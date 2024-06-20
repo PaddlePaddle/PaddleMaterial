@@ -102,11 +102,7 @@ class MEGNetPlus(paddle.nn.Layer):
         Returns:
             Prediction
         """
-        import pdb;pdb.set_trace()
         node_attr = g.node_feat['node_type']
-        # bond_vec, bond_dist = compute_pair_vector_and_distance(g)
-        # g.edata['bond_vec'] = bond_vec
-        # g.edata['bond_dist'] = bond_dist
         edge_attr = self.bond_expansion(g.edge_feat['bond_dist'])
         node_feat, edge_feat, state_feat = self.embedding(node_attr,
             edge_attr, state_attr)
@@ -118,9 +114,6 @@ class MEGNetPlus(paddle.nn.Layer):
             edge_feat, node_feat, state_feat = output
         node_vec = self.node_s2s(g, node_feat)
         edge_vec = self.edge_s2s(g, edge_feat)
-        node_vec = paddle.squeeze(x=node_vec)
-        edge_vec = paddle.squeeze(x=edge_vec)
-        state_feat = paddle.squeeze(x=state_feat)
 
         vec = paddle.concat([node_vec, edge_vec, state_feat], axis=1)
         if self.dropout:

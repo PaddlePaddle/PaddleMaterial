@@ -372,8 +372,9 @@ class MGLDataset(DGLDataset):
             state_attrs = paddle.to_tensor(data=self.graph_labels).astype(dtype
                 ='int64')
         else:
-            state_attrs = paddle.to_tensor(data=np.array(state_attrs),
-                dtype='float32')
+            # state_attrs = paddle.to_tensor(data=np.array(state_attrs),
+            #     dtype='float32')
+            state_attrs =np.array(state_attrs, dtype='float32')
         if self.clear_processed:
             del self.structures
             self.structures = []

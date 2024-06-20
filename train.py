@@ -1,28 +1,15 @@
 from __future__ import annotations
 
 import os
-os.environ["DGLDEFAULTDIR"] = "./dgl"
 import shutil
 import warnings
 import zipfile
 
 import matplotlib.pyplot as plt
 import pandas as pd
-# import pytorch_lightning as pl
-# from pytorch_lightning.callbacks import ModelCheckpoint
-# import torch
-# from dgl.data.utils import split_dataset
 from pymatgen.core import Structure
-# from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
 from tqdm import tqdm
 import pickle
-
-# from matgl.ext.pymatgen import Structure2Graph, get_element_list
-# from matgl.graph.data import MGLDataset, MGLDataLoader, collate_fn_graph
-# from matgl.layers import BondExpansion
-# from matgl.models import MEGNet
-# from matgl.utils.io import RemoteFile
-# from matgl.utils.training import ModelLightningModule
 
 from models.megnet import MEGNetPlus
 
@@ -32,8 +19,17 @@ from dataset.utils import split_dataset
 from dataset.mgl_dataloader import MGLDataLoader, collate_fn_graph
 from utils._bond import BondExpansion
 import paddle
+from utils.logger import init_logger
+import argparse
+import yaml
+import paddle.distributed.fleet as fleet
+import paddle.distributed as dist
+
 # To suppress warnings for clearer output
 warnings.simplefilter("ignore")
+
+if dist.get_world_size() > 1:
+    fleet.init(is_collective=True)
 
 def load_dataset() -> tuple[list[Structure], list[str], list[float]]:
     """Raw data loading function.
@@ -66,119 +62,181 @@ def load_dataset_from_pickle(structures_path, mp_ids_path, formation_energy_path
         formation_energy_per_atom = pickle.load(f)
     return structures, mp_ids, formation_energy_per_atom
 
+def train_epoch(model, loader, loss_fn, optimizer, epoch, log):
+    model.train()
+    total_loss = []
+    for idx, batch_data in enumerate(loader):
+        graph, _, state_attr, labels = batch_data
+        preds = model(graph, state_attr)
 
-structures, mp_ids, eform_per_atom = load_dataset()
+        train_loss = loss_fn(preds, labels)
+        train_loss.backward()
+        optimizer.step()
+        optimizer.clear_grad()
+        total_loss.append(train_loss)
 
-# structures, mp_ids, eform_per_atom = load_dataset_from_pickle(
-#     structures_path="./data/structures.pickle",
-#     mp_ids_path="./data/mp_ids.pickle",
-#     formation_energy_path="./data/formation_energy.pickle",
-# )
+        if paddle.distributed.get_rank() == 0 and (idx % 1 == 0 or idx == len(loader)-1):
+            message = "train: epoch %d | step %d | " % (epoch, idx)
+            message += "loss %.6f" % (train_loss)
+            log.info(message)
+    return sum(total_loss)/len(total_loss)
 
+@paddle.no_grad()
+def eval_epoch(model, loader, loss_fn, metric_fn, log):
+    model.eval()
+    total_loss = []
+    total_metric = []
+    for idx, batch_data in enumerate(loader):
+        graph, _, state_attr, labels = batch_data
+        batch_size = len(labels)
 
-structures = structures[:100]
-eform_per_atom = eform_per_atom[:100]
+        preds = model(graph, state_attr)
 
-# get element types in the dataset
-elem_list = get_element_list(structures)
-# setup a graph converter
-converter = Structure2Graph(element_types=elem_list, cutoff=4.0)
-# convert the raw dataset into MEGNetDataset
-mp_dataset = MGLDataset(
-    structures=structures,
-    labels={"Eform": eform_per_atom},
-    converter=converter,
-    save_dir='./data/mp2018_cache'
-)
+        eval_loss = loss_fn(preds, labels)
+        total_loss.append(eval_loss)
 
-train_data, val_data, test_data = split_dataset(
-    mp_dataset,
-    # frac_list=[0.8665637, 0.06671815, 0.06671815],
-    frac_list=[0.9, 0.05, 0.05],
-    shuffle=True,
-    random_state=42,
-)
+        eval_metric = metric_fn(preds, labels)
+        total_metric.append(eval_metric)
 
-train_loader, val_loader, test_loader = MGLDataLoader(
-    train_data=train_data,
-    val_data=val_data,
-    test_data=test_data,
-    collate_fn=collate_fn_graph,
-    batch_size=4,
-    num_workers=0,
-)
-
-# setup the embedding layer for node attributes
-# node_embed = torch.nn.Embedding(len(elem_list), 16)
-# define the bond expansion
-bond_expansion = BondExpansion(rbf_type="Gaussian", initial=0.0, final=5.0, num_centers=100, width=0.5)
-# setup the architecture of MEGNet model
-model = MEGNetPlus(
-    dim_node_embedding=16,
-    dim_edge_embedding=100,
-    dim_state_embedding=2,
-    nblocks=3,
-    hidden_layer_sizes_input=(64, 32),
-    hidden_layer_sizes_conv=(64, 64, 32),
-    nlayers_set2set=1,
-    niters_set2set=2,
-    hidden_layer_sizes_output=(32, 16),
-    is_classification=False,
-    activation_type="softplus2",
-    bond_expansion=bond_expansion,
-    cutoff=4.0,
-    gauss_width=0.5,
-)
-model.set_dict(paddle.load('data/paddle_weight.pdparams'))
-
-
-lr_scheduler = paddle.optimizer.lr.CosineAnnealingDecay(T_max=1000, eta_min=0.001 * 1000,
-    learning_rate=0.001)
-optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
-    learning_rate=lr_scheduler, epsilon=1e-08, weight_decay=0.0)
-loss_fn = paddle.nn.functional.mse_loss
-import pdb;pdb.set_trace()
-for data in train_loader:
-    print(len(data))
-    preds = model(data[0], data[2])
-    labels = data[3]
-    loss = loss_fn(labels, preds)
-    loss.backward()
-    optimizer.step()
-    optimizer.clear_gradients()
-    # lr_scheduler.step()
-    print('loss: ', loss)
+    return sum(total_loss)/len(total_loss), sum(total_metric)/len(loader)
+        
 
 
 
 
+def train(cfg, log):
+    fleet.init(is_collective=True)
+    # structures, mp_ids, eform_per_atom = load_dataset()
+    # structures = structures[:100]
+    # eform_per_atom = eform_per_atom[:100]
 
-# save_path = './results/v6_1'
+    structures, mp_ids, eform_per_atom = load_dataset_from_pickle(
+        structures_path=cfg['dataset']['structures_path'],
+        mp_ids_path=cfg['dataset']['mp_ids_path'],
+        formation_energy_path=cfg['dataset']['formation_energy_path'],
+    )
 
-# checkpoint_callback = ModelCheckpoint(
-#     monitor="val_MAE",
-#     mode="min",
-#     save_top_k=1,
-#     save_last=True,
-#     filename="{epoch}-{val_MAE:.4f}",
-#     dirpath=os.path.join(save_path, "checkpoints"),
-#     auto_insert_metric_name=False,
-#     every_n_epochs=1,
-# )
+    # get element types in the dataset
+    elem_list = get_element_list(structures)
+    # setup a graph converter
+    converter = Structure2Graph(element_types=elem_list, cutoff=cfg['dataset']['cutoff'])
+    # convert the raw dataset into MEGNetDataset
+    mp_dataset = MGLDataset(
+        structures=structures,
+        labels={"Eform": eform_per_atom},
+        converter=converter,
+        save_dir='./data/mp2018_cache'
+    )
 
-# # setup the MEGNetTrainer
-# lit_module = ModelLightningModule(model=model)
-# logger_csv = CSVLogger(save_path, name="logs_csv")
-# logger_tbd = TensorBoardLogger(save_path, name="logs_tbd")
-# trainer = pl.Trainer(max_epochs=1000, logger=[logger_csv, logger_tbd] , devices=[6]) #, strategy='ddp', devices=[2], callbacks=[checkpoint_callback])
-# # trainer = pl.Trainer(max_epochs=2000, logger=[logger_csv, logger_tbd], strategy='ddp', devices=[2, 3, 4, 5], callbacks=[checkpoint_callback])
-# trainer.fit(model=lit_module, train_dataloaders=train_loader, val_dataloaders=val_loader)
-# trainer.test(model=lit_module, dataloaders=test_loader)
-# # metrics = pd.read_csv("logs/MEGNet_training/version_1/metrics.csv")
-# # metrics["train_MAE"].dropna().plot()
-# # metrics["val_MAE"].dropna().plot()
+    train_data, val_data, test_data = split_dataset(
+        mp_dataset,
+        frac_list=cfg['dataset']['split_list'],
+        shuffle=True,
+        random_state=42,
+    )
 
-# # _ = plt.legend()
-# # import pdb;pdb.set_trace()
-# # trainer = pl.Trainer(max_epochs=5, logger=logger, devices=[2])
-# # trainer.test(model=lit_module, dataloaders=test_loader, ckpt_path="./logs/MEGNet_training/version_2/checkpoints/epoch=1999-step=80000.ckpt")
+    # train_loader, val_loader, test_loader = MGLDataLoader(
+    #     train_data=train_data,
+    #     val_data=val_data,
+    #     test_data=test_data,
+    #     collate_fn=collate_fn_graph,
+    #     batch_size=cfg["batch_size"],
+    #     num_workers=0,
+    # )
+
+    train_loader = paddle.io.DataLoader(
+        train_data, 
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            train_data,
+            batch_size=cfg['batch_size'],
+            shuffle=False,
+        ),
+        collate_fn=collate_fn_graph,
+        num_workers=0,
+    )
+    val_loader = paddle.io.DataLoader(
+        val_data, 
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            val_data,
+            batch_size=cfg['batch_size'],
+        ),
+        collate_fn=collate_fn_graph,
+    )
+    test_loader = paddle.io.DataLoader(
+        test_data, 
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            test_data,
+            batch_size=cfg['batch_size'],
+        ),
+        collate_fn=collate_fn_graph,
+    )
+
+    # define the bond expansion
+    bond_expansion = BondExpansion(rbf_type="Gaussian", initial=0.0, final=5.0, num_centers=100, width=0.5)
+    # setup the architecture of MEGNet model
+    model = MEGNetPlus(
+        dim_node_embedding=cfg['model']['dim_node_embedding'],
+        dim_edge_embedding=cfg['model']['dim_edge_embedding'],
+        dim_state_embedding=cfg['model']['dim_state_embedding'],
+        nblocks=cfg['model']['nblocks'],
+        hidden_layer_sizes_input=cfg["model"]['hidden_layer_sizes_input'],
+        hidden_layer_sizes_conv=cfg["model"]['hidden_layer_sizes_conv'],
+        nlayers_set2set=cfg["model"]['nlayers_set2set'],
+        niters_set2set=cfg["model"]['niters_set2set'],
+        hidden_layer_sizes_output=cfg["model"]['hidden_layer_sizes_output'],
+        is_classification=cfg['model']['is_classification'],
+        activation_type=cfg['model']['activation_type'],
+        bond_expansion=bond_expansion,
+        cutoff=cfg['model']['cutoff'],
+        gauss_width=cfg['model']['gauss_width'],
+    )
+    # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
+
+    if dist.get_world_size() > 1:
+        model = fleet.distributed_model(model)
+
+    lr_scheduler = paddle.optimizer.lr.CosineAnnealingDecay(**cfg['lr_cfg'])
+    optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
+        learning_rate=lr_scheduler, epsilon=1e-08, weight_decay=0.0)
+    if dist.get_world_size() > 1:
+        optimizer = fleet.distributed_optimizer(optimizer)
+    loss_fn = paddle.nn.functional.mse_loss
+    metric_fn = paddle.nn.functional.l1_loss
+
+    global_step = 0
+    best_metric = float('inf')
+
+    for epoch in range(cfg['epochs']):
+        train_loss = train_epoch(model, train_loader, loss_fn, optimizer, epoch, log)
+        lr_scheduler.step()
+
+        if paddle.distributed.get_rank() == 0:
+            eval_loss, eval_metric = eval_epoch(model, val_loader, loss_fn, metric_fn, log)
+            log.info("epoch: {}, train_loss: {:.6f}, eval_loss: {:.6f}, eval_metric: {:.6f}".format(epoch, train_loss.item(), eval_loss.item(), eval_metric.item()))
+
+            if eval_metric < best_metric:
+                best_metric = eval_metric
+                paddle.save(model.state_dict(), '{}/best.pdparams'.format(cfg['save_path']))
+                log.info("Saving best checkpoint at {}".format(cfg['save_path']))
+
+            paddle.save(model.state_dict(), '{}/latest.pdparams'.format(cfg['save_path']))
+            if epoch % 500 == 0:
+                paddle.save(model.state_dict(), '{}/epoch_{}.pdparams'.format(cfg['save_path'], epoch))
+    if paddle.distributed.get_rank() == 0:
+        test_loss, test_metric = eval_epoch(model, test_loader, loss_fn, metric_fn, log)
+        log.info("test_loss: {:.6f}, test_metric: {:.6f}".format(test_loss.item(), test_metric.item()))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--config", type=str, default='./configs/megnet_3d.yaml', help="Path to config file")
+    args = parser.parse_args()
+    with open(args.config, 'r') as f:
+        cfg = yaml.safe_load(f)
+    if paddle.distributed.get_rank() == 0:
+        os.makedirs(cfg['save_path'], exist_ok=True)
+        shutil.copy(args.config, cfg['save_path'])
+    log = init_logger(log_file=os.path.join(cfg['save_path'], 'run.log'))
+    train(cfg, log)
+
+
