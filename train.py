@@ -75,9 +75,9 @@ def train_epoch(model, loader, loss_fn, optimizer, epoch, log):
         optimizer.clear_grad()
         total_loss.append(train_loss)
 
-        if paddle.distributed.get_rank() == 0 and (idx % 1 == 0 or idx == len(loader)-1):
+        if paddle.distributed.get_rank() == 0 and (idx % 10 == 0 or idx == len(loader)-1):
             message = "train: epoch %d | step %d | " % (epoch, idx)
-            message += "loss %.6f" % (train_loss)
+            message += "lr %.6f | loss %.6f" % (optimizer.get_lr(), train_loss)
             log.info(message)
     return sum(total_loss)/len(total_loss)
 
@@ -96,7 +96,7 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
         total_loss.append(eval_loss)
 
         eval_metric = metric_fn(preds, labels)
-        total_metric.append(eval_metric)
+        total_metric.append(eval_metric*batch_size)
 
     return sum(total_loss)/len(total_loss), sum(total_metric)/len(loader)
         
@@ -149,7 +149,7 @@ def train(cfg, log):
         batch_sampler=paddle.io.DistributedBatchSampler(
             train_data,
             batch_size=cfg['batch_size'],
-            shuffle=False,
+            shuffle=True,
         ),
         collate_fn=collate_fn_graph,
         num_workers=0,
@@ -212,7 +212,7 @@ def train(cfg, log):
 
         if paddle.distributed.get_rank() == 0:
             eval_loss, eval_metric = eval_epoch(model, val_loader, loss_fn, metric_fn, log)
-            log.info("epoch: {}, train_loss: {:.6f}, eval_loss: {:.6f}, eval_metric: {:.6f}".format(epoch, train_loss.item(), eval_loss.item(), eval_metric.item()))
+            log.info("epoch: {}, train_loss: {:.6f}, eval_loss: {:.6f}, eval_mae: {:.6f}".format(epoch, train_loss.item(), eval_loss.item(), eval_metric.item()))
 
             if eval_metric < best_metric:
                 best_metric = eval_metric
@@ -224,7 +224,7 @@ def train(cfg, log):
                 paddle.save(model.state_dict(), '{}/epoch_{}.pdparams'.format(cfg['save_path'], epoch))
     if paddle.distributed.get_rank() == 0:
         test_loss, test_metric = eval_epoch(model, test_loader, loss_fn, metric_fn, log)
-        log.info("test_loss: {:.6f}, test_metric: {:.6f}".format(test_loss.item(), test_metric.item()))
+        log.info("test_loss: {:.6f}, test_mae: {:.6f}".format(test_loss.item(), test_metric.item()))
 
 
 if __name__ == "__main__":
