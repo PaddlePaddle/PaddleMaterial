@@ -38,15 +38,6 @@ class MLP(paddle.nn.Layer):
                 if activation is not None and activate_last:
                     self.layers.append(activation)
 
-    # def __repr__(self):
-    #     dims = []
-    #     for layer in self.layers:
-    #         if isinstance(layer, paddle.nn.Linear):
-    #             dims.append(f'{layer.in_features} → {layer.out_features}')
-    #         else:
-    #             dims.append(layer.__class__.__name__)
-    #     return f"MLP({', '.join(dims)})"
-
     @property
     def last_linear(self) ->(Linear | None):
         """:return: The last linear layer."""
@@ -216,108 +207,24 @@ class MEGNetGraphConv(paddle.nn.Layer):
         attr_update = MLP(state_dims, activation, activate_last=True)
         return MEGNetGraphConv(edge_update, node_update, attr_update)
 
-    def _edge_udf(self, edges: dgl.udf.EdgeBatch):
-        vi = edges.src['v']
-        vj = edges.dst['v']
-        u = edges.src['u']
-        eij = edges.data.pop('e')
-        inputs = paddle.hstack(x=[vi, vj, eij, u])
-        mij = {'mij': self.edge_func(inputs)}
-        return mij
-
-    def edge_update_(self, graph: dgl.DGLGraph) ->paddle.Tensor:
-        """Perform edge update.
-
-        Args:
-            graph: Input g
-
-        Returns:
-            Output tensor for edges.
-        """
-        graph.apply_edges(self._edge_udf)
-        graph.edata['e'] = graph.edata.pop('mij')
-        return graph.edata['e']
-
-    def node_update_(self, graph: dgl.DGLGraph) ->paddle.Tensor:
-        """Perform node update.
-
-        Args:
-            graph: Input g
-
-        Returns:
-            Output tensor for nodes.
-        """
-        graph.update_all(fn.copy_e('e', 'e'), fn.mean('e', 've'))
-        ve = graph.ndata.pop('ve')
-        v = graph.ndata.pop('v')
-        u = graph.ndata.pop('u')
-        inputs = paddle.hstack(x=[v, ve, u])
-        graph.ndata['v'] = self.node_func(inputs)
-        return graph.ndata['v']
-
-    def state_update_(self, graph: dgl.DGLGraph, state_feat: paddle.Tensor
-        ) ->paddle.Tensor:
-        """Perform attribute (global state) update.
-
-        Args:
-            graph: Input g
-            state_feat: Input attributes
-
-        Returns:
-            Output tensor for attributes
-        """
-        u_edge = dgl.readout_edges(graph, feat='e', op='mean')
-        u_vertex = dgl.readout_nodes(graph, feat='v', op='mean')
-        u_edge = paddle.squeeze(x=u_edge)
-        u_vertex = paddle.squeeze(x=u_vertex)
-        inputs = paddle.hstack(x=[state_feat.squeeze(), u_edge, u_vertex])
-        state_feat = self.state_func(inputs)
-        return state_feat
-
-    def edge_update(self, graph, node_feat, edge_feat, state_feat):
+    def edge_update(self, graph, node_feat, edge_feat, u):
         vi = node_feat[graph.edges[:, 0]]
         vj = node_feat[graph.edges[:, 1]]
-        batch_num_nodes = graph._graph_node_index
-        batch_num_nodes = batch_num_nodes[1:] - batch_num_nodes[:-1]
-        u = paddle.repeat_interleave(state_feat, batch_num_nodes, axis=0)
         u = u[graph.edges[:, 0]]
         edge_feat = paddle.concat([vi, vj, edge_feat, u], axis=1)
         edge_feat = self.edge_func(edge_feat)
         return edge_feat
 
-    def node_update(self, graph, node_feat, edge_feat, state_feat):
-
-        batch_num_nodes = graph._graph_node_index
-        batch_num_nodes = batch_num_nodes[1:] - batch_num_nodes[:-1]
-
+    def node_update(self, graph, node_feat, edge_feat, u):
         src, dst, eid = graph.sorted_edges(sort_by='dst')
         node_feat_e = paddle.geometric.segment_mean(edge_feat[eid], dst)
-
-        u = paddle.repeat_interleave(state_feat, batch_num_nodes, axis=0)
-        v = node_feat
         node_feat = paddle.concat([node_feat, node_feat_e, u], axis=1)
         node_feat = self.node_func(node_feat)
         return node_feat
 
     def state_update(self, graph, node_feat, edge_feat, state_feat):
-
-        batch_num_edges = graph._graph_edge_index
-        batch_num_edges = batch_num_edges[1:] - batch_num_edges[:-1]
-        seg_ids = []
-        for i in range(len(batch_num_edges)):
-            num_edges = batch_num_edges[i]
-            seg_ids.append(paddle.full(shape=[num_edges], fill_value=i, dtype='int32'))
-        seg_ids = paddle.concat(seg_ids)
-        u_edge_feat = paddle.geometric.segment_mean(edge_feat, seg_ids)
-        
-        batch_num_nodes = graph._graph_node_index
-        batch_num_nodes = batch_num_nodes[1:] - batch_num_nodes[:-1]
-        seg_ids = []
-        for i in range(len(batch_num_nodes)):
-            num_nodes = batch_num_nodes[i]
-            seg_ids.append(paddle.full(shape=[num_nodes], fill_value=i, dtype='int32'))
-        seg_ids = paddle.concat(seg_ids)
-        u_node_feat = paddle.geometric.segment_mean(node_feat, seg_ids)
+        u_edge_feat = paddle.geometric.segment_mean(edge_feat, graph.graph_edge_id)
+        u_node_feat = paddle.geometric.segment_mean(node_feat, graph.graph_node_id)
         state = paddle.concat([state_feat, u_edge_feat, u_node_feat], axis=1)
         state_feat = self.state_func(state)
         return state_feat
@@ -336,18 +243,14 @@ class MEGNetGraphConv(paddle.nn.Layer):
         Returns:
             (edge features, node features, graph attributes)
         """
-        edge_feat = self.edge_update(graph, node_feat, edge_feat, state_feat)
-        node_feat = self.node_update(graph, node_feat, edge_feat, state_feat)
+        batch_num_nodes = graph._graph_node_index
+        batch_num_nodes = batch_num_nodes[1:] - batch_num_nodes[:-1]
+        u = paddle.repeat_interleave(state_feat, batch_num_nodes, axis=0)
+
+        edge_feat = self.edge_update(graph, node_feat, edge_feat, u)
+        node_feat = self.node_update(graph, node_feat, edge_feat, u)
         state_feat = self.state_update(graph, node_feat, edge_feat, state_feat)
         return edge_feat, node_feat, state_feat
-        # with graph.local_scope():
-        #     graph.edata['e'] = edge_feat
-        #     graph.ndata['v'] = node_feat
-        #     graph.ndata['u'] = dgl.broadcast_nodes(graph, state_feat)
-        #     edge_feat = self.edge_update_(graph)
-        #     node_feat = self.node_update_(graph)
-        #     state_feat = self.state_update_(graph, state_feat)
-        # return edge_feat, node_feat, state_feat
 
 
 class MEGNetBlock(paddle.nn.Layer):
@@ -421,221 +324,82 @@ class MEGNetBlock(paddle.nn.Layer):
 
 
 
-def broadcast_nodes(graph, graph_feat, *, ntype=None):
-    """Generate a node feature equal to the graph-level feature :attr:`graph_feat`.
+# def broadcast_nodes(graph, graph_feat, *, ntype=None):
+#     """Generate a node feature equal to the graph-level feature :attr:`graph_feat`.
 
-    The operation is similar to ``numpy.repeat`` (or ``torch.repeat_interleave``).
-    It is commonly used to normalize node features by a global vector. For example,
-    to normalize node features across graph to range :math:`[0~1)`:
+#     The operation is similar to ``numpy.repeat`` (or ``torch.repeat_interleave``).
+#     It is commonly used to normalize node features by a global vector. For example,
+#     to normalize node features across graph to range :math:`[0~1)`:
 
-    >>> g = dgl.batch([...])  # batch multiple graphs
-    >>> g.ndata['h'] = ...  # some node features
-    >>> h_sum = dgl.broadcast_nodes(g, dgl.sum_nodes(g, 'h'))
-    >>> g.ndata['h'] /= h_sum  # normalize by summation
-
-    Parameters
-    ----------
-    graph : DGLGraph
-        The graph.
-    graph_feat : tensor
-        The feature to broadcast. Tensor shape is :math:`(B, *)` for batched graph,
-        where :math:`B` is the batch size.
-
-    ntype : str, optional
-        Node type. Can be omitted if there is only one node type.
-
-    Returns
-    -------
-    Tensor
-        The node features tensor with shape :math:`(N, *)`, where :math:`N` is the
-        number of nodes.
-
-    Examples
-    --------
-
-    >>> import dgl
-    >>> import torch as th
-
-    Create two :class:`~dgl.DGLGraph` objects and initialize their
-    node features.
-
-    >>> g1 = dgl.graph(([0], [1]))                    # Graph 1
-    >>> g2 = dgl.graph(([0, 1], [1, 2]))              # Graph 2
-    >>> bg = dgl.batch([g1, g2])
-    >>> feat = th.rand(2, 5)
-    >>> feat
-    tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-            [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
-
-    Broadcast feature to all nodes in the batched graph, feat[i] is broadcast to nodes
-    in the i-th example in the batch.
-
-    >>> dgl.broadcast_nodes(bg, feat)
-    tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-            [0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-            [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
-            [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
-            [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
-
-    Broadcast feature to all nodes in the single graph (the feature tensor shape
-    to broadcast should be :math:`(1, *)`).
-
-    >>> feat0 = th.unsqueeze(feat[0], 0)
-    >>> dgl.broadcast_nodes(g1, feat0)
-    tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-            [0.4325, 0.7710, 0.5541, 0.0544, 0.9368]])
-
-    See Also
-    --------
-    broadcast_edges
-    """
-    if tuple(graph_feat.shape)[0
-        ] != graph.batch_size and graph.batch_size == 1:
-        dgl_warning(
-            'For a single graph, use a tensor of shape (1, *) for graph_feat. The support of shape (*) will be deprecated.'
-            )
-        graph_feat = paddle.unsqueeze(x=graph_feat, axis=0)
-    return paddle.repeat_interleave(x=graph_feat, repeats=graph.
-        batch_num_nodes(ntype), axis=0)
-
-
-# class Set2Set(paddle.nn.Layer):
-#     """Set2Set operator from `Order Matters: Sequence to sequence for sets
-#     <https://arxiv.org/pdf/1511.06391.pdf>`__
-
-#     For each individual graph in the batch, set2set computes
-
-#     .. math::
-#         q_t &= \\mathrm{LSTM} (q^*_{t-1})
-
-#         \\alpha_{i,t} &= \\mathrm{softmax}(x_i \\cdot q_t)
-
-#         r_t &= \\sum_{i=1}^N \\alpha_{i,t} x_i
-
-#         q^*_t &= q_t \\Vert r_t
-
-#     for this graph.
+#     >>> g = dgl.batch([...])  # batch multiple graphs
+#     >>> g.ndata['h'] = ...  # some node features
+#     >>> h_sum = dgl.broadcast_nodes(g, dgl.sum_nodes(g, 'h'))
+#     >>> g.ndata['h'] /= h_sum  # normalize by summation
 
 #     Parameters
 #     ----------
-#     input_dim : int
-#         The size of each input sample.
-#     n_iters : int
-#         The number of iterations.
-#     n_layers : int
-#         The number of recurrent layers.
+#     graph : DGLGraph
+#         The graph.
+#     graph_feat : tensor
+#         The feature to broadcast. Tensor shape is :math:`(B, *)` for batched graph,
+#         where :math:`B` is the batch size.
+
+#     ntype : str, optional
+#         Node type. Can be omitted if there is only one node type.
+
+#     Returns
+#     -------
+#     Tensor
+#         The node features tensor with shape :math:`(N, *)`, where :math:`N` is the
+#         number of nodes.
 
 #     Examples
 #     --------
-#     The following example uses PyTorch backend.
 
 #     >>> import dgl
 #     >>> import torch as th
-#     >>> from dgl.nn import Set2Set
-#     >>>
-#     >>> g1 = dgl.rand_graph(3, 4)  # g1 is a random graph with 3 nodes and 4 edges
-#     >>> g1_node_feats = th.rand(3, 5)  # feature size is 5
-#     >>> g1_node_feats
-#     tensor([[0.8948, 0.0699, 0.9137, 0.7567, 0.3637],
-#             [0.8137, 0.8938, 0.8377, 0.4249, 0.6118],
-#             [0.5197, 0.9030, 0.6825, 0.5725, 0.4755]])
-#     >>>
-#     >>> g2 = dgl.rand_graph(4, 6)  # g2 is a random graph with 4 nodes and 6 edges
-#     >>> g2_node_feats = th.rand(4, 5)  # feature size is 5
-#     >>> g2_node_feats
-#     tensor([[0.2053, 0.2426, 0.4111, 0.9028, 0.5658],
-#             [0.5278, 0.6365, 0.9990, 0.2351, 0.8945],
-#             [0.3134, 0.0580, 0.4349, 0.7949, 0.3891],
-#             [0.0142, 0.2709, 0.3330, 0.8521, 0.6925]])
-#     >>>
-#     >>> s2s = Set2Set(5, 2, 1)  # create a Set2Set layer(n_iters=2, n_layers=1)
 
-#     Case 1: Input a single graph
+#     Create two :class:`~dgl.DGLGraph` objects and initialize their
+#     node features.
 
-#     >>> s2s(g1, g1_node_feats)
-#         tensor([[-0.0235, -0.2291,  0.2654,  0.0376,  0.1349,  0.7560,  0.5822,  0.8199,
-#                   0.5960,  0.4760]], grad_fn=<CatBackward>)
+#     >>> g1 = dgl.graph(([0], [1]))                    # Graph 1
+#     >>> g2 = dgl.graph(([0, 1], [1, 2]))              # Graph 2
+#     >>> bg = dgl.batch([g1, g2])
+#     >>> feat = th.rand(2, 5)
+#     >>> feat
+#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
+#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
 
-#     Case 2: Input a batch of graphs
+#     Broadcast feature to all nodes in the batched graph, feat[i] is broadcast to nodes
+#     in the i-th example in the batch.
 
-#     Build a batch of DGL graphs and concatenate all graphs' node features into one tensor.
+#     >>> dgl.broadcast_nodes(bg, feat)
+#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
+#             [0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
+#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
+#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
+#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
 
-#     >>> batch_g = dgl.batch([g1, g2])
-#     >>> batch_f = th.cat([g1_node_feats, g2_node_feats], 0)
-#     >>>
-#     >>> s2s(batch_g, batch_f)
-#     tensor([[-0.0235, -0.2291,  0.2654,  0.0376,  0.1349,  0.7560,  0.5822,  0.8199,
-#               0.5960,  0.4760],
-#             [-0.0483, -0.2010,  0.2324,  0.0145,  0.1361,  0.2703,  0.3078,  0.5529,
-#               0.6876,  0.6399]], grad_fn=<CatBackward>)
+#     Broadcast feature to all nodes in the single graph (the feature tensor shape
+#     to broadcast should be :math:`(1, *)`).
 
-#     Notes
-#     -----
-#     Set2Set is widely used in molecular property predictions, see
-#     `dgl-lifesci's MPNN example <https://github.com/awslabs/dgl-lifesci/blob/
-#     ecd95c905479ec048097777039cf9a19cfdcf223/python/dgllife/model/model_zoo/
-#     mpnn_predictor.py>`__
-#     on how to use DGL's Set2Set layer in graph property prediction applications.
+#     >>> feat0 = th.unsqueeze(feat[0], 0)
+#     >>> dgl.broadcast_nodes(g1, feat0)
+#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
+#             [0.4325, 0.7710, 0.5541, 0.0544, 0.9368]])
+
+#     See Also
+#     --------
+#     broadcast_edges
 #     """
-
-#     def __init__(self, input_dim, n_iters, n_layers):
-#         super(Set2Set, self).__init__()
-#         self.input_dim = input_dim
-#         self.output_dim = 2 * input_dim
-#         self.n_iters = n_iters
-#         self.n_layers = n_layers
-#         self.lstm = paddle.nn.LSTM(input_size=self.output_dim, hidden_size=
-#             self.input_dim, num_layers=n_layers, time_major=not False,
-#             direction='forward')
-#         self.reset_parameters()
-
-#     def reset_parameters(self):
-#         """Reinitialize learnable parameters."""
-#         self.lstm.reset_parameters()
-
-#     def forward(self, graph, feat):
-#         """
-#         Compute set2set pooling.
-
-#         Parameters
-#         ----------
-#         graph : DGLGraph
-#             The input graph.
-#         feat : torch.Tensor
-#             The input feature with shape :math:`(N, D)` where  :math:`N` is the
-#             number of nodes in the graph, and :math:`D` means the size of features.
-
-#         Returns
-#         -------
-#         torch.Tensor
-#             The output feature with shape :math:`(B, D)`, where :math:`B` refers to
-#             the batch size, and :math:`D` means the size of features.
-#         """
-#         with graph.local_scope():
-#             batch_size = graph.batch_size
-#             h = paddle.zeros(shape=(self.n_layers, batch_size, self.
-#                 input_dim), dtype=feat.dtype), paddle.zeros(shape=(self.
-#                 n_layers, batch_size, self.input_dim), dtype=feat.dtype)
-#             q_star = paddle.zeros(shape=[batch_size, self.output_dim],
-#                 dtype=feat.dtype)
-#             for _ in range(self.n_iters):
-#                 q, h = self.lstm(q_star.unsqueeze(axis=0), h)
-#                 q = q.view(batch_size, self.input_dim)
-#                 e = (feat * broadcast_nodes(graph, q)).sum(axis=-1, keepdim
-#                     =True)
-#                 graph.ndata['e'] = e
-#                 alpha = softmax_nodes(graph, 'e')
-#                 graph.ndata['r'] = feat * alpha
-#                 readout = sum_nodes(graph, 'r')
-#                 q_star = paddle.concat(x=[q, readout], axis=-1)
-#             return q_star
-
-#     def extra_repr(self):
-#         """Set the extra representation of the module.
-#         which will come into effect when printing the model.
-#         """
-#         summary = 'n_iters={n_iters}'
-#         return summary.format(**self.__dict__)
+#     if tuple(graph_feat.shape)[0
+#         ] != graph.batch_size and graph.batch_size == 1:
+#         dgl_warning(
+#             'For a single graph, use a tensor of shape (1, *) for graph_feat. The support of shape (*) will be deprecated.'
+#             )
+#         graph_feat = paddle.unsqueeze(x=graph_feat, axis=0)
+#     return paddle.repeat_interleave(x=graph_feat, repeats=graph.
+#         batch_num_nodes(ntype), axis=0)
 
 
 
@@ -705,7 +469,7 @@ class EdgeSet2Set(paddle.nn.Layer):
         self.n_iters = n_iters
         self.n_layers = n_layers
         self.lstm = paddle.nn.LSTM(input_size=self.output_dim, hidden_size=
-            self.input_dim, num_layers=n_layers, time_major=not False,
+            self.input_dim, num_layers=n_layers, time_major=True,
             direction='forward')
     #     self.reset_parameters()
 
