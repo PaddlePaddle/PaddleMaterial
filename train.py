@@ -53,14 +53,12 @@ def load_dataset() -> tuple[list[Structure], list[str], list[float]]:
             break
     return structures, mp_ids, data["formation_energy_per_atom"].tolist()
 
-def load_dataset_from_pickle(structures_path, mp_ids_path, formation_energy_path):
+def load_dataset_from_pickle(structures_path, formation_energy_path):
     with open(structures_path, 'rb') as f:
         structures = pickle.load(f)
-    with open(mp_ids_path, 'rb') as f:
-        mp_ids = pickle.load(f)
     with open(formation_energy_path, 'rb') as f:
         formation_energy_per_atom = pickle.load(f)
-    return structures, mp_ids, formation_energy_per_atom
+    return structures, formation_energy_per_atom
 
 def train_epoch(model, loader, loss_fn, optimizer, epoch, log):
     model.train()
@@ -86,6 +84,7 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
     model.eval()
     total_loss = []
     total_metric = []
+    total_num_data = 0
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
         batch_size = len(labels)
@@ -97,12 +96,10 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
 
         eval_metric = metric_fn(preds, labels)
         total_metric.append(eval_metric*batch_size)
+        total_num_data += batch_size
 
-    return sum(total_loss)/len(total_loss), sum(total_metric)/len(loader)
+    return sum(total_loss)/len(total_loss), sum(total_metric)/total_num_data
         
-
-
-
 
 def train(cfg, log):
     fleet.init(is_collective=True)
@@ -110,9 +107,8 @@ def train(cfg, log):
     # structures = structures[:100]
     # eform_per_atom = eform_per_atom[:100]
 
-    structures, mp_ids, eform_per_atom = load_dataset_from_pickle(
+    structures, eform_per_atom = load_dataset_from_pickle(
         structures_path=cfg['dataset']['structures_path'],
-        mp_ids_path=cfg['dataset']['mp_ids_path'],
         formation_energy_path=cfg['dataset']['formation_energy_path'],
     )
 

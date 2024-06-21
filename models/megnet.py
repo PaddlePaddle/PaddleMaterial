@@ -1,10 +1,12 @@
 from __future__ import annotations
 import paddle
+import paddle.nn as nn
 import logging
 from typing import TYPE_CHECKING
 from utils.default_elements import DEFAULT_ELEMENTS
 from models.layers import MLP, ActivationFunction, EmbeddingBlock, MEGNetBlock
 from models.layers import Set2Set, EdgeSet2Set
+from models import initializer
 logger = logging.getLogger(__file__)
 
 
@@ -89,6 +91,16 @@ class MEGNetPlus(paddle.nn.Layer):
         self.dropout = paddle.nn.Dropout(p=dropout) if dropout else None
         self.is_classification = is_classification
         self.include_state_embedding = include_state
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            initializer.linear_init_(m)
+        elif isinstance(m, nn.Embedding):
+            initializer.normal_(m.weight)
+        elif isinstance(m, nn.LSTM):
+            initializer.lstm_init_(m)
 
     def forward(self, g: dgl.DGLGraph, state_attr: (paddle.Tensor | None)=
         None, **kwargs):
