@@ -70,6 +70,8 @@ def get_dataloader(cfg):
         structures_path=cfg['dataset']['structures_path'],
         formation_energy_path=cfg['dataset']['formation_energy_path'],
     )
+    # structures = structures[:100]
+    # eform_per_atom = eform_per_atom[:100]
 
     # get element types in the dataset
     elem_list = get_element_list(structures)
@@ -117,10 +119,10 @@ def get_dataloader(cfg):
         collate_fn=collate_fn_graph,
     )
 
-    return train_loader, val_loader, test_loader
+    return train_loader, val_loader, test_loader, elem_list
 
 
-def get_model(cfg):
+def get_model(cfg, elem_list):
     # define the bond expansion
     bond_expansion = BondExpansion(rbf_type="Gaussian", initial=0.0, final=5.0, num_centers=100, width=0.5)
     # setup the architecture of MEGNet model
@@ -139,6 +141,7 @@ def get_model(cfg):
         bond_expansion=bond_expansion,
         cutoff=cfg['model']['cutoff'],
         gauss_width=cfg['model']['gauss_width'],
+        element_types=elem_list,
     )
     model.set_dict(paddle.load('data/paddle_weight.pdparams'))
 
@@ -156,11 +159,15 @@ def get_optimizer(cfg, model):
         optimizer = fleet.distributed_optimizer(optimizer)
     return optimizer, lr_scheduler
 
-def train_epoch(model, loader, loss_fn, optimizer, epoch, log):
+def train_epoch(model, loader, loss_fn, metric_fn, optimizer, epoch, log):
     model.train()
     total_loss = []
+    total_metric = []
+    total_num_data = 0
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
+        batch_size = len(labels)
+
         preds = model(graph, state_attr)
 
         train_loss = loss_fn(preds, labels)
@@ -169,11 +176,15 @@ def train_epoch(model, loader, loss_fn, optimizer, epoch, log):
         optimizer.clear_grad()
         total_loss.append(train_loss)
 
+        train_metric = metric_fn(preds, labels)
+        total_metric.append(train_metric*batch_size)
+        total_num_data += batch_size
+
         if paddle.distributed.get_rank() == 0 and (idx % 10 == 0 or idx == len(loader)-1):
             message = "train: epoch %d | step %d | " % (epoch, idx)
-            message += "lr %.6f | loss %.6f" % (optimizer.get_lr(), train_loss)
+            message += "lr %.6f | loss %.6f | mae %.6f" % (optimizer.get_lr(), train_loss, train_metric)
             log.info(message)
-    return sum(total_loss)/len(total_loss)
+    return sum(total_loss)/len(total_loss), sum(total_metric)/total_num_data
 
 @paddle.no_grad()
 def eval_epoch(model, loader, loss_fn, metric_fn, log):
@@ -199,9 +210,9 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
 
 def train(cfg):
     log = init_logger(log_file=os.path.join(cfg['save_path'], 'train.log'))
-    train_loader, val_loader, test_loader = get_dataloader(cfg)
+    train_loader, val_loader, test_loader, elem_list = get_dataloader(cfg)
 
-    model = get_model(cfg)
+    model = get_model(cfg, elem_list)
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
     loss_fn = paddle.nn.functional.mse_loss
@@ -211,12 +222,12 @@ def train(cfg):
     best_metric = float('inf')
 
     for epoch in range(cfg['epochs']):
-        train_loss = train_epoch(model, train_loader, loss_fn, optimizer, epoch, log)
+        train_loss, train_metric = train_epoch(model, train_loader, loss_fn, metric_fn, optimizer, epoch, log)
         lr_scheduler.step()
 
         if paddle.distributed.get_rank() == 0:
             eval_loss, eval_metric = eval_epoch(model, val_loader, loss_fn, metric_fn, log)
-            log.info("epoch: {}, train_loss: {:.6f}, eval_loss: {:.6f}, eval_mae: {:.6f}".format(epoch, train_loss.item(), eval_loss.item(), eval_metric.item()))
+            log.info("epoch: {}, train_loss: {:.6f}, train_metric: {:.6f}, eval_loss: {:.6f}, eval_mae: {:.6f}".format(epoch, train_loss.item(), train_metric.item(), eval_loss.item(), eval_metric.item()))
 
             if eval_metric < best_metric:
                 best_metric = eval_metric
@@ -233,9 +244,9 @@ def train(cfg):
 
 def evaluate(cfg):
     log = init_logger(log_file=os.path.join(cfg['save_path'], 'evaluate.log'))
-    train_loader, val_loader, test_loader = get_dataloader(cfg)
+    train_loader, val_loader, test_loader, elem_list = get_dataloader(cfg)
 
-    model = get_model(cfg)
+    model = get_model(cfg, elem_list)
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
     loss_fn = paddle.nn.functional.mse_loss
@@ -247,9 +258,9 @@ def evaluate(cfg):
 
 def test(cfg):
     log = init_logger(log_file=os.path.join(cfg['save_path'], 'test.log'))
-    train_loader, val_loader, test_loader = get_dataloader(cfg)
+    train_loader, val_loader, test_loader, elem_list = get_dataloader(cfg)
 
-    model = get_model(cfg)
+    model = get_model(cfg, elem_list)
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
     loss_fn = paddle.nn.functional.mse_loss
@@ -261,7 +272,7 @@ def test(cfg):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", type=str, default='./configs/megnet_3d.yaml', help="Path to config file")
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval', 'test'], required=True)
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval', 'test'])
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
