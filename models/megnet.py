@@ -7,13 +7,9 @@ from utils.default_elements import DEFAULT_ELEMENTS
 from models.layers import MLP, ActivationFunction, EmbeddingBlock, MEGNetBlock
 from models.layers import Set2Set, EdgeSet2Set
 from models import initializer
-logger = logging.getLogger(__file__)
 
 
 class MEGNetPlus(paddle.nn.Layer):
-    """DGL implementation of MEGNet."""
-    __version__ = 1
-
     def __init__(self, dim_node_embedding: int=16, dim_edge_embedding: int=
         100, dim_state_embedding: int=2, ntypes_state: (int | None)=None,
         nblocks: int=3, hidden_layer_sizes_input: tuple[int, ...]=(64, 32),
@@ -23,7 +19,7 @@ class MEGNetPlus(paddle.nn.Layer):
         ='softplus2', is_classification: bool=False, include_state: bool=
         True, dropout: float=0.0, element_types: tuple[str, ...]=
         DEFAULT_ELEMENTS, bond_expansion: (BondExpansion | None)=None,
-        cutoff: float=4.0, gauss_width: float=0.5, **kwargs):
+        cutoff: float=4.0, gauss_width: float=0.5, pretrained = None, **kwargs):
         """Useful defaults for all arguments have been specified based on MEGNet formation energy model.
 
         Args:
@@ -56,6 +52,7 @@ class MEGNetPlus(paddle.nn.Layer):
         self.element_types = element_types or DEFAULT_ELEMENTS
         self.cutoff = cutoff
         self.bond_expansion = bond_expansion
+        self.pretrained = pretrained
         node_dims = [dim_node_embedding, *hidden_layer_sizes_input]
         edge_dims = [dim_edge_embedding, *hidden_layer_sizes_input]
         state_dims = [dim_state_embedding, *hidden_layer_sizes_input]
@@ -92,7 +89,11 @@ class MEGNetPlus(paddle.nn.Layer):
         self.is_classification = is_classification
         self.include_state_embedding = include_state
 
-        self.apply(self._init_weights)
+        
+        if self.pretrained:
+            self.set_dict(paddle.load(self.pretrained))
+        else:
+            self.apply(self._init_weights)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
