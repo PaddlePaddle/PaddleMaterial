@@ -348,9 +348,13 @@ class MGLDataset(DGLDataset):
         """Convert Pymatgen structure into dgl graphs."""
         num_graphs = len(self.structures)
         graphs, lattices, line_graphs, state_attrs = [], [], [], []
+        not_use_idxs = []
         for idx in trange(num_graphs):
             structure = self.structures[idx]
             graph, lattice, state_attr = self.converter.get_graph(structure)
+            if graph.num_edges == 0:
+                not_use_idxs.append(idx)
+                continue
             graphs.append(graph)
             lattices.append(lattice)
             state_attrs.append(state_attr)
@@ -385,6 +389,14 @@ class MGLDataset(DGLDataset):
             self.line_graphs = line_graphs
             return (self.graphs, self.lattices, self.line_graphs, self.
                 state_attr)
+        
+        for key, value in self.labels.items():
+            new_value = []
+            for idx in range(len(value)):
+                if idx in not_use_idxs:
+                    continue
+                new_value.append(value[idx])
+            self.labels[key] = new_value
         return self.graphs, self.lattices, self.state_attr
 
     def save(self):
