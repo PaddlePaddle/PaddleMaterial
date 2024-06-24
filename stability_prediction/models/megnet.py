@@ -143,7 +143,7 @@ class MEGNetPlus(paddle.nn.Layer):
 
         Args:
             g (dgl.DGLGraph): DGL graphs
-            state_attr (torch.Tensor): State attributes
+            state_attr (paddle.Tensor): State attributes
             **kwargs: For future flexibility. Not used at the moment.
 
         Returns:

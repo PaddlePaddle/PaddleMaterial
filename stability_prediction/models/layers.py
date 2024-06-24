@@ -108,10 +108,10 @@ class SoftPlus2(paddle.nn.Layer):
         """Evaluate activation function given the input tensor x.
 
         Args:
-            x (torch.tensor): Input tensor
+            x (paddle.tensor): Input tensor
 
         Returns:
-            out (torch.tensor): Output tensor
+            out (paddle.tensor): Output tensor
         """
         return self.ssp(x) - math.log(2.0)
 
@@ -373,84 +373,6 @@ class MEGNetBlock(paddle.nn.Layer):
             node_feat = node_feat + inputs[1]
             state_feat = state_feat + inputs[2]
         return edge_feat, node_feat, state_feat
-
-
-# def broadcast_nodes(graph, graph_feat, *, ntype=None):
-#     """Generate a node feature equal to the graph-level feature :attr:`graph_feat`.
-
-#     The operation is similar to ``numpy.repeat`` (or ``torch.repeat_interleave``).
-#     It is commonly used to normalize node features by a global vector. For example,
-#     to normalize node features across graph to range :math:`[0~1)`:
-
-#     >>> g = dgl.batch([...])  # batch multiple graphs
-#     >>> g.ndata['h'] = ...  # some node features
-#     >>> h_sum = dgl.broadcast_nodes(g, dgl.sum_nodes(g, 'h'))
-#     >>> g.ndata['h'] /= h_sum  # normalize by summation
-
-#     Parameters
-#     ----------
-#     graph : DGLGraph
-#         The graph.
-#     graph_feat : tensor
-#         The feature to broadcast. Tensor shape is :math:`(B, *)` for batched graph,
-#         where :math:`B` is the batch size.
-
-#     ntype : str, optional
-#         Node type. Can be omitted if there is only one node type.
-
-#     Returns
-#     -------
-#     Tensor
-#         The node features tensor with shape :math:`(N, *)`, where :math:`N` is the
-#         number of nodes.
-
-#     Examples
-#     --------
-
-#     >>> import dgl
-#     >>> import torch as th
-
-#     Create two :class:`~dgl.DGLGraph` objects and initialize their
-#     node features.
-
-#     >>> g1 = dgl.graph(([0], [1]))                    # Graph 1
-#     >>> g2 = dgl.graph(([0, 1], [1, 2]))              # Graph 2
-#     >>> bg = dgl.batch([g1, g2])
-#     >>> feat = th.rand(2, 5)
-#     >>> feat
-#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
-
-#     Broadcast feature to all nodes in the batched graph, feat[i] is broadcast to nodes
-#     in the i-th example in the batch.
-
-#     >>> dgl.broadcast_nodes(bg, feat)
-#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-#             [0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
-#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014],
-#             [0.2721, 0.4629, 0.7269, 0.0724, 0.1014]])
-
-#     Broadcast feature to all nodes in the single graph (the feature tensor shape
-#     to broadcast should be :math:`(1, *)`).
-
-#     >>> feat0 = th.unsqueeze(feat[0], 0)
-#     >>> dgl.broadcast_nodes(g1, feat0)
-#     tensor([[0.4325, 0.7710, 0.5541, 0.0544, 0.9368],
-#             [0.4325, 0.7710, 0.5541, 0.0544, 0.9368]])
-
-#     See Also
-#     --------
-#     broadcast_edges
-#     """
-#     if tuple(graph_feat.shape)[0
-#         ] != graph.batch_size and graph.batch_size == 1:
-#         dgl_warning(
-#             'For a single graph, use a tensor of shape (1, *) for graph_feat. The support of shape (*) will be deprecated.'
-#             )
-#         graph_feat = paddle.unsqueeze(x=graph_feat, axis=0)
-#     return paddle.repeat_interleave(x=graph_feat, repeats=graph.
-#         batch_num_nodes(ntype), axis=0)
 
 
 class Set2Set(nn.Layer):

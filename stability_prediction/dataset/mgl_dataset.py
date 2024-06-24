@@ -274,8 +274,8 @@ def compute_pair_vector_and_distance(g: dgl.DGLGraph):
     g: DGL graph
 
     Returns:
-    bond_vec (torch.tensor): bond distance between two atoms
-    bond_dist (torch.tensor): vector from src node to dst node
+    bond_vec (paddle.tensor): bond distance between two atoms
+    bond_dist (paddle.tensor): vector from src node to dst node
     """
     dst_pos = g.node_feat["pos"][g.edges[:, 1]] + g.edge_feat["pbc_offshift"]
     src_pos = g.node_feat["pos"][g.edges[:, 0]]
