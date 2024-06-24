@@ -23,7 +23,8 @@ model:
   activation_type: "softplus2"
   cutoff: 4.0
   gauss_width: 0.5
-  # pretrained: './checkpoints/megnet_3d_init/latest.pdparams'
+  dropout: 0.5
+  # pretrained: './checkpoints/megnet_2d_v1/best.pdparams'
 
 
 lr_cfg:
@@ -33,4 +34,4 @@ lr_cfg:
 epochs: 2000
 batch_size: 128
 
-save_path: "./checkpoints/megnet_2d"
+save_path: "./checkpoints/megnet_2d_dp0.5"
