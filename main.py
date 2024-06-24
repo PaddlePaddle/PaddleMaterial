@@ -88,7 +88,6 @@ def get_dataloader(cfg):
         clip=cfg['dataset'].get('clip'),
         select=cfg['dataset'].get('select')
     )
-    import pdb;pdb.set_trace()
     # structures = structures[:100]
     # eform_per_atom = eform_per_atom[:100]
 
@@ -283,7 +282,7 @@ def test(cfg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", type=str, default='./configs/megnet_3d.yaml', help="Path to config file")
+    parser.add_argument("-c", "--config", type=str, default='./configs/megnet_2d.yaml', help="Path to config file")
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval', 'test'])
     args = parser.parse_args()
 
