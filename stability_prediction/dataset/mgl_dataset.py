@@ -1,20 +1,17 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
-import os
-
-import paddle
-
-"""Tools to construct a dataset of DGL graphs."""
 import abc
 import hashlib
 import json
+import os
 import traceback
 from functools import partial
 from typing import TYPE_CHECKING
 from typing import Callable
 
 import numpy as np
+import paddle
 from tqdm import trange
 
 
@@ -409,8 +406,6 @@ class MGLDataset(DGLDataset):
         if self.graph_labels is not None:
             state_attrs = paddle.to_tensor(data=self.graph_labels).astype(dtype="int64")
         else:
-            # state_attrs = paddle.to_tensor(data=np.array(state_attrs),
-            #     dtype='float32')
             state_attrs = np.array(state_attrs, dtype="float32")
         if self.clear_processed:
             del self.structures

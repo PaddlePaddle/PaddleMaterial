@@ -14,9 +14,11 @@ filter_thresh = 1
 cif_names = os.listdir(cif_path)
 csv_data = pd.read_csv(csv_file)
 ehull_dict = {name: value for name, value in zip(csv_data["cif"], csv_data["ehull"])}
+energy_dict = {name: value for name, value in zip(csv_data["cif"], csv_data["energy"])}
 
 structures = []
 ehulls = []
+energys = []
 for cif_name in tqdm.tqdm(cif_names):
     if not cif_name.endswith(".cif"):
         continue
@@ -28,10 +30,13 @@ for cif_name in tqdm.tqdm(cif_names):
     structure = parser.get_structures()[0]
     structures.append(structure)
     ehulls.append(ehull)
-    # import pdb;pdb.set_trace()
+    energys.append(energy_dict[cif_name.replace(".cif", "")])
 
 with open("./data/2D_structure/structures_0621.pickle", "wb") as f:
     pickle.dump(structures, f)
 
 with open("./data/2D_structure/ehulls_0621.pickle", "wb") as f:
     pickle.dump(ehulls, f)
+
+with open("./data/2D_structure/energys_0621.pickle", "wb") as f:
+    pickle.dump(energys, f)

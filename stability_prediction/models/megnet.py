@@ -37,6 +37,7 @@ class MEGNetPlus(paddle.nn.Layer):
         cutoff: float = 4.0,
         gauss_width: float = 0.5,
         pretrained=None,
+        num_predictions: int = 1,
         **kwargs,
     ):
         """Useful defaults for all arguments have been specified based on MEGNet formation energy model.
@@ -113,7 +114,7 @@ class MEGNetPlus(paddle.nn.Layer):
             dims=[
                 2 * 2 * dim_blocks_out + dim_blocks_out,
                 *hidden_layer_sizes_output,
-                1,
+                num_predictions,
             ],
             activation=activation,
             activate_last=False,

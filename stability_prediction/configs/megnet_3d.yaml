@@ -2,7 +2,7 @@
 dataset:
   structures_path: "./data/structures.pickle"
   mp_ids_path: "./data/mp_ids.pickle"
-  formation_energy_path: "./data/formation_energy.pickle"
+  ehull_path: "./data/formation_energy.pickle"
 
   cutoff: 4.0
   split_list: [0.9, 0.05, 0.05]

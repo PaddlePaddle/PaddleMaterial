@@ -25,7 +25,7 @@ if __name__ == "__main__":
     data = load_dataset_from_pickle(args.path)
     new_data = []
     for d in data:
-        if abs(d) > 1:
+        if abs(d) > 50:
             print(d)
         else:
             new_data.append(d)

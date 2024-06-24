@@ -23,7 +23,10 @@ def collate_fn_graph(batch, include_line_graph: bool = False):
     else:
         graphs, lattices, state_attr, labels = map(list, zip(*batch))
     g = pgl.Graph.batch(graphs)
-    labels = np.array([next(iter(d.values())) for d in labels], dtype="float32")
+    new_labels = {}
+    for k, v in labels[0].items():
+        new_labels[k] = np.array([d[k] for d in labels], dtype="float32")
+    labels = new_labels
     state_attr = np.asarray(state_attr)
     lat = lattices[0] if g.num_graph == 1 else np.squeeze(np.asarray(lattices))
     if include_line_graph:

@@ -1,13 +1,20 @@
 
 dataset:
   structures_path: "./data/2D_structure/structures_0621.pickle"
-  formation_energy_path: "./data/2D_structure/ehulls_0621.pickle"
-  clip: [-4, 4]
+  ehull_path: "./data/2D_structure/ehulls_0621.pickle"
+  # energy_path: "./data/2D_structure/energys_0621.pickle"
+  energy_path: null
+  ehull_clip: [-4, 4]
+  energy_clip: [-8, 2]
   # select: [0.0, 0.5]
 
   cutoff: 4.0
   split_list: [0.9, 0.05, 0.05]
   # split_list: [0.8, 0.1, 0.1]
+
+loss_weight:
+  ehull: 1.0
+  energy: 1.0
 
 model:
   dim_node_embedding: 16
@@ -24,6 +31,7 @@ model:
   cutoff: 4.0
   gauss_width: 0.5
   dropout: 0.5
+  num_predictions: 2
   # pretrained: './checkpoints/megnet_2d_v1/best.pdparams'
 
 
@@ -34,4 +42,4 @@ lr_cfg:
 epochs: 2000
 batch_size: 128
 
-save_path: "./checkpoints/megnet_2d_dp0.5"
+save_path: "./checkpoints/megnet_2d_debug"

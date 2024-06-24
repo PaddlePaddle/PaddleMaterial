@@ -6,6 +6,7 @@ import pickle
 import shutil
 import warnings
 import zipfile
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,42 +60,43 @@ def load_dataset() -> tuple[list[Structure], list[str], list[float]]:
 
 
 def load_dataset_from_pickle(
-    structures_path, formation_energy_path, clip=None, select=None
+    structures_path,
+    ehull_path,
+    energy_path=None,
+    ehull_clip=None,
+    energy_clip=None,
+    **kwargs,
 ):
     with open(structures_path, "rb") as f:
         structures = pickle.load(f)
-    with open(formation_energy_path, "rb") as f:
-        formation_energy_per_atom = pickle.load(f)
+    with open(ehull_path, "rb") as f:
+        ehulls = pickle.load(f)
+    if energy_path is not None:
+        with open(energy_path, "rb") as f:
+            energys = pickle.load(f)
+    else:
+        energys = None
 
-    if select:
-        indexs = []
-        for i, energe in enumerate(formation_energy_per_atom):
-            if select[0] <= energe <= select[1]:
-                indexs.append(i)
-        structures = [structures[i] for i in indexs]
-        formation_energy_per_atom = [formation_energy_per_atom[i] for i in indexs]
+    if ehull_clip:
+        ehulls = np.asarray(ehulls)
+        ehulls = ehulls.clip(ehull_clip[0], ehull_clip[1])
+        ehulls = ehulls.tolist()
+    if energy_clip and energys is not None:
+        energys = np.asarray(energys)
+        energys = energys.clip(energy_clip[0], energy_clip[1])
+        energys = energys.tolist()
 
-    if clip:
-        formation_energy_per_atom = np.asarray(formation_energy_per_atom)
-        formation_energy_per_atom = formation_energy_per_atom.clip(clip[0], clip[1])
-        formation_energy_per_atom = formation_energy_per_atom.tolist()
-
-    return structures, formation_energy_per_atom
+    return structures, ehulls, energys
 
 
 def get_dataloader(cfg):
-    # structures, mp_ids, eform_per_atom = load_dataset()
+    # structures, mp_ids, ehulls = load_dataset()
     # structures = structures[:100]
-    # eform_per_atom = eform_per_atom[:100]
+    # ehulls = ehulls[:100]
 
-    structures, eform_per_atom = load_dataset_from_pickle(
-        structures_path=cfg["dataset"]["structures_path"],
-        formation_energy_path=cfg["dataset"]["formation_energy_path"],
-        clip=cfg["dataset"].get("clip"),
-        select=cfg["dataset"].get("select"),
-    )
+    structures, ehulls, energys = load_dataset_from_pickle(**cfg["dataset"])
     # structures = structures[:100]
-    # eform_per_atom = eform_per_atom[:100]
+    # ehulls = ehulls[:100]
 
     # get element types in the dataset
     elem_list = get_element_list(structures)
@@ -104,11 +106,16 @@ def get_dataloader(cfg):
         element_types=elem_list, cutoff=cfg["dataset"]["cutoff"]
     )
     # convert the raw dataset into MEGNetDataset
+    labels = (
+        {"ehull": ehulls, "energy": energys}
+        if energys is not None
+        else {"ehull": ehulls}
+    )
     mp_dataset = MGLDataset(
         structures=structures,
-        labels={"Eform": eform_per_atom},
+        labels=labels,
         converter=converter,
-        save_dir="./data/mp2018_cache",
+        save_dir="",
     )
 
     train_data, val_data, test_data = split_dataset(
@@ -179,60 +186,101 @@ def get_optimizer(cfg, model):
     return optimizer, lr_scheduler
 
 
-def train_epoch(model, loader, loss_fn, metric_fn, optimizer, epoch, log):
+def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch, log):
     model.train()
-    total_loss = []
-    total_metric = []
+    total_loss = defaultdict(list)
+    total_metric = defaultdict(list)
     total_num_data = 0
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
-        batch_size = len(labels)
+        batch_size = state_attr.shape[0]
 
         preds = model(graph, state_attr)
 
-        train_loss = loss_fn(preds, labels)
+        keys = labels.keys()
+        keys = sorted(keys)
+        train_loss = 0.0
+
+        msg = ""
+        for i, key in enumerate(keys):
+            label = labels[key]
+            if len(preds.shape) > 1:
+                pred = preds[:, i]
+            else:
+                pred = preds
+
+            loss = loss_fn(pred, label)
+            metric = metric_fn(pred, label)
+
+            total_loss[key].append(loss * batch_size)
+            total_metric[key].append(metric * batch_size)
+            if key in loss_weight.keys():
+                train_loss += loss * loss_weight[key]
+            else:
+                train_loss += loss
+            msg += f" | {key}_loss: {loss.item():.6f} | {key}_mae: {metric.item():.6f}"
+
         train_loss.backward()
         optimizer.step()
         optimizer.clear_grad()
-        total_loss.append(train_loss)
 
-        train_metric = metric_fn(preds, labels)
-        total_metric.append(train_metric * batch_size)
         total_num_data += batch_size
 
         if paddle.distributed.get_rank() == 0 and (
             idx % 10 == 0 or idx == len(loader) - 1
         ):
-            message = "train: epoch %d | step %d | " % (epoch, idx)
-            message += "lr %.6f | loss %.6f | mae %.6f" % (
+            message = "train: epoch %d | step %d | lr %.6f" % (
+                epoch,
+                idx,
                 optimizer.get_lr(),
-                train_loss,
-                train_metric,
             )
+            message += msg
             log.info(message)
-    return sum(total_loss) / len(total_loss), sum(total_metric) / total_num_data
+
+    total_loss = {key: sum(total_loss[key]) / total_num_data for key in keys}
+    total_metric = {key: sum(total_metric[key]) / total_num_data for key in keys}
+    return total_loss, total_metric
 
 
 @paddle.no_grad()
 def eval_epoch(model, loader, loss_fn, metric_fn, log):
     model.eval()
-    total_loss = []
-    total_metric = []
+    total_loss = defaultdict(list)
+    total_metric = defaultdict(list)
+    total_preds = defaultdict(list)
+    total_labels = defaultdict(list)
+
     total_num_data = 0
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
-        batch_size = len(labels)
+        batch_size = state_attr.shape[0]
 
         preds = model(graph, state_attr)
 
-        eval_loss = loss_fn(preds, labels)
-        total_loss.append(eval_loss)
+        keys = labels.keys()
+        keys = sorted(keys)
 
-        eval_metric = metric_fn(preds, labels)
-        total_metric.append(eval_metric * batch_size)
+        msg = ""
+        for i, key in enumerate(keys):
+            label = labels[key]
+            if len(preds.shape) > 1:
+                pred = preds[:, i]
+            else:
+                pred = preds
+
+            loss = loss_fn(pred, label)
+            metric = metric_fn(pred, label)
+
+            total_loss[key].append(loss * batch_size)
+            total_metric[key].append(metric * batch_size)
+
+            total_preds[key].extend(pred.tolist())
+            total_labels[key].extend(label.tolist())
+
         total_num_data += batch_size
-
-    return sum(total_loss) / len(total_loss), sum(total_metric) / total_num_data
+    total_loss = {key: sum(total_loss[key]) / total_num_data for key in keys}
+    total_metric = {key: sum(total_metric[key]) / total_num_data for key in keys}
+    return total_loss, total_metric, total_preds, total_labels
 
 
 def train(cfg):
@@ -245,31 +293,33 @@ def train(cfg):
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
 
+    loss_weight = cfg.get("loss_weight", {})
+
     global_step = 0
     best_metric = float("inf")
 
     for epoch in range(cfg["epochs"]):
         train_loss, train_metric = train_epoch(
-            model, train_loader, loss_fn, metric_fn, optimizer, epoch, log
+            model, train_loader, loss_fn, metric_fn, optimizer, loss_weight, epoch, log
         )
         lr_scheduler.step()
 
         if paddle.distributed.get_rank() == 0:
-            eval_loss, eval_metric = eval_epoch(
+            eval_loss, eval_metric, total_preds, total_labels = eval_epoch(
                 model, val_loader, loss_fn, metric_fn, log
             )
-            log.info(
-                "epoch: {}, train_loss: {:.6f}, train_metric: {:.6f}, eval_loss: {:.6f}, eval_mae: {:.6f}".format(
-                    epoch,
-                    train_loss.item(),
-                    train_metric.item(),
-                    eval_loss.item(),
-                    eval_metric.item(),
-                )
-            )
+            msg = ""
+            for key in train_loss.keys():
+                msg += f", train_{key}_loss: {train_loss[key].item():.6f}"
+                msg += f", train_{key}_mae: {train_metric[key].item():.6f}"
+            for key in eval_loss.keys():
+                msg += f", eval_{key}_loss: {eval_loss[key].item():.6f}"
+                msg += f", eval_{key}_mae: {eval_metric[key].item():.6f}"
 
-            if eval_metric < best_metric:
-                best_metric = eval_metric
+            log.info(f"epoch: {epoch}" + msg)
+
+            if eval_metric["ehull"] < best_metric:
+                best_metric = eval_metric["ehull"]
                 paddle.save(
                     model.state_dict(), "{}/best.pdparams".format(cfg["save_path"])
                 )
@@ -284,12 +334,14 @@ def train(cfg):
                     "{}/epoch_{}.pdparams".format(cfg["save_path"], epoch),
                 )
     if paddle.distributed.get_rank() == 0:
-        test_loss, test_metric = eval_epoch(model, test_loader, loss_fn, metric_fn, log)
-        log.info(
-            "test_loss: {:.6f}, test_mae: {:.6f}".format(
-                test_loss.item(), test_metric.item()
-            )
+        test_loss, test_metric, total_preds, total_labels = eval_epoch(
+            model, test_loader, loss_fn, metric_fn, log
         )
+        msg = ""
+        for key in test_loss.keys():
+            msg += f", test_{key}_loss: {test_loss[key].item():.6f}"
+            msg += f", test_{key}_mae: {test_metric[key].item():.6f}"
+        log.info(f"epoch: {epoch}" + msg)
 
 
 def evaluate(cfg):
@@ -302,12 +354,14 @@ def evaluate(cfg):
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
 
-    test_loss, test_metric = eval_epoch(model, val_loader, loss_fn, metric_fn, log)
-    log.info(
-        "eval_loss: {:.6f}, eval_mae: {:.6f}".format(
-            test_loss.item(), test_metric.item()
-        )
+    test_loss, test_metric, total_preds, total_labels = eval_epoch(
+        model, val_loader, loss_fn, metric_fn, log
     )
+    msg = ""
+    for key in test_loss.keys():
+        msg += f", eval_{key}_loss: {test_loss[key].item():.6f}"
+        msg += f", eval_{key}_mae: {test_metric[key].item():.6f}"
+    log.info(f"epoch: 0" + msg)
 
 
 def test(cfg):
@@ -320,12 +374,21 @@ def test(cfg):
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
 
-    test_loss, test_metric = eval_epoch(model, test_loader, loss_fn, metric_fn, log)
-    log.info(
-        "test_loss: {:.6f}, test_mae: {:.6f}".format(
-            test_loss.item(), test_metric.item()
-        )
+    test_loss, test_metric, total_preds, total_labels = eval_epoch(
+        model, test_loader, loss_fn, metric_fn, log
     )
+    msg = ""
+    for key in test_loss.keys():
+        msg += f", test_{key}_loss: {test_loss[key].item():.6f}"
+        msg += f", test_{key}_mae: {test_metric[key].item():.6f}"
+    log.info("epoch: 0" + msg)
+
+    data = {}
+    for key in total_preds.keys():
+        data[f"pred_{key}"] = total_preds[key]
+        data[f"label_{key}"] = total_labels[key]
+    df = pd.DataFrame(data)
+    df.to_csv(os.path.join(cfg["save_path"], "predictions.csv"), index=False)
 
 
 if __name__ == "__main__":
