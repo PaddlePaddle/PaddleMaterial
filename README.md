@@ -35,7 +35,7 @@
 由于PGL暂不兼容最新版本的Paddle，因此安装完成PGL后需要在安装路径内修改部分代码：
 例如我的安装路径为：anaconda3/envs/meg_paddle/lib/python3.10/site-packages/pgl
 
-1. 代码fluid替换为base: 
+1. 代码fluid替换为base:
 
     a. 将pgl下所有文件中的 paddle.fluid 替换为 paddle.base
 
@@ -61,3 +61,16 @@
 
 ## 模型评估
     python main.py --mode=test
+
+
+## 二维材料训练
+超参数详见: [megnet_2d.yaml](configs/megnet_2d.yaml)
+
+实验结果：
+
+    train_loss: 0.018
+    val_loss: 0.049
+    train_mae: 0.099
+    val_mae: 0.145:
+
+    test_mae: 0.142
