@@ -1,11 +1,13 @@
 
 dataset:
-  structures_path: "./data/structures.pickle"
-  mp_ids_path: "./data/mp_ids.pickle"
-  formation_energy_path: "./data/formation_energy.pickle"
+  structures_path: "./data/2D_structure/structures_0621.pickle"
+  formation_energy_path: "./data/2D_structure/ehulls_0621.pickle"
+  clip: [-4, 4]
+  # select: [0.0, 0.5]
 
   cutoff: 4.0
   split_list: [0.9, 0.05, 0.05]
+  # split_list: [0.8, 0.1, 0.1]
 
 model:
   dim_node_embedding: 16
@@ -21,13 +23,14 @@ model:
   activation_type: "softplus2"
   cutoff: 4.0
   gauss_width: 0.5
+  # pretrained: './checkpoints/megnet_3d_init/latest.pdparams'
 
 
 lr_cfg:
   T_max: 1000
   eta_min: 0.00001
-  learning_rate: 0.001
+  learning_rate: 0.0005
 epochs: 2000
 batch_size: 128
 
-save_path: "./checkpoints/megnet_3d_debug"
+save_path: "./checkpoints/megnet_2d"
