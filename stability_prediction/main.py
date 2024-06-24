@@ -15,7 +15,6 @@ import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
 import pandas as pd
 import yaml
-from dataset.mgl_dataloader import MGLDataLoader
 from dataset.mgl_dataloader import collate_fn_graph
 from dataset.mgl_dataset import MGLDataset
 from dataset.utils import split_dataset
