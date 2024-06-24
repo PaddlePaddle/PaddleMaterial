@@ -60,7 +60,13 @@
     python -m paddle.distributed.launch --gpus="2,3,4,5" main.py
 
 ## 模型评估
+
+    # 修改配置文件 configs/megnet_2d.yaml 里的 model/pretrained 字段为训练好的模型路径
+    #   model:
+    #        ...
+    #        pretrained: './weights/megnet_2d_dp0.5/best.pdparams'
     python main.py --mode=test
+
 
 
 ## 二维材料训练
