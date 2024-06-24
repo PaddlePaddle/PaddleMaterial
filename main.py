@@ -10,6 +10,7 @@ import pandas as pd
 from pymatgen.core import Structure
 from tqdm import tqdm
 import pickle
+import numpy as np
 
 from models.megnet import MEGNetPlus
 
@@ -25,6 +26,7 @@ import yaml
 import paddle.distributed.fleet as fleet
 import paddle.distributed as dist
 from utils.misc import set_random_seed
+from utils.default_elements import DEFAULT_ELEMENTS
 
 # To suppress warnings for clearer output
 warnings.simplefilter("ignore")
@@ -54,11 +56,25 @@ def load_dataset() -> tuple[list[Structure], list[str], list[float]]:
             break
     return structures, mp_ids, data["formation_energy_per_atom"].tolist()
 
-def load_dataset_from_pickle(structures_path, formation_energy_path):
+def load_dataset_from_pickle(structures_path, formation_energy_path, clip=None, select=None):
     with open(structures_path, 'rb') as f:
         structures = pickle.load(f)
     with open(formation_energy_path, 'rb') as f:
         formation_energy_per_atom = pickle.load(f)
+    
+    if select:
+        indexs = []
+        for i, energe in enumerate(formation_energy_per_atom):
+            if select[0] <= energe <= select[1]:
+                indexs.append(i)
+        structures = [structures[i] for i in indexs]
+        formation_energy_per_atom = [formation_energy_per_atom[i] for i in indexs]
+
+    if clip:
+        formation_energy_per_atom = np.asarray(formation_energy_per_atom)
+        formation_energy_per_atom = formation_energy_per_atom.clip(clip[0], clip[1])
+        formation_energy_per_atom = formation_energy_per_atom.tolist()
+
     return structures, formation_energy_per_atom
 
 def get_dataloader(cfg):
@@ -69,12 +85,16 @@ def get_dataloader(cfg):
     structures, eform_per_atom = load_dataset_from_pickle(
         structures_path=cfg['dataset']['structures_path'],
         formation_energy_path=cfg['dataset']['formation_energy_path'],
+        clip=cfg['dataset'].get('clip'),
+        select=cfg['dataset'].get('select')
     )
+    import pdb;pdb.set_trace()
     # structures = structures[:100]
     # eform_per_atom = eform_per_atom[:100]
 
     # get element types in the dataset
     elem_list = get_element_list(structures)
+    elem_list = DEFAULT_ELEMENTS
     # setup a graph converter
     converter = Structure2Graph(element_types=elem_list, cutoff=cfg['dataset']['cutoff'])
     # convert the raw dataset into MEGNetDataset
@@ -126,24 +146,16 @@ def get_model(cfg, elem_list):
     # define the bond expansion
     bond_expansion = BondExpansion(rbf_type="Gaussian", initial=0.0, final=5.0, num_centers=100, width=0.5)
     # setup the architecture of MEGNet model
-    model = MEGNetPlus(
-        dim_node_embedding=cfg['model']['dim_node_embedding'],
-        dim_edge_embedding=cfg['model']['dim_edge_embedding'],
-        dim_state_embedding=cfg['model']['dim_state_embedding'],
-        nblocks=cfg['model']['nblocks'],
-        hidden_layer_sizes_input=cfg["model"]['hidden_layer_sizes_input'],
-        hidden_layer_sizes_conv=cfg["model"]['hidden_layer_sizes_conv'],
-        nlayers_set2set=cfg["model"]['nlayers_set2set'],
-        niters_set2set=cfg["model"]['niters_set2set'],
-        hidden_layer_sizes_output=cfg["model"]['hidden_layer_sizes_output'],
-        is_classification=cfg['model']['is_classification'],
-        activation_type=cfg['model']['activation_type'],
-        bond_expansion=bond_expansion,
-        cutoff=cfg['model']['cutoff'],
-        gauss_width=cfg['model']['gauss_width'],
-        element_types=elem_list,
+    model_cfg = cfg['model']
+    model_cfg.update(
+        {
+            "bond_expansion": bond_expansion,
+            "element_types": elem_list
+        }
     )
-    model.set_dict(paddle.load('data/paddle_weight.pdparams'))
+    model = MEGNetPlus(**model_cfg)
+    # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
+
 
     if dist.get_world_size() > 1:
         model = fleet.distributed_model(model)
