@@ -1,25 +1,45 @@
 from __future__ import annotations
-import paddle
-import paddle.nn as nn
+
 import logging
 from typing import TYPE_CHECKING
-from utils.default_elements import DEFAULT_ELEMENTS
-from models.layers import MLP, ActivationFunction, EmbeddingBlock, MEGNetBlock
-from models.layers import Set2Set, EdgeSet2Set
+
+import paddle
+import paddle.nn as nn
+
 from models import initializer
+from models.layers import MLP
+from models.layers import ActivationFunction
+from models.layers import EdgeSet2Set
+from models.layers import EmbeddingBlock
+from models.layers import MEGNetBlock
+from models.layers import Set2Set
+from utils.default_elements import DEFAULT_ELEMENTS
 
 
 class MEGNetPlus(paddle.nn.Layer):
-    def __init__(self, dim_node_embedding: int=16, dim_edge_embedding: int=
-        100, dim_state_embedding: int=2, ntypes_state: (int | None)=None,
-        nblocks: int=3, hidden_layer_sizes_input: tuple[int, ...]=(64, 32),
-        hidden_layer_sizes_conv: tuple[int, ...]=(64, 64, 32),
-        hidden_layer_sizes_output: tuple[int, ...]=(32, 16),
-        nlayers_set2set: int=1, niters_set2set: int=2, activation_type: str
-        ='softplus2', is_classification: bool=False, include_state: bool=
-        True, dropout: float=0.0, element_types: tuple[str, ...]=
-        DEFAULT_ELEMENTS, bond_expansion: (BondExpansion | None)=None,
-        cutoff: float=4.0, gauss_width: float=0.5, pretrained = None, **kwargs):
+    def __init__(
+        self,
+        dim_node_embedding: int = 16,
+        dim_edge_embedding: int = 100,
+        dim_state_embedding: int = 2,
+        ntypes_state: (int | None) = None,
+        nblocks: int = 3,
+        hidden_layer_sizes_input: tuple[int, ...] = (64, 32),
+        hidden_layer_sizes_conv: tuple[int, ...] = (64, 64, 32),
+        hidden_layer_sizes_output: tuple[int, ...] = (32, 16),
+        nlayers_set2set: int = 1,
+        niters_set2set: int = 2,
+        activation_type: str = "softplus2",
+        is_classification: bool = False,
+        include_state: bool = True,
+        dropout: float = 0.0,
+        element_types: tuple[str, ...] = DEFAULT_ELEMENTS,
+        bond_expansion: (BondExpansion | None) = None,
+        cutoff: float = 4.0,
+        gauss_width: float = 0.5,
+        pretrained=None,
+        **kwargs,
+    ):
         """Useful defaults for all arguments have been specified based on MEGNet formation energy model.
 
         Args:
@@ -57,39 +77,52 @@ class MEGNetPlus(paddle.nn.Layer):
         edge_dims = [dim_edge_embedding, *hidden_layer_sizes_input]
         state_dims = [dim_state_embedding, *hidden_layer_sizes_input]
         try:
-            activation: paddle.nn.Layer = ActivationFunction[activation_type
-                ].value()
+            activation: paddle.nn.Layer = ActivationFunction[activation_type].value()
         except KeyError:
             raise ValueError(
-                f'Invalid activation type, please try using one of {[af.name for af in ActivationFunction]}'
-                ) from None
-        self.embedding = EmbeddingBlock(degree_rbf=dim_edge_embedding,
-            dim_node_embedding=dim_node_embedding, ntypes_node=len(self.
-            element_types), ntypes_state=ntypes_state, include_state=
-            include_state, dim_state_embedding=dim_state_embedding,
-            activation=activation)
+                f"Invalid activation type, please try using one of {[af.name for af in ActivationFunction]}"
+            ) from None
+        self.embedding = EmbeddingBlock(
+            degree_rbf=dim_edge_embedding,
+            dim_node_embedding=dim_node_embedding,
+            ntypes_node=len(self.element_types),
+            ntypes_state=ntypes_state,
+            include_state=include_state,
+            dim_state_embedding=dim_state_embedding,
+            activation=activation,
+        )
         self.edge_encoder = MLP(edge_dims, activation, activate_last=True)
         self.node_encoder = MLP(node_dims, activation, activate_last=True)
         self.state_encoder = MLP(state_dims, activation, activate_last=True)
         dim_blocks_in = hidden_layer_sizes_input[-1]
         dim_blocks_out = hidden_layer_sizes_conv[-1]
-        block_args = {'conv_hiddens': hidden_layer_sizes_conv, 'dropout':
-            dropout, 'act': activation, 'skip': True}
+        block_args = {
+            "conv_hiddens": hidden_layer_sizes_conv,
+            "dropout": dropout,
+            "act": activation,
+            "skip": True,
+        }
         blocks = [MEGNetBlock(dims=[dim_blocks_in], **block_args)] + [
-            MEGNetBlock(dims=[dim_blocks_out, *hidden_layer_sizes_input],
-            **block_args) for _ in range(nblocks - 1)]
+            MEGNetBlock(dims=[dim_blocks_out, *hidden_layer_sizes_input], **block_args)
+            for _ in range(nblocks - 1)
+        ]
         self.blocks = paddle.nn.LayerList(sublayers=blocks)
-        s2s_kwargs = {'n_iters': niters_set2set, 'n_layers': nlayers_set2set}
+        s2s_kwargs = {"n_iters": niters_set2set, "n_layers": nlayers_set2set}
         self.edge_s2s = EdgeSet2Set(dim_blocks_out, **s2s_kwargs)
         self.node_s2s = Set2Set(dim_blocks_out, **s2s_kwargs)
-        self.output_proj = MLP(dims=[2 * 2 * dim_blocks_out +
-            dim_blocks_out, *hidden_layer_sizes_output, 1], activation=
-            activation, activate_last=False)
+        self.output_proj = MLP(
+            dims=[
+                2 * 2 * dim_blocks_out + dim_blocks_out,
+                *hidden_layer_sizes_output,
+                1,
+            ],
+            activation=activation,
+            activate_last=False,
+        )
         self.dropout = paddle.nn.Dropout(p=dropout) if dropout else None
         self.is_classification = is_classification
         self.include_state_embedding = include_state
 
-        
         if self.pretrained:
             self.set_dict(paddle.load(self.pretrained))
         else:
@@ -103,8 +136,9 @@ class MEGNetPlus(paddle.nn.Layer):
         elif isinstance(m, nn.LSTM):
             initializer.lstm_init_(m)
 
-    def forward(self, g: dgl.DGLGraph, state_attr: (paddle.Tensor | None)=
-        None, **kwargs):
+    def forward(
+        self, g: dgl.DGLGraph, state_attr: (paddle.Tensor | None) = None, **kwargs
+    ):
         """Forward pass of MEGnet. Executes all blocks.
 
         Args:
@@ -115,10 +149,11 @@ class MEGNetPlus(paddle.nn.Layer):
         Returns:
             Prediction
         """
-        node_attr = g.node_feat['node_type']
-        edge_attr = self.bond_expansion(g.edge_feat['bond_dist'])
-        node_feat, edge_feat, state_feat = self.embedding(node_attr,
-            edge_attr, state_attr)
+        node_attr = g.node_feat["node_type"]
+        edge_attr = self.bond_expansion(g.edge_feat["bond_dist"])
+        node_feat, edge_feat, state_feat = self.embedding(
+            node_attr, edge_attr, state_attr
+        )
         edge_feat = self.edge_encoder(edge_feat)
         node_feat = self.node_encoder(node_feat)
         state_feat = self.state_encoder(state_feat)
@@ -135,29 +170,3 @@ class MEGNetPlus(paddle.nn.Layer):
         if self.is_classification:
             output = paddle.nn.functional.sigmoid(x=output)
         return paddle.squeeze(x=output)
-
-    def predict_structure(self, structure, state_attr: (paddle.Tensor |
-        None)=None, graph_converter: (GraphConverter | None)=None):
-        """Convenience method to directly predict property from structure.
-
-        Args:
-            structure: An input crystal/molecule.
-            state_attr (torch.tensor): Graph attributes
-            graph_converter: Object that implements a get_graph_from_structure.
-
-        Returns:
-            output (torch.tensor): output property
-        """
-        if graph_converter is None:
-            from matgl.ext.pymatgen import Structure2Graph
-            graph_converter = Structure2Graph(element_types=self.
-                element_types, cutoff=self.cutoff)
-        g, lat, state_attr_default = graph_converter.get_graph(structure)
-        g.edata['pbc_offshift'] = paddle.matmul(x=g.edata['pbc_offset'], y=
-            lat[0])
-        g.ndata['pos'] = g.ndata['frac_coords'] @ lat[0]
-        if state_attr is None:
-            state_attr = paddle.to_tensor(data=state_attr_default)
-        bond_vec, bond_dist = compute_pair_vector_and_distance(g)
-        g.edata['edge_attr'] = self.bond_expansion(bond_dist)
-        return self(g=g, state_attr=state_attr).detach()
