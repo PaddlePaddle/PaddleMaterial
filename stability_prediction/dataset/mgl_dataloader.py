@@ -15,13 +15,10 @@ import pgl
 from tqdm import trange
 
 
-def collate_fn_graph(batch, include_line_graph: bool = False):
+def collate_fn_graph(batch):
     """Merge a list of dgl graphs to form a batch."""
     line_graphs = None
-    if include_line_graph:
-        graphs, lattices, line_graphs, state_attr, labels = map(list, zip(*batch))
-    else:
-        graphs, lattices, state_attr, labels = map(list, zip(*batch))
+    graphs, lattices, state_attr, labels = map(list, zip(*batch))
     g = pgl.Graph.batch(graphs)
     new_labels = {}
     for k, v in labels[0].items():
@@ -29,9 +26,6 @@ def collate_fn_graph(batch, include_line_graph: bool = False):
     labels = new_labels
     state_attr = np.asarray(state_attr)
     lat = lattices[0] if g.num_graph == 1 else np.squeeze(np.asarray(lattices))
-    if include_line_graph:
-        l_g = dgl.batch(line_graphs)
-        return g, lat, l_g, state_attr, labels
     return g.tensor(), lat, state_attr, labels
 
 

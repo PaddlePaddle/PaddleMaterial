@@ -294,7 +294,6 @@ class MGLDataset(DGLDataset):
         filename_line_graph: str = "dgl_line_graph.bin",
         filename_state_attr: str = "state_attr.pt",
         filename_labels: str = "labels.json",
-        include_line_graph: bool = False,
         converter: (GraphConverter | None) = None,
         threebody_cutoff: (float | None) = None,
         directed_line_graph: bool = False,
@@ -314,7 +313,6 @@ class MGLDataset(DGLDataset):
             filename_line_graph: file name for storing dgl line graphs.
             filename_state_attr: file name for storing state attributes.
             filename_labels: file name for storing labels.
-            include_line_graph: whether to include line graphs.
             converter: dgl graph converter.
             threebody_cutoff: cutoff for three body.
             directed_line_graph (bool): Whether to create a directed line graph (CHGNet), or an
@@ -339,7 +337,6 @@ class MGLDataset(DGLDataset):
         self.filename_line_graph = filename_line_graph
         self.filename_state_attr = filename_state_attr
         self.filename_labels = filename_labels
-        self.include_line_graph = include_line_graph
         self.converter = converter
         self.structures = structures or []
         self.labels = labels or {}
@@ -366,8 +363,6 @@ class MGLDataset(DGLDataset):
             self.filename_state_attr,
             self.filename_labels,
         ]
-        if self.include_line_graph:
-            files_to_check.append(self.filename_line_graph)
         return all(
             os.path.exists(os.path.join(self.save_path, f)) for f in files_to_check
         )
@@ -393,13 +388,6 @@ class MGLDataset(DGLDataset):
             bond_vec, bond_dist = compute_pair_vector_and_distance(graph)
             graph.edge_feat["bond_vec"] = bond_vec
             graph.edge_feat["bond_dist"] = bond_dist
-            if self.include_line_graph:
-                line_graph = create_line_graph(
-                    graph, self.threebody_cutoff, directed=self.directed_line_graph
-                )
-                for name in ["bond_vec", "bond_dist", "pbc_offset"]:
-                    line_graph.node_feat.pop(name)
-                line_graphs.append(line_graph)
             graph.node_feat.pop("pos")
             graph.edge_feat.pop("pbc_offshift")
             graph.numpy()
@@ -413,10 +401,6 @@ class MGLDataset(DGLDataset):
         self.graphs = graphs
         self.lattices = lattices
         self.state_attr = state_attrs
-        if self.include_line_graph:
-            self.line_graphs = line_graphs
-            return (self.graphs, self.lattices, self.line_graphs, self.state_attr)
-
         for key, value in self.labels.items():
             new_value = []
             for idx in range(len(value)):
@@ -443,10 +427,6 @@ class MGLDataset(DGLDataset):
             obj=self.state_attr,
             path=os.path.join(self.save_path, self.filename_state_attr),
         )
-        if self.include_line_graph:
-            save_graphs(
-                os.path.join(self.save_path, self.filename_line_graph), self.line_graphs
-            )
 
     def load(self):
         """Load dgl graphs from files."""
@@ -454,10 +434,6 @@ class MGLDataset(DGLDataset):
         self.lattices = paddle.load(
             path=os.path.join(self.save_path, self.filename_lattice)
         )
-        if self.include_line_graph:
-            self.line_graphs, _ = load_graphs(
-                os.path.join(self.save_path, self.filename_line_graph)
-            )
         self.state_attr = paddle.load(
             path=os.path.join(self.save_path, self.filename_state_attr)
         )
@@ -475,8 +451,6 @@ class MGLDataset(DGLDataset):
             self.state_attr[idx],
             {k: np.array(v[idx], dtype="float32") for k, v in self.labels.items()},
         ]
-        if self.include_line_graph:
-            items.insert(2, self.line_graphs[idx])
         return tuple(items)
 
     def __len__(self):
