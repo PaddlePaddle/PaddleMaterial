@@ -30,7 +30,6 @@ import paddle
 from paddle import nn
 from typing_extensions import Literal
 
-
 __all__ = [
     "uniform_",
     "normal_",
@@ -45,7 +44,7 @@ __all__ = [
     "kaiming_normal_",
     "linear_init_",
     "conv_init_",
-    "lstm_init_"
+    "lstm_init_",
 ]
 
 
@@ -454,6 +453,7 @@ def linear_init_(module: nn.Layer) -> None:
         bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
         uniform_(module.bias, -bound, bound)
 
+
 def lstm_init_(module: nn.Layer) -> None:
     """Initialize module's weight and bias as it is a linear layer.
 
@@ -475,6 +475,7 @@ def lstm_init_(module: nn.Layer) -> None:
         uniform_(module.bias_hh_l0, -bound, bound)
     if module.bias_ih_l0 is not None:
         uniform_(module.bias_ih_l0, -bound, bound)
+
 
 def conv_init_(module: nn.Layer) -> None:
     """Initialize module's weight and bias as it is a conv layer.

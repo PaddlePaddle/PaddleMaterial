@@ -1,4 +1,3 @@
-
 # Default set of elements supported by universal matgl models.
 DEFAULT_ELEMENTS = (
     "H",

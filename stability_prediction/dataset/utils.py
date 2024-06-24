@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class Subset(object):
     """Subset of a dataset at specified indices
 
@@ -27,7 +28,6 @@ class Subset(object):
         """
         return self.dataset[self.indices[item]]
 
-
     def __len__(self):
         """Get subset size
 
@@ -37,6 +37,7 @@ class Subset(object):
             Number of datapoints in the subset
         """
         return len(self.indices)
+
 
 def split_dataset(dataset, frac_list=None, shuffle=False, random_state=None):
     """Split dataset into training, validation and test set.

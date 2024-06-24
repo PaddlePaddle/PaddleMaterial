@@ -1,19 +1,21 @@
-
-from __future__ import annotations
 from __future__ import absolute_import
-import paddle
+from __future__ import annotations
+
 import os
+
+import paddle
+
 """Tools to construct a dataset of DGL graphs."""
-import json
-from functools import partial
-from typing import TYPE_CHECKING, Callable
-import numpy as np
-from tqdm import trange
 import abc
 import hashlib
+import json
 import traceback
+from functools import partial
+from typing import TYPE_CHECKING
+from typing import Callable
 
-
+import numpy as np
+from tqdm import trange
 
 
 class DGLDataset(object):
@@ -83,8 +85,17 @@ class DGLDataset(object):
         Hash value for the dataset and the setting.
     """
 
-    def __init__(self, name, url=None, raw_dir=None, save_dir=None,
-        hash_key=(), force_reload=False, verbose=False, transform=None):
+    def __init__(
+        self,
+        name,
+        url=None,
+        raw_dir=None,
+        save_dir=None,
+        hash_key=(),
+        force_reload=False,
+        verbose=False,
+        transform=None,
+    ):
         self._name = name
         self._url = url
         self._force_reload = force_reload
@@ -162,19 +173,19 @@ class DGLDataset(object):
             try:
                 self.load()
                 if self.verbose:
-                    print('Done loading data from cached files.')
+                    print("Done loading data from cached files.")
             except KeyboardInterrupt:
                 raise
             except:
                 load_flag = False
                 if self.verbose:
                     print(traceback.format_exc())
-                    print('Loading from cache failed, re-processing.')
+                    print("Loading from cache failed, re-processing.")
         if not load_flag:
             self.process()
             # self.save()
             if self.verbose:
-                print('Done saving data into cached files.')
+                print("Done saving data into cached files.")
 
     def _get_hash(self):
         """Compute the hash of the input tuple
@@ -188,17 +199,17 @@ class DGLDataset(object):
         'a770b222'
         """
         hash_func = hashlib.sha1()
-        hash_func.update(str(self._hash_key).encode('utf-8'))
+        hash_func.update(str(self._hash_key).encode("utf-8"))
         return hash_func.hexdigest()[:8]
 
     def _get_hash_url_suffix(self):
         """Get the suffix based on the hash value of the url."""
         if self._url is None:
-            return ''
+            return ""
         else:
             hash_func = hashlib.sha1()
-            hash_func.update(str(self._url).encode('utf-8'))
-            return '_' + hash_func.hexdigest()[:8]
+            hash_func.update(str(self._url).encode("utf-8"))
+            return "_" + hash_func.hexdigest()[:8]
 
     @property
     def url(self):
@@ -220,8 +231,7 @@ class DGLDataset(object):
         """Directory contains the input data files.
         By default raw_path = os.path.join(self.raw_dir, self.name)
         """
-        return os.path.join(self.raw_dir, self.name + self.
-            _get_hash_url_suffix())
+        return os.path.join(self.raw_dir, self.name + self._get_hash_url_suffix())
 
     @property
     def save_dir(self):
@@ -231,8 +241,7 @@ class DGLDataset(object):
     @property
     def save_path(self):
         """Path to save the processed dataset."""
-        return os.path.join(self.save_dir, self.name + self.
-            _get_hash_url_suffix())
+        return os.path.join(self.save_dir, self.name + self._get_hash_url_suffix())
 
     @property
     def verbose(self):
@@ -255,8 +264,10 @@ class DGLDataset(object):
         pass
 
     def __repr__(self):
-        return (f'Dataset("{self.name}", num_graphs={len(self)},' +
-            f' save_path={self.save_path})')
+        return (
+            f'Dataset("{self.name}", num_graphs={len(self)},'
+            + f" save_path={self.save_path})"
+        )
 
 
 def compute_pair_vector_and_distance(g: dgl.DGLGraph):
@@ -279,16 +290,26 @@ def compute_pair_vector_and_distance(g: dgl.DGLGraph):
 class MGLDataset(DGLDataset):
     """Create a dataset including dgl graphs."""
 
-    def __init__(self, filename: str='dgl_graph.bin', filename_lattice: str
-        ='lattice.pt', filename_line_graph: str='dgl_line_graph.bin',
-        filename_state_attr: str='state_attr.pt', filename_labels: str=
-        'labels.json', include_line_graph: bool=False, converter: (
-        GraphConverter | None)=None, threebody_cutoff: (float | None)=None,
-        directed_line_graph: bool=False, structures: (list | None)=None,
-        labels: (dict[str, list] | None)=None, name: str='MGLDataset',
-        graph_labels: (list[int | float] | None)=None, clear_processed:
-        bool=False, save_cache: bool=True, raw_dir: (str | None)=None,
-        save_dir: (str | None)=None):
+    def __init__(
+        self,
+        filename: str = "dgl_graph.bin",
+        filename_lattice: str = "lattice.pt",
+        filename_line_graph: str = "dgl_line_graph.bin",
+        filename_state_attr: str = "state_attr.pt",
+        filename_labels: str = "labels.json",
+        include_line_graph: bool = False,
+        converter: (GraphConverter | None) = None,
+        threebody_cutoff: (float | None) = None,
+        directed_line_graph: bool = False,
+        structures: (list | None) = None,
+        labels: (dict[str, list] | None) = None,
+        name: str = "MGLDataset",
+        graph_labels: (list[int | float] | None) = None,
+        clear_processed: bool = False,
+        save_cache: bool = True,
+        raw_dir: (str | None) = None,
+        save_dir: (str | None) = None,
+    ):
         """
         Args:
             filename: file name for storing dgl graphs.
@@ -332,17 +353,27 @@ class MGLDataset(DGLDataset):
         self.graph_labels = graph_labels
         self.clear_processed = clear_processed
         self.save_cache = save_cache
-        super().__init__(name=name, raw_dir=raw_dir, save_dir=save_dir,
-            verbose=True, force_reload=True)
+        super().__init__(
+            name=name,
+            raw_dir=raw_dir,
+            save_dir=save_dir,
+            verbose=True,
+            force_reload=True,
+        )
 
-    def has_cache(self) ->bool:
+    def has_cache(self) -> bool:
         """Check if the dgl_graph.bin exists or not."""
-        files_to_check = [self.filename, self.filename_lattice, self.
-            filename_state_attr, self.filename_labels]
+        files_to_check = [
+            self.filename,
+            self.filename_lattice,
+            self.filename_state_attr,
+            self.filename_labels,
+        ]
         if self.include_line_graph:
             files_to_check.append(self.filename_line_graph)
-        return all(os.path.exists(os.path.join(self.save_path, f)) for f in
-            files_to_check)
+        return all(
+            os.path.exists(os.path.join(self.save_path, f)) for f in files_to_check
+        )
 
     def process(self):
         """Convert Pymatgen structure into dgl graphs."""
@@ -358,27 +389,29 @@ class MGLDataset(DGLDataset):
             graphs.append(graph)
             lattices.append(lattice)
             state_attrs.append(state_attr)
-            graph.node_feat['pos'] = structure.cart_coords.astype('float32')
-            graph.edge_feat['pbc_offshift'] = np.matmul(graph.edge_feat['pbc_offset'], lattice[0])
+            graph.node_feat["pos"] = structure.cart_coords.astype("float32")
+            graph.edge_feat["pbc_offshift"] = np.matmul(
+                graph.edge_feat["pbc_offset"], lattice[0]
+            )
             bond_vec, bond_dist = compute_pair_vector_and_distance(graph)
-            graph.edge_feat['bond_vec'] = bond_vec
-            graph.edge_feat['bond_dist'] = bond_dist
+            graph.edge_feat["bond_vec"] = bond_vec
+            graph.edge_feat["bond_dist"] = bond_dist
             if self.include_line_graph:
-                line_graph = create_line_graph(graph, self.threebody_cutoff,
-                    directed=self.directed_line_graph)
-                for name in ['bond_vec', 'bond_dist', 'pbc_offset']:
+                line_graph = create_line_graph(
+                    graph, self.threebody_cutoff, directed=self.directed_line_graph
+                )
+                for name in ["bond_vec", "bond_dist", "pbc_offset"]:
                     line_graph.node_feat.pop(name)
                 line_graphs.append(line_graph)
-            graph.node_feat.pop('pos')
-            graph.edge_feat.pop('pbc_offshift')
+            graph.node_feat.pop("pos")
+            graph.edge_feat.pop("pbc_offshift")
             graph.numpy()
         if self.graph_labels is not None:
-            state_attrs = paddle.to_tensor(data=self.graph_labels).astype(dtype
-                ='int64')
+            state_attrs = paddle.to_tensor(data=self.graph_labels).astype(dtype="int64")
         else:
             # state_attrs = paddle.to_tensor(data=np.array(state_attrs),
             #     dtype='float32')
-            state_attrs =np.array(state_attrs, dtype='float32')
+            state_attrs = np.array(state_attrs, dtype="float32")
         if self.clear_processed:
             del self.structures
             self.structures = []
@@ -387,9 +420,8 @@ class MGLDataset(DGLDataset):
         self.state_attr = state_attrs
         if self.include_line_graph:
             self.line_graphs = line_graphs
-            return (self.graphs, self.lattices, self.line_graphs, self.
-                state_attr)
-        
+            return (self.graphs, self.lattices, self.line_graphs, self.state_attr)
+
         for key, value in self.labels.items():
             new_value = []
             for idx in range(len(value)):
@@ -406,29 +438,34 @@ class MGLDataset(DGLDataset):
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         if self.labels:
-            with open(os.path.join(self.save_path, self.filename_labels), 'w'
-                ) as file:
+            with open(os.path.join(self.save_path, self.filename_labels), "w") as file:
                 json.dump(self.labels, file)
         save_graphs(os.path.join(self.save_path, self.filename), self.graphs)
-        paddle.save(obj=self.lattices, path=os.path.join(self.save_path,
-            self.filename_lattice))
-        paddle.save(obj=self.state_attr, path=os.path.join(self.save_path,
-            self.filename_state_attr))
+        paddle.save(
+            obj=self.lattices, path=os.path.join(self.save_path, self.filename_lattice)
+        )
+        paddle.save(
+            obj=self.state_attr,
+            path=os.path.join(self.save_path, self.filename_state_attr),
+        )
         if self.include_line_graph:
-            save_graphs(os.path.join(self.save_path, self.
-                filename_line_graph), self.line_graphs)
+            save_graphs(
+                os.path.join(self.save_path, self.filename_line_graph), self.line_graphs
+            )
 
     def load(self):
         """Load dgl graphs from files."""
-        self.graphs, _ = load_graphs(os.path.join(self.save_path, self.
-            filename))
-        self.lattices = paddle.load(path=os.path.join(self.save_path, self.
-            filename_lattice))
+        self.graphs, _ = load_graphs(os.path.join(self.save_path, self.filename))
+        self.lattices = paddle.load(
+            path=os.path.join(self.save_path, self.filename_lattice)
+        )
         if self.include_line_graph:
-            self.line_graphs, _ = load_graphs(os.path.join(self.save_path,
-                self.filename_line_graph))
-        self.state_attr = paddle.load(path=os.path.join(self.save_path,
-            self.filename_state_attr))
+            self.line_graphs, _ = load_graphs(
+                os.path.join(self.save_path, self.filename_line_graph)
+            )
+        self.state_attr = paddle.load(
+            path=os.path.join(self.save_path, self.filename_state_attr)
+        )
         with open(os.path.join(self.save_path, self.filename_labels)) as f:
             self.labels = json.load(f)
 
@@ -437,9 +474,12 @@ class MGLDataset(DGLDataset):
         # items = [self.graphs[idx], self.lattices[idx], self.state_attr[idx],
         #     {k: paddle.to_tensor(data=v[idx], dtype='float32') for k,
         #     v in self.labels.items()}]
-        items = [self.graphs[idx], self.lattices[idx], self.state_attr[idx],
-            {k: np.array(v[idx], dtype='float32') for k,
-            v in self.labels.items()}]
+        items = [
+            self.graphs[idx],
+            self.lattices[idx],
+            self.state_attr[idx],
+            {k: np.array(v[idx], dtype="float32") for k, v in self.labels.items()},
+        ]
         if self.include_line_graph:
             items.insert(2, self.line_graphs[idx])
         return tuple(items)

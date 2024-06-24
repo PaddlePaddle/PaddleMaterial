@@ -1,20 +1,31 @@
 from __future__ import annotations
-import sys
-import paddle
-from typing import TYPE_CHECKING, Any, Callable, Literal
-from collections.abc import Sequence
-import math
-from enum import Enum
-import paddle.nn as nn
 
-from pgl.math import segment_sum, segment_softmax, segment_pool
+import math
+import sys
+from collections.abc import Sequence
+from enum import Enum
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
+from typing import Literal
+
+import paddle
+import paddle.nn as nn
+from pgl.math import segment_pool
+from pgl.math import segment_softmax
+from pgl.math import segment_sum
+
 
 class MLP(paddle.nn.Layer):
     """An implementation of a multi-layer perceptron."""
 
-    def __init__(self, dims: Sequence[int], activation: (Callable[[paddle.Tensor],
-        paddle.Tensor] | None)=None, activate_last: bool=False, bias_last:
-        bool=True) ->None:
+    def __init__(
+        self,
+        dims: Sequence[int],
+        activation: (Callable[[paddle.Tensor], paddle.Tensor] | None) = None,
+        activate_last: bool = False,
+        bias_last: bool = True,
+    ) -> None:
         """:param dims: Dimensions of each layer of MLP.
         :param activation: Activation function.
         :param activate_last: Whether to apply activation to last layer.
@@ -26,20 +37,26 @@ class MLP(paddle.nn.Layer):
         bias_attr = paddle.ParamAttr(initializer=paddle.nn.initializer.XavierNormal())
         for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
             if i < self._depth - 1:
-                self.layers.append(paddle.nn.Linear(in_features=in_dim,
-                    out_features=out_dim, bias_attr=bias_attr))
+                self.layers.append(
+                    paddle.nn.Linear(
+                        in_features=in_dim, out_features=out_dim, bias_attr=bias_attr
+                    )
+                )
                 if activation is not None:
                     self.layers.append(activation)
             else:
                 if bias_last:
                     bias_last = bias_attr
-                self.layers.append(paddle.nn.Linear(in_features=in_dim,
-                    out_features=out_dim, bias_attr=bias_last))
+                self.layers.append(
+                    paddle.nn.Linear(
+                        in_features=in_dim, out_features=out_dim, bias_attr=bias_last
+                    )
+                )
                 if activation is not None and activate_last:
                     self.layers.append(activation)
 
     @property
-    def last_linear(self) ->(Linear | None):
+    def last_linear(self) -> (Linear | None):
         """:return: The last linear layer."""
         for layer in reversed(self.layers):
             if isinstance(layer, paddle.nn.Linear):
@@ -47,17 +64,17 @@ class MLP(paddle.nn.Layer):
         raise RuntimeError
 
     @property
-    def depth(self) ->int:
+    def depth(self) -> int:
         """Returns depth of MLP."""
         return self._depth
 
     @property
-    def in_features(self) ->int:
+    def in_features(self) -> int:
         """Return input features of MLP."""
         return self.layers[0].in_features
 
     @property
-    def out_features(self) ->int:
+    def out_features(self) -> int:
         """Returns output features of MLP."""
         for layer in reversed(self.layers):
             if isinstance(layer, paddle.nn.Linear):
@@ -82,12 +99,12 @@ class SoftPlus2(paddle.nn.Layer):
     softplus function that is 0 at x=0, the implementation aims at avoiding overflow.
     """
 
-    def __init__(self) ->None:
+    def __init__(self) -> None:
         """Initializes the SoftPlus2 class."""
         super().__init__()
         self.ssp = paddle.nn.Softplus()
 
-    def forward(self, x: paddle.Tensor) ->paddle.Tensor:
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """Evaluate activation function given the input tensor x.
 
         Args:
@@ -101,17 +118,25 @@ class SoftPlus2(paddle.nn.Layer):
 
 class ActivationFunction(Enum):
     """Enumeration of optional activation functions."""
+
     softplus2 = SoftPlus2
 
 
 class EmbeddingBlock(paddle.nn.Layer):
     """Embedding block for generating node, bond and state features."""
 
-    def __init__(self, degree_rbf: int, activation: paddle.nn.Layer,
-        dim_node_embedding: int, dim_edge_embedding: (int | None)=None,
-        dim_state_feats: (int | None)=None, ntypes_node: (int | None)=None,
-        include_state: bool=False, ntypes_state: (int | None)=None,
-        dim_state_embedding: (int | None)=None):
+    def __init__(
+        self,
+        degree_rbf: int,
+        activation: paddle.nn.Layer,
+        dim_node_embedding: int,
+        dim_edge_embedding: (int | None) = None,
+        dim_state_feats: (int | None) = None,
+        ntypes_node: (int | None) = None,
+        include_state: bool = False,
+        ntypes_state: (int | None) = None,
+        dim_state_embedding: (int | None) = None,
+    ):
         """
         Args:
             degree_rbf (int): number of rbf
@@ -134,13 +159,15 @@ class EmbeddingBlock(paddle.nn.Layer):
         self.dim_state_embedding = dim_state_embedding
         self.activation = activation
 
-        self.layer_node_embedding = paddle.nn.Embedding(num_embeddings=
-            ntypes_node, embedding_dim=dim_node_embedding)
+        self.layer_node_embedding = paddle.nn.Embedding(
+            num_embeddings=ntypes_node, embedding_dim=dim_node_embedding
+        )
 
         if dim_edge_embedding is not None:
             dim_edges = [degree_rbf, dim_edge_embedding]
-            self.layer_edge_embedding = MLP(dim_edges, activation=
-                activation, activate_last=True)
+            self.layer_edge_embedding = MLP(
+                dim_edges, activation=activation, activate_last=True
+            )
 
     def forward(self, node_attr, edge_attr, state_attr):
         """Output embedded features.
@@ -158,9 +185,9 @@ class EmbeddingBlock(paddle.nn.Layer):
         if self.ntypes_node is not None:
             node_feat = self.layer_node_embedding(node_attr)
         else:
-            node_feat = self.layer_node_embedding(node_attr.to('float32'))
+            node_feat = self.layer_node_embedding(node_attr.to("float32"))
         if self.dim_edge_embedding is not None:
-            edge_feat = self.layer_edge_embedding(edge_attr.to('float32'))
+            edge_feat = self.layer_edge_embedding(edge_attr.to("float32"))
         else:
             edge_feat = edge_attr
         if self.include_state is True:
@@ -170,13 +197,15 @@ class EmbeddingBlock(paddle.nn.Layer):
         return node_feat, edge_feat, state_feat
 
 
-
-
 class MEGNetGraphConv(paddle.nn.Layer):
     """A MEGNet graph convolution layer in DGL."""
 
-    def __init__(self, edge_func: paddle.nn.Layer, node_func: paddle.nn.
-        Layer, state_func: paddle.nn.Layer) ->None:
+    def __init__(
+        self,
+        edge_func: paddle.nn.Layer,
+        node_func: paddle.nn.Layer,
+        state_func: paddle.nn.Layer,
+    ) -> None:
         """
         Args:
             edge_func: Edge update function.
@@ -189,8 +218,12 @@ class MEGNetGraphConv(paddle.nn.Layer):
         self.state_func = state_func
 
     @staticmethod
-    def from_dims(edge_dims: list[int], node_dims: list[int], state_dims:
-        list[int], activation: paddle.nn.Layer) ->MEGNetGraphConv:
+    def from_dims(
+        edge_dims: list[int],
+        node_dims: list[int],
+        state_dims: list[int],
+        activation: paddle.nn.Layer,
+    ) -> MEGNetGraphConv:
         """Create a MEGNet graph convolution layer from dimensions.
 
         Args:
@@ -216,7 +249,7 @@ class MEGNetGraphConv(paddle.nn.Layer):
         return edge_feat
 
     def node_update(self, graph, node_feat, edge_feat, u):
-        src, dst, eid = graph.sorted_edges(sort_by='dst')
+        src, dst, eid = graph.sorted_edges(sort_by="dst")
         node_feat_e = paddle.geometric.segment_mean(edge_feat[eid], dst)
         node_feat = paddle.concat([node_feat, node_feat_e, u], axis=1)
         node_feat = self.node_func(node_feat)
@@ -229,9 +262,13 @@ class MEGNetGraphConv(paddle.nn.Layer):
         state_feat = self.state_func(state)
         return state_feat
 
-    def forward(self, graph: dgl.DGLGraph, edge_feat: paddle.Tensor,
-        node_feat: paddle.Tensor, state_feat: paddle.Tensor) ->tuple[paddle
-        .Tensor, paddle.Tensor, paddle.Tensor]:
+    def forward(
+        self,
+        graph: dgl.DGLGraph,
+        edge_feat: paddle.Tensor,
+        node_feat: paddle.Tensor,
+        state_feat: paddle.Tensor,
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Perform sequence of edge->node->attribute updates.
 
         Args:
@@ -256,8 +293,14 @@ class MEGNetGraphConv(paddle.nn.Layer):
 class MEGNetBlock(paddle.nn.Layer):
     """A MEGNet block comprising a sequence of update operations."""
 
-    def __init__(self, dims: list[int], conv_hiddens: list[int], act:
-        paddle.nn.Layer, dropout: (float | None)=None, skip: bool=True) ->None:
+    def __init__(
+        self,
+        dims: list[int],
+        conv_hiddens: list[int],
+        act: paddle.nn.Layer,
+        dropout: (float | None) = None,
+        skip: bool = True,
+    ) -> None:
         """
         Init the MEGNet block with key parameters.
 
@@ -274,26 +317,34 @@ class MEGNetBlock(paddle.nn.Layer):
         self.activation = act
         conv_dim = dims[-1]
         out_dim = conv_hiddens[-1]
-        mlp_kwargs = {'dims': dims, 'activation': self.activation,
-            'activate_last': True, 'bias_last': True}
-        self.edge_func = MLP(**mlp_kwargs
-            ) if self.has_dense else paddle.nn.Identity()
-        self.node_func = MLP(**mlp_kwargs
-            ) if self.has_dense else paddle.nn.Identity()
-        self.state_func = MLP(**mlp_kwargs
-            ) if self.has_dense else paddle.nn.Identity()
+        mlp_kwargs = {
+            "dims": dims,
+            "activation": self.activation,
+            "activate_last": True,
+            "bias_last": True,
+        }
+        self.edge_func = MLP(**mlp_kwargs) if self.has_dense else paddle.nn.Identity()
+        self.node_func = MLP(**mlp_kwargs) if self.has_dense else paddle.nn.Identity()
+        self.state_func = MLP(**mlp_kwargs) if self.has_dense else paddle.nn.Identity()
         edge_in = 2 * conv_dim + conv_dim + conv_dim
         node_in = out_dim + conv_dim + conv_dim
         attr_in = out_dim + out_dim + conv_dim
-        self.conv = MEGNetGraphConv.from_dims(edge_dims=[edge_in, *
-            conv_hiddens], node_dims=[node_in, *conv_hiddens], state_dims=[
-            attr_in, *conv_hiddens], activation=self.activation)
+        self.conv = MEGNetGraphConv.from_dims(
+            edge_dims=[edge_in, *conv_hiddens],
+            node_dims=[node_in, *conv_hiddens],
+            state_dims=[attr_in, *conv_hiddens],
+            activation=self.activation,
+        )
         self.dropout = paddle.nn.Dropout(p=dropout) if dropout else None
         self.skip = skip
 
-    def forward(self, graph: dgl.DGLGraph, edge_feat: paddle.Tensor,
-        node_feat: paddle.Tensor, state_feat: paddle.Tensor) ->tuple[paddle
-        .Tensor, paddle.Tensor, paddle.Tensor]:
+    def forward(
+        self,
+        graph: dgl.DGLGraph,
+        edge_feat: paddle.Tensor,
+        node_feat: paddle.Tensor,
+        state_feat: paddle.Tensor,
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """MEGNetBlock forward pass.
 
         Args:
@@ -310,8 +361,9 @@ class MEGNetBlock(paddle.nn.Layer):
         edge_feat = self.edge_func(edge_feat)
         node_feat = self.node_func(node_feat)
         state_feat = self.state_func(state_feat)
-        edge_feat, node_feat, state_feat = self.conv(graph, edge_feat,
-            node_feat, state_feat)
+        edge_feat, node_feat, state_feat = self.conv(
+            graph, edge_feat, node_feat, state_feat
+        )
         if self.dropout:
             edge_feat = self.dropout(edge_feat)
             node_feat = self.dropout(node_feat)
@@ -321,7 +373,6 @@ class MEGNetBlock(paddle.nn.Layer):
             node_feat = node_feat + inputs[1]
             state_feat = state_feat + inputs[2]
         return edge_feat, node_feat, state_feat
-
 
 
 # def broadcast_nodes(graph, graph_feat, *, ntype=None):
@@ -402,11 +453,10 @@ class MEGNetBlock(paddle.nn.Layer):
 #         batch_num_nodes(ntype), axis=0)
 
 
-
 class Set2Set(nn.Layer):
     """Implementation of Graph Global Pooling "Set2Set".
-    
-    Reference Paper: ORDER MATTERS: SEQUENCE TO SEQUENCE 
+
+    Reference Paper: ORDER MATTERS: SEQUENCE TO SEQUENCE
 
     Args:
         input_dim (int): dimentional size of input
@@ -426,11 +476,12 @@ class Set2Set(nn.Layer):
             input_size=self.output_dim,
             hidden_size=self.input_dim,
             num_layers=n_layers,
-            time_major=True)
+            time_major=True,
+        )
 
     def forward(self, graph, x):
         """Forward function of Graph Global Pooling "Set2Set".
-        
+
         Args:
             graph: the graph object from (:code:`Graph`)
             x: A tensor with shape (num_nodes, feature_size).
@@ -441,13 +492,13 @@ class Set2Set(nn.Layer):
         batch_size = graph_id.max() + 1
         h = (
             paddle.zeros((self.n_layers, batch_size, self.input_dim)),
-            paddle.zeros((self.n_layers, batch_size, self.input_dim)), )
+            paddle.zeros((self.n_layers, batch_size, self.input_dim)),
+        )
         q_star = paddle.zeros((batch_size, self.output_dim))
         for _ in range(self.n_iters):
             q, h = self.lstm(q_star.unsqueeze(0), h)
             q = q.reshape((batch_size, self.input_dim))
-            e = (x * q.index_select(
-                graph_id, axis=0)).sum(axis=-1, keepdim=True)
+            e = (x * q.index_select(graph_id, axis=0)).sum(axis=-1, keepdim=True)
             a = segment_softmax(e, graph_id)
             r = segment_sum(a * x, graph_id)
             q_star = paddle.concat([q, r], axis=-1)
@@ -458,7 +509,7 @@ class Set2Set(nn.Layer):
 class EdgeSet2Set(paddle.nn.Layer):
     """Implementation of Set2Set."""
 
-    def __init__(self, input_dim: int, n_iters: int, n_layers: int) ->None:
+    def __init__(self, input_dim: int, n_iters: int, n_layers: int) -> None:
         """:param input_dim: The size of each input sample.
         :param n_iters: The number of iterations.
         :param n_layers: The number of recurrent layers.
@@ -468,9 +519,14 @@ class EdgeSet2Set(paddle.nn.Layer):
         self.output_dim = 2 * input_dim
         self.n_iters = n_iters
         self.n_layers = n_layers
-        self.lstm = paddle.nn.LSTM(input_size=self.output_dim, hidden_size=
-            self.input_dim, num_layers=n_layers, time_major=True,
-            direction='forward')
+        self.lstm = paddle.nn.LSTM(
+            input_size=self.output_dim,
+            hidden_size=self.input_dim,
+            num_layers=n_layers,
+            time_major=True,
+            direction="forward",
+        )
+
     #     self.reset_parameters()
 
     # def reset_parameters(self):
@@ -486,25 +542,26 @@ class EdgeSet2Set(paddle.nn.Layer):
         """
         with g.local_scope():
             batch_size = g.batch_size
-            h = paddle.zeros(shape=(self.n_layers, batch_size, self.
-                input_dim), dtype=feat.dtype), paddle.zeros(shape=(self.
-                n_layers, batch_size, self.input_dim), dtype=feat.dtype)
-            q_star = paddle.zeros(shape=[batch_size, self.output_dim],
-                dtype=feat.dtype)
+            h = paddle.zeros(
+                shape=(self.n_layers, batch_size, self.input_dim), dtype=feat.dtype
+            ), paddle.zeros(
+                shape=(self.n_layers, batch_size, self.input_dim), dtype=feat.dtype
+            )
+            q_star = paddle.zeros(shape=[batch_size, self.output_dim], dtype=feat.dtype)
             for _ in range(self.n_iters):
                 q, h = self.lstm(q_star.unsqueeze(axis=0), h)
                 q = q.view(batch_size, self.input_dim)
                 e = (feat * broadcast_edges(g, q)).sum(dim=-1, keepdim=True)
-                g.edata['e'] = e
-                alpha = softmax_edges(g, 'e')
-                g.edata['r'] = feat * alpha
-                readout = sum_edges(g, 'r')
+                g.edata["e"] = e
+                alpha = softmax_edges(g, "e")
+                g.edata["r"] = feat * alpha
+                readout = sum_edges(g, "r")
                 q_star = paddle.concat(x=[q, readout], axis=-1)
             return q_star
 
     def forward(self, graph, x):
         """Forward function of Graph Global Pooling "Set2Set".
-        
+
         Args:
             graph: the graph object from (:code:`Graph`)
             x: A tensor with shape (num_nodes, feature_size).
@@ -515,13 +572,13 @@ class EdgeSet2Set(paddle.nn.Layer):
         batch_size = graph_id.max() + 1
         h = (
             paddle.zeros((self.n_layers, batch_size, self.input_dim)),
-            paddle.zeros((self.n_layers, batch_size, self.input_dim)), )
+            paddle.zeros((self.n_layers, batch_size, self.input_dim)),
+        )
         q_star = paddle.zeros((batch_size, self.output_dim))
         for _ in range(self.n_iters):
             q, h = self.lstm(q_star.unsqueeze(0), h)
             q = q.reshape((batch_size, self.input_dim))
-            e = (x * q.index_select(
-                graph_id, axis=0)).sum(axis=-1, keepdim=True)
+            e = (x * q.index_select(graph_id, axis=0)).sum(axis=-1, keepdim=True)
             a = segment_softmax(e, graph_id)
             r = segment_sum(a * x, graph_id)
             q_star = paddle.concat([q, r], axis=-1)

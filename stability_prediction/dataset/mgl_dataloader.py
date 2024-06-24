@@ -1,32 +1,36 @@
-
 from __future__ import annotations
-import paddle
+
 import os
+
+import paddle
+
 """Tools to construct a dataset of DGL graphs."""
 import json
 from functools import partial
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from typing import Callable
+
 import numpy as np
-from tqdm import trange
 import pgl
+from tqdm import trange
 
 
-def collate_fn_graph(batch, include_line_graph: bool=False):
+def collate_fn_graph(batch, include_line_graph: bool = False):
     """Merge a list of dgl graphs to form a batch."""
     line_graphs = None
     if include_line_graph:
-        graphs, lattices, line_graphs, state_attr, labels = map(list, zip(*
-            batch))
+        graphs, lattices, line_graphs, state_attr, labels = map(list, zip(*batch))
     else:
         graphs, lattices, state_attr, labels = map(list, zip(*batch))
     g = pgl.Graph.batch(graphs)
-    labels = np.array([next(iter(d.values())) for d in labels], dtype='float32')
+    labels = np.array([next(iter(d.values())) for d in labels], dtype="float32")
     state_attr = np.asarray(state_attr)
     lat = lattices[0] if g.num_graph == 1 else np.squeeze(np.asarray(lattices))
     if include_line_graph:
         l_g = dgl.batch(line_graphs)
         return g, lat, l_g, state_attr, labels
     return g.tensor(), lat, state_attr, labels
+
 
 def _create_dist_sampler(dataset, dataloader_kwargs, ddp_seed):
     # Note: will change the content of dataloader_kwargs
@@ -98,10 +102,7 @@ class GraphDataLoader(paddle.io.DataLoader):
     ...         train_on(batched_graph, labels)
     """
 
-
-    def __init__(
-        self, dataset, collate_fn=None, use_ddp=False, ddp_seed=0, **kwargs
-    ):
+    def __init__(self, dataset, collate_fn=None, use_ddp=False, ddp_seed=0, **kwargs):
         dataloader_kwargs = {}
         for k, v in kwargs.items():
             dataloader_kwargs[k] = v
@@ -113,9 +114,7 @@ class GraphDataLoader(paddle.io.DataLoader):
             )
             dataloader_kwargs["batch_sampler"] = self.dist_sampler
 
-        super().__init__(
-            dataset=dataset, collate_fn=collate_fn, **dataloader_kwargs
-        )
+        super().__init__(dataset=dataset, collate_fn=collate_fn, **dataloader_kwargs)
 
     def set_epoch(self, epoch):
         """Sets the epoch number for the underlying sampler which ensures all replicas
@@ -136,9 +135,13 @@ class GraphDataLoader(paddle.io.DataLoader):
             raise DGLError("set_epoch is only available when use_ddp is True.")
 
 
-def MGLDataLoader(train_data: dgl.data.utils.Subset, val_data: dgl.data.
-    utils.Subset, collate_fn: (Callable | None)=None, test_data: dgl.data.
-    utils.Subset=None, **kwargs) ->tuple[GraphDataLoader, ...]:
+def MGLDataLoader(
+    train_data: dgl.data.utils.Subset,
+    val_data: dgl.data.utils.Subset,
+    collate_fn: (Callable | None) = None,
+    test_data: dgl.data.utils.Subset = None,
+    **kwargs,
+) -> tuple[GraphDataLoader, ...]:
     """Dataloader for MatGL training.
 
     Args:
@@ -153,12 +156,15 @@ def MGLDataLoader(train_data: dgl.data.utils.Subset, val_data: dgl.data.
         tuple[GraphDataLoader, ...]: Train, validation and test data loaders. Test data
             loader is None if test_data is None.
     """
-    train_loader = GraphDataLoader(train_data, shuffle=False, collate_fn=
-        collate_fn, **kwargs)
-    val_loader = GraphDataLoader(val_data, shuffle=False, collate_fn=
-        collate_fn, **kwargs)
+    train_loader = GraphDataLoader(
+        train_data, shuffle=False, collate_fn=collate_fn, **kwargs
+    )
+    val_loader = GraphDataLoader(
+        val_data, shuffle=False, collate_fn=collate_fn, **kwargs
+    )
     if test_data is not None:
-        test_loader = GraphDataLoader(test_data, shuffle=False, collate_fn=
-            collate_fn, **kwargs)
+        test_loader = GraphDataLoader(
+            test_data, shuffle=False, collate_fn=collate_fn, **kwargs
+        )
         return train_loader, val_loader, test_loader
     return train_loader, val_loader

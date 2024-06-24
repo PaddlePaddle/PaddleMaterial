@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import argparse
+import pickle
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from pymatgen.core import Structure
 from tqdm import tqdm
-import pickle
-import argparse
-import numpy as np
+
 
 def load_dataset_from_pickle(file_path):
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         data = pickle.load(f)
     return data
 

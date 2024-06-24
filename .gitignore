@@ -1,6 +1,4 @@
 __pycache__/
-data_bak/*
-results/*
-dgl/*
-log/*
-checkpoints/*
+stability_prediction/data_bak/*
+stability_prediction/log/*
+stability_prediction/checkpoints/*

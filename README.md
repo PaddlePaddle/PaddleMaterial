@@ -1,6 +1,9 @@
-# 基于GNN的二维材料稳定性预测
+# PaddlePaddle for Materials
 
-## 整体流程
+
+## 基于GNN的二维材料稳定性预测
+
+### 整体流程
 
 通过预测输入晶体的形成能（分解能等）等能量，实现晶体的稳定性预测，能量越低，稳定性越高。整体流程如下，网络模型输入为晶体的属性包括：原子类型、原子坐标、晶格常数等，网络模型输出为预测的晶体的形成能。涉及到：
 1. 晶体数据的图结构表示；
@@ -13,7 +16,7 @@
 
 详见文档3.4节：https://365.kdocs.cn/l/cmMI44AGmqJG
 
-### 二维材料数据
+#### 二维材料数据
 
 数据地址：https://365.kdocs.cn/ent/664860898/2340801472/304878020292
 
@@ -26,7 +29,7 @@
 
 
 
-## 环境准备
+### 环境准备
     python==3.10.9
     paddlepaddle==2.6.1
     pgl==2.2.3
@@ -52,25 +55,27 @@
         return _C_ops.scatter(x, index, updates, overwrite)
 
 
-## 模型训练
+### 模型训练
 
+    cd stability_prediction
     # 单卡训练
     python main.py
     # 多卡训练
     python -m paddle.distributed.launch --gpus="2,3,4,5" main.py
 
-## 模型评估
+### 模型评估
 
     # 修改配置文件 configs/megnet_2d.yaml 里的 model/pretrained 字段为训练好的模型路径
     #   model:
     #        ...
     #        pretrained: './weights/megnet_2d_dp0.5/best.pdparams'
+    cd stability_prediction
     python main.py --mode=test
 
 
 
-## 二维材料训练
-超参数详见: [megnet_2d.yaml](configs/megnet_2d.yaml)
+### 二维材料训练
+超参数详见: [megnet_2d.yaml](stability_prediction/configs/megnet_2d.yaml)
 
 实验结果：
 

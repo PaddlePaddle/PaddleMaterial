@@ -26,8 +26,6 @@ from typing import Optional
 import colorlog
 import paddle.distributed as dist
 
-
-
 # INFO(20) is white(no color)
 # use custom log level `MESSAGE` for printing message in color
 _MESSAGE_LEVEL = 25

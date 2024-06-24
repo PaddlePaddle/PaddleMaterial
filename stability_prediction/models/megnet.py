@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import paddle
 import paddle.nn as nn
-
 from models import initializer
 from models.layers import MLP
 from models.layers import ActivationFunction
