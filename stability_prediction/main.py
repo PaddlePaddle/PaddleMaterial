@@ -409,7 +409,10 @@ if __name__ == "__main__":
 
     if paddle.distributed.get_rank() == 0:
         os.makedirs(cfg["save_path"], exist_ok=True)
-        shutil.copy(args.config, cfg["save_path"])
+        try:
+            shutil.copy(args.config, cfg["save_path"])
+        except shutil.SameFileError:
+            pass
 
     set_random_seed(cfg.get("seed", 42))
 
