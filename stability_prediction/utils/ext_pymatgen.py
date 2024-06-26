@@ -32,7 +32,7 @@ class GraphConverter(metaclass=abc.ABCMeta):
     """Abstract base class for converters from input crystals/molecules to graphs."""
 
     @abc.abstractmethod
-    def get_graph(self, structure) -> tuple[dgl.DGLGraph, paddle.Tensor, list]:
+    def get_graph(self, structure) -> tuple[pgl.Graph, paddle.Tensor, list]:
         """Args:
         structure: Input crystals or molecule.
 
@@ -50,8 +50,8 @@ class GraphConverter(metaclass=abc.ABCMeta):
         element_types,
         frac_coords,
         is_atoms: bool = False,
-    ) -> tuple[dgl.DGLGraph, paddle.Tensor, list]:
-        """Construct a dgl graph from processed structure and bond information.
+    ) -> tuple[pgl.Graph, paddle.Tensor, list]:
+        """Construct a pgl graph from processed structure and bond information.
 
         Args:
             structure: Input crystals or molecule of pymatgen structure or molecule types.
@@ -95,8 +95,8 @@ class GraphConverter(metaclass=abc.ABCMeta):
         element_types,
         frac_coords,
         is_atoms: bool = False,
-    ) -> tuple[dgl.DGLGraph, paddle.Tensor, list]:
-        """Construct a dgl graph from processed structure and bond information.
+    ) -> tuple[pgl.Graph, paddle.Tensor, list]:
+        """Construct a pgl graph from processed structure and bond information.
 
         Args:
             structure: Input crystals or molecule of pymatgen structure or molecule types.
@@ -145,9 +145,7 @@ class Structure2Graph(GraphConverter):
         self.element_types = tuple(element_types)
         self.cutoff = cutoff
 
-    def get_graph(
-        self, structure: Structure
-    ) -> tuple[dgl.DGLGraph, paddle.Tensor, list]:
+    def get_graph(self, structure: Structure) -> tuple[pgl.Graph, paddle.Tensor, list]:
         """Get a DGL graph from an input Structure.
 
         :param structure: pymatgen structure object

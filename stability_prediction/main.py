@@ -114,7 +114,6 @@ def get_dataloader(cfg):
         structures=structures,
         labels=labels,
         converter=converter,
-        save_dir="",
     )
 
     train_data, val_data, test_data = split_dataset(
@@ -190,6 +189,7 @@ def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch
     total_loss = defaultdict(list)
     total_metric = defaultdict(list)
     total_num_data = 0
+
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
         batch_size = state_attr.shape[0]
@@ -208,14 +208,20 @@ def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch
             else:
                 pred = preds
 
+            # loss = loss_fn(pred, label, reduction='none')
             loss = loss_fn(pred, label)
             metric = metric_fn(pred, label)
 
             total_loss[key].append(loss * batch_size)
+            # total_loss[key].append(loss.sum())
             total_metric[key].append(metric * batch_size)
             if key in loss_weight.keys():
                 train_loss += loss * loss_weight[key]
             else:
+                # weights = paddle.exp(0.5 * paddle.abs(label - 0.1))
+                # weights = paddle.log(paddle.abs(label - 0.1) + 1.3)
+                # loss = loss * weights
+                # loss = loss.mean()
                 train_loss += loss
             msg += f" | {key}_loss: {loss.item():.6f} | {key}_mae: {metric.item():.6f}"
 

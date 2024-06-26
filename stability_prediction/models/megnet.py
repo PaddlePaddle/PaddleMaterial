@@ -137,12 +137,12 @@ class MEGNetPlus(paddle.nn.Layer):
             initializer.lstm_init_(m)
 
     def forward(
-        self, g: dgl.DGLGraph, state_attr: (paddle.Tensor | None) = None, **kwargs
+        self, g: pgl.Graph, state_attr: (paddle.Tensor | None) = None, **kwargs
     ):
         """Forward pass of MEGnet. Executes all blocks.
 
         Args:
-            g (dgl.DGLGraph): DGL graphs
+            g (pgl.Graph): PGL graphs
             state_attr (paddle.Tensor): State attributes
             **kwargs: For future flexibility. Not used at the moment.
 

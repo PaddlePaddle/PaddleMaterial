@@ -15,79 +15,12 @@ import paddle
 from tqdm import trange
 
 
-class DGLDataset(object):
-    """The basic DGL dataset for creating graph datasets.
-    This class defines a basic template class for DGL Dataset.
-    The following steps will be executed automatically:
-
-      1. Check whether there is a dataset cache on disk
-         (already processed and stored on the disk) by
-         invoking ``has_cache()``. If true, goto 5.
-      2. Call ``download()`` to download the data if ``url`` is not None.
-      3. Call ``process()`` to process the data.
-      4. Call ``save()`` to save the processed dataset on disk and goto 6.
-      5. Call ``load()`` to load the processed dataset from disk.
-      6. Done.
-
-    Users can overwite these functions with their
-    own data processing logic.
-
-    Parameters
-    ----------
-    name : str
-        Name of the dataset
-    url : str
-        Url to download the raw dataset. Default: None
-    raw_dir : str
-        Specifying the directory that will store the
-        downloaded data or the directory that
-        already stores the input data.
-        Default: ~/.dgl/
-    save_dir : str
-        Directory to save the processed dataset.
-        Default: same as raw_dir
-    hash_key : tuple
-        A tuple of values as the input for the hash function.
-        Users can distinguish instances (and their caches on the disk)
-        from the same dataset class by comparing the hash values.
-        Default: (), the corresponding hash value is ``'f9065fa7'``.
-    force_reload : bool
-        Whether to reload the dataset. Default: False
-    verbose : bool
-        Whether to print out progress information
-    transform : callable, optional
-        A transform that takes in a :class:`~dgl.DGLGraph` object and returns
-        a transformed version. The :class:`~dgl.DGLGraph` object will be
-        transformed before every access.
-
-    Attributes
-    ----------
-    url : str
-        The URL to download the dataset
-    name : str
-        The dataset name
-    raw_dir : str
-        Directory to store all the downloaded raw datasets.
-    raw_path : str
-        Path to the downloaded raw dataset folder. An alias for
-        ``os.path.join(self.raw_dir, self.name)``.
-    save_dir : str
-        Directory to save all the processed datasets.
-    save_path : str
-        Path to the processed dataset folder. An alias for
-        ``os.path.join(self.save_dir, self.name)``.
-    verbose : bool
-        Whether to print more runtime information.
-    hash : str
-        Hash value for the dataset and the setting.
-    """
-
+class BaseDataset(object):
     def __init__(
         self,
         name,
         url=None,
         raw_dir=None,
-        save_dir=None,
         hash_key=(),
         force_reload=False,
         verbose=False,
@@ -101,42 +34,7 @@ class DGLDataset(object):
         self._hash = self._get_hash()
         self._transform = transform
         self._raw_dir = raw_dir
-        if save_dir is None:
-            self._save_dir = self._raw_dir
-        else:
-            self._save_dir = save_dir
         self._load()
-
-    def download(self):
-        """Overwite to realize your own logic of downloading data.
-
-        It is recommended to download the to the :obj:`self.raw_dir`
-        folder. Can be ignored if the dataset is
-        already in :obj:`self.raw_dir`.
-        """
-        pass
-
-    def save(self):
-        """Overwite to realize your own logic of
-        saving the processed dataset into files.
-
-        It is recommended to use ``dgl.data.utils.save_graphs``
-        to save dgl graph into files and use
-        ``dgl.data.utils.save_info`` to save extra
-        information into files.
-        """
-        pass
-
-    def load(self):
-        """Overwite to realize your own logic of
-        loading the saved dataset from files.
-
-        It is recommended to use ``dgl.data.utils.load_graphs``
-        to load dgl graph from files and use
-        ``dgl.data.utils.load_info`` to load extra information
-        into python dict object.
-        """
-        pass
 
     @abc.abstractmethod
     def process(self):
@@ -156,33 +54,16 @@ class DGLDataset(object):
 
         If cache exists:
 
-          - Load the dataset from saved dgl graph and information files.
+          - Load the dataset from saved pgl graph and information files.
           - If loadin process fails, re-download and process the dataset.
 
         else:
 
           - Download the dataset if needed.
-          - Process the dataset and build the dgl graph.
+          - Process the dataset and build the pgl graph.
           - Save the processed dataset into files.
         """
-        load_flag = not self._force_reload and self.has_cache()
-        if load_flag:
-            try:
-                self.load()
-                if self.verbose:
-                    print("Done loading data from cached files.")
-            except KeyboardInterrupt:
-                raise
-            except:
-                load_flag = False
-                if self.verbose:
-                    print(traceback.format_exc())
-                    print("Loading from cache failed, re-processing.")
-        if not load_flag:
-            self.process()
-            # self.save()
-            if self.verbose:
-                print("Done saving data into cached files.")
+        self.process()
 
     def _get_hash(self):
         """Compute the hash of the input tuple
@@ -231,16 +112,6 @@ class DGLDataset(object):
         return os.path.join(self.raw_dir, self.name + self._get_hash_url_suffix())
 
     @property
-    def save_dir(self):
-        """Directory to save the processed dataset."""
-        return self._save_dir
-
-    @property
-    def save_path(self):
-        """Path to save the processed dataset."""
-        return os.path.join(self.save_dir, self.name + self._get_hash_url_suffix())
-
-    @property
     def verbose(self):
         """Whether to print information."""
         return self._verbose
@@ -267,11 +138,11 @@ class DGLDataset(object):
         )
 
 
-def compute_pair_vector_and_distance(g: dgl.DGLGraph):
-    """Calculate bond vectors and distances using dgl graphs.
+def compute_pair_vector_and_distance(g):
+    """Calculate bond vectors and distances using pgl graphs.
 
     Args:
-    g: DGL graph
+    g: PGL graph
 
     Returns:
     bond_vec (paddle.tensor): bond distance between two atoms
@@ -284,14 +155,14 @@ def compute_pair_vector_and_distance(g: dgl.DGLGraph):
     return bond_vec, bond_dist
 
 
-class MGLDataset(DGLDataset):
-    """Create a dataset including dgl graphs."""
+class MGLDataset(BaseDataset):
+    """Create a dataset including pgl graphs."""
 
     def __init__(
         self,
-        filename: str = "dgl_graph.bin",
+        filename: str = "pgl_graph.bin",
         filename_lattice: str = "lattice.pt",
-        filename_line_graph: str = "dgl_line_graph.bin",
+        filename_line_graph: str = "pgl_line_graph.bin",
         filename_state_attr: str = "state_attr.pt",
         filename_labels: str = "labels.json",
         converter: (GraphConverter | None) = None,
@@ -302,18 +173,16 @@ class MGLDataset(DGLDataset):
         name: str = "MGLDataset",
         graph_labels: (list[int | float] | None) = None,
         clear_processed: bool = False,
-        save_cache: bool = True,
         raw_dir: (str | None) = None,
-        save_dir: (str | None) = None,
     ):
         """
         Args:
-            filename: file name for storing dgl graphs.
+            filename: file name for storing pgl graphs.
             filename_lattice: file name for storing lattice matrixs.
-            filename_line_graph: file name for storing dgl line graphs.
+            filename_line_graph: file name for storing pgl line graphs.
             filename_state_attr: file name for storing state attributes.
             filename_labels: file name for storing labels.
-            converter: dgl graph converter.
+            converter: pgl graph converter.
             threebody_cutoff: cutoff for three body.
             directed_line_graph (bool): Whether to create a directed line graph (CHGNet), or an
                 undirected 3body line graph (M3GNet)
@@ -323,14 +192,10 @@ class MGLDataset(DGLDataset):
             name: name of dataset.
             graph_labels: state attributes.
             clear_processed: Whether to clear the stored structures after processing into graphs. Structures
-                are not really needed after the conversion to DGL graphs and can take a significant amount of memory.
+                are not really needed after the conversion to pgl graphs and can take a significant amount of memory.
                 Setting this to True will delete the structures from memory.
-            save_cache: whether to save the processed dataset. The dataset can be reloaded from save_dir
-                Default: True
             raw_dir : str specifying the directory that will store the downloaded data or the directory that already
                 stores the input data.
-                Default: ~/.dgl/
-            save_dir : directory to save the processed dataset. Default: same as raw_dir.
         """
         self.filename = filename
         self.filename_lattice = filename_lattice
@@ -346,17 +211,15 @@ class MGLDataset(DGLDataset):
         self.directed_line_graph = directed_line_graph
         self.graph_labels = graph_labels
         self.clear_processed = clear_processed
-        self.save_cache = save_cache
         super().__init__(
             name=name,
             raw_dir=raw_dir,
-            save_dir=save_dir,
             verbose=True,
             force_reload=True,
         )
 
     def has_cache(self) -> bool:
-        """Check if the dgl_graph.bin exists or not."""
+        """Check if the pgl_graph.bin exists or not."""
         files_to_check = [
             self.filename,
             self.filename_lattice,
@@ -368,7 +231,7 @@ class MGLDataset(DGLDataset):
         )
 
     def process(self):
-        """Convert Pymatgen structure into dgl graphs."""
+        """Convert Pymatgen structure into pgl graphs."""
         num_graphs = len(self.structures)
         graphs, lattices, line_graphs, state_attrs = [], [], [], []
         not_use_idxs = []
@@ -409,36 +272,6 @@ class MGLDataset(DGLDataset):
                 new_value.append(value[idx])
             self.labels[key] = new_value
         return self.graphs, self.lattices, self.state_attr
-
-    def save(self):
-        """Save dgl graphs and labels to self.save_path."""
-        if self.save_cache is False:
-            return
-        if not os.path.exists(self.save_path):
-            os.makedirs(self.save_path)
-        if self.labels:
-            with open(os.path.join(self.save_path, self.filename_labels), "w") as file:
-                json.dump(self.labels, file)
-        save_graphs(os.path.join(self.save_path, self.filename), self.graphs)
-        paddle.save(
-            obj=self.lattices, path=os.path.join(self.save_path, self.filename_lattice)
-        )
-        paddle.save(
-            obj=self.state_attr,
-            path=os.path.join(self.save_path, self.filename_state_attr),
-        )
-
-    def load(self):
-        """Load dgl graphs from files."""
-        self.graphs, _ = load_graphs(os.path.join(self.save_path, self.filename))
-        self.lattices = paddle.load(
-            path=os.path.join(self.save_path, self.filename_lattice)
-        )
-        self.state_attr = paddle.load(
-            path=os.path.join(self.save_path, self.filename_state_attr)
-        )
-        with open(os.path.join(self.save_path, self.filename_labels)) as f:
-            self.labels = json.load(f)
 
     def __getitem__(self, idx: int):
         """Get graph and label with idx."""

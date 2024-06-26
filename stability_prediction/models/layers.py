@@ -264,7 +264,7 @@ class MEGNetGraphConv(paddle.nn.Layer):
 
     def forward(
         self,
-        graph: dgl.DGLGraph,
+        graph: pgl.Graph,
         edge_feat: paddle.Tensor,
         node_feat: paddle.Tensor,
         state_feat: paddle.Tensor,
@@ -340,7 +340,7 @@ class MEGNetBlock(paddle.nn.Layer):
 
     def forward(
         self,
-        graph: dgl.DGLGraph,
+        graph: pgl.Graph,
         edge_feat: paddle.Tensor,
         node_feat: paddle.Tensor,
         state_feat: paddle.Tensor,
@@ -348,7 +348,7 @@ class MEGNetBlock(paddle.nn.Layer):
         """MEGNetBlock forward pass.
 
         Args:
-            graph (dgl.DGLGraph): A DGLGraph.
+            graph (pgl.Graph): A Graph.
             edge_feat (Tensor): Edge features.
             node_feat (Tensor): Node features.
             state_feat (Tensor): Graph attributes (global state).
@@ -455,7 +455,7 @@ class EdgeSet2Set(paddle.nn.Layer):
     #     """Reinitialize learnable parameters."""
     #     self.lstm.reset_parameters()
 
-    def forward(self, g: DGLGraph, feat: paddle.Tensor):
+    def forward(self, g: Graph, feat: paddle.Tensor):
         """Defines the computation performed at every call.
 
         :param g: Input graph
