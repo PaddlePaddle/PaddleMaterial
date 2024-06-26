@@ -37,7 +37,7 @@ class GraphConverter(metaclass=abc.ABCMeta):
         structure: Input crystals or molecule.
 
         Returns:
-        DGLGraph object, state_attr
+        Graph object, state_attr
         """
 
     def get_graph_from_processed_structure_tensor(
@@ -64,7 +64,7 @@ class GraphConverter(metaclass=abc.ABCMeta):
             is_atoms: whether the input structure object is ASE atoms object or not.
 
         Returns:
-            DGLGraph object, state_attr
+            Graph object, state_attr
 
         """
         u, v = paddle.to_tensor(data=src_id), paddle.to_tensor(data=dst_id)
@@ -109,7 +109,7 @@ class GraphConverter(metaclass=abc.ABCMeta):
             is_atoms: whether the input structure object is ASE atoms object or not.
 
         Returns:
-            DGLGraph object, state_attr
+            Graph object, state_attr
 
         """
         # u, v = src_id, dst_id
@@ -133,7 +133,7 @@ class GraphConverter(metaclass=abc.ABCMeta):
 
 
 class Structure2Graph(GraphConverter):
-    """Construct a DGL graph from Pymatgen Structure."""
+    """Construct a PGL graph from Pymatgen Structure."""
 
     def __init__(self, element_types: tuple[str, ...], cutoff: float = 5.0):
         """Parameters
@@ -146,11 +146,11 @@ class Structure2Graph(GraphConverter):
         self.cutoff = cutoff
 
     def get_graph(self, structure: Structure) -> tuple[pgl.Graph, paddle.Tensor, list]:
-        """Get a DGL graph from an input Structure.
+        """Get a PGL graph from an input Structure.
 
         :param structure: pymatgen structure object
         :return:
-            g: DGL graph
+            g: PGL graph
             lat: lattice for periodic systems
             state_attr: state features
         """
