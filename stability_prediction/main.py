@@ -15,8 +15,8 @@ import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
 import pandas as pd
 import yaml
-from dataset.mgl_dataloader import collate_fn_graph
-from dataset.mgl_dataset import MGLDataset
+from dataset.collate_fn import collate_fn_graph
+from dataset.structure_dataset import StructureDataset
 from dataset.utils import split_dataset
 from models.megnet import MEGNetPlus
 from pymatgen.core import Structure
@@ -110,7 +110,7 @@ def get_dataloader(cfg):
         if energys is not None
         else {"ehull": ehulls}
     )
-    mp_dataset = MGLDataset(
+    mp_dataset = StructureDataset(
         structures=structures,
         labels=labels,
         converter=converter,

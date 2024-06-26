@@ -155,7 +155,7 @@ def compute_pair_vector_and_distance(g):
     return bond_vec, bond_dist
 
 
-class MGLDataset(BaseDataset):
+class StructureDataset(BaseDataset):
     """Create a dataset including pgl graphs."""
 
     def __init__(
@@ -170,7 +170,7 @@ class MGLDataset(BaseDataset):
         directed_line_graph: bool = False,
         structures: (list | None) = None,
         labels: (dict[str, list] | None) = None,
-        name: str = "MGLDataset",
+        name: str = "StructureDataset",
         graph_labels: (list[int | float] | None) = None,
         clear_processed: bool = False,
         raw_dir: (str | None) = None,
