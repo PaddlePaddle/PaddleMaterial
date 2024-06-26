@@ -1,0 +1,13 @@
+colorlog==6.8.2
+matplotlib==3.9.0
+numpy==2.0.0
+paddlepaddle_gpu==2.6.1
+pandas==2.2.2
+pgl==2.2.3
+pymatgen==2024.6.10
+PyYAML==6.0.1
+PyYAML==6.0.1
+scipy==1.14.0
+sympy==1.12.1
+tqdm==4.66.4
+typing_extensions==4.12.2

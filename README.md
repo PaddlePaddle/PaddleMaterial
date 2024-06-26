@@ -35,6 +35,14 @@
     pgl==2.2.3
     pymatgen==2024.6.10
 
+#### 新建环境：
+    conda create -n test_env python=3.10.9
+    conda activate test_env
+
+#### 安装所需依赖包：
+    pip install -r requirments.txt
+
+
 由于PGL暂不兼容最新版本的Paddle，因此安装完成PGL后需要在安装路径内修改部分代码：
 例如我的安装路径为：anaconda3/envs/meg_paddle/lib/python3.10/site-packages/pgl
 
