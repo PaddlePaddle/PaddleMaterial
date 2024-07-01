@@ -130,8 +130,18 @@ class DataProvider:
             subset = paddle.io.Subset(dataset=self.data_container, indices=indices)
             idx_sampler = paddle.io.SequenceSampler(data_source=subset)
             dataset = subset
-        batch_sampler = paddle.io.BatchSampler(
+        batch_sampler1 = paddle.io.BatchSampler(
             sampler=idx_sampler, batch_size=batch_size, drop_last=False
+        )
+
+        # NOTE: paddle.io.DataLoader only support batch_sampler parameter, but
+        # Raw pytorch code pass batch_sampler to sampler parameter, and inner
+        # logic is:
+        #    if batch_size is not None and batch_sampler is None:
+        #        batch_sampler = BatchSampler(sampler, batch_size, drop_last)
+        # So we need to wrap one more BatchSampler to change it to paddlepaddle.
+        batch_sampler = paddle.io.BatchSampler(
+            sampler=batch_sampler1, batch_size=1, drop_last=False
         )
         # >>>>>>        dataloader = torch.utils.data.DataLoader(dataset, sampler=
         #             batch_sampler, collate_fn=functools.partial(collate,
@@ -145,6 +155,7 @@ class DataProvider:
             ),
             **self.kwargs,
         )
+        # dataloader.auto_collate_batch = False
 
         def generator():
             while True:

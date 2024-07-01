@@ -488,7 +488,6 @@ class GemNet(paddle.nn.Layer):
             cbf4 = self.cbf_basis(D_ab, Phi_abd, id4_expand_intm_ab, None)
             sbf4 = self.sbf_basis(D_ca, Phi_cab, Theta_cabd, id4_reduce_ca, Kidx4)
         rbf = self.rbf_basis(D_ca)
-        print(id3_reduce_ca.shape, id3_expand_ba.shape)
         Angles3_cab = self.calculate_angles3(
             R, id_c, id_a, id3_reduce_ca, id3_expand_ba
         )
