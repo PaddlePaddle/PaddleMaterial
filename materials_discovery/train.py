@@ -29,11 +29,8 @@ logger.addHandler(ch)
 logger.setLevel("INFO")
 
 
-# import paddle
-# paddle.utils.run_check()
-
-
-with open("config.yaml", "r") as c:
+os.chdir(os.getcwd() + '/materials_discovery')
+with open('config.yaml', "r") as c:
     config = yaml.safe_load(c)
 for key, val in config.items():
     if type(val) is str:
