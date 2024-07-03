@@ -34,4 +34,4 @@ lr_cfg:
 epochs: 2000
 batch_size: 128
 
-save_path: "./checkpoints/megnet_2d_dp0.5_debug"
+save_path: "./weights/megnet_2d_dp0.5"
