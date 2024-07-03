@@ -15,10 +15,14 @@ cif_names = os.listdir(cif_path)
 csv_data = pd.read_csv(csv_file)
 ehull_dict = {name: value for name, value in zip(csv_data["cif"], csv_data["ehull"])}
 energy_dict = {name: value for name, value in zip(csv_data["cif"], csv_data["energy"])}
+formula_dict = {
+    name: value for name, value in zip(csv_data["cif"], csv_data["formula"])
+}
 
 structures = []
 ehulls = []
 energys = []
+formulas = []
 for cif_name in tqdm.tqdm(cif_names):
     if not cif_name.endswith(".cif"):
         continue
@@ -31,6 +35,7 @@ for cif_name in tqdm.tqdm(cif_names):
     structures.append(structure)
     ehulls.append(ehull)
     energys.append(energy_dict[cif_name.replace(".cif", "")])
+    formulas.append([cif_name, formula_dict[cif_name.replace(".cif", "")]])
 
 with open("./data/2D_structure/structures_0621.pickle", "wb") as f:
     pickle.dump(structures, f)
@@ -40,3 +45,6 @@ with open("./data/2D_structure/ehulls_0621.pickle", "wb") as f:
 
 with open("./data/2D_structure/energys_0621.pickle", "wb") as f:
     pickle.dump(energys, f)
+
+with open("./data/2D_structure/formulas_0621.pickle", "wb") as f:
+    pickle.dump(formulas, f)

@@ -278,11 +278,17 @@ class StructureDataset(BaseDataset):
         # items = [self.graphs[idx], self.lattices[idx], self.state_attr[idx],
         #     {k: paddle.to_tensor(data=v[idx], dtype='float32') for k,
         #     v in self.labels.items()}]
+        label_dict = {}
+        for k, v in self.labels.items():
+            if isinstance(v[idx], str):
+                label_dict[k] = v[idx]
+            else:
+                label_dict[k] = np.array(v[idx], dtype="float32")
         items = [
             self.graphs[idx],
             self.lattices[idx],
             self.state_attr[idx],
-            {k: np.array(v[idx], dtype="float32") for k, v in self.labels.items()},
+            label_dict,
         ]
         return tuple(items)
 

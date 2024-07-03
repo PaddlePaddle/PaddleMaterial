@@ -19,7 +19,10 @@ def collate_fn_graph(batch):
     g = pgl.Graph.batch(graphs)
     new_labels = {}
     for k, v in labels[0].items():
-        new_labels[k] = np.array([d[k] for d in labels], dtype="float32")
+        if isinstance(v, str):
+            new_labels[k] = [d[k] for d in labels]
+        else:
+            new_labels[k] = np.array([d[k] for d in labels], dtype="float32")
     labels = new_labels
     state_attr = np.asarray(state_attr)
     lat = lattices[0] if g.num_graph == 1 else np.squeeze(np.asarray(lattices))

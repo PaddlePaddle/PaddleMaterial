@@ -2,6 +2,7 @@
 dataset:
   structures_path: "./data/2D_structure/structures_0621.pickle"
   ehull_path: "./data/2D_structure/ehulls_0621.pickle"
+  formula_path: "./data/2D_structure/formulas_0621.pickle"
   ehull_clip: [-4, 4]
   # select: [0.0, 0.5]
 

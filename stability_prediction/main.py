@@ -63,6 +63,7 @@ def load_dataset_from_pickle(
     structures_path,
     ehull_path,
     energy_path=None,
+    formula_path=None,
     ehull_clip=None,
     energy_clip=None,
     **kwargs,
@@ -76,6 +77,11 @@ def load_dataset_from_pickle(
             energys = pickle.load(f)
     else:
         energys = None
+    if formula_path is not None:
+        with open(formula_path, "rb") as f:
+            formulas = pickle.load(f)
+    else:
+        formulas = None
 
     if ehull_clip:
         ehulls = np.asarray(ehulls)
@@ -86,7 +92,7 @@ def load_dataset_from_pickle(
         energys = energys.clip(energy_clip[0], energy_clip[1])
         energys = energys.tolist()
 
-    return structures, ehulls, energys
+    return structures, ehulls, energys, formulas
 
 
 def get_dataloader(cfg):
@@ -94,7 +100,9 @@ def get_dataloader(cfg):
     # structures = structures[:100]
     # ehulls = ehulls[:100]
 
-    structures, ehulls, energys = load_dataset_from_pickle(**cfg["dataset"])
+    structures, ehulls, energys, name_formulas = load_dataset_from_pickle(
+        **cfg["dataset"]
+    )
     # structures = structures[:100]
     # ehulls = ehulls[:100]
 
@@ -106,11 +114,19 @@ def get_dataloader(cfg):
         element_types=elem_list, cutoff=cfg["dataset"]["cutoff"]
     )
     # convert the raw dataset into MEGNetDataset
-    labels = (
-        {"ehull": ehulls, "energy": energys}
-        if energys is not None
-        else {"ehull": ehulls}
-    )
+    labels = {"ehull": ehulls}
+    if energys is not None:
+        labels["energy"] = energys
+    if name_formulas is not None:
+        names, formulas = [v[0] for v in name_formulas], [v[1] for v in name_formulas]
+        labels["names"] = names
+        labels["formulas"] = formulas
+
+    # labels = (
+    #     {"ehull": ehulls, "energy": energys, 'ids':ids, 'names':names, 'formulas':formulas}
+    #     if energys is not None
+    #     else {"ehull": ehulls, 'ids':ids, 'names':names, 'formulas':formulas}
+    # )
     mp_dataset = StructureDataset(
         structures=structures,
         labels=labels,
@@ -185,10 +201,21 @@ def get_optimizer(cfg, model):
     return optimizer, lr_scheduler
 
 
-def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch, log):
+def train_epoch(
+    model,
+    loader,
+    loss_fn,
+    metric_fn,
+    optimizer,
+    loss_weight,
+    epoch,
+    log,
+    id_keys=["names", "formulas"],
+):
     model.train()
     total_loss = defaultdict(list)
     total_metric = defaultdict(list)
+    total_ids = defaultdict(list)
     total_num_data = 0
 
     for idx, batch_data in enumerate(loader):
@@ -200,6 +227,11 @@ def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch
         keys = labels.keys()
         keys = sorted(keys)
         train_loss = 0.0
+
+        for id_key in id_keys:
+            if id_key in keys:
+                total_ids[id_key].extend(labels[id_key])
+                keys.remove(id_key)
 
         msg = ""
         for i, key in enumerate(keys):
@@ -249,12 +281,13 @@ def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch
 
 
 @paddle.no_grad()
-def eval_epoch(model, loader, loss_fn, metric_fn, log):
+def eval_epoch(model, loader, loss_fn, metric_fn, log, id_keys=["names", "formulas"]):
     model.eval()
     total_loss = defaultdict(list)
     total_metric = defaultdict(list)
     total_preds = defaultdict(list)
     total_labels = defaultdict(list)
+    total_ids = defaultdict(list)
 
     total_num_data = 0
     for idx, batch_data in enumerate(loader):
@@ -265,6 +298,11 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
 
         keys = labels.keys()
         keys = sorted(keys)
+
+        for id_key in id_keys:
+            if id_key in keys:
+                total_ids[id_key].extend(labels[id_key])
+                keys.remove(id_key)
 
         msg = ""
         for i, key in enumerate(keys):
@@ -286,7 +324,7 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log):
         total_num_data += batch_size
     total_loss = {key: sum(total_loss[key]) / total_num_data for key in keys}
     total_metric = {key: sum(total_metric[key]) / total_num_data for key in keys}
-    return total_loss, total_metric, total_preds, total_labels
+    return total_loss, total_metric, total_preds, total_labels, total_ids
 
 
 def train(cfg):
@@ -313,7 +351,7 @@ def train(cfg):
         lr_scheduler.step()
 
         if paddle.distributed.get_rank() == 0:
-            eval_loss, eval_metric, total_preds, total_labels = eval_epoch(
+            eval_loss, eval_metric, total_preds, total_labels, total_ids = eval_epoch(
                 model, val_loader, loss_fn, metric_fn, log
             )
             msg = ""
@@ -342,7 +380,7 @@ def train(cfg):
                     "{}/epoch_{}.pdparams".format(cfg["save_path"], epoch),
                 )
     if paddle.distributed.get_rank() == 0:
-        test_loss, test_metric, total_preds, total_labels = eval_epoch(
+        test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
             model, test_loader, loss_fn, metric_fn, log
         )
         msg = ""
@@ -362,7 +400,7 @@ def evaluate(cfg):
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
 
-    test_loss, test_metric, total_preds, total_labels = eval_epoch(
+    test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
         model, val_loader, loss_fn, metric_fn, log
     )
     msg = ""
@@ -382,7 +420,7 @@ def test(cfg):
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
 
-    test_loss, test_metric, total_preds, total_labels = eval_epoch(
+    test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
         model, test_loader, loss_fn, metric_fn, log
     )
     msg = ""
@@ -390,8 +428,7 @@ def test(cfg):
         msg += f", test_{key}_loss: {test_loss[key].item():.6f}"
         msg += f", test_{key}_mae: {test_metric[key].item():.6f}"
     log.info("epoch: 0" + msg)
-
-    data = {}
+    data = total_ids
     for key in total_preds.keys():
         data[f"pred_{key}"] = total_preds[key]
         data[f"label_{key}"] = total_labels[key]
