@@ -18,6 +18,7 @@ import yaml
 from dataset.collate_fn import collate_fn_graph
 from dataset.structure_dataset import StructureDataset
 from dataset.utils import split_dataset
+from losses.bmc_loss import BMCLoss
 from models.megnet import MEGNetPlus
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -218,8 +219,8 @@ def train_epoch(model, loader, loss_fn, metric_fn, optimizer, loss_weight, epoch
             if key in loss_weight.keys():
                 train_loss += loss * loss_weight[key]
             else:
-                # weights = paddle.exp(0.5 * paddle.abs(label - 0.1))
-                # weights = paddle.log(paddle.abs(label - 0.1) + 1.3)
+                # weights = paddle.exp(paddle.abs(label - 0.1))
+                # weights = paddle.log(paddle.abs(label - 0.1) + 2)
                 # loss = loss * weights
                 # loss = loss.mean()
                 train_loss += loss
@@ -297,6 +298,8 @@ def train(cfg):
 
     loss_fn = paddle.nn.functional.mse_loss
     metric_fn = paddle.nn.functional.l1_loss
+
+    # loss_fn = BMCLoss()
 
     loss_weight = cfg.get("loss_weight", {})
 
