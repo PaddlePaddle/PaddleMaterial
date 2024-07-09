@@ -131,6 +131,7 @@ def get_dataloader(cfg):
         structures=structures,
         labels=labels,
         converter=converter,
+        name=cfg["dataset"].get("name", "structure_dataset"),
     )
 
     train_data, val_data, test_data = split_dataset(

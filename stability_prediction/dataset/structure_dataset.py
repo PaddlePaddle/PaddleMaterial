@@ -5,6 +5,8 @@ import abc
 import hashlib
 import json
 import os
+import pickle
+import random
 import traceback
 from functools import partial
 from typing import TYPE_CHECKING
@@ -34,6 +36,7 @@ class BaseDataset(object):
         self._hash = self._get_hash()
         self._transform = transform
         self._raw_dir = raw_dir
+        self.save_path = os.path.join(self.raw_dir, self.name)
         self._load()
 
     @abc.abstractmethod
@@ -63,7 +66,11 @@ class BaseDataset(object):
           - Process the dataset and build the pgl graph.
           - Save the processed dataset into files.
         """
-        self.process()
+        if self.has_cache():
+            self.load()
+        else:
+            self.process()
+            self.save()
 
     def _get_hash(self):
         """Compute the hash of the input tuple
@@ -103,13 +110,6 @@ class BaseDataset(object):
     def raw_dir(self):
         """Raw file directory contains the input data folder."""
         return self._raw_dir
-
-    @property
-    def raw_path(self):
-        """Directory contains the input data files.
-        By default raw_path = os.path.join(self.raw_dir, self.name)
-        """
-        return os.path.join(self.raw_dir, self.name + self._get_hash_url_suffix())
 
     @property
     def verbose(self):
@@ -160,11 +160,11 @@ class StructureDataset(BaseDataset):
 
     def __init__(
         self,
-        filename: str = "pgl_graph.bin",
-        filename_lattice: str = "lattice.pt",
+        filename: str = "pgl_graph.pkl",
+        filename_lattice: str = "lattice.pkl",
         filename_line_graph: str = "pgl_line_graph.bin",
-        filename_state_attr: str = "state_attr.pt",
-        filename_labels: str = "labels.json",
+        filename_state_attr: str = "state_attr.pkl",
+        filename_labels: str = "labels.pkl",
         converter: (GraphConverter | None) = None,
         threebody_cutoff: (float | None) = None,
         directed_line_graph: bool = False,
@@ -173,7 +173,7 @@ class StructureDataset(BaseDataset):
         name: str = "StructureDataset",
         graph_labels: (list[int | float] | None) = None,
         clear_processed: bool = False,
-        raw_dir: (str | None) = None,
+        raw_dir: str = ".cache/",
     ):
         """
         Args:
@@ -273,6 +273,30 @@ class StructureDataset(BaseDataset):
             self.labels[key] = new_value
         return self.graphs, self.lattices, self.state_attr
 
+    def save(self):
+        os.makedirs(self.save_path, exist_ok=True)
+
+        with open(os.path.join(self.save_path, self.filename), "wb") as f:
+            pickle.dump(self.graphs, f)
+        with open(os.path.join(self.save_path, self.filename_lattice), "wb") as f:
+            pickle.dump(self.lattices, f)
+        with open(os.path.join(self.save_path, self.filename_state_attr), "wb") as f:
+            pickle.dump(self.state_attr, f)
+        with open(os.path.join(self.save_path, self.filename_labels), "wb") as f:
+            pickle.dump(self.labels, f)
+        print(f"Saved {len(self.graphs)} graphs to {self.save_path}")
+
+    def load(self):
+        with open(os.path.join(self.save_path, self.filename), "rb") as f:
+            self.graphs = pickle.load(f)
+        with open(os.path.join(self.save_path, self.filename_lattice), "rb") as f:
+            self.lattices = pickle.load(f)
+        with open(os.path.join(self.save_path, self.filename_state_attr), "rb") as f:
+            self.state_attr = pickle.load(f)
+        with open(os.path.join(self.save_path, self.filename_labels), "rb") as f:
+            self.labels = pickle.load(f)
+        print(f"Loaded {len(self.graphs)} graphs from {self.save_path}")
+
     def __getitem__(self, idx: int):
         """Get graph and label with idx."""
         # items = [self.graphs[idx], self.lattices[idx], self.state_attr[idx],
@@ -284,6 +308,11 @@ class StructureDataset(BaseDataset):
                 label_dict[k] = v[idx]
             else:
                 label_dict[k] = np.array(v[idx], dtype="float32")
+                if np.isnan(label_dict[k]):
+                    # print(f"NaN found in {label_dict}, with index {idx}")
+                    return None
+        if 0 in self.graphs[idx].indegree():
+            return None
         items = [
             self.graphs[idx],
             self.lattices[idx],

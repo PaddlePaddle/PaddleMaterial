@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 
 
@@ -26,7 +28,10 @@ class Subset(object):
         tuple
             datapoint
         """
-        return self.dataset[self.indices[item]]
+        data = self.dataset[self.indices[item]]
+        if data is None:
+            return self.__getitem__(random.randint(0, len(self) - 1))
+        return data
 
     def __len__(self):
         """Get subset size
