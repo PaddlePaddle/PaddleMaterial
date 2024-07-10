@@ -66,7 +66,7 @@ class BaseDataset(object):
           - Process the dataset and build the pgl graph.
           - Save the processed dataset into files.
         """
-        if self.has_cache():
+        if self.has_cache() and not self._force_reload:
             self.load()
         else:
             self.process()
