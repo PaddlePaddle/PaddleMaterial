@@ -8,72 +8,6 @@ from utils import paddle_aux
 MAX_ATOMIC_NUM = 100
 
 
-def dense_to_sparse(data):
-    return data
-
-
-def block_diag(inputs, name=None):
-    """
-    Create a block diagonal matrix from provided tensors.
-
-    Args:
-        inputs (list|tuple): ``inputs`` is a Tensor list or Tensor tuple, one or more tensors with 0, 1, or 2 dimensions.
-        name (str, optional): Name for the operation (optional, default is None).
-
-    Returns:
-        Tensor, A ``Tensor``. The data type is same as ``inputs``.
-
-    Examples:
-        .. code-block:: python
-
-            >>> import paddle
-
-            >>> A = paddle.to_tensor([[4], [3], [2]])
-            >>> B = paddle.to_tensor([7, 6, 5])
-            >>> C = paddle.to_tensor(1)
-            >>> D = paddle.to_tensor([[5, 4, 3], [2, 1, 0]])
-            >>> E = paddle.to_tensor([[8, 7], [7, 8]])
-            >>> out = paddle.block_diag([A, B, C, D, E])
-            >>> print(out)
-            Tensor(shape=[9, 10], dtype=int64, place=Place(gpu:0), stop_gradient=True,
-                [[4, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 7, 6, 5, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 5, 4, 3, 0, 0],
-                [0, 0, 0, 0, 0, 2, 1, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0, 8, 7],
-                [0, 0, 0, 0, 0, 0, 0, 0, 7, 8]])
-    """
-
-    def to_col_block(arys, i, a):
-        return [
-            a if idx == i else paddle.zeros([ary.shape[0], a.shape[1]], dtype=a.dtype)
-            for idx, ary in enumerate(arys)
-        ]
-
-    def to_2d(ary):
-        if ary.ndim == 0:
-            return ary.unsqueeze(axis=0).unsqueeze(axis=0)
-        if ary.ndim == 1:
-            return ary.unsqueeze(axis=0)
-        if ary.ndim == 2:
-            return ary
-        raise ValueError(
-            "For 'block_diag', the dimension of each elements in 'inputs' must be 0, 1, or 2, but got "
-            f"{ary.ndim}"
-        )
-
-    arys = [to_2d(ary) for ary in inputs]
-
-    matrix = [
-        paddle.concat(to_col_block(arys, idx, ary), axis=0)
-        for idx, ary in enumerate(arys)
-    ]
-    return paddle.concat(matrix, axis=1)
-
-
 class SinusoidsEmbedding(paddle.nn.Layer):
     def __init__(self, n_frequencies=10, n_space=3):
         super().__init__()
@@ -152,9 +86,6 @@ class CSPLayer(paddle.nn.Layer):
         return edge_features
 
     def node_model(self, node_features, edge_features, edge_index):
-        # import pdb;pdb.set_trace()
-        # agg = scatter(edge_features, edge_index[0], dim=0, reduce='mean',
-        #     dim_size=tuple(node_features.shape)[0])
         agg = paddle.geometric.segment_mean(edge_features, edge_index[0])
         agg = paddle.concat(x=[node_features, agg], axis=1)
         out = self.node_mlp(agg)
@@ -255,34 +186,7 @@ class CSPNet(paddle.nn.Layer):
     def gen_edges(self, num_atoms, frac_coords, lattices, node2graph):
         if self.edge_style == "fc":
             lis = [paddle.ones(shape=[n, n]) for n in num_atoms]
-            # import time
-            # import pdb;pdb.set_trace()
-            # start  = time.time()
-            # fc_graph = block_diag(lis)
-            # print("block diag time:", time.time() - start)
-            # fc_edges = fc_graph.nonzero().t()
-
-            # start = time.time()
-            # indices = []
             cum_num_atoms = paddle.cumsum(x=num_atoms)
-            # for n, cum_n in zip(num_atoms, cum_num_atoms):
-            #     offset = cum_n - n
-            #     if n > 1:
-            #         indices.append(paddle.triu_indices(n, n, offset=1)+offset)
-            #     indices.append(paddle.tril_indices(n, n)+offset)
-            # indices = paddle.concat(x=indices, axis=1)
-
-            # print("tril triu time:", time.time() - start)
-            # import numpy as np
-            # start = time.time()
-            # indices_np = []
-            # for n, cum_n in zip(num_atoms, cum_num_atoms):
-            #     offset = cum_n - n
-            #     indices_np.append(np.indices([n, n]).reshape(2, -1)+offset.item())
-            # indices_np = np.concatenate(indices_np, axis=1)
-            # indices_np = paddle.to_tensor(indices_np)
-            # print("np time:", time.time() - start)
-            # fc_edges = indices_np
             indices_pp = []
             rows = paddle.arange(num_atoms.max())
             ind1, ind2 = paddle.meshgrid(rows, rows)
@@ -321,9 +225,6 @@ class CSPNet(paddle.nn.Layer):
         if self.ln:
             node_features = self.final_layer_norm(node_features)
         coord_out = self.coord_out(node_features)
-
-        # graph_features = scatter(node_features, node2graph, dim=0, reduce=
-        #     'mean')
         graph_features = paddle.geometric.segment_mean(node_features, node2graph)
         if self.pred_scalar:
             return self.scalar_out(graph_features)

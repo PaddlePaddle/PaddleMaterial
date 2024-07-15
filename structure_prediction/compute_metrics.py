@@ -149,16 +149,6 @@ chemical_symbols = [
 
 CrystalNNFP = CrystalNNFingerprint.from_preset("ops")
 CompFP = ElementProperty.from_preset("magpie")
-Percentiles = {
-    "mp20": np.array([-3.17562208, -2.82196882, -2.52814761]),
-    "carbon": np.array([-154.527093, -154.45865733, -154.44206825]),
-    "perovskite": np.array([0.43924842, 0.61202443, 0.7364607]),
-}
-COV_Cutoffs = {
-    "mp20": {"struc": 0.4, "comp": 10.0},
-    "carbon": {"struc": 0.2, "comp": 4.0},
-    "perovskite": {"struc": 0.2, "comp": 4},
-}
 
 
 def get_crystals_list(frac_coords, atom_types, lengths, angles, num_atoms):

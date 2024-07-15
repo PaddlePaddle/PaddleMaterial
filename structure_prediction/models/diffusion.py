@@ -16,7 +16,7 @@ from tqdm import tqdm
 MAX_ATOMIC_NUM = 100
 
 
-def lattice_params_to_matrix_torch(lengths, angles):
+def lattice_params_to_matrix_paddle(lengths, angles):
     """Batched torch version to compute lattice matrix from params.
 
     lengths: torch.Tensor of shape (N, 3), unit A
@@ -87,9 +87,6 @@ class CSPDiffusion(paddle.nn.Layer):
         super().__init__()
 
         self.decoder = CSPNet(**decoder_cfg)
-        # self.decoder = hydra.utils.instantiate(self.hparams.decoder,
-        #     latent_dim=self.hparams.latent_dim + self.hparams.time_dim,
-        #     _recursive_=False)
 
         self.beta_scheduler = BetaScheduler(**beta_scheduler_cfg)
         self.sigma_scheduler = SigmaScheduler(**sigma_scheduler_cfg)
@@ -116,7 +113,6 @@ class CSPDiffusion(paddle.nn.Layer):
             initializer.lstm_init_(m)
 
     def forward(self, batch):
-        # import pdb;pdb.set_trace()
         batch_size = batch["num_graphs"]
         times = self.beta_scheduler.uniform_sample_t(batch_size, self.device)
         time_emb = self.time_embedding(times)
@@ -131,13 +127,11 @@ class CSPDiffusion(paddle.nn.Layer):
             paddle.cast(times, dtype="int32")
         ]
 
-        lattices = lattice_params_to_matrix_torch(batch["lengths"], batch["angles"])
+        lattices = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         frac_coords = batch["frac_coords"]
         rand_l, rand_x = paddle.randn(
             shape=lattices.shape, dtype=lattices.dtype
         ), paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
-        # rand_l = paddle.to_tensor(np.load('l.npy'))
-        # rand_x = paddle.to_tensor(np.load('x.npy'))
         input_lattice = c0[:, None, None] * lattices + c1[:, None, None] * rand_l
         sigmas_per_atom = sigmas.repeat_interleave(repeats=batch["num_atoms"])[:, None]
         sigmas_norm_per_atom = sigmas_norm.repeat_interleave(
@@ -174,7 +168,7 @@ class CSPDiffusion(paddle.nn.Layer):
         if self.keep_coords:
             x_T = batch["frac_coords"]
         if self.keep_lattice:
-            l_T = lattice_params_to_matrix_torch(batch["lengths"], batch["angles"])
+            l_T = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         time_start = self.beta_scheduler.timesteps
         traj = {
             time_start: {
@@ -280,45 +274,3 @@ class CSPDiffusion(paddle.nn.Layer):
             ),
         }
         return traj[0], traj_stack
-
-    def training_step(self, batch: Any, batch_idx: int) -> paddle.Tensor:
-        output_dict = self(batch)
-        loss_lattice = output_dict["loss_lattice"]
-        loss_coord = output_dict["loss_coord"]
-        loss = output_dict["loss"]
-        self.log_dict(
-            {
-                "train_loss": loss,
-                "lattice_loss": loss_lattice,
-                "coord_loss": loss_coord,
-            },
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        if loss.isnan():
-            return None
-        return loss
-
-    def validation_step(self, batch: Any, batch_idx: int) -> paddle.Tensor:
-        output_dict = self(batch)
-        log_dict, loss = self.compute_stats(output_dict, prefix="val")
-        self.log_dict(log_dict, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-
-    def test_step(self, batch: Any, batch_idx: int) -> paddle.Tensor:
-        output_dict = self(batch)
-        log_dict, loss = self.compute_stats(output_dict, prefix="test")
-        self.log_dict(log_dict)
-        return loss
-
-    def compute_stats(self, output_dict, prefix):
-        loss_lattice = output_dict["loss_lattice"]
-        loss_coord = output_dict["loss_coord"]
-        loss = output_dict["loss"]
-        log_dict = {
-            f"{prefix}_loss": loss,
-            f"{prefix}_lattice_loss": loss_lattice,
-            f"{prefix}_coord_loss": loss_coord,
-        }
-        return log_dict, loss

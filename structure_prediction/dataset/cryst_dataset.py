@@ -1,15 +1,10 @@
-import sys
-
-sys.path.append(
-    "/root/host/ssd3/zhangzhimin04/workspaces_118/PP4Materials/structure_prediction/paddle_project/utils"
-)
 import os
 import pickle
+import sys
 
 import chemparse
 import numpy as np
 import paddle
-import paddle_aux
 import pandas as pd
 from common.data_utils import add_scaled_lattice_prop
 from common.data_utils import preprocess
@@ -19,6 +14,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pyxtal.symmetry import Group
+from utils import paddle_aux
 
 chemical_symbols = [
     "X",

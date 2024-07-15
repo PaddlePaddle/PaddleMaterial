@@ -361,68 +361,6 @@ def get_pymatgen(crystal_array):
         return None
 
 
-def evaluate(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "train.log"))
-    train_loader, val_loader, test_loader = get_dataloader(cfg)
-
-    model = get_model(cfg)
-
-    step_lr = cfg["sample_step_lr"]
-    num_evals = cfg.get("num_evals", 1)
-
-    frac_coords = []
-    num_atoms = []
-    atom_types = []
-    lattices = []
-    input_data_list = []
-    start_time = time.time()
-    for idx, batch in enumerate(val_loader):
-        batch_all_frac_coords = []
-        batch_all_lattices = []
-        batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
-        batch_lattices = []
-        for eval_idx in range(num_evals):
-            log.info(
-                f"batch {idx} / {len(val_loader)}, sample {eval_idx} / {num_evals}"
-            )
-            outputs, traj = model.sample(batch, step_lr=step_lr)
-            batch_frac_coords.append(outputs["frac_coords"].detach().cpu())
-            batch_num_atoms.append(outputs["num_atoms"].detach().cpu())
-            batch_atom_types.append(outputs["atom_types"].detach().cpu())
-            batch_lattices.append(outputs["lattices"].detach().cpu())
-        frac_coords.append(paddle.stack(x=batch_frac_coords, axis=0))
-        num_atoms.append(paddle.stack(x=batch_num_atoms, axis=0))
-        atom_types.append(paddle.stack(x=batch_atom_types, axis=0))
-        lattices.append(paddle.stack(x=batch_lattices, axis=0))
-        input_data_list.append(batch)
-    frac_coords = paddle.concat(x=frac_coords, axis=1)
-    num_atoms = paddle.concat(x=num_atoms, axis=1)
-    atom_types = paddle.concat(x=atom_types, axis=1)
-    lattices = paddle.concat(x=lattices, axis=1)
-    lengths, angles = lattices_to_params_shape(lattices)
-
-    # import pdb;pdb.set_trace()
-
-    # input_data_batch = Batch.from_data_list(input_data_list)
-    # return (frac_coords, atom_types, lattices, lengths, angles, num_atoms,
-    #     input_data_batch)
-
-    paddle.save(
-        obj={
-            "eval_setting": cfg,
-            # 'input_data_batch': input_data_batch,
-            "frac_coords": frac_coords,
-            "num_atoms": num_atoms,
-            "atom_types": atom_types,
-            "lattices": lattices,
-            "lengths": lengths,
-            "angles": angles,
-            "time": time.time() - start_time,
-        },
-        path=os.path.join(cfg["save_path"], "evaluation.pt"),
-    )
-
-
 def test(cfg):
     log = init_logger(log_file=os.path.join(cfg["save_path"], "test.log"))
     train_loader, val_loader, test_loader = get_dataloader(cfg)
@@ -496,10 +434,6 @@ def test(cfg):
                 [x[key] for x in input_data_list]
             ).sum()
 
-    # input_data_batch = Batch.from_data_list(input_data_list)
-    # return (frac_coords, atom_types, lattices, lengths, angles, num_atoms,
-    #     input_data_batch)
-
     paddle.save(
         obj={
             "eval_setting": cfg,
@@ -532,12 +466,7 @@ def sample(cfg):
     crystal_list = get_crystals_list(
         frac_coords, atom_types, lengths, angles, num_atoms
     )
-    # structure_list = []
-    # for crystal in crystal_list:
-    #     structure = get_pymatgen(crystal)
-    #     structure_list.append(structure)
     strcuture_list = p_map(get_pymatgen, crystal_list)
-    # import pdb;pdb.set_trace()
     for i, structure in enumerate(strcuture_list):
         tar_file = os.path.join(tar_dir, f"{formula}_{i + 1}.cif")
         if structure is not None:
@@ -557,7 +486,7 @@ if __name__ == "__main__":
         help="Path to config file",
     )
     parser.add_argument(
-        "--mode", type=str, default="train", choices=["train", "eval", "test", "sample"]
+        "--mode", type=str, default="train", choices=["train", "test", "sample"]
     )
     args = parser.parse_args()
 
@@ -575,8 +504,6 @@ if __name__ == "__main__":
 
     if args.mode == "train":
         train(cfg)
-    elif args.mode == "eval":
-        evaluate(cfg)
     elif args.mode == "test":
         test(cfg)
     elif args.mode == "sample":
