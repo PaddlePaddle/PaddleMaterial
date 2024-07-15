@@ -137,3 +137,7 @@ __pycache__/
 stability_prediction/data_bak/*
 stability_prediction/log/*
 stability_prediction/checkpoints/*
+
+structure_prediction/data_bak/*
+structure_prediction/log/*
+structure_prediction/checkpoints/*
