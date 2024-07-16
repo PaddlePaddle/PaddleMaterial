@@ -190,12 +190,9 @@ def train_epoch(
     total_loss = defaultdict(list)
     total_num_data = 0
 
-    import time
-
     for idx, batch_data in enumerate(loader):
         batch_size = batch_data["num_graphs"]
         losses = model(batch_data)
-        # print('forward time:', time.time()-start)
 
         train_loss = losses["loss"]
         train_loss.backward()
@@ -219,8 +216,6 @@ def train_epoch(
             )
             message += msg
             log.info(message)
-        # print("index: ", idx, "loss: ", train_loss.item(), "time: ", time.time()-start)
-
     total_loss = {
         key: sum(total_loss[key]) / total_num_data for key in total_loss.keys()
     }
@@ -365,11 +360,6 @@ def get_pymatgen(crystal_array):
     atom_types = crystal_array["atom_types"]
     lengths = crystal_array["lengths"]
     angles = crystal_array["angles"]
-    # import pdb;pdb.set_trace()
-    # structure = Structure(lattice=Lattice.from_parameters(*(lengths.
-    #     tolist() + angles.tolist())), species=atom_types, coords=
-    #     frac_coords, coords_are_cartesian=False)
-    # return structure
     try:
         structure = Structure(
             lattice=Lattice.from_parameters(*(lengths.tolist() + angles.tolist())),
@@ -390,7 +380,6 @@ def test(cfg):
 
     step_lr = cfg["sample_step_lr"]
     num_evals = cfg.get("num_evals", 1)
-    # import pdb;pdb.set_trace()
     frac_coords = []
     num_atoms = []
     atom_types = []

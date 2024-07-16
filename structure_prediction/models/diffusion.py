@@ -17,10 +17,10 @@ MAX_ATOMIC_NUM = 100
 
 
 def lattice_params_to_matrix_paddle(lengths, angles):
-    """Batched torch version to compute lattice matrix from params.
+    """Batched paddle version to compute lattice matrix from params.
 
-    lengths: torch.Tensor of shape (N, 3), unit A
-    angles: torch.Tensor of shape (N, 3), unit degree
+    lengths: paddle.Tensor of shape (N, 3), unit A
+    angles: paddle.Tensor of shape (N, 3), unit degree
     """
     angles_r = paddle.deg2rad(x=angles)
     coses = paddle.cos(x=angles_r)

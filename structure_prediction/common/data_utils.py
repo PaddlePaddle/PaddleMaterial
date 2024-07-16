@@ -337,11 +337,11 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     return np.array([vector_a, vector_b, vector_c])
 
 
-def lattice_params_to_matrix_torch(lengths, angles):
-    """Batched torch version to compute lattice matrix from params.
+def lattice_params_to_matrix_paddle(lengths, angles):
+    """Batched paddle version to compute lattice matrix from params.
 
-    lengths: torch.Tensor of shape (N, 3), unit A
-    angles: torch.Tensor of shape (N, 3), unit degree
+    lengths: paddle.Tensor of shape (N, 3), unit A
+    angles: paddle.Tensor of shape (N, 3), unit degree
     """
     angles_r = paddle.deg2rad(x=angles)
     coses = paddle.cos(x=angles_r)
@@ -390,7 +390,7 @@ def compute_volume(batch_lattice):
 
 
 def lengths_angles_to_volume(lengths, angles):
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     return compute_volume(lattice)
 
 
@@ -429,14 +429,14 @@ def frac_to_cart_coords(
     if regularized:
         frac_coords = frac_coords % 1.0
     if lattices is None:
-        lattices = lattice_params_to_matrix_torch(lengths, angles)
+        lattices = lattice_params_to_matrix_paddle(lengths, angles)
     lattice_nodes = paddle.repeat_interleave(x=lattices, repeats=num_atoms, axis=0)
     pos = paddle.einsum("bi,bij->bj", frac_coords, lattice_nodes)
     return pos
 
 
 def cart_to_frac_coords(cart_coords, lengths, angles, num_atoms, regularized=True):
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     inv_lattice = paddle.linalg.pinv(x=lattice)
     inv_lattice_nodes = paddle.repeat_interleave(
         x=inv_lattice, repeats=num_atoms, axis=0
@@ -461,7 +461,7 @@ def get_pbc_distances(
     lattices=None,
 ):
     if lattices is None:
-        lattices = lattice_params_to_matrix_torch(lengths, angles)
+        lattices = lattice_params_to_matrix_paddle(lengths, angles)
     if coord_is_cart:
         pos = coords
     else:
@@ -616,7 +616,7 @@ def radius_graph_pbc(
 ):
     batch_size = len(natoms)
     if lattices is None:
-        cell = lattice_params_to_matrix_torch(lengths, angles)
+        cell = lattice_params_to_matrix_paddle(lengths, angles)
     else:
         cell = lattices
     atom_pos = pos
@@ -844,7 +844,7 @@ def radius_graph_pbc_(
     perm_3[1] = 0
     unit_cell = paddle.transpose(x=x, perm=perm_3)
     unit_cell_batch = unit_cell.view(1, 3, num_cells).expand(shape=[batch_size, -1, -1])
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     x = lattice
     perm_4 = list(range(x.ndim))
     perm_4[1] = 2
@@ -992,7 +992,7 @@ def min_distance_sqr_pbc(
     perm_5[1] = 0
     unit_cell = paddle.transpose(x=x, perm=perm_5)
     unit_cell_batch = unit_cell.view(1, 3, num_cells).expand(shape=[batch_size, -1, -1])
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     x = lattice
     perm_6 = list(range(x.ndim))
     perm_6[1] = 2
@@ -1021,7 +1021,7 @@ def min_distance_sqr_pbc(
     return return_list[0] if len(return_list) == 1 else return_list
 
 
-class StandardScalerTorch(object):
+class StandardScalerPaddle(object):
     """Normalizes the targets of a dataset."""
 
     def __init__(self, means=None, stds=None):
@@ -1047,7 +1047,7 @@ class StandardScalerTorch(object):
             self.stds = self.stds.to(tensor.place)
 
     def copy(self):
-        return StandardScalerTorch(
+        return StandardScalerPaddle(
             means=self.means.clone().detach(), stds=self.stds.clone().detach()
         )
 
@@ -1057,7 +1057,7 @@ class StandardScalerTorch(object):
 
 def get_scaler_from_data_list(data_list, key):
     targets = paddle.to_tensor(data=[d[key] for d in data_list])
-    scaler = StandardScalerTorch()
+    scaler = StandardScalerPaddle()
     scaler.fit(targets)
     return scaler
 
