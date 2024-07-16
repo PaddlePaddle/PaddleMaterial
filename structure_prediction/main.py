@@ -16,8 +16,10 @@ import paddle.distributed.fleet as fleet
 import pandas as pd
 import yaml
 from dataset.cryst_dataset import CrystDataset
+from dataset.cryst_dataset import GenDataset
 from dataset.cryst_dataset import SampleDataset
 from models.diffusion import CSPDiffusion
+from models.diffusion import CSPDiffusionWithType
 from p_tqdm import p_map
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -78,7 +80,11 @@ def collate_fn_graph(batch):
 def get_model(cfg):
     # setup the architecture of MEGNet model
     model_cfg = cfg["model"]
-    model = CSPDiffusion(**model_cfg)
+    model_name = model_cfg.pop("__name__", None)
+    if model_name == "CSPDiffusionWithType":
+        model = CSPDiffusionWithType(**model_cfg)
+    else:
+        model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
 
     if dist.get_world_size() > 1:
@@ -139,6 +145,22 @@ def get_sample_dataloader(cfg):
     return sample_loader
 
 
+def get_gen_dataloader(cfg):
+
+    gen_data = GenDataset(**cfg["dataset"]["generation"])
+
+    gen_loader = paddle.io.DataLoader(
+        gen_data,
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            gen_data,
+            batch_size=cfg["batch_size"],
+        ),
+        collate_fn=collate_fn_graph,
+    )
+
+    return gen_loader
+
+
 def get_optimizer(cfg, model):
     lr_scheduler = paddle.optimizer.lr.ReduceOnPlateau(**cfg["lr_cfg"])
     if cfg.get("grad_clip") is not None:
@@ -172,7 +194,6 @@ def train_epoch(
 
     for idx, batch_data in enumerate(loader):
         batch_size = batch_data["num_graphs"]
-
         losses = model(batch_data)
         # print('forward time:', time.time()-start)
 
@@ -453,7 +474,7 @@ def test(cfg):
 def sample(cfg):
     log = init_logger(log_file=os.path.join(cfg["save_path"], "sample.log"))
     model = get_model(cfg)
-    model.set_dict(paddle.load("csp_paddle_200.pdparams"))
+
     sample_loader = get_sample_dataloader(cfg)
 
     formula = cfg["dataset"]["sample"]["formula"]
@@ -476,6 +497,33 @@ def sample(cfg):
             print(f"{i + 1} Error Structure.")
 
 
+def generation(cfg):
+    log = init_logger(log_file=os.path.join(cfg["save_path"], "generation.log"))
+    model = get_model(cfg)
+
+    sample_loader = get_gen_dataloader(cfg)
+
+    tar_dir = os.path.join(cfg["save_path"], "generation")
+    os.makedirs(tar_dir, exist_ok=True)
+
+    frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(
+        sample_loader, model, cfg["sample_step_lr"]
+    )
+    atom_types = paddle.to_tensor([row.argmax() + 1 for row in atom_types])
+    crystal_list = get_crystals_list(
+        frac_coords, atom_types, lengths, angles, num_atoms
+    )
+    strcuture_list = p_map(get_pymatgen, crystal_list)
+    for i, structure in enumerate(strcuture_list):
+        formula = structure.formula.replace(" ", "-")
+        tar_file = os.path.join(tar_dir, f"{i + 1}_{formula}.cif")
+        if structure is not None:
+            writer = CifWriter(structure)
+            writer.write_file(tar_file)
+        else:
+            print(f"{i + 1} Error Structure.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -486,7 +534,7 @@ if __name__ == "__main__":
         help="Path to config file",
     )
     parser.add_argument(
-        "--mode", type=str, default="train", choices=["train", "test", "sample"]
+        "--mode", type=str, default="train", choices=["train", "test", "sample", "gen"]
     )
     args = parser.parse_args()
 
@@ -508,5 +556,7 @@ if __name__ == "__main__":
         test(cfg)
     elif args.mode == "sample":
         sample(cfg)
+    elif args.mode == "gen":
+        generation(cfg)
     else:
         raise ValueError("Unknown mode: {}".format(args.mode))
