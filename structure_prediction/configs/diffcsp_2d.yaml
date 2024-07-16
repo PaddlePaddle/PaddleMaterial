@@ -38,7 +38,7 @@ dataset:
     <<: *common_args
 
   sample:
-    formula: MoS2
+    formula: Fe1Ag1Se1S1Br2
     num_evals: 20
 
 model:
@@ -65,7 +65,7 @@ model:
   time_dim: 256
   cost_lattice: 1
   cost_coord: 1
-  # pretrained: /root/host/ssd3/zhangzhimin04/workspaces_118/PP4Materials/structure_prediction/paddle_project/checkpoints/diffcsp_2d_init/latest.pdparams #csp_paddle_200.pdparams #
+  pretrained: ./checkpoints/diffcsp_2d_init/latest.pdparams
 
 
 lr_cfg:

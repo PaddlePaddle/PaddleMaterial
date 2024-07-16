@@ -40,6 +40,8 @@ dataset:
   sample:
     formula: MoS2
     num_evals: 20
+  generation:
+    total_num: 10
 
 model:
   __name__: CSPDiffusionWithType
