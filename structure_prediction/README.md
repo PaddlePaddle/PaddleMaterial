@@ -33,6 +33,7 @@
     #        pretrained: './weights/diffcsp_2d_init/latest.pdparams'
     cd structure_prediction
     python main.py --mode=test
+    python compute_metric.py --root_path=./weights/diffcsp_2d_init/test.pt --multi_eval
 
 
 ### 模型推理
