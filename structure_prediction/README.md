@@ -25,6 +25,7 @@
     python main.py -c ./configs/diffcsp_2d_w_type.yaml
 
 ### 模型评估
+已训练好的模型可从[此处](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6)下载。
 
     # 修改配置文件 configs/diffcsp_2d.yaml 里的 model/pretrained 字段为训练好的模型路径
     #   model:
