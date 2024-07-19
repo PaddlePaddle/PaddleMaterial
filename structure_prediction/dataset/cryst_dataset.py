@@ -180,13 +180,15 @@ class CrystDataset(paddle.io.Dataset):
                 self.cached_data = pickle.load(f)
             # self.cached_data = paddle.load(path=save_path)
         else:
+            if not isinstance(prop, list):
+                prop = [prop]
             cached_data = preprocess(
                 self.path,
                 preprocess_workers,
                 niggli=self.niggli,
                 primitive=self.primitive,
                 graph_method=self.graph_method,
-                prop_list=[prop],
+                prop_list=prop,
                 use_space_group=self.use_space_group,
                 tol=self.tolerance,
             )
@@ -199,6 +201,7 @@ class CrystDataset(paddle.io.Dataset):
         return len(self.cached_data)
 
     def __getitem__(self, index):
+
         data_dict = self.cached_data[index]
         # prop = self.scaler.transform(data_dict[self.prop])
         (
@@ -210,6 +213,12 @@ class CrystDataset(paddle.io.Dataset):
             to_jimages,
             num_atoms,
         ) = data_dict["graph_arrays"]
+        if isinstance(self.prop, list):
+            prop_value = np.array(
+                [data_dict[key] for key in self.prop], dtype=np.float32
+            ).reshape(1, -1)
+        else:
+            prop_value = np.array(data_dict[self.prop], dtype=np.float32).reshape(1, -1)
 
         data = dict(
             frac_coords=frac_coords.astype("float32"),
@@ -221,6 +230,7 @@ class CrystDataset(paddle.io.Dataset):
             num_atoms=num_atoms,
             num_bonds=tuple(edge_indices.shape)[0],
             num_nodes=num_atoms,
+            prop=prop_value,
         )  # y=prop.view(1, -1))
 
         if self.use_space_group:
@@ -271,7 +281,7 @@ class SampleDataset(paddle.io.Dataset):
 
 
 class GenDataset(paddle.io.Dataset):
-    def __init__(self, total_num):
+    def __init__(self, total_num, property_value=None):
         super().__init__()
         distribution = [
             0.0,
@@ -393,6 +403,7 @@ class GenDataset(paddle.io.Dataset):
         self.num_atoms = np.random.choice(
             len(self.distribution), total_num, p=self.distribution
         )
+        self.property_value = property_value
 
     def __len__(self) -> int:
         return self.total_num
@@ -403,4 +414,7 @@ class GenDataset(paddle.io.Dataset):
             num_atoms=num_atom,
             num_nodes=num_atom,
         )  # y=prop.view(1, -1))
+        if self.property_value is not None:
+            prop = np.array(self.property_value, dtype=np.float32).reshape(1, -1)
+            data["prop"] = prop
         return data

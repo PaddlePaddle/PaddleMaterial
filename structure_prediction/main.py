@@ -20,6 +20,7 @@ from dataset.cryst_dataset import GenDataset
 from dataset.cryst_dataset import SampleDataset
 from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
+from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from p_tqdm import p_map
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -55,15 +56,26 @@ def collate_fn_graph(batch):
         "num_atoms",
         "num_bonds",
         "num_nodes",
+        "prop",
     ]
     for key in keys:
         if key not in batch[0]:
             continue
         if key in ["edge_index"]:
             new_batch[key] = np.concatenate([x[key] for x in batch], axis=1)
-        elif key in ["frac_coords", "atom_types", "lengths", "angles", "to_jimages"]:
+        elif key in [
+            "frac_coords",
+            "atom_types",
+            "lengths",
+            "angles",
+            "to_jimages",
+            "prop",
+        ]:
             new_batch[key] = np.concatenate([x[key] for x in batch], axis=0)
-        elif key in ["num_atoms", "num_bonds"]:
+        elif key in [
+            "num_atoms",
+            "num_bonds",
+        ]:
             new_batch[key] = np.array([x[key] for x in batch])
         elif key in ["num_nodes"]:
             new_batch[key] = np.array([x[key] for x in batch]).sum()
@@ -83,6 +95,8 @@ def get_model(cfg):
     model_name = model_cfg.pop("__name__", None)
     if model_name == "CSPDiffusionWithType":
         model = CSPDiffusionWithType(**model_cfg)
+    elif model_name == "CSPDiffusionWithGuidance":
+        model = CSPDiffusionWithGuidance(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))

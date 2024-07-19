@@ -2,6 +2,7 @@ import math
 import sys
 
 import paddle
+import paddle.nn as nn
 from einops import repeat
 from utils import paddle_aux
 
@@ -49,6 +50,14 @@ class CSPLayer(paddle.nn.Layer):
             paddle.nn.Linear(in_features=hidden_dim, out_features=hidden_dim),
             act_fn,
         )
+
+        self.prop_mlp = paddle.nn.Sequential(
+            paddle.nn.Linear(in_features=512, out_features=hidden_dim),
+            act_fn,
+            paddle.nn.Linear(in_features=hidden_dim, out_features=hidden_dim),
+            act_fn,
+        )
+
         self.ln = ln
         if self.ln:
             self.layer_norm = paddle.nn.LayerNorm(normalized_shape=hidden_dim)
@@ -99,7 +108,20 @@ class CSPLayer(paddle.nn.Layer):
         edge_index,
         edge2graph,
         frac_diff=None,
+        num_atoms=None,
+        property_emb=None,
+        property_mask=None,
     ):
+        # import pdb;pdb.set_trace()
+        if property_emb is not None:
+            property_features = self.prop_mlp(property_emb)
+            if property_mask is not None:
+                property_features = property_features * property_mask
+            property_features = paddle.repeat_interleave(
+                property_features, num_atoms, axis=0
+            )
+            node_features = node_features + property_features
+
         node_input = node_features
         if self.ln:
             node_features = self.layer_norm(node_input)
@@ -200,7 +222,17 @@ class CSPNet(paddle.nn.Layer):
         else:
             raise NotImplementedError("Edge style '%s'" % self.edge_style)
 
-    def forward(self, t, atom_types, frac_coords, lattices, num_atoms, node2graph):
+    def forward(
+        self,
+        t,
+        atom_types,
+        frac_coords,
+        lattices,
+        num_atoms,
+        node2graph,
+        property_emb=None,
+        property_mask=None,
+    ):
         edges, frac_diff = self.gen_edges(num_atoms, frac_coords, lattices, node2graph)
         edge2graph = node2graph[edges[0]]
         if self.smooth:
@@ -220,6 +252,9 @@ class CSPNet(paddle.nn.Layer):
                 edges,
                 edge2graph,
                 frac_diff=frac_diff,
+                num_atoms=num_atoms,
+                property_emb=property_emb,
+                property_mask=property_mask,
             )
 
         if self.ln:
