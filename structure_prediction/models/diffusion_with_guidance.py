@@ -82,6 +82,8 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         cost_lattice,
         cost_coord,
         cost_type,
+        property_input_dim=2,
+        property_dim=512,
         pretrained=None,
         **kwargs,
     ) -> None:
@@ -96,7 +98,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         self.cost_coord = cost_coord
         self.cost_type = cost_type
 
-        self.property_embedding = paddle.nn.Linear(2, 512)
+        self.property_embedding = paddle.nn.Linear(property_input_dim, property_dim)
         self.drop_prob = 0.1
 
         self.time_embedding = SinusoidalTimeEmbeddings(self.time_dim)
