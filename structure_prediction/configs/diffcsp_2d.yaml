@@ -10,7 +10,7 @@ dataset:
   teacher_forcing_max_epoch: 500
 
   common_args: &common_args
-    prop: formation_energy_per_atom
+    prop: mean_distance
     niggli: true
     primitive: False
     graph_method: crystalnn

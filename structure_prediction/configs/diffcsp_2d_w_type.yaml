@@ -10,7 +10,7 @@ dataset:
   teacher_forcing_max_epoch: 500
 
   common_args: &common_args
-    prop: formation_energy_per_atom
+    prop: mean_distance
     niggli: true
     primitive: False
     graph_method: crystalnn
@@ -81,7 +81,7 @@ lr_cfg:
   min_lr: 0.0001
 epochs: 1000
 batch_size: 256
-num_workers: 4
+num_workers: 0
 save_path: "./checkpoints/diffcsp_2d_w_type_debug"
 
 sample_step_lr: 0.00001
