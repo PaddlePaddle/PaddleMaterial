@@ -55,7 +55,4 @@ for cif_name in tqdm.tqdm(cif_names):
     material_id.append(cif_name)
 
 
-import pdb
-
-pdb.set_trace()
 stds_sd = [stds[i] for i in range(len(stds)) if ehulls[i] < 0.2]
