@@ -10,7 +10,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifParser
 
 csv_file = "./ehull_0621.csv"
-cif_path = "/root/host/ssd3/zhangzhimin04/workspaces_118/PP4Materials/structure_prediction/data_bak/paddle_project/data/2d_structure/cif_structure"
+cif_path = "./data/2d_structure/cif_structure"
 save_path = "./2d_structure_csv_ehull_200_condition"
 os.makedirs(save_path, exist_ok=True)
 
