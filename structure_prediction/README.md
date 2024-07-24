@@ -16,6 +16,7 @@
 
 为保证训练数据中的结构都为稳定结构，使用ehull<0.2作为阈值进行筛选，使用筛选后的结构进行训练。
 
+已整理好的数据、模型可从[此处](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6)下载。
 
 ### 模型训练
 
@@ -23,9 +24,12 @@
     python main.py
     # Ab initio generation
     python main.py -c ./configs/diffcsp_2d_w_type.yaml
+    # Ab initio generation with guidance
+    # 可修改配置文件common_args/prop下的字段配置用于控制生成结构的属性类型，默认为mean_distance
+    python main.py -c ./configs/diffcsp_2d_w_type_guidance.yaml
 
 ### 模型评估
-已训练好的模型可从[此处](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6)下载。
+
 
     # 修改配置文件 configs/diffcsp_2d.yaml 里的 model/pretrained 字段为训练好的模型路径
     #   model:
@@ -57,14 +61,30 @@
     #   model:
     #        ...
     #        pretrained: './weights/diffcsp_2d_w_type/latest.pdparams'
-    # 2. 修改文件 configs/diffcsp_2d_w_type.yaml 里的 dataset/sample 配置 formula 和生成数量
+    # 2. 修改文件 configs/diffcsp_2d_w_type.yaml 里的 dataset/generation 配置生成数量
     #   dataset:
     #        ...
-    #        gen:
+    #        generation:
     #          total_num: 10
 
     cd structure_prediction
     python main.py -c configs/diffcsp_2d_w_type.yaml --mode=gen
+
+
+    # Ab initio generation with guidance
+    # 1. 修改配置文件 configs/diffcsp_2d_w_type_guidance.yaml 里的 model/pretrained 字段为训练好的模型路径
+    #   model:
+    #        ...
+    #        pretrained: './weights/diffcsp_2d_w_type_guidance/latest.pdparams'
+    # 2. 修改文件 configs/diffcsp_2d_w_type_guidance.yaml 里的 dataset/generation 配置生成数量和属性值
+    #   dataset:
+    #        ...
+    #        generation:
+    #          total_num: 10
+    #          property_value: [0.2]
+
+    cd structure_prediction
+    python main.py -c configs/diffcsp_2d_w_type_guidance.yaml --mode=gen
 
 ### 实验结果
 超参数详见: [diffcsp_2d.yaml](configs/diffcsp_2d.yaml)
@@ -98,4 +118,14 @@
 * Mn2V1Ni1N3F3
     <div align="center">
         <img src="docs/4_Mn2-V1-Ni1-N3-F3.png" width="150">
+    </div>
+
+#### Ab initio generation with guidance
+* mean_distance=0.2
+    <div align="center">
+        <img src="docs/guidance_mean_distance_0.2.png" width="160">
+    </div>
+* mean_distance=0.01
+    <div align="center">
+        <img src="docs/guidance_mean_distance_0.01.png" width="150">
     </div>
