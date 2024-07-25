@@ -98,6 +98,7 @@
 
 ### 生成结果展示
 
+#### 指定formula
 * MoS2
     <div align="center">
         <img src="docs/MoS2_1.png" width="150">
