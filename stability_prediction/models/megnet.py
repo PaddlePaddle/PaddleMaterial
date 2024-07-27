@@ -29,7 +29,6 @@ class MEGNetPlus(paddle.nn.Layer):
         nlayers_set2set: int = 1,
         niters_set2set: int = 2,
         activation_type: str = "softplus2",
-        is_classification: bool = False,
         include_state: bool = True,
         dropout: float = 0.0,
         element_types: tuple[str, ...] = DEFAULT_ELEMENTS,
@@ -37,7 +36,7 @@ class MEGNetPlus(paddle.nn.Layer):
         cutoff: float = 4.0,
         gauss_width: float = 0.5,
         pretrained=None,
-        num_predictions: int = 1,
+        prediction_keys=None,
         **kwargs,
     ):
         """Useful defaults for all arguments have been specified based on MEGNet formation energy model.
@@ -54,7 +53,6 @@ class MEGNetPlus(paddle.nn.Layer):
             niters_set2set: Number of iterations in Set2Set layer
             hidden_layer_sizes_output: Architecture of dense layers for concatenated features after graph convolution
             activation_type: Activation used for non-linearity
-            is_classification: Whether this is classification task or not
             layer_node_embedding: Architecture of embedding layer for node attributes
             layer_edge_embedding: Architecture of embedding layer for edge attributes
             layer_state_embedding: Architecture of embedding layer for state attributes
@@ -73,6 +71,10 @@ class MEGNetPlus(paddle.nn.Layer):
         self.cutoff = cutoff
         self.bond_expansion = bond_expansion
         self.pretrained = pretrained
+        self.prediction_keys = (
+            prediction_keys if prediction_keys is not None else "ehulls"
+        )
+        self.num_predictions = len(prediction_keys)
         node_dims = [dim_node_embedding, *hidden_layer_sizes_input]
         edge_dims = [dim_edge_embedding, *hidden_layer_sizes_input]
         state_dims = [dim_state_embedding, *hidden_layer_sizes_input]
@@ -114,13 +116,12 @@ class MEGNetPlus(paddle.nn.Layer):
             dims=[
                 2 * 2 * dim_blocks_out + dim_blocks_out,
                 *hidden_layer_sizes_output,
-                num_predictions,
+                self.num_predictions,
             ],
             activation=activation,
             activate_last=False,
         )
         self.dropout = paddle.nn.Dropout(p=dropout) if dropout else None
-        self.is_classification = is_classification
         self.include_state_embedding = include_state
 
         if self.pretrained:
@@ -167,6 +168,7 @@ class MEGNetPlus(paddle.nn.Layer):
         if self.dropout:
             vec = self.dropout(vec)
         output = self.output_proj(vec)
-        if self.is_classification:
-            output = paddle.nn.functional.sigmoid(x=output)
-        return paddle.squeeze(x=output)
+        results = {}
+        for i, key in enumerate(self.prediction_keys):
+            results[key] = output[:, i]
+        return results
