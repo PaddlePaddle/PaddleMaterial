@@ -26,6 +26,7 @@ from utils._bond import BondExpansion
 from utils.default_elements import DEFAULT_ELEMENTS
 from utils.ext_pymatgen import Structure2Graph
 from utils.ext_pymatgen import get_element_list
+from utils.io import load_from_pickle
 from utils.logger import init_logger
 from utils.misc import set_random_seed
 
@@ -59,53 +60,63 @@ def load_dataset() -> tuple[list[Structure], list[str], list[float]]:
     return structures, mp_ids, data["formation_energy_per_atom"].tolist()
 
 
-def load_dataset_from_pickle(
-    structures_path,
-    ehull_path,
-    energy_path=None,
-    formula_path=None,
-    ehull_clip=None,
-    energy_clip=None,
-    **kwargs,
-):
-    with open(structures_path, "rb") as f:
-        structures = pickle.load(f)
-    with open(ehull_path, "rb") as f:
-        ehulls = pickle.load(f)
-    if energy_path is not None:
-        with open(energy_path, "rb") as f:
-            energys = pickle.load(f)
-    else:
-        energys = None
-    if formula_path is not None:
-        with open(formula_path, "rb") as f:
-            formulas = pickle.load(f)
-    else:
-        formulas = None
+def preprocess_data(datas, cfg):
+    def clip_data(datas, clip_range, key):
+        datas[key] = np.clip(
+            np.asarray(datas[key]), clip_range[0], clip_range[1]
+        ).tolist()
+        return datas
 
-    if ehull_clip:
-        ehulls = np.asarray(ehulls)
-        ehulls = ehulls.clip(ehull_clip[0], ehull_clip[1])
-        ehulls = ehulls.tolist()
-    if energy_clip and energys is not None:
-        energys = np.asarray(energys)
-        energys = energys.clip(energy_clip[0], energy_clip[1])
-        energys = energys.tolist()
+    def select_data(datas, select_range, key):
+        selected_idx = []
+        for i in range(len(datas[key])):
+            if select_range[0] < datas[key][i] < select_range[1]:
+                selected_idx.append(i)
+        for key in datas.keys():
+            datas[key] = [datas[key][i] for i in selected_idx]
+        return datas
 
-    return structures, ehulls, energys, formulas
+    def normalize_data(datas, mean_std, key):
+        data = np.asarray(datas[key])
+        datas[key] = ((data - mean_std[0]) / mean_std[1]).tolist()
+        return datas
+
+    preprocess_cfg = cfg["dataset"].get("preprocess")
+    if preprocess_cfg is None:
+        return datas
+    clip_cfg = preprocess_cfg.get("clip", {})
+    select_cfg = preprocess_cfg.get("select", {})
+    normalize_cfg = preprocess_cfg.get("normalize", {})
+
+    for key, range_value in clip_cfg.items():
+        datas = clip_data(datas, range_value, key)
+    for key, range_value in select_cfg.items():
+        datas = select_data(datas, range_value, key)
+    for key, mean_std in normalize_cfg.items():
+        datas = normalize_data(datas, mean_std, key)
+    return datas
+
+
+def postprocess(pred, label=None, mean_std=None):
+    if mean_std is not None:
+        pred = pred * mean_std[1] + mean_std[0]
+        if label is not None:
+            label = label * mean_std[1] + mean_std[0]
+    return pred, label
 
 
 def get_dataloader(cfg):
-    # structures, mp_ids, ehulls = load_dataset()
-    # structures = structures[:100]
-    # ehulls = ehulls[:100]
+    datas = {
+        key: load_from_pickle(path)
+        for key, path in cfg["dataset"]["data_paths"].items()
+    }
+    datas = preprocess_data(datas, cfg)
 
-    structures, ehulls, energys, name_formulas = load_dataset_from_pickle(
-        **cfg["dataset"]
-    )
-    # structures = structures[:100]
-    # ehulls = ehulls[:100]
-
+    # hard code
+    structures = datas["structures"]
+    datas.pop("structures")
+    name_formulas = datas["name_formulas"]
+    datas.pop("name_formulas")
     # get element types in the dataset
     elem_list = get_element_list(structures)
     elem_list = DEFAULT_ELEMENTS
@@ -114,19 +125,12 @@ def get_dataloader(cfg):
         element_types=elem_list, cutoff=cfg["dataset"]["cutoff"]
     )
     # convert the raw dataset into MEGNetDataset
-    labels = {"ehull": ehulls}
-    if energys is not None:
-        labels["energy"] = energys
+    labels = datas
     if name_formulas is not None:
         names, formulas = [v[0] for v in name_formulas], [v[1] for v in name_formulas]
         labels["names"] = names
         labels["formulas"] = formulas
 
-    # labels = (
-    #     {"ehull": ehulls, "energy": energys, 'ids':ids, 'names':names, 'formulas':formulas}
-    #     if energys is not None
-    #     else {"ehull": ehulls, 'ids':ids, 'names':names, 'formulas':formulas}
-    # )
     mp_dataset = StructureDataset(
         structures=structures,
         labels=labels,
@@ -203,6 +207,7 @@ def get_optimizer(cfg, model):
 
 
 def train_epoch(
+    cfg,
     model,
     loader,
     loss_fn,
@@ -219,43 +224,27 @@ def train_epoch(
     total_ids = defaultdict(list)
     total_num_data = 0
 
+    normalize_cfg = cfg["dataset"].get("preprocess", {}).get("normalize", {})
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
         batch_size = state_attr.shape[0]
 
         preds = model(graph, state_attr)
 
-        keys = labels.keys()
-        keys = sorted(keys)
-        train_loss = 0.0
-
-        for id_key in id_keys:
-            if id_key in keys:
-                total_ids[id_key].extend(labels[id_key])
-                keys.remove(id_key)
-
         msg = ""
-        for i, key in enumerate(keys):
+        train_loss = 0.0
+        for key, pred in preds.items():
             label = labels[key]
-            if len(preds.shape) > 1:
-                pred = preds[:, i]
-            else:
-                pred = preds
-
-            # loss = loss_fn(pred, label, reduction='none')
             loss = loss_fn(pred, label)
+
+            pred, label = postprocess(pred, label, normalize_cfg.get(key))
             metric = metric_fn(pred, label)
 
             total_loss[key].append(loss * batch_size)
-            # total_loss[key].append(loss.sum())
             total_metric[key].append(metric * batch_size)
             if key in loss_weight.keys():
                 train_loss += loss * loss_weight[key]
             else:
-                # weights = paddle.exp(paddle.abs(label - 0.1))
-                # weights = paddle.log(paddle.abs(label - 0.1) + 2)
-                # loss = loss * weights
-                # loss = loss.mean()
                 train_loss += loss
             msg += f" | {key}_loss: {loss.item():.6f} | {key}_mae: {metric.item():.6f}"
 
@@ -275,14 +264,16 @@ def train_epoch(
             )
             message += msg
             log.info(message)
-
+    keys = total_loss.keys()
     total_loss = {key: sum(total_loss[key]) / total_num_data for key in keys}
     total_metric = {key: sum(total_metric[key]) / total_num_data for key in keys}
     return total_loss, total_metric
 
 
 @paddle.no_grad()
-def eval_epoch(model, loader, loss_fn, metric_fn, log, id_keys=["names", "formulas"]):
+def eval_epoch(
+    cfg, model, loader, loss_fn, metric_fn, log, id_keys=["names", "formulas"]
+):
     model.eval()
     total_loss = defaultdict(list)
     total_metric = defaultdict(list)
@@ -291,11 +282,26 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log, id_keys=["names", "formul
     total_ids = defaultdict(list)
 
     total_num_data = 0
+    normalize_cfg = cfg["dataset"].get("preprocess", {}).get("normalize", {})
     for idx, batch_data in enumerate(loader):
         graph, _, state_attr, labels = batch_data
         batch_size = state_attr.shape[0]
 
         preds = model(graph, state_attr)
+
+        msg = ""
+        train_loss = 0.0
+        for key, pred in preds.items():
+            label = labels[key]
+            loss = loss_fn(pred, label)
+
+            pred, label = postprocess(pred, label, normalize_cfg.get(key))
+            metric = metric_fn(pred, label)
+
+            total_loss[key].append(loss * batch_size)
+            total_metric[key].append(metric * batch_size)
+            total_preds[key].extend(pred.tolist())
+            total_labels[key].extend(label.tolist())
 
         keys = labels.keys()
         keys = sorted(keys)
@@ -305,24 +311,8 @@ def eval_epoch(model, loader, loss_fn, metric_fn, log, id_keys=["names", "formul
                 total_ids[id_key].extend(labels[id_key])
                 keys.remove(id_key)
 
-        msg = ""
-        for i, key in enumerate(keys):
-            label = labels[key]
-            if len(preds.shape) > 1:
-                pred = preds[:, i]
-            else:
-                pred = preds
-
-            loss = loss_fn(pred, label)
-            metric = metric_fn(pred, label)
-
-            total_loss[key].append(loss * batch_size)
-            total_metric[key].append(metric * batch_size)
-
-            total_preds[key].extend(pred.tolist())
-            total_labels[key].extend(label.tolist())
-
         total_num_data += batch_size
+    keys = total_loss.keys()
     total_loss = {key: sum(total_loss[key]) / total_num_data for key in keys}
     total_metric = {key: sum(total_metric[key]) / total_num_data for key in keys}
     return total_loss, total_metric, total_preds, total_labels, total_ids
@@ -339,21 +329,30 @@ def train(cfg):
     metric_fn = paddle.nn.functional.l1_loss
 
     # loss_fn = BMCLoss()
-
     loss_weight = cfg.get("loss_weight", {})
 
     global_step = 0
     best_metric = float("inf")
+    # default_key = "ehull"
+    main_key = cfg.get("main_key", "ehull")
 
     for epoch in range(cfg["epochs"]):
         train_loss, train_metric = train_epoch(
-            model, train_loader, loss_fn, metric_fn, optimizer, loss_weight, epoch, log
+            cfg,
+            model,
+            train_loader,
+            loss_fn,
+            metric_fn,
+            optimizer,
+            loss_weight,
+            epoch,
+            log,
         )
         lr_scheduler.step()
 
         if paddle.distributed.get_rank() == 0:
             eval_loss, eval_metric, total_preds, total_labels, total_ids = eval_epoch(
-                model, val_loader, loss_fn, metric_fn, log
+                cfg, model, val_loader, loss_fn, metric_fn, log
             )
             msg = ""
             for key in train_loss.keys():
@@ -365,8 +364,8 @@ def train(cfg):
 
             log.info(f"epoch: {epoch}" + msg)
 
-            if eval_metric["ehull"] < best_metric:
-                best_metric = eval_metric["ehull"]
+            if eval_metric[main_key] < best_metric:
+                best_metric = eval_metric[main_key]
                 paddle.save(
                     model.state_dict(), "{}/best.pdparams".format(cfg["save_path"])
                 )
@@ -382,7 +381,7 @@ def train(cfg):
                 )
     if paddle.distributed.get_rank() == 0:
         test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
-            model, test_loader, loss_fn, metric_fn, log
+            cfg, model, test_loader, loss_fn, metric_fn, log
         )
         msg = ""
         for key in test_loss.keys():
@@ -402,7 +401,7 @@ def evaluate(cfg):
     metric_fn = paddle.nn.functional.l1_loss
 
     test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
-        model, val_loader, loss_fn, metric_fn, log
+        cfg, model, val_loader, loss_fn, metric_fn, log
     )
     msg = ""
     for key in test_loss.keys():
@@ -422,7 +421,7 @@ def test(cfg):
     metric_fn = paddle.nn.functional.l1_loss
 
     test_loss, test_metric, total_preds, total_labels, total_ids = eval_epoch(
-        model, test_loader, loss_fn, metric_fn, log
+        cfg, model, test_loader, loss_fn, metric_fn, log
     )
     msg = ""
     for key in test_loss.keys():
