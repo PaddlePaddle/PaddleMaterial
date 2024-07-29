@@ -90,6 +90,18 @@
     train_loss: 0.018
     val_loss: 0.049
     train_mae: 0.099
-    val_mae: 0.145:
+    val_mae: 0.145
 
     test_mae: 0.142
+
+### 三维材料训练-MP
+超参数详见: [megnet_3d_pretrain.yaml](configs/megnet_3d_pretrain.yaml)
+
+实验结果：(best model)
+
+    train_loss: 0.000449
+    val_loss: 0.017095
+    train_mae: 0.022108
+    val_mae: 0.057668
+
+    test_mae: 0.057356
