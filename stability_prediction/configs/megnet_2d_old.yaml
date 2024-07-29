@@ -1,0 +1,44 @@
+
+dataset:
+  structures_path: "./data/2D_structure/structures_0621.pickle"
+  ehull_path: "./data/2D_structure/ehulls_0621.pickle"
+  # energy_path: "./data/2D_structure/energys_0621.pickle"
+  ehull_clip: [-4, 4]
+  energy_clip: [-8, 2]
+  # select: [0.0, 0.5]
+
+  cutoff: 4.0
+  split_list: [0.9, 0.05, 0.05]
+  # split_list: [0.8, 0.1, 0.1]
+
+# loss_weight:
+#   ehull: 1.0
+#   energy: 0.5
+
+model:
+  dim_node_embedding: 16
+  dim_edge_embedding: 100
+  dim_state_embedding: 2
+  nblocks: 3
+  hidden_layer_sizes_input: [64, 32]
+  hidden_layer_sizes_conv: [64, 64, 32]
+  nlayers_set2set: 1
+  niters_set2set: 2
+  hidden_layer_sizes_output: [32, 16]
+  is_classification: False
+  activation_type: "softplus2"
+  cutoff: 4.0
+  gauss_width: 0.5
+  dropout: 0.5
+  # num_predictions: 2
+  # pretrained: './checkpoints/megnet_2d_v1/best.pdparams'
+
+
+lr_cfg:
+  T_max: 1000
+  eta_min: 0.00001
+  learning_rate: 0.0005
+epochs: 2000
+batch_size: 128
+
+save_path: "./checkpoints/megnet_2d_debug"
