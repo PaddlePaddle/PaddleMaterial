@@ -94,10 +94,10 @@
 
     test_mae: 0.142
 
-### 三维材料训练-MP
+### 三维材料训练-MP-0708
 超参数详见: [megnet_3d_pretrain.yaml](configs/megnet_3d_pretrain.yaml)
 
-实验结果：(best model)
+实验结果：(best model) megnet_3d_pretrain_mp_select_10_norm_lr_0.001_run_large.tar
 
     train_loss: 0.000449
     val_loss: 0.017095
@@ -105,3 +105,14 @@
     val_mae: 0.057668
 
     test_mae: 0.057356
+
+### 三维材料训练-MP-2018.6.1
+超参数详见: [megnet_3d.yaml](configs/megnet_3d.yaml)
+
+实验结果：(latest model) megnet_3d_init.tar
+
+    train_loss: 0.000335
+    val_loss: 0.007371
+    val_mae: 0.034974
+
+    test_mae:0.030705
