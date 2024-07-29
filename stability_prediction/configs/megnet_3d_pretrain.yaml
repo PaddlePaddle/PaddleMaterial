@@ -39,7 +39,7 @@ model:
   gauss_width: 0.5
   prediction_keys: ["energys"]
   # dropout: 0.5
-  pretrained: './checkpoints/megnet_3d_pretrain_mp_select_10_norm_lr_0.001_run_large/best.pdparams'
+  # pretrained: './checkpoints/megnet_3d_pretrain_mp_select_10_norm_lr_0.001_run_large/best.pdparams'
 
 
 lr_cfg:
