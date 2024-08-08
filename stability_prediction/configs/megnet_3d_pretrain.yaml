@@ -1,0 +1,52 @@
+dataset:
+  name: "3D_pretrain_mp"
+  data_paths:
+    structures: "./data/3D_structure/structures_mp_0708.pickle"
+    energys: "./data/3D_structure/energys_mp_0708.pickle"
+    name_formulas: "./data/3D_structure/formulas_mp_0708.pickle"
+  preprocess:
+    # clip the data to a range
+    clip:
+      # the key must be the same as in dataset/data_path
+      energys: [-10, 2]
+    # select the data in a range
+    select:
+      energys: [-10, 2]
+    # normalize the data
+    normalize:
+      # the mean and std of the data
+      energys: [-6.43, 1.76]
+
+  cutoff: 4.0
+  split_list: [0.8, 0.1, 0.1]
+
+# select the best model by main_key
+main_key: "energys"
+
+model:
+  dim_node_embedding: 24
+  dim_edge_embedding: 100
+  dim_state_embedding: 2
+  nblocks: 6
+  hidden_layer_sizes_input: [96, 48]
+  hidden_layer_sizes_conv: [96, 96, 48]
+  nlayers_set2set: 1
+  niters_set2set: 2
+  hidden_layer_sizes_output: [48, 24]
+  is_classification: False
+  activation_type: "softplus2"
+  cutoff: 4.0
+  gauss_width: 0.5
+  prediction_keys: ["energys"]
+  # dropout: 0.5
+  # pretrained: './checkpoints/megnet_3d_pretrain_mp_select_10_norm_lr_0.001_run_large/best.pdparams'
+
+
+lr_cfg:
+  T_max: 1000
+  eta_min: 0.00001
+  learning_rate: 0.001
+epochs: 2000
+batch_size: 128
+
+save_path: "./checkpoints/megnet_3d_pretrain_mp_select_10_norm_lr_0.001_run_large_debug"
