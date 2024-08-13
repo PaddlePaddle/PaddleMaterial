@@ -201,19 +201,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             "loss_type_ce": loss_type_ce,
         }
 
-    def p_sample(self, x, t, cond, noise):
-        predicted_x0_logits = self.model_predict(x, t, cond)
-        pred_q_posterior_logits = self.q_posterior_logits(predicted_x0_logits, x, t)
-        noise = paddle.clip(x=noise, min=self.eps, max=1.0)
-        not_first_step = (
-            (t != 1).astype(dtype="float32").reshape((x.shape[0], *([1] * x.dim())))
-        )
-        gumbel_noise = -paddle.log(x=-paddle.log(x=noise))
-        sample = paddle.argmax(
-            x=pred_q_posterior_logits + gumbel_noise * not_first_step, axis=-1
-        )
-        return sample
-
     @paddle.no_grad()
     def sample(self, batch, diff_ratio=1.0, step_lr=1e-05, guide_w=0.5):
         batch_size = batch["num_graphs"]
