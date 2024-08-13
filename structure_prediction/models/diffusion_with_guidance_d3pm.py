@@ -154,7 +154,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             paddle.cast(atom_types_times, dtype="int64"),
             paddle.rand(shape=(*atom_types.shape, self.num_classes)),
         )
-        input_atom_types += 1
+        # input_atom_types += 1
         if self.keep_coords:
             input_frac_coords = frac_coords
         if self.keep_lattice:
@@ -177,11 +177,11 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
 
         true_q_posterior_logits = self.q_posterior_logits(
             atom_types,
-            input_atom_types - 1,
+            input_atom_types,
             paddle.cast(atom_types_times, dtype="int64"),
         )
         pred_q_posterior_logits = self.q_posterior_logits(
-            pred_t, input_atom_types - 1, paddle.cast(atom_types_times, dtype="int64")
+            pred_t, input_atom_types, paddle.cast(atom_types_times, dtype="int64")
         )
         loss_type_vb = self.vb(true_q_posterior_logits, pred_q_posterior_logits)
         loss_type_ce = nn.functional.cross_entropy(pred_t, atom_types)
@@ -257,7 +257,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             l_t = traj[t]["lattices"]
             t_t = traj[t]["atom_types"]
 
-            t_t += 1
+            # t_t += 1
 
             if self.keep_coords:
                 x_t = x_T
@@ -362,7 +362,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             noise = paddle.rand(shape=(*t_t_minus_05.shape, self.num_classes))
             atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
             pred_q_posterior_logits = self.q_posterior_logits(
-                pred_t, t_t_minus_05 - 1, atom_types_times.cast("int64")
+                pred_t, t_t_minus_05, atom_types_times.cast("int64")
             )
             noise = paddle.clip(x=noise, min=self.discrete_scheduler.eps, max=1.0)
             not_first_step = (
