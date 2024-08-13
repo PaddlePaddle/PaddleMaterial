@@ -8,10 +8,10 @@ import paddle
 import paddle.nn as nn
 from models import initializer
 from models.cspnet import CSPNet
-from models.diff_utils import BetaScheduler
-from models.diff_utils import DiscreteScheduler
-from models.diff_utils import SigmaScheduler
-from models.diff_utils import d_log_p_wrapped_normal
+from models.noise_schedule import BetaScheduler
+from models.noise_schedule import DiscreteScheduler
+from models.noise_schedule import SigmaScheduler
+from models.noise_schedule import d_log_p_wrapped_normal
 from tqdm import tqdm
 from utils.crystal import lattice_params_to_matrix_paddle
 
