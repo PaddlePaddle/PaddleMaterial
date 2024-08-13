@@ -371,8 +371,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
                     traj[i]["atom_types"]
                     for i in range(self.beta_scheduler.timesteps, -1, -1)
                 ]
-            ).argmax(axis=-1)
-            + 1,
+            ),
             "all_frac_coords": paddle.stack(
                 x=[
                     traj[i]["frac_coords"]
