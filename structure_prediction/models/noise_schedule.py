@@ -85,10 +85,6 @@ class BetaScheduler(paddle.nn.Layer):
         self.register_buffer(name="alphas_cumprod", tensor=alphas_cumprod)
         self.register_buffer(name="sigmas", tensor=sigmas)
 
-    def uniform_sample_t(self, batch_size, device):
-        ts = np.random.choice(np.arange(1, self.timesteps + 1), batch_size)
-        return paddle.to_tensor(data=ts, dtype="float32").to(device)
-
 
 class SigmaScheduler(paddle.nn.Layer):
     def __init__(self, timesteps, sigma_begin=0.01, sigma_end=1.0):
@@ -109,10 +105,6 @@ class SigmaScheduler(paddle.nn.Layer):
             name="sigmas_norm",
             tensor=paddle.concat(x=[paddle.ones(shape=[1]), sigmas_norm_], axis=0),
         )
-
-    def uniform_sample_t(self, batch_size, device):
-        ts = np.random.choice(np.arange(1, self.timesteps + 1), batch_size)
-        return paddle.to_tensor(data=ts).to(device)
 
 
 class DiscreteScheduler(paddle.nn.Layer):

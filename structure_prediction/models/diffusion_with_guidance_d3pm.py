@@ -13,6 +13,7 @@ from models.noise_schedule import DiscreteScheduler
 from models.noise_schedule import SigmaScheduler
 from models.noise_schedule import d_log_p_wrapped_normal
 from models.time_embedding import SinusoidalTimeEmbeddings
+from models.time_embedding import uniform_sample_t
 from tqdm import tqdm
 from utils.crystal import lattice_params_to_matrix_paddle
 
@@ -118,23 +119,19 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
 
     def forward(self, batch):
         batch_size = batch["num_graphs"]
-        times = self.beta_scheduler.uniform_sample_t(batch_size, self.device)
+        times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
 
         property_emb = self.property_embedding(batch["prop"])
         property_mask = paddle.bernoulli(paddle.zeros([batch_size, 1]) + self.drop_prob)
         property_mask = 1 - property_mask
 
-        alphas_cumprod = self.beta_scheduler.alphas_cumprod[
-            paddle.cast(times, dtype="int32")
-        ]
-        beta = self.beta_scheduler.betas[paddle.cast(times, dtype="int32")]
+        alphas_cumprod = self.beta_scheduler.alphas_cumprod[times]
+        beta = self.beta_scheduler.betas[times]
         c0 = paddle.sqrt(x=alphas_cumprod)
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
-        sigmas = self.sigma_scheduler.sigmas[paddle.cast(times, dtype="int32")]
-        sigmas_norm = self.sigma_scheduler.sigmas_norm[
-            paddle.cast(times, dtype="int32")
-        ]
+        sigmas = self.sigma_scheduler.sigmas[times]
+        sigmas_norm = self.sigma_scheduler.sigmas_norm[times]
         lattices = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         frac_coords = batch["frac_coords"]
         rand_l, rand_x = paddle.randn(
@@ -151,7 +148,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
         atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
         input_atom_types = self.q_sample(
             atom_types,
-            paddle.cast(atom_types_times, dtype="int64"),
+            atom_types_times,
             paddle.rand(shape=(*atom_types.shape, self.num_classes)),
         )
         # input_atom_types += 1
@@ -178,10 +175,10 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
         true_q_posterior_logits = self.q_posterior_logits(
             atom_types,
             input_atom_types,
-            paddle.cast(atom_types_times, dtype="int64"),
+            atom_types_times,
         )
         pred_q_posterior_logits = self.q_posterior_logits(
-            pred_t, input_atom_types, paddle.cast(atom_types_times, dtype="int64")
+            pred_t, input_atom_types, atom_types_times
         )
         loss_type_vb = self.vb(true_q_posterior_logits, pred_q_posterior_logits)
         loss_type_ce = nn.functional.cross_entropy(pred_t, atom_types)
@@ -231,7 +228,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
         property_emb_double = paddle.concat([property_emb, property_emb], axis=0)
 
         for t in tqdm(range(self.beta_scheduler.timesteps, 0, -1)):
-            times = paddle.full(shape=(batch_size,), fill_value=t)
+            times = paddle.full(shape=(batch_size,), fill_value=t, dtype="int64")
             time_emb = self.time_embedding(times)
             alphas = self.beta_scheduler.alphas[t]
             alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]
@@ -243,8 +240,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             x_t = traj[t]["frac_coords"]
             l_t = traj[t]["lattices"]
             t_t = traj[t]["atom_types"]
-
-            # t_t += 1
 
             if self.keep_coords:
                 x_t = x_T
@@ -349,7 +344,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             noise = paddle.rand(shape=(*t_t_minus_05.shape, self.num_classes))
             atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
             pred_q_posterior_logits = self.q_posterior_logits(
-                pred_t, t_t_minus_05, atom_types_times.cast("int64")
+                pred_t, t_t_minus_05, atom_types_times
             )
             noise = paddle.clip(x=noise, min=self.discrete_scheduler.eps, max=1.0)
             not_first_step = (
