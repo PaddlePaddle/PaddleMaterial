@@ -211,21 +211,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             paddle.rand(shape=(*atom_types.shape, self.num_classes)),
         )
         input_atom_types += 1
-        # gt_atom_types_onehot = (
-        #     paddle.nn.functional.one_hot(
-        #         num_classes=MAX_ATOMIC_NUM, x=batch["atom_types"] - 1
-        #     )
-        #     .astype("int64")
-        #     .astype(dtype="float32")
-        # )
-        # rand_t = paddle.randn(
-        #     shape=gt_atom_types_onehot.shape, dtype=gt_atom_types_onehot.dtype
-        # )
-        # atom_type_probs = (
-        #     c0.repeat_interleave(repeats=batch["num_atoms"])[:, None]
-        #     * gt_atom_types_onehot
-        #     + c1.repeat_interleave(repeats=batch["num_atoms"])[:, None] * rand_t
-        # )
         if self.keep_coords:
             input_frac_coords = frac_coords
         if self.keep_lattice:
@@ -258,7 +243,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
         loss_type_ce = nn.functional.cross_entropy(pred_t, atom_types)
         loss_type = loss_type_vb + 0.01 * loss_type_ce
 
-        # loss_type = paddle.nn.functional.mse_loss(input=pred_t, label=rand_t)
         loss = (
             self.cost_lattice * loss_lattice
             + self.cost_coord * loss_coord
@@ -293,9 +277,7 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
             shape=[batch["num_nodes"], 3]
         ).to(self.device)
         t_T = paddle.randint(low=0, high=self.num_classes, shape=[batch["num_nodes"]])
-        # t_T = t_T + 1
 
-        # t_T = paddle.randn(shape=[batch["num_nodes"], MAX_ATOMIC_NUM]).to(self.device)
         if self.keep_coords:
             x_T = batch["frac_coords"]
         if self.keep_lattice:
@@ -342,11 +324,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
                 if t > 1
                 else paddle.zeros_like(x=l_T)
             )
-            # rand_t = (
-            #     paddle.randn(shape=t_T.shape, dtype=t_T.dtype)
-            #     if t > 1
-            #     else paddle.zeros_like(x=t_T)
-            # )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
                 if t > 1
@@ -391,11 +368,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
                 if t > 1
                 else paddle.zeros_like(x=l_T)
             )
-            # rand_t = (
-            #     paddle.randn(shape=t_T.shape, dtype=t_T.dtype)
-            #     if t > 1
-            #     else paddle.zeros_like(x=t_T)
-            # )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
                 if t > 1
@@ -443,7 +415,6 @@ class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
                 if not self.keep_lattice
                 else l_t
             )
-            # t_t_minus_1 = c0 * (t_t_minus_05 - c1 * pred_t) + sigmas * rand_t
             noise = paddle.rand(shape=(*t_t_minus_05.shape, self.num_classes))
             atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
             pred_q_posterior_logits = self.q_posterior_logits(
