@@ -16,8 +16,6 @@ from models.time_embedding import SinusoidalTimeEmbeddings
 from tqdm import tqdm
 from utils.crystal import lattice_params_to_matrix_paddle
 
-MAX_ATOMIC_NUM = 100
-
 
 class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
     def __init__(

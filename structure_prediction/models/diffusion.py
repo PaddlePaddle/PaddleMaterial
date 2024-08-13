@@ -15,8 +15,6 @@ from models.time_embedding import SinusoidalTimeEmbeddings
 from tqdm import tqdm
 from utils.crystal import lattice_params_to_matrix_paddle
 
-MAX_ATOMIC_NUM = 100
-
 
 class CSPDiffusion(paddle.nn.Layer):
     def __init__(
@@ -28,6 +26,7 @@ class CSPDiffusion(paddle.nn.Layer):
         cost_lattice,
         cost_coord,
         pretrained=None,
+        num_classes=100,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -40,6 +39,7 @@ class CSPDiffusion(paddle.nn.Layer):
         self.time_dim = time_dim
         self.cost_lattice = cost_lattice
         self.cost_coord = cost_coord
+        self.num_classes = num_classes
 
         self.time_embedding = SinusoidalTimeEmbeddings(self.time_dim)
         self.keep_lattice = self.cost_lattice < 1e-05
@@ -290,7 +290,7 @@ class CSPDiffusionWithType(paddle.nn.Layer):
         input_frac_coords = (frac_coords + sigmas_per_atom * rand_x) % 1.0
         gt_atom_types_onehot = (
             paddle.nn.functional.one_hot(
-                num_classes=MAX_ATOMIC_NUM, x=batch["atom_types"] - 1
+                num_classes=self.num_classes, x=batch["atom_types"] - 1
             )
             .astype("int64")
             .astype(dtype="float32")
@@ -339,7 +339,7 @@ class CSPDiffusionWithType(paddle.nn.Layer):
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]).to(self.device), paddle.rand(
             shape=[batch["num_nodes"], 3]
         ).to(self.device)
-        t_T = paddle.randn(shape=[batch["num_nodes"], MAX_ATOMIC_NUM]).to(self.device)
+        t_T = paddle.randn(shape=[batch["num_nodes"], self.num_classes]).to(self.device)
         if self.keep_coords:
             x_T = batch["frac_coords"]
         if self.keep_lattice:
