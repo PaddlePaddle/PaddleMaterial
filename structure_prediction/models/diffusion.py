@@ -8,68 +8,13 @@ import paddle
 import paddle.nn as nn
 from models import initializer
 from models.cspnet import CSPNet
-from models.diff_utils import BetaScheduler
-from models.diff_utils import SigmaScheduler
-from models.diff_utils import d_log_p_wrapped_normal
+from models.noise_schedule import BetaScheduler
+from models.noise_schedule import SigmaScheduler
+from models.noise_schedule import d_log_p_wrapped_normal
+from models.time_embedding import SinusoidalTimeEmbeddings
+from models.time_embedding import uniform_sample_t
 from tqdm import tqdm
-
-MAX_ATOMIC_NUM = 100
-
-
-def lattice_params_to_matrix_paddle(lengths, angles):
-    """Batched paddle version to compute lattice matrix from params.
-
-    lengths: paddle.Tensor of shape (N, 3), unit A
-    angles: paddle.Tensor of shape (N, 3), unit degree
-    """
-    angles_r = paddle.deg2rad(x=angles)
-    coses = paddle.cos(x=angles_r)
-    sins = paddle.sin(x=angles_r)
-    val = (coses[:, 0] * coses[:, 1] - coses[:, 2]) / (sins[:, 0] * sins[:, 1])
-    val = paddle.clip(x=val, min=-1.0, max=1.0)
-    gamma_star = paddle.acos(x=val)
-    vector_a = paddle.stack(
-        x=[
-            lengths[:, 0] * sins[:, 1],
-            paddle.zeros(shape=lengths.shape[0]),
-            lengths[:, 0] * coses[:, 1],
-        ],
-        axis=1,
-    )
-    vector_b = paddle.stack(
-        x=[
-            -lengths[:, 1] * sins[:, 0] * paddle.cos(x=gamma_star),
-            lengths[:, 1] * sins[:, 0] * paddle.sin(x=gamma_star),
-            lengths[:, 1] * coses[:, 0],
-        ],
-        axis=1,
-    )
-    vector_c = paddle.stack(
-        x=[
-            paddle.zeros(shape=lengths.shape[0]),
-            paddle.zeros(shape=lengths.shape[0]),
-            lengths[:, 2],
-        ],
-        axis=1,
-    )
-    return paddle.stack(x=[vector_a, vector_b, vector_c], axis=1)
-
-
-class SinusoidalTimeEmbeddings(paddle.nn.Layer):
-    """Attention is all you need."""
-
-    def __init__(self, dim):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, time):
-        device = time.place
-        half_dim = self.dim // 2
-        embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = paddle.exp(x=paddle.arange(end=half_dim) * -embeddings)
-        embeddings = time[:, None] * embeddings[None, :]
-        embeddings = paddle.concat(x=(embeddings.sin(), embeddings.cos()), axis=-1)
-        return embeddings
+from utils.crystal import lattice_params_to_matrix_paddle
 
 
 class CSPDiffusion(paddle.nn.Layer):
@@ -82,6 +27,7 @@ class CSPDiffusion(paddle.nn.Layer):
         cost_lattice,
         cost_coord,
         pretrained=None,
+        num_classes=100,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -94,6 +40,7 @@ class CSPDiffusion(paddle.nn.Layer):
         self.time_dim = time_dim
         self.cost_lattice = cost_lattice
         self.cost_coord = cost_coord
+        self.num_classes = num_classes
 
         self.time_embedding = SinusoidalTimeEmbeddings(self.time_dim)
         self.keep_lattice = self.cost_lattice < 1e-05
@@ -114,18 +61,14 @@ class CSPDiffusion(paddle.nn.Layer):
 
     def forward(self, batch):
         batch_size = batch["num_graphs"]
-        times = self.beta_scheduler.uniform_sample_t(batch_size, self.device)
+        times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
-        alphas_cumprod = self.beta_scheduler.alphas_cumprod[
-            paddle.cast(times, dtype="int32")
-        ]
-        beta = self.beta_scheduler.betas[paddle.cast(times, dtype="int32")]
+        alphas_cumprod = self.beta_scheduler.alphas_cumprod[times]
+        beta = self.beta_scheduler.betas[times]
         c0 = paddle.sqrt(x=alphas_cumprod)
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
-        sigmas = self.sigma_scheduler.sigmas[paddle.cast(times, dtype="int32")]
-        sigmas_norm = self.sigma_scheduler.sigmas_norm[
-            paddle.cast(times, dtype="int32")
-        ]
+        sigmas = self.sigma_scheduler.sigmas[times]
+        sigmas_norm = self.sigma_scheduler.sigmas_norm[times]
 
         lattices = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         frac_coords = batch["frac_coords"]
@@ -179,7 +122,7 @@ class CSPDiffusion(paddle.nn.Layer):
             }
         }
         for t in tqdm(range(time_start, 0, -1)):
-            times = paddle.full(shape=(batch_size,), fill_value=t)
+            times = paddle.full(shape=(batch_size,), fill_value=t, dtype="int64")
             time_emb = self.time_embedding(times)
             alphas = self.beta_scheduler.alphas[t]
             alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]
@@ -319,18 +262,14 @@ class CSPDiffusionWithType(paddle.nn.Layer):
 
     def forward(self, batch):
         batch_size = batch["num_graphs"]
-        times = self.beta_scheduler.uniform_sample_t(batch_size, self.device)
+        times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
-        alphas_cumprod = self.beta_scheduler.alphas_cumprod[
-            paddle.cast(times, dtype="int32")
-        ]
-        beta = self.beta_scheduler.betas[paddle.cast(times, dtype="int32")]
+        alphas_cumprod = self.beta_scheduler.alphas_cumprod[times]
+        beta = self.beta_scheduler.betas[times]
         c0 = paddle.sqrt(x=alphas_cumprod)
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
-        sigmas = self.sigma_scheduler.sigmas[paddle.cast(times, dtype="int32")]
-        sigmas_norm = self.sigma_scheduler.sigmas_norm[
-            paddle.cast(times, dtype="int32")
-        ]
+        sigmas = self.sigma_scheduler.sigmas[times]
+        sigmas_norm = self.sigma_scheduler.sigmas_norm[times]
         lattices = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         frac_coords = batch["frac_coords"]
         rand_l, rand_x = paddle.randn(
@@ -344,7 +283,7 @@ class CSPDiffusionWithType(paddle.nn.Layer):
         input_frac_coords = (frac_coords + sigmas_per_atom * rand_x) % 1.0
         gt_atom_types_onehot = (
             paddle.nn.functional.one_hot(
-                num_classes=MAX_ATOMIC_NUM, x=batch["atom_types"] - 1
+                num_classes=self.num_classes, x=batch["atom_types"] - 1
             )
             .astype("int64")
             .astype(dtype="float32")
@@ -393,7 +332,7 @@ class CSPDiffusionWithType(paddle.nn.Layer):
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]).to(self.device), paddle.rand(
             shape=[batch["num_nodes"], 3]
         ).to(self.device)
-        t_T = paddle.randn(shape=[batch["num_nodes"], MAX_ATOMIC_NUM]).to(self.device)
+        t_T = paddle.randn(shape=[batch["num_nodes"], self.num_classes]).to(self.device)
         if self.keep_coords:
             x_T = batch["frac_coords"]
         if self.keep_lattice:
@@ -407,7 +346,7 @@ class CSPDiffusionWithType(paddle.nn.Layer):
             }
         }
         for t in tqdm(range(self.beta_scheduler.timesteps, 0, -1)):
-            times = paddle.full(shape=(batch_size,), fill_value=t)
+            times = paddle.full(shape=(batch_size,), fill_value=t, dtype="int64")
             time_emb = self.time_embedding(times)
             alphas = self.beta_scheduler.alphas[t]
             alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]

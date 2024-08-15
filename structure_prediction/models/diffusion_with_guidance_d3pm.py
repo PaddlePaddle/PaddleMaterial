@@ -9,6 +9,7 @@ import paddle.nn as nn
 from models import initializer
 from models.cspnet import CSPNet
 from models.noise_schedule import BetaScheduler
+from models.noise_schedule import DiscreteScheduler
 from models.noise_schedule import SigmaScheduler
 from models.noise_schedule import d_log_p_wrapped_normal
 from models.time_embedding import SinusoidalTimeEmbeddings
@@ -17,12 +18,13 @@ from tqdm import tqdm
 from utils.crystal import lattice_params_to_matrix_paddle
 
 
-class CSPDiffusionWithGuidance(paddle.nn.Layer):
+class CSPDiffusionWithGuidanceD3PM(paddle.nn.Layer):
     def __init__(
         self,
         decoder_cfg,
         beta_scheduler_cfg,
         sigma_scheduler_cfg,
+        discrete_scheduler_cfg,
         time_dim,
         cost_lattice,
         cost_coord,
@@ -38,6 +40,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
 
         self.beta_scheduler = BetaScheduler(**beta_scheduler_cfg)
         self.sigma_scheduler = SigmaScheduler(**sigma_scheduler_cfg)
+        self.discrete_scheduler = DiscreteScheduler(**discrete_scheduler_cfg)
 
         self.time_dim = time_dim
         self.cost_lattice = cost_lattice
@@ -65,8 +68,56 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         elif isinstance(m, nn.LSTM):
             initializer.lstm_init_(m)
 
+    def _at(self, a, t, x):
+        t = t.reshape((t.shape[0], *([1] * (x.dim() - 1))))
+        return a[t - 1, x, :]
+
+    def q_sample(self, x_0, t, noise):
+        logits = paddle.log(
+            x=self._at(self.discrete_scheduler.q_mats, t, x_0)
+            + self.discrete_scheduler.eps
+        )
+        noise = paddle.clip(x=noise, min=self.discrete_scheduler.eps, max=1.0)
+        gumbel_noise = -paddle.log(x=-paddle.log(x=noise))
+        return paddle.argmax(x=logits + gumbel_noise, axis=-1)
+
+    def q_posterior_logits(self, x_0, x_t, t):
+
+        if x_0.dtype == paddle.int64 or x_0.dtype == paddle.int32:
+            x_0_logits = paddle.log(
+                x=nn.functional.one_hot(num_classes=self.num_classes, x=x_0).astype(
+                    "int64"
+                )
+                + self.discrete_scheduler.eps
+            )
+        else:
+            x_0_logits = x_0.clone()
+        assert tuple(x_0_logits.shape) == tuple(x_t.shape) + (self.num_classes,)
+
+        fact1 = self._at(self.discrete_scheduler.q_one_step_transposed, t, x_t)
+        softmaxed = nn.functional.softmax(x=x_0_logits, axis=-1)
+        index = t - 2
+        index = paddle.where(condition=index < 0, x=index + self.num_classes, y=index)
+        qmats2 = self.discrete_scheduler.q_mats[index].cast(softmaxed.dtype)
+
+        fact2 = paddle.einsum("bc,bcd->bd", softmaxed, qmats2)
+        out = paddle.log(x=fact1 + self.discrete_scheduler.eps) + paddle.log(
+            x=fact2 + self.discrete_scheduler.eps
+        )
+        t_broadcast = t.reshape((t.shape[0], *([1] * x_t.dim())))
+        bc = paddle.where(condition=t_broadcast == 1, x=x_0_logits, y=out)
+        return bc
+
+    def vb(self, dist1, dist2):
+        dist1 = dist1.flatten(start_axis=0, stop_axis=-2)
+        dist2 = dist2.flatten(start_axis=0, stop_axis=-2)
+        out = nn.functional.softmax(x=dist1 + self.discrete_scheduler.eps, axis=-1) * (
+            nn.functional.log_softmax(dist1 + self.discrete_scheduler.eps, axis=-1)
+            - nn.functional.log_softmax(dist2 + self.discrete_scheduler.eps, axis=-1)
+        )
+        return out.sum(axis=-1).mean()
+
     def forward(self, batch):
-        # import pdb;pdb.set_trace()
         batch_size = batch["num_graphs"]
         times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
@@ -92,28 +143,22 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             repeats=batch["num_atoms"]
         )[:, None]
         input_frac_coords = (frac_coords + sigmas_per_atom * rand_x) % 1.0
-        gt_atom_types_onehot = (
-            paddle.nn.functional.one_hot(
-                num_classes=self.num_classes, x=batch["atom_types"] - 1
-            )
-            .astype("int64")
-            .astype(dtype="float32")
+
+        atom_types = batch["atom_types"] - 1
+        atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
+        input_atom_types = self.q_sample(
+            atom_types,
+            atom_types_times,
+            paddle.rand(shape=(*atom_types.shape, self.num_classes)),
         )
-        rand_t = paddle.randn(
-            shape=gt_atom_types_onehot.shape, dtype=gt_atom_types_onehot.dtype
-        )
-        atom_type_probs = (
-            c0.repeat_interleave(repeats=batch["num_atoms"])[:, None]
-            * gt_atom_types_onehot
-            + c1.repeat_interleave(repeats=batch["num_atoms"])[:, None] * rand_t
-        )
+        # input_atom_types += 1
         if self.keep_coords:
             input_frac_coords = frac_coords
         if self.keep_lattice:
             input_lattice = lattices
         pred_l, pred_x, pred_t = self.decoder(
             time_emb,
-            atom_type_probs,
+            input_atom_types,
             input_frac_coords,
             input_lattice,
             batch["num_atoms"],
@@ -126,7 +171,19 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         ) / paddle.sqrt(x=sigmas_norm_per_atom)
         loss_lattice = paddle.nn.functional.mse_loss(input=pred_l, label=rand_l)
         loss_coord = paddle.nn.functional.mse_loss(input=pred_x, label=tar_x)
-        loss_type = paddle.nn.functional.mse_loss(input=pred_t, label=rand_t)
+
+        true_q_posterior_logits = self.q_posterior_logits(
+            atom_types,
+            input_atom_types,
+            atom_types_times,
+        )
+        pred_q_posterior_logits = self.q_posterior_logits(
+            pred_t, input_atom_types, atom_types_times
+        )
+        loss_type_vb = self.vb(true_q_posterior_logits, pred_q_posterior_logits)
+        loss_type_ce = nn.functional.cross_entropy(pred_t, atom_types)
+        loss_type = loss_type_vb + 0.01 * loss_type_ce
+
         loss = (
             self.cost_lattice * loss_lattice
             + self.cost_coord * loss_coord
@@ -137,6 +194,8 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             "loss_lattice": loss_lattice,
             "loss_coord": loss_coord,
             "loss_type": loss_type,
+            "loss_type_vb": loss_type_vb,
+            "loss_type_ce": loss_type_ce,
         }
 
     @paddle.no_grad()
@@ -145,7 +204,8 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]).to(self.device), paddle.rand(
             shape=[batch["num_nodes"], 3]
         ).to(self.device)
-        t_T = paddle.randn(shape=[batch["num_nodes"], self.num_classes]).to(self.device)
+        t_T = paddle.randint(low=0, high=self.num_classes, shape=[batch["num_nodes"]])
+
         if self.keep_coords:
             x_T = batch["frac_coords"]
         if self.keep_lattice:
@@ -189,11 +249,6 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 paddle.randn(shape=l_T.shape, dtype=l_T.dtype)
                 if t > 1
                 else paddle.zeros_like(x=l_T)
-            )
-            rand_t = (
-                paddle.randn(shape=t_T.shape, dtype=t_T.dtype)
-                if t > 1
-                else paddle.zeros_like(x=t_T)
             )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
@@ -239,11 +294,6 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 if t > 1
                 else paddle.zeros_like(x=l_T)
             )
-            rand_t = (
-                paddle.randn(shape=t_T.shape, dtype=t_T.dtype)
-                if t > 1
-                else paddle.zeros_like(x=t_T)
-            )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
                 if t > 1
@@ -271,6 +321,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 property_emb=property_emb_double,
                 property_mask=property_mask,
             )
+
             pred_l = (1 + guide_w) * pred_l[:batch_size] - guide_w * pred_l[batch_size:]
             pred_x = (1 + guide_w) * pred_x[: batch["num_nodes"]] - guide_w * pred_x[
                 batch["num_nodes"] :
@@ -290,7 +341,23 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 if not self.keep_lattice
                 else l_t
             )
-            t_t_minus_1 = c0 * (t_t_minus_05 - c1 * pred_t) + sigmas * rand_t
+            noise = paddle.rand(shape=(*t_t_minus_05.shape, self.num_classes))
+            atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
+            pred_q_posterior_logits = self.q_posterior_logits(
+                pred_t, t_t_minus_05, atom_types_times
+            )
+            noise = paddle.clip(x=noise, min=self.discrete_scheduler.eps, max=1.0)
+            not_first_step = (
+                (atom_types_times != 1)
+                .astype(dtype="float32")
+                .reshape((t_t_minus_05.shape[0], *([1] * t_t_minus_05.dim())))
+            )
+            gumbel_noise = -paddle.log(x=-paddle.log(x=noise))
+            sample = paddle.argmax(
+                x=pred_q_posterior_logits + gumbel_noise * not_first_step, axis=-1
+            )
+            t_t_minus_1 = sample
+
             traj[t - 1] = {
                 "num_atoms": batch["num_atoms"],
                 "atom_types": t_t_minus_1,
@@ -304,8 +371,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                     traj[i]["atom_types"]
                     for i in range(self.beta_scheduler.timesteps, -1, -1)
                 ]
-            ).argmax(axis=-1)
-            + 1,
+            ),
             "all_frac_coords": paddle.stack(
                 x=[
                     traj[i]["frac_coords"]

@@ -85,10 +85,6 @@ class BetaScheduler(paddle.nn.Layer):
         self.register_buffer(name="alphas_cumprod", tensor=alphas_cumprod)
         self.register_buffer(name="sigmas", tensor=sigmas)
 
-    def uniform_sample_t(self, batch_size, device):
-        ts = np.random.choice(np.arange(1, self.timesteps + 1), batch_size)
-        return paddle.to_tensor(data=ts, dtype="float32").to(device)
-
 
 class SigmaScheduler(paddle.nn.Layer):
     def __init__(self, timesteps, sigma_begin=0.01, sigma_end=1.0):
@@ -110,6 +106,40 @@ class SigmaScheduler(paddle.nn.Layer):
             tensor=paddle.concat(x=[paddle.ones(shape=[1]), sigmas_norm_], axis=0),
         )
 
-    def uniform_sample_t(self, batch_size, device):
-        ts = np.random.choice(np.arange(1, self.timesteps + 1), batch_size)
-        return paddle.to_tensor(data=ts).to(device)
+
+class DiscreteScheduler(paddle.nn.Layer):
+    def __init__(self, timesteps, num_classes, forward_type="uniform"):
+        super().__init__()
+        self.timesteps = timesteps
+
+        steps = paddle.arange(dtype="float64", end=timesteps + 1) / timesteps
+        alpha_bar = paddle.cos(x=(steps + 0.008) / 1.008 * 3.1415926 / 2)
+        self.beta_t = paddle.minimum(
+            x=1 - alpha_bar[1:] / alpha_bar[:-1],
+            y=paddle.ones_like(x=alpha_bar[1:]) * 0.999,
+        )
+        self.eps = 1e-06
+        self.num_classes = num_classes
+        q_onestep_mats = []
+        q_mats = []
+        for beta in self.beta_t:
+            if forward_type == "uniform":
+                mat = paddle.ones(shape=[num_classes, num_classes]) * beta / num_classes
+                mat.diagonal().fill_(
+                    value=1 - (num_classes - 1) * beta.item() / num_classes
+                )
+                q_onestep_mats.append(mat)
+            else:
+                raise NotImplementedError(f"{forward_type} is not implemented.")
+        q_one_step_mats = paddle.stack(x=q_onestep_mats, axis=0)
+        x = q_one_step_mats
+        q_one_step_transposed = x.transpose([0, 2, 1])
+        q_mat_t = q_onestep_mats[0]
+        q_mats = [q_mat_t]
+        for idx in range(1, self.timesteps):
+            q_mat_t = q_mat_t @ q_onestep_mats[idx]
+            q_mats.append(q_mat_t)
+        q_mats = paddle.stack(x=q_mats, axis=0)
+        self.logit_type = "logit"
+        self.register_buffer(name="q_one_step_transposed", tensor=q_one_step_transposed)
+        self.register_buffer(name="q_mats", tensor=q_mats)

@@ -6,8 +6,9 @@ import chemparse
 import numpy as np
 import paddle
 import pandas as pd
-from common.data_utils import add_scaled_lattice_prop
-from common.data_utils import preprocess
+from dataset.utils import add_scaled_lattice_prop
+from dataset.utils import chemical_symbols
+from dataset.utils import preprocess
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
@@ -15,128 +16,6 @@ from pymatgen.io.cif import CifWriter
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pyxtal.symmetry import Group
 from utils import paddle_aux
-
-chemical_symbols = [
-    "X",
-    "H",
-    "He",
-    "Li",
-    "Be",
-    "B",
-    "C",
-    "N",
-    "O",
-    "F",
-    "Ne",
-    "Na",
-    "Mg",
-    "Al",
-    "Si",
-    "P",
-    "S",
-    "Cl",
-    "Ar",
-    "K",
-    "Ca",
-    "Sc",
-    "Ti",
-    "V",
-    "Cr",
-    "Mn",
-    "Fe",
-    "Co",
-    "Ni",
-    "Cu",
-    "Zn",
-    "Ga",
-    "Ge",
-    "As",
-    "Se",
-    "Br",
-    "Kr",
-    "Rb",
-    "Sr",
-    "Y",
-    "Zr",
-    "Nb",
-    "Mo",
-    "Tc",
-    "Ru",
-    "Rh",
-    "Pd",
-    "Ag",
-    "Cd",
-    "In",
-    "Sn",
-    "Sb",
-    "Te",
-    "I",
-    "Xe",
-    "Cs",
-    "Ba",
-    "La",
-    "Ce",
-    "Pr",
-    "Nd",
-    "Pm",
-    "Sm",
-    "Eu",
-    "Gd",
-    "Tb",
-    "Dy",
-    "Ho",
-    "Er",
-    "Tm",
-    "Yb",
-    "Lu",
-    "Hf",
-    "Ta",
-    "W",
-    "Re",
-    "Os",
-    "Ir",
-    "Pt",
-    "Au",
-    "Hg",
-    "Tl",
-    "Pb",
-    "Bi",
-    "Po",
-    "At",
-    "Rn",
-    "Fr",
-    "Ra",
-    "Ac",
-    "Th",
-    "Pa",
-    "U",
-    "Np",
-    "Pu",
-    "Am",
-    "Cm",
-    "Bk",
-    "Cf",
-    "Es",
-    "Fm",
-    "Md",
-    "No",
-    "Lr",
-    "Rf",
-    "Db",
-    "Sg",
-    "Bh",
-    "Hs",
-    "Mt",
-    "Ds",
-    "Rg",
-    "Cn",
-    "Nh",
-    "Fl",
-    "Mc",
-    "Lv",
-    "Ts",
-    "Og",
-]
 
 
 class CrystDataset(paddle.io.Dataset):
@@ -178,7 +57,6 @@ class CrystDataset(paddle.io.Dataset):
         if os.path.exists(save_path):
             with open(save_path, "rb") as f:
                 self.cached_data = pickle.load(f)
-            # self.cached_data = paddle.load(path=save_path)
         else:
             if not isinstance(prop, list):
                 prop = [prop]
@@ -194,7 +72,6 @@ class CrystDataset(paddle.io.Dataset):
             )
             with open(save_path, "wb") as f:
                 pickle.dump(cached_data, f)
-            # paddle.save(obj=cached_data, path=save_path)
             self.cached_data = cached_data
 
     def __len__(self) -> int:
@@ -203,7 +80,6 @@ class CrystDataset(paddle.io.Dataset):
     def __getitem__(self, index):
 
         data_dict = self.cached_data[index]
-        # prop = self.scaler.transform(data_dict[self.prop])
         (
             frac_coords,
             atom_types,

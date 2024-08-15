@@ -6,8 +6,6 @@ import paddle.nn as nn
 from einops import repeat
 from utils import paddle_aux
 
-MAX_ATOMIC_NUM = 100
-
 
 class SinusoidsEmbedding(paddle.nn.Layer):
     def __init__(self, n_frequencies=10, n_space=3):
@@ -150,17 +148,20 @@ class CSPNet(paddle.nn.Layer):
         smooth=False,
         pred_type=False,
         pred_scalar=False,
+        num_classes=None,
     ):
         super(CSPNet, self).__init__()
         self.ip = ip
         self.smooth = smooth
+        self.num_classes = num_classes if num_classes is not None else max_atoms
+
         if self.smooth:
             self.node_embedding = paddle.nn.Linear(
-                in_features=max_atoms, out_features=hidden_dim
+                in_features=self.num_classes, out_features=hidden_dim
             )
         else:
             self.node_embedding = paddle.nn.Embedding(
-                num_embeddings=max_atoms, embedding_dim=hidden_dim
+                num_embeddings=self.num_classes, embedding_dim=hidden_dim
             )
         self.atom_latent_emb = paddle.nn.Linear(
             in_features=hidden_dim + latent_dim, out_features=hidden_dim
@@ -192,7 +193,7 @@ class CSPNet(paddle.nn.Layer):
             self.final_layer_norm = paddle.nn.LayerNorm(normalized_shape=hidden_dim)
         if self.pred_type:
             self.type_out = paddle.nn.Linear(
-                in_features=hidden_dim, out_features=MAX_ATOMIC_NUM
+                in_features=hidden_dim, out_features=self.num_classes
             )
         self.pred_scalar = pred_scalar
         if self.pred_scalar:
@@ -235,10 +236,7 @@ class CSPNet(paddle.nn.Layer):
     ):
         edges, frac_diff = self.gen_edges(num_atoms, frac_coords, lattices, node2graph)
         edge2graph = node2graph[edges[0]]
-        if self.smooth:
-            node_features = self.node_embedding(atom_types)
-        else:
-            node_features = self.node_embedding(atom_types - 1)
+        node_features = self.node_embedding(atom_types)
 
         t_per_atom = t.repeat_interleave(repeats=num_atoms, axis=0)
         node_features = paddle.concat(x=[node_features, t_per_atom], axis=1)

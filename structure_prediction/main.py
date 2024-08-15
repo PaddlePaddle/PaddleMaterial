@@ -21,6 +21,7 @@ from dataset.cryst_dataset import SampleDataset
 from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
 from models.diffusion_with_guidance import CSPDiffusionWithGuidance
+from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
 from p_tqdm import p_map
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -97,6 +98,8 @@ def get_model(cfg):
         model = CSPDiffusionWithType(**model_cfg)
     elif model_name == "CSPDiffusionWithGuidance":
         model = CSPDiffusionWithGuidance(**model_cfg)
+    elif model_name == "CSPDiffusionWithGuidanceD3PM":
+        model = CSPDiffusionWithGuidanceD3PM(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
@@ -512,7 +515,10 @@ def generation(cfg):
     frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(
         sample_loader, model, cfg["sample_step_lr"]
     )
-    atom_types = paddle.to_tensor([row.argmax() + 1 for row in atom_types])
+    if atom_types.dim() != 1:
+        atom_types = paddle.to_tensor([row.argmax() + 1 for row in atom_types])
+    else:
+        atom_types = atom_types + 1
     crystal_list = get_crystals_list(
         frac_coords, atom_types, lengths, angles, num_atoms
     )
