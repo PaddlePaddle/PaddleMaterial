@@ -3,17 +3,17 @@ repos:
     rev: 5.11.5
     hooks:
       - id: isort
-        args: ["--multi-line=7", "--sl"]
+        args: ["--multi-line=7", "--sl", "--profile", "black", "--filter-files"]
 
   - repo: https://github.com/psf/black
     rev: 22.3.0
     hooks:
       - id: black
 
-  # - repo: https://github.com/charliermarsh/ruff-pre-commit
-  #   rev: "v0.0.272"
-  #   hooks:
-  #     - id: ruff
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: "v0.0.272"
+    hooks:
+      - id: ruff
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: a11d9314b22d8f8c7556443875b731ef05965464
@@ -51,3 +51,6 @@ repos:
         entry: bash .clang_format.hook -i
         language: system
         files: \.(c|cc|cxx|cpp|cu|h|hpp|hxx|cuh|proto)$
+
+exclude: |
+  ^jointContribution/
