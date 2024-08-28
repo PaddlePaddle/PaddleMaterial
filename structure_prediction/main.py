@@ -2,18 +2,14 @@ from __future__ import annotations
 
 import argparse
 import os
-import pickle
 import shutil
-import warnings
-import zipfile
+import time
 from collections import defaultdict
 
-import matplotlib.pyplot as plt
 import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
-import pandas as pd
 import yaml
 from dataset.cryst_dataset import CrystDataset
 from dataset.cryst_dataset import GenDataset
@@ -22,21 +18,13 @@ from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
 from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
+from models.mattergen import MatterGen
 from p_tqdm import p_map
-from pymatgen.core import Structure
-from tqdm import tqdm
-from utils.logger import init_logger
-from utils.misc import set_random_seed
-
-# To suppress warnings for clearer output
-warnings.simplefilter("ignore")
-import time
-
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from pyxtal.symmetry import Group
+from utils.logger import init_logger
+from utils.misc import set_random_seed
 
 if dist.get_world_size() > 1:
     fleet.init(is_collective=True)
@@ -100,6 +88,8 @@ def get_model(cfg):
         model = CSPDiffusionWithGuidance(**model_cfg)
     elif model_name == "CSPDiffusionWithGuidanceD3PM":
         model = CSPDiffusionWithGuidanceD3PM(**model_cfg)
+    elif model_name == "MatterGen":
+        model = MatterGen(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
@@ -196,6 +186,41 @@ def get_optimizer(cfg, model):
     return optimizer, lr_scheduler
 
 
+def scale_shared_grads(model):
+    """Divide the gradients of the layers that are shared across multiple
+    blocks
+    by the number the weights are shared for
+    """
+    with paddle.no_grad():
+
+        def scale_grad(param, scale_factor):
+            if param.grad is None:
+                return
+            g_data = param.grad
+            new_grads = g_data / scale_factor
+            param.grad = new_grads  # .copy_(new_grads)
+
+        shared_int_layers = [
+            model.decoder.mlp_rbf3,
+            model.decoder.mlp_cbf3,
+            model.decoder.mlp_rbf_h,
+        ]
+        # if not model.decoder.triplets_only:
+        #     shared_int_layers += [
+        #         model.decoder.mlp_rbf4,
+        #         model.decoder.mlp_cbf4,
+        #         model.decoder.mlp_sbf4,
+        #     ]
+        for i, layer in enumerate(shared_int_layers):
+            if i == 1:
+                scale_grad(layer.weight, model.decoder.num_blocks)
+            else:
+                scale_grad(layer.linear.weight, model.decoder.num_blocks)
+        scale_grad(
+            model.decoder.mlp_rbf_out.linear.weight, model.decoder.num_blocks + 1
+        )
+
+
 def train_epoch(
     model,
     loader,
@@ -213,6 +238,7 @@ def train_epoch(
 
         train_loss = losses["loss"]
         train_loss.backward()
+        scale_shared_grads(model)
         optimizer.step()
         optimizer.clear_grad()
 
@@ -267,7 +293,6 @@ def train(cfg):
 
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
-    global_step = 0
     best_metric = float("inf")
 
     for epoch in range(cfg["epochs"]):
@@ -323,7 +348,6 @@ def diffusion(loader, model, step_lr):
     num_atoms = []
     atom_types = []
     lattices = []
-    input_data_list = []
     for idx, batch in enumerate(loader):
         outputs, traj = model.sample(batch, step_lr=step_lr)
         frac_coords.append(outputs["frac_coords"].detach().cpu())
@@ -385,7 +409,8 @@ def get_pymatgen(crystal_array):
             coords_are_cartesian=False,
         )
         return structure
-    except:
+    except Exception as e:
+        print(f"pymatgen error: {e}")
         return None
 
 
@@ -404,8 +429,6 @@ def test(cfg):
     input_data_list = []
     start_time = time.time()
     for idx, batch in enumerate(test_loader):
-        batch_all_frac_coords = []
-        batch_all_lattices = []
         batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
         batch_lattices = []
         for eval_idx in range(num_evals):
@@ -500,7 +523,7 @@ def sample(cfg):
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            print(f"{i + 1} Error Structure.")
+            log.info(f"{i + 1} Error Structure.")
 
 
 def generation(cfg):
@@ -530,7 +553,7 @@ def generation(cfg):
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            print(f"{i + 1} Error Structure.")
+            log.info(f"{i + 1} Error Structure.")
 
 
 if __name__ == "__main__":
