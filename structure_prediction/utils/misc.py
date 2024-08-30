@@ -13,3 +13,5 @@ def set_random_seed(seed: int):
     paddle.seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+

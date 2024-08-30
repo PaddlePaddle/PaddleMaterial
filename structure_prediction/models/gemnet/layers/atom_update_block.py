@@ -122,7 +122,8 @@ class OutputBlock(AtomUpdateBlock):
         self.output_init = output_init.lower()
         self.direct_forces = direct_forces
         self.seq_energy = self.layers
-        self.out_energy = Dense(emb_size_atom, num_targets, bias=False, activation=None)
+        # self.out_energy = Dense(emb_size_atom, num_targets, bias=False, activation=None)
+        self.out_energy = Dense(emb_size_atom, 9, bias=False, activation=None)
         if self.direct_forces:
             self.scale_rbf_F = ScalingFactor(scale_file=scale_file, name=name + "_had")
             self.seq_forces = self.get_mlp(
