@@ -128,10 +128,12 @@ class CrystDataset(paddle.io.Dataset):
 
 
 class SampleDataset(paddle.io.Dataset):
-    def __init__(self, formula, num_evals):
+    def __init__(self, formula, num_evals, lengths=None, angles=None):
         super().__init__()
         self.formula = formula
         self.num_evals = num_evals
+        self.lengths = np.asarray(lengths, dtype=np.float32).reshape(1, -1)
+        self.angles = np.asarray(angles, dtype=np.float32).reshape(1, -1)
         self.get_structure()
 
     def get_structure(self):
@@ -151,6 +153,8 @@ class SampleDataset(paddle.io.Dataset):
             atom_types=self.chem_list,
             num_atoms=len(self.chem_list),
             num_nodes=len(self.chem_list),
+            lengths=self.lengths,
+            angles=self.angles,
         )  # y=prop.view(1, -1))
 
         return data

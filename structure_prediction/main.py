@@ -199,7 +199,9 @@ def scale_shared_grads(model):
             g_data = param.grad
             new_grads = g_data / scale_factor
             param.grad = new_grads  # .copy_(new_grads)
-
+        # import remote_pdb as pdb;pdb.set_trace()
+        if isinstance(model, paddle.distributed.parallel.DataParallel):
+            model = model._layers
         shared_int_layers = [
             model.decoder.mlp_rbf3,
             model.decoder.mlp_cbf3,
