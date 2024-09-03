@@ -1,9 +1,11 @@
 from typing import Optional
 
 import paddle
+import paddle.nn as nn
 from utils import paddle_aux  # noqa: F401
 from utils.crystal import frac_to_cart_coords
 from utils.crystal import get_pbc_distances
+from utils.crystal import lattice_params_to_matrix_paddle
 from utils.crystal import radius_graph_pbc
 
 from .layers.atom_update_block import OutputBlock
@@ -19,9 +21,7 @@ from .utils import inner_product_normalized
 from .utils import ragged_range
 from .utils import repeat_blocks
 from .utils import scatter
-from utils.crystal import lattice_params_to_matrix_paddle
 
-import paddle.nn as nn
 
 class MLP(nn.Layer):
     """Multi layer perceptron module used in Transformer.
@@ -183,18 +183,14 @@ class GemNetT(paddle.nn.Layer):
         )
 
         self.edge_latent_emb = paddle.nn.Sequential(
-            paddle.nn.Linear(
-                in_features=512 + 9, out_features=512
-            ),
+            paddle.nn.Linear(in_features=512 + 9, out_features=512),
             paddle.nn.Silu(),
             paddle.nn.Linear(in_features=512, out_features=512),
             paddle.nn.Silu(),
         )
 
         self.rbf_emb = paddle.nn.Sequential(
-            paddle.nn.Linear(
-                in_features=128+3 + 9, out_features=128
-            ),
+            paddle.nn.Linear(in_features=128 + 3 + 9, out_features=128),
             paddle.nn.Silu(),
             paddle.nn.Linear(in_features=128, out_features=128),
             paddle.nn.Silu(),
@@ -239,13 +235,11 @@ class GemNetT(paddle.nn.Layer):
         lattice_out_blocks = []
         for i in range(num_blocks):
             lattice_out_blocks.append(
-                Dense(512+3, 1, bias=False)
-                # paddle.nn.Linear(
-                #     in_features=512+3, out_features=1
-                # )
+                # Dense(512+3, 1, bias=False)
+                paddle.nn.Linear(in_features=512 + 3, out_features=9, bias_attr=False)
                 # MLP(512+3, out_features=1)
             )
-        
+
         self.lattice_out_blocks = paddle.nn.LayerList(sublayers=lattice_out_blocks)
 
         self.out_blocks = paddle.nn.LayerList(sublayers=out_blocks)
@@ -475,10 +469,16 @@ class GemNetT(paddle.nn.Layer):
         rbf_out = self.mlp_rbf_out(rbf)
         E_t, F_st = self.out_blocks[0](h, m, rbf_out, idx_t)
 
-        # angle1 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 0], V_st, axis=1)
-        # angle2 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 1], V_st, axis=1)
-        # angle3 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 2], V_st, axis=1)
-        # angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
+        angle1 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 0], V_st, axis=1
+        )
+        angle2 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 1], V_st, axis=1
+        )
+        angle3 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 2], V_st, axis=1
+        )
+        angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
 
         lattice_total = None
         for i in range(self.num_blocks):
@@ -501,28 +501,29 @@ class GemNetT(paddle.nn.Layer):
             F_st += F
             E_t += E
 
-            # lattice_score = self.lattice_out_blocks[i](paddle.concat([m, angles], axis=1)) 
-            # lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
+            lattice_score = self.lattice_out_blocks[i](
+                paddle.concat([m, angles], axis=1)
+            )
+            lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
             # v_sts = V_st.split(neighbors.numpy().tolist())
-            
-            # lattice_sub_layers = []
-            # for j in range(len(lattice_scores)):
-            #     lattice_score = paddle.diag(
-            #         lattice_scores[j]
-            #     ) 
-            #     ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
-            #     ll = ll / neighbors[j]
 
-            #     lattice_sub_layers.append(ll)
-            #     # ll = lattice_scores[j].reshape([-1, 3, 3]).sum(axis=0)
-            #     # ll = ll / neighbors[j]
-            #     # lattice_sub_layers.append(ll)
-            # lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
-            # if lattice_total is None:
-            #     lattice_total = lattice_sub_layers
-            # else:
-            #     lattice_total += lattice_sub_layers
-            
+            lattice_sub_layers = []
+            for j in range(len(lattice_scores)):
+                # lattice_score = paddle.diag(
+                #     lattice_scores[j]
+                # )
+                # ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
+                # ll = ll / neighbors[j]
+                # lattice_sub_layers.append(ll)
+                # import pdb; pdb.set_trace()
+                ll = lattice_scores[j].reshape([-1, 3, 3]).sum(axis=0)
+                ll = ll / neighbors[j]
+                lattice_sub_layers.append(ll)
+            lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
+            if lattice_total is None:
+                lattice_total = lattice_sub_layers
+            else:
+                lattice_total += lattice_sub_layers
 
         nMolecules = paddle.max(x=batch) + 1
         E_t = scatter(E_t, batch, dim=0, dim_size=nMolecules, reduce="mean")
