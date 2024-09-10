@@ -24,6 +24,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
 from utils import logger
+from utils import save_load
 from utils.misc import set_random_seed
 
 if dist.get_world_size() > 1:
@@ -313,18 +314,29 @@ def train(cfg):
 
             if eval_loss["loss"] < best_metric:
                 best_metric = eval_loss["loss"]
-                paddle.save(
-                    model.state_dict(), "{}/best.pdparams".format(cfg["save_path"])
+                save_load.save_checkpoint(
+                    model,
+                    optimizer,
+                    train_loss,
+                    output_dir=cfg["save_path"],
+                    prefix="best",
                 )
                 logger.info("Saving best checkpoint at {}".format(cfg["save_path"]))
 
-            paddle.save(
-                model.state_dict(), "{}/latest.pdparams".format(cfg["save_path"])
+            save_load.save_checkpoint(
+                model,
+                optimizer,
+                train_loss,
+                output_dir=cfg["save_path"],
+                prefix="latest",
             )
-            if epoch % 100 == 0:
-                paddle.save(
-                    model.state_dict(),
-                    "{}/epoch_{}.pdparams".format(cfg["save_path"], epoch),
+            if epoch % 1 == 0:
+                save_load.save_checkpoint(
+                    model,
+                    optimizer,
+                    train_loss,
+                    output_dir=cfg["save_path"],
+                    prefix=f"epoch_{epoch}",
                 )
 
 
