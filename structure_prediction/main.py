@@ -199,6 +199,7 @@ def scale_shared_grads(model):
             g_data = param.grad
             new_grads = g_data / scale_factor
             param.grad = new_grads  # .copy_(new_grads)
+
         # import remote_pdb as pdb;pdb.set_trace()
         if isinstance(model, paddle.distributed.parallel.DataParallel):
             model = model._layers
@@ -306,9 +307,9 @@ def train(cfg):
 
             msg = ""
             for key in train_loss.keys():
-                msg += f", train_{key}_loss: {train_loss[key].item():.6f}"
+                msg += f", train_{key}: {train_loss[key].item():.6f}"
             for key in eval_loss.keys():
-                msg += f", eval_{key}_loss: {eval_loss[key].item():.6f}"
+                msg += f", eval_{key}: {eval_loss[key].item():.6f}"
 
             log.info(f"epoch: {epoch}" + msg)
 
@@ -322,7 +323,7 @@ def train(cfg):
             paddle.save(
                 model.state_dict(), "{}/latest.pdparams".format(cfg["save_path"])
             )
-            if epoch % 500 == 0:
+            if epoch % 100 == 0:
                 paddle.save(
                     model.state_dict(),
                     "{}/epoch_{}.pdparams".format(cfg["save_path"], epoch),
@@ -520,6 +521,7 @@ def sample(cfg):
     )
     strcuture_list = p_map(get_pymatgen, crystal_list)
     for i, structure in enumerate(strcuture_list):
+        formula = structure.formula.replace(" ", "-")
         tar_file = os.path.join(tar_dir, f"{formula}_{i + 1}.cif")
         if structure is not None:
             writer = CifWriter(structure)

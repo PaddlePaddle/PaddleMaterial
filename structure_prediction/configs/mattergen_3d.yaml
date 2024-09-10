@@ -38,7 +38,7 @@ dataset:
     <<: *common_args
 
   sample:
-    formula: Fe1Ag1Se1S1Br2
+    formula: Ga4Te4
     num_evals: 20
 
 model:
@@ -54,6 +54,8 @@ model:
     cutoff: 7
     otf_graph: True
     scale_file: ./models/gemnet/gemnet-dT.json
+    index_start: 0 # this is the index of the first element, e.g., 0 for H, 1 for He
+    num_classes: 100
   beta_scheduler_cfg:
     timesteps: 1000
     scheduler_mode: cosine
@@ -61,10 +63,16 @@ model:
     timesteps: 1000
     sigma_begin: 0.005
     sigma_end: 0.5
+  discrete_scheduler_cfg:
+    timesteps: 1000
+    num_classes: 100
+    forward_type: uniform
   time_dim: 256
-  cost_lattice: 1
-  cost_coord: 1
-  # pretrained: ./checkpoints/mattergen_2d/latest.pdparams
+  cost_lattice: 0.0
+  cost_coord: 0.1
+  cost_type: 1.0
+  cost_type_ce: 0.01
+  # pretrained: ./checkpoints/mattergen_3d_coor_lattices_de_paddlecloud/latest.pdparams
 
 
 lr_cfg:
@@ -75,7 +83,7 @@ lr_cfg:
 epochs: 1000
 batch_size: 32
 num_workers: 4
-save_path: "./checkpoints/mattergen_3d_coor"
+save_path: "./checkpoints/mattergen_3d_debug"
 
 sample_step_lr: 0.00001
 grad_clip: 0.5
