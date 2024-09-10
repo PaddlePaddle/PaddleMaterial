@@ -23,7 +23,7 @@ from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
-from utils.logger import init_logger
+from utils import logger
 from utils.misc import set_random_seed
 
 if dist.get_world_size() > 1:
@@ -229,7 +229,6 @@ def train_epoch(
     loader,
     optimizer,
     epoch,
-    log,
 ):
     model.train()
     total_loss = defaultdict(list)
@@ -261,7 +260,7 @@ def train_epoch(
                 optimizer.get_lr(),
             )
             message += msg
-            log.info(message)
+            logger.info(message)
     total_loss = {
         key: sum(total_loss[key]) / total_num_data for key in total_loss.keys()
     }
@@ -269,7 +268,7 @@ def train_epoch(
 
 
 @paddle.no_grad()
-def eval_epoch(model, loader, log):
+def eval_epoch(model, loader):
     model.eval()
     total_loss = defaultdict(list)
     total_num_data = 0
@@ -289,7 +288,6 @@ def eval_epoch(model, loader, log):
 
 
 def train(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "train.log"))
     train_loader, val_loader, test_loader = get_dataloader(cfg)
 
     model = get_model(cfg)
@@ -299,10 +297,10 @@ def train(cfg):
     best_metric = float("inf")
 
     for epoch in range(cfg["epochs"]):
-        train_loss = train_epoch(model, train_loader, optimizer, epoch, log)
+        train_loss = train_epoch(model, train_loader, optimizer, epoch)
 
         if paddle.distributed.get_rank() == 0:
-            eval_loss = eval_epoch(model, val_loader, log)
+            eval_loss = eval_epoch(model, val_loader)
             lr_scheduler.step(eval_loss["loss"])
 
             msg = ""
@@ -311,14 +309,14 @@ def train(cfg):
             for key in eval_loss.keys():
                 msg += f", eval_{key}: {eval_loss[key].item():.6f}"
 
-            log.info(f"epoch: {epoch}" + msg)
+            logger.info(f"epoch: {epoch}" + msg)
 
             if eval_loss["loss"] < best_metric:
                 best_metric = eval_loss["loss"]
                 paddle.save(
                     model.state_dict(), "{}/best.pdparams".format(cfg["save_path"])
                 )
-                log.info("Saving best checkpoint at {}".format(cfg["save_path"]))
+                logger.info("Saving best checkpoint at {}".format(cfg["save_path"]))
 
             paddle.save(
                 model.state_dict(), "{}/latest.pdparams".format(cfg["save_path"])
@@ -418,7 +416,6 @@ def get_pymatgen(crystal_array):
 
 
 def test(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "test.log"))
     train_loader, val_loader, test_loader = get_dataloader(cfg)
 
     model = get_model(cfg)
@@ -435,7 +432,7 @@ def test(cfg):
         batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
         batch_lattices = []
         for eval_idx in range(num_evals):
-            log.info(
+            logger.info(
                 f"batch {idx} / {len(test_loader)}, sample {eval_idx} / {num_evals}"
             )
             outputs, traj = model.sample(batch, step_lr=step_lr)
@@ -504,7 +501,6 @@ def test(cfg):
 
 
 def sample(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "sample.log"))
     model = get_model(cfg)
 
     sample_loader = get_sample_dataloader(cfg)
@@ -527,11 +523,10 @@ def sample(cfg):
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            log.info(f"{i + 1} Error Structure.")
+            logger.info(f"{i + 1} Error Structure.")
 
 
 def generation(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "generation.log"))
     model = get_model(cfg)
 
     sample_loader = get_gen_dataloader(cfg)
@@ -557,7 +552,7 @@ def generation(cfg):
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            log.info(f"{i + 1} Error Structure.")
+            logger.info(f"{i + 1} Error Structure.")
 
 
 if __name__ == "__main__":
@@ -585,6 +580,7 @@ if __name__ == "__main__":
             pass
 
     set_random_seed(cfg.get("seed", 42))
+    logger.init_logger(log_file=os.path.join(cfg["save_path"], f"{args.mode}.log"))
 
     if args.mode == "train":
         train(cfg)
