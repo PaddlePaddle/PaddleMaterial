@@ -331,7 +331,7 @@ def train(cfg):
                 output_dir=cfg["save_path"],
                 prefix="latest",
             )
-            if epoch % 1 == 0:
+            if epoch % 100 == 0:
                 save_load.save_checkpoint(
                     model,
                     optimizer,
