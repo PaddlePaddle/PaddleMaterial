@@ -25,6 +25,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
 from utils import logger
 from utils import save_load
+from utils.crystal import lattices_to_params_shape
 from utils.misc import set_random_seed
 
 if dist.get_world_size() > 1:
@@ -338,22 +339,6 @@ def train(cfg):
                     output_dir=cfg["save_path"],
                     prefix=f"epoch_{epoch}",
                 )
-
-
-def lattices_to_params_shape(lattices):
-    lengths = paddle.sqrt(x=paddle.sum(x=lattices**2, axis=-1))
-    angles = paddle.zeros_like(x=lengths)
-    for i in range(3):
-        j = (i + 1) % 3
-        k = (i + 2) % 3
-        angles[..., i] = paddle.clip(
-            x=paddle.sum(x=lattices[..., j, :] * lattices[..., k, :], axis=-1)
-            / (lengths[..., j] * lengths[..., k]),
-            min=-1.0,
-            max=1.0,
-        )
-    angles = paddle.acos(x=angles) * 180.0 / np.pi
-    return lengths, angles
 
 
 def diffusion(loader, model, step_lr):
