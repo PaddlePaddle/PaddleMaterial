@@ -25,6 +25,14 @@ from typing import Optional
 
 import colorlog
 import paddle.distributed as dist
+from utils import misc
+
+if TYPE_CHECKING:
+    import visualdl  # isort:skip
+    import wandb  # isort:skip
+    import tensorboardX as tbd
+
+_logger: logging.Logger = None
 
 # INFO(20) is white(no color)
 # use custom log level `MESSAGE` for printing message in color
@@ -75,6 +83,8 @@ def init_logger(
     if isinstance(log_level, str):
         log_level = getattr(logging, log_level.upper())
 
+    global _logger
+
     # get a clean logger
     _logger = logging.getLogger(name)
     _logger.handlers.clear()
@@ -110,4 +120,147 @@ def init_logger(
         _logger.setLevel(logging.ERROR)
 
     _logger.propagate = False
-    return _logger
+
+
+def set_log_level(log_level: int):
+    """Set logger level, only message of level >= `log_level` will be printed.
+
+    Built-in log level are below:
+
+    CRITICAL = 50,
+    FATAL = 50,
+    ERROR = 40,
+    WARNING = 30,
+    WARN = 30,
+    INFO = 20,
+    DEBUG = 10,
+    NOTSET = 0.
+
+    Args:
+        log_level (int): Log level.
+    """
+    if dist.get_rank() == 0:
+        _logger.setLevel(log_level)
+    else:
+        _logger.setLevel(logging.ERROR)
+
+
+def ensure_logger(log_func: Callable) -> Callable:
+    """
+    A decorator which automatically initialize `logger` by default arguments
+    when init_logger() is not called manually.
+    """
+
+    @functools.wraps(log_func)
+    def wrapped_log_func(msg, *args):
+        if _logger is None:
+            init_logger()
+            _logger.warning(
+                "Logger has already been automatically initialized as `log_file` is "
+                "set to None by default, information will only be printed to terminal "
+                "without writting to any file."
+            )
+
+        log_func(msg, *args)
+
+    return wrapped_log_func
+
+
+@ensure_logger
+@misc.run_at_rank0
+def info(msg, *args):
+    _logger.info(msg, *args)
+
+
+@ensure_logger
+@misc.run_at_rank0
+def message(msg, *args):
+    _logger.log(_MESSAGE_LEVEL, msg, *args)
+
+
+@ensure_logger
+@misc.run_at_rank0
+def debug(msg, *args):
+    _logger.debug(msg, *args)
+
+
+@ensure_logger
+@misc.run_at_rank0
+def warning(msg, *args):
+    _logger.warning(msg, *args)
+
+
+@ensure_logger
+@misc.run_at_rank0
+def error(msg, *args):
+    _logger.error(msg, *args)
+
+
+def scalar(
+    metric_dict: Dict[str, float],
+    step: int,
+    vdl_writer: Optional["visualdl.LogWriter"] = None,
+    wandb_writer: Optional["wandb.run"] = None,
+    tbd_writer: Optional["tbd.SummaryWriter"] = None,
+):
+    """This function will add scalar data to VisualDL or WandB for plotting curve(s).
+
+    Args:
+        metric_dict (Dict[str, float]): Metrics dict with metric name and value.
+        step (int): The step of the metric.
+        vdl_writer (Optional[visualdl.LogWriter]): VisualDL writer to record metrics.
+            Defaults to None.
+        wandb_writer (Optional[wandb.run]): Run object of WandB to record metrics.
+            Defaults to None.
+        tbd_writer (Optional[tbd.SummaryWriter]): Run object of WandB to record metrics.
+            Defaults to None.
+    """
+    if vdl_writer is not None:
+        with misc.RankZeroOnly() as is_master:
+            if is_master:
+                for name, value in metric_dict.items():
+                    vdl_writer.add_scalar(name, value, step)
+
+    if wandb_writer is not None:
+        with misc.RankZeroOnly() as is_master:
+            if is_master:
+                wandb_writer.log({"step": step, **metric_dict})
+
+    if tbd_writer is not None:
+        with misc.RankZeroOnly() as is_master:
+            if is_master:
+                for name, value in metric_dict.items():
+                    tbd_writer.add_scalar(name, value, global_step=step)
+
+
+def advertise():
+    """
+    Show the advertising message like the following:
+
+    ===========================================================
+    ==      PaddleScience is powered by PaddlePaddle !       ==
+    ===========================================================
+    ==                                                       ==
+    ==   For more info please go to the following website.   ==
+    ==                                                       ==
+    ==     https://github.com/PaddlePaddle/PaddleScience     ==
+    ===========================================================
+    """
+
+    _copyright = "PaddleScience is powered by PaddlePaddle !"
+    ad = "Please refer to the following website for more info."
+    website = "https://github.com/PaddlePaddle/PaddleScience"
+    AD_LEN = 6 + len(max([_copyright, ad, website], key=len))
+
+    info(
+        "\n{0}\n{1}\n{2}\n{3}\n{4}\n{5}\n{6}\n{7}\n".format(
+            "=" * (AD_LEN + 4),
+            "=={}==".format(_copyright.center(AD_LEN)),
+            "=" * (AD_LEN + 4),
+            "=={}==".format(" " * AD_LEN),
+            "=={}==".format(ad.center(AD_LEN)),
+            "=={}==".format(" " * AD_LEN),
+            "=={}==".format(website.center(AD_LEN)),
+            "=" * (AD_LEN + 4),
+        )
+    )
