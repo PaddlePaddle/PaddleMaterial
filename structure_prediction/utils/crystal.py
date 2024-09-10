@@ -1,4 +1,5 @@
 import copy
+
 import numpy as np
 import paddle
 from utils import paddle_aux  # noqa: F401
@@ -72,6 +73,7 @@ def lattice_params_to_matrix_paddle(lengths, angles):
     )
     return paddle.stack(x=[vector_a, vector_b, vector_c], axis=1)
 
+
 def lattices_to_params_shape(lattices):
     lengths = paddle.sqrt(x=paddle.sum(x=lattices**2, axis=-1))
     angles = paddle.zeros_like(x=lengths)
@@ -87,11 +89,11 @@ def lattices_to_params_shape(lattices):
     angles = paddle.acos(x=angles) * 180.0 / np.pi
     return lengths, angles
 
+
 def get_pbc_distances(
     coords,
     edge_index,
-    lengths,
-    angles,
+    lattice,
     to_jimages,
     num_atoms,
     num_bonds,
@@ -99,7 +101,7 @@ def get_pbc_distances(
     return_offsets=False,
     return_distance_vec=False,
 ):
-    lattice = lattice_params_to_matrix_paddle(lengths, angles)
+    # lattice = lattice_params_to_matrix_paddle(lengths, angles)
     if coord_is_cart:
         pos = coords
     else:
@@ -123,8 +125,7 @@ def get_pbc_distances(
 
 def radius_graph_pbc(
     cart_coords,
-    lengths,
-    angles,
+    lattice,
     num_atoms,
     radius,
     max_num_neighbors_threshold,
@@ -173,7 +174,7 @@ def radius_graph_pbc(
     perm_1[1] = 0
     unit_cell = paddle.transpose(x=x, perm=perm_1)
     unit_cell_batch = unit_cell.view(1, 3, num_cells).expand(shape=[batch_size, -1, -1])
-    lattice = lattice_params_to_matrix_paddle(lengths, angles)
+    # lattice = lattice_params_to_matrix_paddle(lengths, angles)
     x = lattice
     perm_2 = list(range(x.ndim))
     perm_2[1] = 2
@@ -290,19 +291,37 @@ def radius_graph_pbc(
         return edge_index, unit_cell, num_neighbors_image, topk_mask
 
 
-def frac_to_cart_coords(frac_coords, lengths, angles, num_atoms):
-    lattice = lattice_params_to_matrix_paddle(lengths, angles)
-    lattice_nodes = paddle.repeat_interleave(x=lattice, repeats=num_atoms, axis=0)
+def frac_to_cart_coords(
+    frac_coords, num_atoms, lengths=None, angles=None, lattices=None
+):
+    assert (lengths is not None and angles is not None) or lattices is not None
+    if lattices is None:
+        lattices = lattice_params_to_matrix_paddle(lengths, angles)
+    lattice_nodes = paddle.repeat_interleave(x=lattices, repeats=num_atoms, axis=0)
     pos = paddle.einsum("bi,bij->bj", frac_coords, lattice_nodes)
     return pos
 
 
-def cart_to_frac_coords(cart_coords, lengths, angles, num_atoms):
-    lattice = lattice_params_to_matrix_paddle(lengths, angles)
-    inv_lattice = paddle.linalg.pinv(x=lattice)
+def cart_to_frac_coords(
+    cart_coords, num_atoms, lengths=None, angles=None, lattices=None
+):
+    assert (lengths is not None and angles is not None) or lattices is not None
+    if lattices is None:
+        lattices = lattice_params_to_matrix_paddle(lengths, angles)
+    inv_lattice = paddle.linalg.pinv(x=lattices)
     inv_lattice_nodes = paddle.repeat_interleave(
         x=inv_lattice, repeats=num_atoms, axis=0
     )
     frac_coords = paddle.einsum("bi,bij->bj", cart_coords, inv_lattice_nodes)
     # return frac_coords % 1.0
     return frac_coords
+
+
+def polar_decomposition(x):
+    vecU, vals, vecV = paddle.linalg.svd(x)
+    P = (
+        vecV.transpose([0, 2, 1]).multiply(vals.view([vals.shape[0], 1, vals.shape[1]]))
+        @ vecV
+    )
+    U = vecU @ vecV
+    return U, P

@@ -1,6 +1,8 @@
+import math
 from typing import Optional
 
 import paddle
+import paddle.nn as nn
 from utils import paddle_aux  # noqa: F401
 from utils.crystal import frac_to_cart_coords
 from utils.crystal import get_pbc_distances
@@ -19,9 +21,22 @@ from .utils import inner_product_normalized
 from .utils import ragged_range
 from .utils import repeat_blocks
 from .utils import scatter
-from utils.crystal import lattice_params_to_matrix_paddle
 
-import paddle.nn as nn
+
+class SinusoidsEmbedding(paddle.nn.Layer):
+    def __init__(self, n_frequencies=10, n_space=3):
+        super().__init__()
+        self.n_frequencies = n_frequencies
+        self.n_space = n_space
+        self.frequencies = 2 * math.pi * paddle.arange(end=self.n_frequencies)
+        self.dim = self.n_frequencies * 2 * self.n_space
+
+    def forward(self, x):
+        emb = x.unsqueeze(axis=-1) * self.frequencies[None, None, :]  # .to(x.devices)
+        emb = emb.reshape(-1, self.n_frequencies * self.n_space)
+        emb = paddle.concat(x=(emb.sin(), emb.cos()), axis=-1)
+        return emb
+
 
 class MLP(nn.Layer):
     """Multi layer perceptron module used in Transformer.
@@ -149,6 +164,8 @@ class GemNetT(paddle.nn.Layer):
         output_init: str = "HeOrthogonal",
         activation: str = "swish",
         scale_file: Optional[str] = None,
+        index_start: int = 1,
+        num_classes: int = 100,
     ):
         super().__init__()
         self.num_targets = num_targets
@@ -158,6 +175,7 @@ class GemNetT(paddle.nn.Layer):
         self.max_neighbors = max_neighbors
         self.regress_forces = regress_forces
         self.otf_graph = otf_graph
+        self.num_classes = num_classes
         AutomaticFit.reset()
         self.radial_basis = RadialBasis(
             num_radial=num_radial, cutoff=cutoff, rbf=rbf, envelope=envelope
@@ -174,7 +192,7 @@ class GemNetT(paddle.nn.Layer):
         )
         self.mlp_rbf_h = Dense(num_radial, emb_size_rbf, activation=None, bias=False)
         self.mlp_rbf_out = Dense(num_radial, emb_size_rbf, activation=None, bias=False)
-        self.atom_emb = AtomEmbedding(emb_size_atom)
+        self.atom_emb = AtomEmbedding(emb_size_atom, index_start=index_start)
         self.atom_latent_emb = paddle.nn.Linear(
             in_features=emb_size_atom + latent_dim, out_features=emb_size_atom
         )
@@ -183,18 +201,14 @@ class GemNetT(paddle.nn.Layer):
         )
 
         self.edge_latent_emb = paddle.nn.Sequential(
-            paddle.nn.Linear(
-                in_features=512 + 9, out_features=512
-            ),
+            paddle.nn.Linear(in_features=512 + 9, out_features=512),
             paddle.nn.Silu(),
             paddle.nn.Linear(in_features=512, out_features=512),
             paddle.nn.Silu(),
         )
-
+        self.dist_emb = SinusoidsEmbedding()
         self.rbf_emb = paddle.nn.Sequential(
-            paddle.nn.Linear(
-                in_features=128+3 + 9, out_features=128
-            ),
+            paddle.nn.Linear(in_features=128 + self.dist_emb.dim + 9, out_features=128),
             paddle.nn.Silu(),
             paddle.nn.Linear(in_features=128, out_features=128),
             paddle.nn.Silu(),
@@ -239,17 +253,18 @@ class GemNetT(paddle.nn.Layer):
         lattice_out_blocks = []
         for i in range(num_blocks):
             lattice_out_blocks.append(
-                Dense(512+3, 1, bias=False)
-                # paddle.nn.Linear(
-                #     in_features=512+3, out_features=1
-                # )
+                # Dense(512+3, 1, bias=False)
+                paddle.nn.Linear(in_features=512 + 3, out_features=9, bias_attr=False)
                 # MLP(512+3, out_features=1)
             )
-        
+
         self.lattice_out_blocks = paddle.nn.LayerList(sublayers=lattice_out_blocks)
 
         self.out_blocks = paddle.nn.LayerList(sublayers=out_blocks)
         self.int_blocks = paddle.nn.LayerList(sublayers=int_blocks)
+        self.type_out = paddle.nn.Linear(
+            in_features=512, out_features=self.num_classes, bias_attr=False
+        )
         self.shared_parameters = [
             (self.mlp_rbf3, self.num_blocks),
             (self.mlp_cbf3, self.num_blocks),
@@ -359,13 +374,12 @@ class GemNetT(paddle.nn.Layer):
         )
 
     def generate_interaction_graph(
-        self, cart_coords, lengths, angles, num_atoms, edge_index, to_jimages, num_bonds
+        self, cart_coords, lattices, num_atoms, edge_index, to_jimages, num_bonds
     ):
         if self.otf_graph:
             edge_index, to_jimages, num_bonds = radius_graph_pbc(
                 cart_coords,
-                lengths,
-                angles,
+                lattices,
                 num_atoms,
                 self.cutoff,
                 self.max_neighbors,
@@ -374,8 +388,7 @@ class GemNetT(paddle.nn.Layer):
         out = get_pbc_distances(
             cart_coords,
             edge_index,
-            lengths,
-            angles,
+            lattices,
             to_jimages,
             num_atoms,
             num_bonds,
@@ -416,27 +429,26 @@ class GemNetT(paddle.nn.Layer):
         self,
         z,
         frac_coords,
+        lattices,
         atom_types,
         num_atoms,
-        lengths,
-        angles,
-        edge_index,
-        to_jimages,
-        num_bonds,
+        edge_index=None,
+        to_jimages=None,
+        num_bonds=None,
     ):
         """
         args:
             z: (N_cryst, num_latent)
             frac_coords: (N_atoms, 3)
+            lattices: (N_cryst, 3, 3)
             atom_types: (N_atoms, ), need to use atomic number e.g. H = 1
             num_atoms: (N_cryst,)
             lengths: (N_cryst, 3)
-            angles: (N_cryst, 3)
         returns:
             atom_frac_coords: (N_atoms, 3)
             atom_types: (N_atoms, MAX_ATOMIC_NUM)
         """
-        pos = frac_to_cart_coords(frac_coords, lengths, angles, num_atoms)
+        pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
             repeats=num_atoms, axis=0
         )
@@ -451,7 +463,7 @@ class GemNetT(paddle.nn.Layer):
             id3_ca,
             id3_ragged_idx,
         ) = self.generate_interaction_graph(
-            pos, lengths, angles, num_atoms, edge_index, to_jimages, num_bonds
+            pos, lattices, num_atoms, edge_index, to_jimages, num_bonds
         )
         idx_s, idx_t = edge_index
         cosφ_cab = inner_product_normalized(V_st[id3_ca], V_st[id3_ba])
@@ -463,10 +475,11 @@ class GemNetT(paddle.nn.Layer):
             h = paddle.concat(x=[h, z_per_atom], axis=1)
             h = self.atom_latent_emb(h)
 
-        lattices = lattice_params_to_matrix_paddle(lengths, angles)
-        lattices_edges = lattices.repeat_interleave(repeats=neighbors, axis=0)
-        latices_edges = lattices_edges.reshape([-1, 9])
-        rbf = self.rbf_emb(paddle.concat([rbf, V_st, latices_edges], axis=1))
+        # lattices_edges = lattices.repeat_interleave(repeats=neighbors, axis=0)
+        # latices_edges = lattices_edges.reshape([-1, 9])
+
+        # V_st_emb = self.dist_emb(V_st*D_st[:, None])
+        # rbf = self.rbf_emb(paddle.concat([rbf, V_st_emb, latices_edges], axis=1))
 
         m = self.edge_emb(h, rbf, idx_s, idx_t)
         rbf3 = self.mlp_rbf3(rbf)
@@ -475,14 +488,18 @@ class GemNetT(paddle.nn.Layer):
         rbf_out = self.mlp_rbf_out(rbf)
         E_t, F_st = self.out_blocks[0](h, m, rbf_out, idx_t)
 
-        # angle1 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 0], V_st, axis=1)
-        # angle2 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 1], V_st, axis=1)
-        # angle3 = paddle.nn.functional.cosine_similarity(lattices_edges[:, :, 2], V_st, axis=1)
+        # angle1 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 0], V_st, axis=1
+        # )
+        # angle2 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 1], V_st, axis=1
+        # )
+        # angle3 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 2], V_st, axis=1
+        # )
         # angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
 
-        lattice_total = None
         for i in range(self.num_blocks):
-            # m = self.edge_latent_emb(paddle.concat([m, latices_edges], axis=1))
             h, m = self.int_blocks[i](
                 h=h,
                 m=m,
@@ -496,46 +513,42 @@ class GemNetT(paddle.nn.Layer):
                 idx_s=idx_s,
                 idx_t=idx_t,
             )
-            # import pdb;pdb.set_trace()
             E, F = self.out_blocks[i + 1](h, m, rbf_out, idx_t)
             F_st += F
             E_t += E
 
-            # lattice_score = self.lattice_out_blocks[i](paddle.concat([m, angles], axis=1)) 
+            # lattice_score = self.lattice_out_blocks[i](
+            #     paddle.concat([m, angles], axis=1)
+            # )
             # lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
-            # v_sts = V_st.split(neighbors.numpy().tolist())
-            
+            # # v_sts = V_st.split(neighbors.numpy().tolist())
             # lattice_sub_layers = []
             # for j in range(len(lattice_scores)):
-            #     lattice_score = paddle.diag(
-            #         lattice_scores[j]
-            #     ) 
-            #     ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
-            #     ll = ll / neighbors[j]
-
-            #     lattice_sub_layers.append(ll)
-            #     # ll = lattice_scores[j].reshape([-1, 3, 3]).sum(axis=0)
+            #     # lattice_score = paddle.diag(
+            #     #     lattice_scores[j]
+            #     # )
+            #     # ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
             #     # ll = ll / neighbors[j]
             #     # lattice_sub_layers.append(ll)
+            #     # import pdb; pdb.set_trace()
+            #     ll = lattice_scores[j].reshape([-1, 3, 3]).sum(axis=0)
+            #     ll = ll / neighbors[j]
+            #     lattice_sub_layers.append(ll)
             # lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
             # if lattice_total is None:
             #     lattice_total = lattice_sub_layers
             # else:
             #     lattice_total += lattice_sub_layers
-            
+
+        pred_a = self.type_out(h)
 
         nMolecules = paddle.max(x=batch) + 1
         E_t = scatter(E_t, batch, dim=0, dim_size=nMolecules, reduce="mean")
-        if self.regress_forces:
-            # assert E_t.shape[1] == 1
-            F_st_vec = F_st[:, :, None] * V_st[:, None, :]
-            F_t = scatter(
-                F_st_vec, idx_t, dim=0, dim_size=num_atoms.sum(), reduce="add"
-            )
-            F_t = F_t.squeeze(axis=1)
-            return E_t, F_t, lattice_total
-        else:
-            return E_t
+        E_t = E_t.reshape([-1, 3, 3])
+        F_st_vec = F_st[:, :, None] * V_st[:, None, :]
+        F_t = scatter(F_st_vec, idx_t, dim=0, dim_size=num_atoms.sum(), reduce="add")
+        F_t = F_t.squeeze(axis=1)
+        return E_t, F_t, pred_a
 
     @property
     def num_params(self):
