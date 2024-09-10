@@ -16,9 +16,12 @@ class AtomEmbedding(paddle.nn.Layer):
             Atom embeddings size
     """
 
-    def __init__(self, emb_size):
+    def __init__(self, emb_size, index_start=1):
         super().__init__()
+        if index_start not in [0, 1]:
+            raise ValueError("index_start must be 0 or 1")
         self.emb_size = emb_size
+        self.index_start = index_start
         self.embeddings = paddle.nn.Embedding(
             num_embeddings=MAX_ATOMIC_NUM, embedding_dim=emb_size
         )
@@ -32,7 +35,11 @@ class AtomEmbedding(paddle.nn.Layer):
             h: paddle.Tensor, shape=(nAtoms, emb_size)
                 Atom embeddings.
         """
-        h = self.embeddings(Z - 1)
+        if self.index_start == 1:
+            h = self.embeddings(Z - 1)
+        else:
+            h = self.embeddings(Z)
+
         return h
 
 
