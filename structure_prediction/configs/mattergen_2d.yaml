@@ -45,6 +45,7 @@ model:
   __name__: MatterGen
   decoder_cfg:
     num_targets: 1
+    num_blocks: 4
     emb_size_atom: 512
     emb_size_edge: 512
     latent_dim: 256
@@ -72,9 +73,9 @@ lr_cfg:
   patience: 100
   min_lr: 0.000001
 epochs: 1000
-batch_size: 64
+batch_size: 32
 num_workers: 0
-save_path: "./checkpoints/mattergen_2d"
+save_path: "./checkpoints/mattergen_2d_coor_lattices"
 
 sample_step_lr: 0.00001
 # grad_clip: 0.5
