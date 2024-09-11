@@ -274,9 +274,11 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     angles_r = np.radians([alpha, beta, gamma])
     cos_alpha, cos_beta, cos_gamma = np.cos(angles_r)
     sin_alpha, sin_beta, sin_gamma = np.sin(angles_r)
+    
     val = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha * sin_beta)
     val = abs_cap(val)
     gamma_star = np.arccos(val)
+    
     vector_a = [a * sin_beta, 0.0, a * cos_beta]
     vector_b = [
         -b * sin_alpha * np.cos(gamma_star),

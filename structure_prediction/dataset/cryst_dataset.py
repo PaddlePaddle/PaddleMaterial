@@ -111,9 +111,10 @@ class CrystDataset(paddle.io.Dataset):
 
         if self.use_space_group:
             data["spacegroup"] = [data_dict["spacegroup"]]
-            data["ops"] = data_dict["wyckoff_ops"]
-
+            data["ops"] = data_dict["wyckoff_ops"].astype("float32")
             data["anchor_index"] = data_dict["anchors"]
+            data["ops_inv"] = np.linalg.pinv(data["ops"][:,:3,:3]).astype('float32')
+
         if self.use_pos_index:
             pos_dic = {}
             indexes = []

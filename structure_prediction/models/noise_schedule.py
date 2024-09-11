@@ -44,17 +44,15 @@ def p_wrapped_normal(x, sigma, N=10, T=1.0):
 def d_log_p_wrapped_normal(x, sigma, N=10, T=1.0):
     p_ = 0
     for i in range(-N, N + 1):
-        p_ += (
-            (x + T * i)
-            / sigma**2
-            * paddle.exp(x=-((x + T * i) ** 2) / 2 / sigma**2)
-        )
+        exp1 = paddle.exp(x=-((x + T * i) ** 2) / 2 / sigma**2)
+        p_ += ((x + T * i)/ sigma**2* exp1)
     return p_ / p_wrapped_normal(x, sigma, N, T)
 
 
 def sigma_norm(sigma, T=1.0, sn=10000):
     sigmas = sigma[None, :].tile([sn, 1])
-    x_sample = sigma * paddle.randn(shape=sigmas.shape, dtype=sigmas.dtype)
+    nprandom = paddle.randn(shape=sigmas.shape, dtype=sigmas.dtype)
+    x_sample = sigma * nprandom
     x_sample = x_sample % T
     normal_ = d_log_p_wrapped_normal(x_sample, sigmas, T=T)
     return (normal_**2).mean(axis=0)

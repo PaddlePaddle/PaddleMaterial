@@ -22,6 +22,7 @@ from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
 from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
+from models.diffusion_pp import CSPDiffusionPP
 from p_tqdm import p_map
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -58,12 +59,22 @@ def collate_fn_graph(batch):
         "num_bonds",
         "num_nodes",
         "prop",
+        "anchor_index",
+        "ops_inv",
+        "ops",
+        "spacegroup",
     ]
     for key in keys:
         if key not in batch[0]:
             continue
         if key in ["edge_index"]:
-            new_batch[key] = np.concatenate([x[key] for x in batch], axis=1)
+            cumulative_length = 0
+            result_arrays_edge_index = []
+            for x in batch:
+                new_array = x[key] + cumulative_length
+                result_arrays_edge_index.append(new_array)
+                cumulative_length += x['num_atoms']
+            new_batch[key] = np.concatenate(result_arrays_edge_index, axis=1)
         elif key in [
             "frac_coords",
             "atom_types",
@@ -71,8 +82,19 @@ def collate_fn_graph(batch):
             "angles",
             "to_jimages",
             "prop",
+            "ops",
+            "ops_inv",
+            "spacegroup",
         ]:
             new_batch[key] = np.concatenate([x[key] for x in batch], axis=0)
+        elif key in ["anchor_index",]:
+            cumulative_length = 0
+            result_arrays_anchor_index = []
+            for x in batch:
+                new_array = x[key] + cumulative_length
+                result_arrays_anchor_index.append(new_array)
+                cumulative_length += len(x[key])
+            new_batch[key] = np.concatenate(result_arrays_anchor_index, axis=0)
         elif key in [
             "num_atoms",
             "num_bonds",
@@ -100,6 +122,8 @@ def get_model(cfg):
         model = CSPDiffusionWithGuidance(**model_cfg)
     elif model_name == "CSPDiffusionWithGuidanceD3PM":
         model = CSPDiffusionWithGuidanceD3PM(**model_cfg)
+    elif model_name == "CSPDiffusionPP":
+        model = CSPDiffusionPP(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
@@ -118,28 +142,18 @@ def get_dataloader(cfg):
 
     train_loader = paddle.io.DataLoader(
         train_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(
-            train_data,
-            batch_size=cfg["batch_size"],
-            shuffle=True,
-        ),
+        batch_sampler=paddle.io.DistributedBatchSampler(train_data,batch_size=cfg["batch_size"],shuffle=False),
         collate_fn=collate_fn_graph,
         num_workers=cfg["num_workers"],
     )
     val_loader = paddle.io.DataLoader(
         val_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(
-            val_data,
-            batch_size=cfg["batch_size"],
-        ),
+        batch_sampler=paddle.io.DistributedBatchSampler(val_data,batch_size=cfg["batch_size"],),
         collate_fn=collate_fn_graph,
     )
     test_loader = paddle.io.DataLoader(
         test_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(
-            test_data,
-            batch_size=cfg["batch_size"],
-        ),
+        batch_sampler=paddle.io.DistributedBatchSampler(test_data,batch_size=cfg["batch_size"],),
         collate_fn=collate_fn_graph,
     )
 
@@ -409,9 +423,7 @@ def test(cfg):
         batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
         batch_lattices = []
         for eval_idx in range(num_evals):
-            log.info(
-                f"batch {idx} / {len(test_loader)}, sample {eval_idx} / {num_evals}"
-            )
+            log.info(f"batch {idx} / {len(test_loader)}, sample {eval_idx} / {num_evals}")
             outputs, traj = model.sample(batch, step_lr=step_lr)
             batch_frac_coords.append(outputs["frac_coords"].detach().cpu())
             batch_num_atoms.append(outputs["num_atoms"].detach().cpu())
@@ -487,12 +499,8 @@ def sample(cfg):
     tar_dir = os.path.join(cfg["save_path"], formula)
     os.makedirs(tar_dir, exist_ok=True)
 
-    frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(
-        sample_loader, model, cfg["sample_step_lr"]
-    )
-    crystal_list = get_crystals_list(
-        frac_coords, atom_types, lengths, angles, num_atoms
-    )
+    frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(sample_loader, model, cfg["sample_step_lr"])
+    crystal_list = get_crystals_list(frac_coords, atom_types, lengths, angles, num_atoms)
     strcuture_list = p_map(get_pymatgen, crystal_list)
     for i, structure in enumerate(strcuture_list):
         tar_file = os.path.join(tar_dir, f"{formula}_{i + 1}.cif")
