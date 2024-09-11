@@ -68,7 +68,7 @@ model:
     num_classes: 100
     forward_type: uniform
   time_dim: 256
-  cost_lattice: 0.0
+  cost_lattice: 1.0
   cost_coord: 0.1
   cost_type: 1.0
   cost_type_ce: 0.01

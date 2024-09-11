@@ -2,7 +2,6 @@ import math
 from typing import Optional
 
 import paddle
-import paddle.nn as nn
 from utils import paddle_aux  # noqa: F401
 from utils.crystal import frac_to_cart_coords
 from utils.crystal import get_pbc_distances
@@ -36,42 +35,6 @@ class SinusoidsEmbedding(paddle.nn.Layer):
         emb = emb.reshape(-1, self.n_frequencies * self.n_space)
         emb = paddle.concat(x=(emb.sin(), emb.cos()), axis=-1)
         return emb
-
-
-class MLP(nn.Layer):
-    """Multi layer perceptron module used in Transformer.
-
-    Args:
-        in_features (int): Number of the input features.
-        hidden_features (Optional[int]): Number of the hidden size. Defaults to None.
-        out_features (Optional[int]): Number of the output features. Defaults to None.
-        activation (str, optional): Name of activation function. Defaults to "gelu".
-        drop (float, optional): Probability of dropout the units. Defaults to 0.0.
-    """
-
-    def __init__(
-        self,
-        in_features: int,
-        hidden_features: Optional[int] = None,
-        out_features: Optional[int] = None,
-        activation: str = "gelu",
-        drop: float = 0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = nn.GELU()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        # x = self.act(x)
-        # x = self.drop(x)
-        x = self.fc2(x)
-        # x = self.drop(x)
-        return x
 
 
 class GemNetT(paddle.nn.Layer):
@@ -253,9 +216,7 @@ class GemNetT(paddle.nn.Layer):
         lattice_out_blocks = []
         for i in range(num_blocks):
             lattice_out_blocks.append(
-                # Dense(512+3, 1, bias=False)
-                paddle.nn.Linear(in_features=512 + 3, out_features=9, bias_attr=False)
-                # MLP(512+3, out_features=1)
+                paddle.nn.Linear(in_features=512 + 3, out_features=1, bias_attr=False)
             )
 
         self.lattice_out_blocks = paddle.nn.LayerList(sublayers=lattice_out_blocks)
@@ -475,11 +436,7 @@ class GemNetT(paddle.nn.Layer):
             h = paddle.concat(x=[h, z_per_atom], axis=1)
             h = self.atom_latent_emb(h)
 
-        # lattices_edges = lattices.repeat_interleave(repeats=neighbors, axis=0)
-        # latices_edges = lattices_edges.reshape([-1, 9])
-
-        # V_st_emb = self.dist_emb(V_st*D_st[:, None])
-        # rbf = self.rbf_emb(paddle.concat([rbf, V_st_emb, latices_edges], axis=1))
+        lattices_edges = lattices.repeat_interleave(repeats=neighbors, axis=0)
 
         m = self.edge_emb(h, rbf, idx_s, idx_t)
         rbf3 = self.mlp_rbf3(rbf)
@@ -488,17 +445,18 @@ class GemNetT(paddle.nn.Layer):
         rbf_out = self.mlp_rbf_out(rbf)
         E_t, F_st = self.out_blocks[0](h, m, rbf_out, idx_t)
 
-        # angle1 = paddle.nn.functional.cosine_similarity(
-        #     lattices_edges[:, :, 0], V_st, axis=1
-        # )
-        # angle2 = paddle.nn.functional.cosine_similarity(
-        #     lattices_edges[:, :, 1], V_st, axis=1
-        # )
-        # angle3 = paddle.nn.functional.cosine_similarity(
-        #     lattices_edges[:, :, 2], V_st, axis=1
-        # )
-        # angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
+        angle1 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 0], V_st, axis=1
+        )
+        angle2 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 1], V_st, axis=1
+        )
+        angle3 = paddle.nn.functional.cosine_similarity(
+            lattices_edges[:, :, 2], V_st, axis=1
+        )
+        angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
 
+        pred_l = None
         for i in range(self.num_blocks):
             h, m = self.int_blocks[i](
                 h=h,
@@ -517,28 +475,22 @@ class GemNetT(paddle.nn.Layer):
             F_st += F
             E_t += E
 
-            # lattice_score = self.lattice_out_blocks[i](
-            #     paddle.concat([m, angles], axis=1)
-            # )
-            # lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
-            # # v_sts = V_st.split(neighbors.numpy().tolist())
-            # lattice_sub_layers = []
-            # for j in range(len(lattice_scores)):
-            #     # lattice_score = paddle.diag(
-            #     #     lattice_scores[j]
-            #     # )
-            #     # ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
-            #     # ll = ll / neighbors[j]
-            #     # lattice_sub_layers.append(ll)
-            #     # import pdb; pdb.set_trace()
-            #     ll = lattice_scores[j].reshape([-1, 3, 3]).sum(axis=0)
-            #     ll = ll / neighbors[j]
-            #     lattice_sub_layers.append(ll)
-            # lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
-            # if lattice_total is None:
-            #     lattice_total = lattice_sub_layers
-            # else:
-            #     lattice_total += lattice_sub_layers
+            lattice_score = self.lattice_out_blocks[i](
+                paddle.concat([m, angles], axis=1)
+            )
+            lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
+            v_sts = V_st.split(neighbors.numpy().tolist())
+            lattice_sub_layers = []
+            for j in range(len(lattice_scores)):
+                lattice_score = paddle.diag(lattice_scores[j])
+                ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
+                ll = ll / neighbors[j]
+                lattice_sub_layers.append(ll)
+            lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
+            if pred_l is None:
+                pred_l = lattice_sub_layers
+            else:
+                pred_l += lattice_sub_layers
 
         pred_a = self.type_out(h)
 
@@ -548,7 +500,7 @@ class GemNetT(paddle.nn.Layer):
         F_st_vec = F_st[:, :, None] * V_st[:, None, :]
         F_t = scatter(F_st_vec, idx_t, dim=0, dim_size=num_atoms.sum(), reduce="add")
         F_t = F_t.squeeze(axis=1)
-        return E_t, F_t, pred_a
+        return pred_l, F_t, pred_a
 
     @property
     def num_params(self):
