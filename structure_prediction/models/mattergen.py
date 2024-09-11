@@ -12,6 +12,7 @@ from models.time_embedding import uniform_sample_t
 from tqdm import tqdm
 from utils.crystal import cart_to_frac_coords  # noqa: F401
 from utils.crystal import lattice_params_to_matrix_paddle
+from utils.crystal import polar_decomposition
 
 
 class MatterGen(paddle.nn.Layer):
@@ -131,13 +132,12 @@ class MatterGen(paddle.nn.Layer):
         atom_types = batch["atom_types"] - 1
 
         # get the symmetric matrix P
-        # _, lattices_P = polar_decomposition(lattices)
+        _, lattices = polar_decomposition(lattices)
 
         if self.keep_lattice is False:
             # get the noise, and add it to the lattice
             rand_l = paddle.randn(shape=lattices.shape, dtype=lattices.dtype)
-            # rand_l = rand_l.tril() + rand_l.tril(diagonal=-1).transpose([0, 2, 1])
-            # input_lattice = c0[:, None, None] * lattices + c1[:, None, None] * rand_l
+            rand_l = rand_l.tril() + rand_l.tril(diagonal=-1).transpose([0, 2, 1])
             input_lattice = c0[:, None, None] * lattices + c1[:, None, None] * rand_l
         else:
             input_lattice = lattices
@@ -184,7 +184,9 @@ class MatterGen(paddle.nn.Layer):
             loss_dict["loss_lattice"] = loss_lattice
 
         if self.keep_coords is False:
-            pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=lattices)
+            pred_x = cart_to_frac_coords(
+                pred_x, batch["num_atoms"], lattices=input_lattice
+            )
             tar_x = d_log_p_wrapped_normal(
                 sigmas_per_atom * rand_x, sigmas_per_atom
             ) / paddle.sqrt(x=sigmas_norm_per_atom)

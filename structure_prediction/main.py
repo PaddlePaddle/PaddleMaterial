@@ -322,7 +322,6 @@ def train(cfg):
                     output_dir=cfg["save_path"],
                     prefix="best",
                 )
-                logger.info("Saving best checkpoint at {}".format(cfg["save_path"]))
 
             save_load.save_checkpoint(
                 model,
