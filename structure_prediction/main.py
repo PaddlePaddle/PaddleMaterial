@@ -296,9 +296,16 @@ def train(cfg):
 
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
-    best_metric = float("inf")
+    best_metric = {"metric": float("inf"), "epoch": -1}
+    if cfg.get("resume_from") is not None:
+        loaded_metric = save_load.load_checkpoint(
+            cfg.get("resume_from"), model, optimizer
+        )
+        if isinstance(loaded_metric, dict):
+            best_metric.update(loaded_metric)
+    start_epoch = best_metric["epoch"] + 1
 
-    for epoch in range(cfg["epochs"]):
+    for epoch in range(start_epoch, cfg["epochs"]):
         train_loss = train_epoch(model, train_loader, optimizer, epoch)
 
         if paddle.distributed.get_rank() == 0:
@@ -312,13 +319,14 @@ def train(cfg):
                 msg += f", eval_{key}: {eval_loss[key].item():.6f}"
 
             logger.info(f"epoch: {epoch}" + msg)
-
-            if eval_loss["loss"] < best_metric:
-                best_metric = eval_loss["loss"]
+            cur_metirc = eval_loss["loss"]
+            if cur_metirc < best_metric["metric"]:
+                best_metric["metric"] = eval_loss["loss"]
+                best_metric["epoch"] = epoch
                 save_load.save_checkpoint(
                     model,
                     optimizer,
-                    train_loss,
+                    best_metric,
                     output_dir=cfg["save_path"],
                     prefix="best",
                 )
@@ -326,7 +334,7 @@ def train(cfg):
             save_load.save_checkpoint(
                 model,
                 optimizer,
-                train_loss,
+                {"metric": cur_metirc, "epoch": epoch},
                 output_dir=cfg["save_path"],
                 prefix="latest",
             )
@@ -334,7 +342,7 @@ def train(cfg):
                 save_load.save_checkpoint(
                     model,
                     optimizer,
-                    train_loss,
+                    {"metric": cur_metirc, "epoch": epoch},
                     output_dir=cfg["save_path"],
                     prefix=f"epoch_{epoch}",
                 )
