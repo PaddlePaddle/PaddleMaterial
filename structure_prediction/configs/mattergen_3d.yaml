@@ -83,7 +83,10 @@ lr_cfg:
 epochs: 1000
 batch_size: 32
 num_workers: 4
-save_path: "./checkpoints/mattergen_3d_debug"
+save_path: "./checkpoints/mattergen_3d_load_debug"
+# checkpoint path for resume training, if None, start from scratch
+# such as: "./checkpoints/mattergen_3d/chekcpoints/latest"
+resume_from: null
 
 sample_step_lr: 0.00001
 grad_clip: 0.5
