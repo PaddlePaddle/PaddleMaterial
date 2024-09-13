@@ -52,9 +52,12 @@ class MatterGen(paddle.nn.Layer):
         self.keep_type = self.cost_type < 1e-5
         self.device = paddle.device.get_device()
         self.pretrained = pretrained
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
         if self.pretrained is not None:
             self.set_dict(paddle.load(self.pretrained))
+
+        for i in range(4):
+            self.decoder.out_blocks[i].reset_parameters()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -218,7 +221,9 @@ class MatterGen(paddle.nn.Layer):
     def sample(self, batch, step_lr=1e-05):
         batch_size = batch["num_graphs"]
 
-        l_T = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
+        # l_T = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
+        l_T = paddle.randn(shape=[batch_size, 3, 3])
+        l_T = l_T.tril() + l_T.tril(diagonal=-1).transpose([0, 2, 1])
         x_T = paddle.rand(shape=[batch["num_nodes"], 3])
         a_T = paddle.randint(low=0, high=self.num_classes, shape=[batch["num_nodes"]])
 
@@ -235,9 +240,9 @@ class MatterGen(paddle.nn.Layer):
         for t in tqdm(range(time_start, 0, -1)):
             times = paddle.full(shape=(batch_size,), fill_value=t, dtype="int64")
             time_emb = self.time_embedding(times)
-            # alphas = self.beta_scheduler.alphas[t]
-            # alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]
-            # sigmas = self.beta_scheduler.sigmas[t]
+            alphas = self.beta_scheduler.alphas[t]
+            alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]
+            sigmas = self.beta_scheduler.sigmas[t]
             sigma_x = self.sigma_scheduler.sigmas[t]
             # sigma_norm = self.sigma_scheduler.sigmas_norm[t]
             # todo:
@@ -246,8 +251,8 @@ class MatterGen(paddle.nn.Layer):
             sigma_x = sigma_x[0]
             sigma_norm = sigma_norm[0]
 
-            # c0 = 1.0 / paddle.sqrt(x=alphas)
-            # c1 = (1 - alphas) / paddle.sqrt(x=1 - alphas_cumprod)
+            c0 = 1.0 / paddle.sqrt(x=alphas)
+            c1 = (1 - alphas) / paddle.sqrt(x=1 - alphas_cumprod)
             x_t = traj[t]["frac_coords"]
             l_t = traj[t]["lattices"]
             a_t = traj[t]["atom_types"]
@@ -266,7 +271,7 @@ class MatterGen(paddle.nn.Layer):
                 a_t,
                 batch["num_atoms"],
             )
-            pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=l_T)
+            pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=l_t)
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
 
             x_t_minus_05 = (
@@ -277,6 +282,12 @@ class MatterGen(paddle.nn.Layer):
             l_t_minus_05 = l_t
             a_t_minus_05 = a_t
 
+            rand_l = (
+                paddle.randn(shape=l_T.shape, dtype=l_T.dtype)
+                if t > 1
+                else paddle.zeros_like(x=l_T)
+            )
+            rand_l = rand_l.tril() + rand_l.tril(diagonal=-1).transpose([0, 2, 1])
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
                 if t > 1
@@ -299,14 +310,20 @@ class MatterGen(paddle.nn.Layer):
                 a_t_minus_05,
                 batch["num_atoms"],
             )
-            pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=l_T)
+            pred_x = cart_to_frac_coords(
+                pred_x, batch["num_atoms"], lattices=l_t_minus_05
+            )
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_1 = (
                 x_t_minus_05 - step_size * pred_x + std_x * rand_x
                 if not self.keep_coords
                 else x_t
             )
-
+            l_t_minus_1 = (
+                c0 * (l_t_minus_05 - c1 * pred_l) + sigmas * rand_l
+                if not self.keep_lattice
+                else l_t
+            )
             noise = paddle.rand(shape=(*a_t_minus_05.shape, self.num_classes))
             atom_types_times = times.repeat_interleave(repeats=batch["num_atoms"])
             pred_q_posterior_logits = self.q_posterior_logits(
@@ -328,7 +345,7 @@ class MatterGen(paddle.nn.Layer):
                 "num_atoms": batch["num_atoms"],
                 "atom_types": a_t_minus_1,
                 "frac_coords": x_t_minus_1 % 1.0,
-                "lattices": l_t,
+                "lattices": l_t_minus_1,
             }
         traj_stack = {
             "num_atoms": batch["num_atoms"],
