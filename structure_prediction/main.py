@@ -242,7 +242,8 @@ def train_epoch(
 
         train_loss = losses["loss"]
         train_loss.backward()
-        scale_shared_grads(model)
+        if cfg["model"].pop("__name__", None) == "MatterGen":
+            scale_shared_grads(model)
         optimizer.step()
         optimizer.clear_grad()
 
