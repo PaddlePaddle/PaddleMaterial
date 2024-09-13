@@ -40,6 +40,8 @@ dataset:
   sample:
     formula: Ga4Te4
     num_evals: 20
+  generation:
+    total_num: 10
 
 model:
   __name__: MatterGen
@@ -69,10 +71,10 @@ model:
     forward_type: uniform
   time_dim: 256
   cost_lattice: 1.0
-  cost_coord: 0.1
+  cost_coord: 1.0
   cost_type: 1.0
   cost_type_ce: 0.01
-  # pretrained: ./checkpoints/mattergen_3d_coor_lattices_de_paddlecloud/latest.pdparams
+  # pretrained: ./checkpoints/mattergen_3d_v2/checkpoints/latest.pdparams
 
 
 lr_cfg:
@@ -83,7 +85,7 @@ lr_cfg:
 epochs: 1000
 batch_size: 32
 num_workers: 4
-save_path: "./checkpoints/mattergen_3d_load_debug"
+save_path: "./checkpoints/mattergen_3d_v2"
 # checkpoint path for resume training, if None, start from scratch
 # such as: "./checkpoints/mattergen_3d/chekcpoints/latest"
 resume_from: null

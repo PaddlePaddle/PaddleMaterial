@@ -156,8 +156,14 @@ class GemNetT(paddle.nn.Layer):
         self.mlp_rbf_h = Dense(num_radial, emb_size_rbf, activation=None, bias=False)
         self.mlp_rbf_out = Dense(num_radial, emb_size_rbf, activation=None, bias=False)
         self.atom_emb = AtomEmbedding(emb_size_atom, index_start=index_start)
-        self.atom_latent_emb = paddle.nn.Linear(
-            in_features=emb_size_atom + latent_dim, out_features=emb_size_atom
+        # self.atom_latent_emb = paddle.nn.Linear(
+        #     in_features=emb_size_atom + latent_dim,
+        #     out_features=emb_size_atom,
+        #     bias_attr=False
+        # )
+        self.atom_latent_emb = Dense(
+            emb_size_atom + latent_dim,
+            emb_size_atom,
         )
         self.edge_emb = EdgeEmbedding(
             emb_size_atom, num_radial, emb_size_edge, activation=activation
@@ -170,12 +176,7 @@ class GemNetT(paddle.nn.Layer):
             paddle.nn.Silu(),
         )
         self.dist_emb = SinusoidsEmbedding()
-        self.rbf_emb = paddle.nn.Sequential(
-            paddle.nn.Linear(in_features=128 + self.dist_emb.dim + 9, out_features=128),
-            paddle.nn.Silu(),
-            paddle.nn.Linear(in_features=128, out_features=128),
-            paddle.nn.Silu(),
-        )
+        self.rbf_emb = paddle.nn.Sequential(Dense(128 + 9 + self.dist_emb.dim, 128))
 
         out_blocks = []
         int_blocks = []
@@ -217,6 +218,7 @@ class GemNetT(paddle.nn.Layer):
         for i in range(num_blocks):
             lattice_out_blocks.append(
                 paddle.nn.Linear(in_features=512 + 3, out_features=1, bias_attr=False)
+                # Dense(in_features=512+3, out_features=1)
             )
 
         self.lattice_out_blocks = paddle.nn.LayerList(sublayers=lattice_out_blocks)
@@ -226,6 +228,10 @@ class GemNetT(paddle.nn.Layer):
         self.type_out = paddle.nn.Linear(
             in_features=512, out_features=self.num_classes, bias_attr=False
         )
+        self.lattice_out = paddle.nn.Linear(
+            in_features=512, out_features=9, bias_attr=False
+        )
+
         self.shared_parameters = [
             (self.mlp_rbf3, self.num_blocks),
             (self.mlp_cbf3, self.num_blocks),
@@ -437,6 +443,11 @@ class GemNetT(paddle.nn.Layer):
             h = self.atom_latent_emb(h)
 
         lattices_edges = lattices.repeat_interleave(repeats=neighbors, axis=0)
+        d_st = V_st * D_st[:, None]
+        d_st = self.dist_emb(d_st)
+        rbf = self.rbf_emb(
+            paddle.concat([rbf, d_st, lattices_edges.reshape([-1, 9])], axis=1)
+        )
 
         m = self.edge_emb(h, rbf, idx_s, idx_t)
         rbf3 = self.mlp_rbf3(rbf)
