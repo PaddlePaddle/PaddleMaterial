@@ -416,6 +416,7 @@ class GemNetT(paddle.nn.Layer):
             atom_types: (N_atoms, MAX_ATOMIC_NUM)
         """
         pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
+        pos = frac_coords
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
             repeats=num_atoms, axis=0
         )
@@ -511,7 +512,7 @@ class GemNetT(paddle.nn.Layer):
         F_st_vec = F_st[:, :, None] * V_st[:, None, :]
         F_t = scatter(F_st_vec, idx_t, dim=0, dim_size=num_atoms.sum(), reduce="add")
         F_t = F_t.squeeze(axis=1)
-        return pred_l, F_t, pred_a
+        return E_t, F_t, pred_a
 
     @property
     def num_params(self):

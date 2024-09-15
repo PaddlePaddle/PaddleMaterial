@@ -6,7 +6,7 @@ from models.noise_schedule import BetaScheduler
 from models.noise_schedule import DiscreteScheduler
 from models.noise_schedule import SigmaScheduler
 from models.noise_schedule import d_log_p_wrapped_normal
-from models.noise_schedule import sigma_norm as sigma_norm_fn
+from models.noise_schedule import sigma_norm as sigma_norm_fn  # noqa: F401
 from models.time_embedding import SinusoidalTimeEmbeddings
 from models.time_embedding import uniform_sample_t
 from tqdm import tqdm
@@ -52,12 +52,9 @@ class MatterGen(paddle.nn.Layer):
         self.keep_type = self.cost_type < 1e-5
         self.device = paddle.device.get_device()
         self.pretrained = pretrained
-        # self.apply(self._init_weights)
+        self.apply(self._init_weights)
         if self.pretrained is not None:
             self.set_dict(paddle.load(self.pretrained))
-
-        for i in range(4):
-            self.decoder.out_blocks[i].reset_parameters()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -132,15 +129,20 @@ class MatterGen(paddle.nn.Layer):
         # get the crystal parameters
         frac_coords = batch["frac_coords"]
         lattices = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
+        # We start indexing the atom type from 0 in the model, so we need to subtract 1.
         atom_types = batch["atom_types"] - 1
 
         # get the symmetric matrix P
         _, lattices = polar_decomposition(lattices)
-
         if self.keep_lattice is False:
             # get the noise, and add it to the lattice
             rand_l = paddle.randn(shape=lattices.shape, dtype=lattices.dtype)
             rand_l = rand_l.tril() + rand_l.tril(diagonal=-1).transpose([0, 2, 1])
+            # for mp20, c = 1/20
+            # u_item = (1 - c0) * (batch['num_atoms'] / 20) ** (1/3)
+            # sigma_item = (batch['num_atoms'] * 1) ** (1/3)
+            # input_lattice = c0[:, None, None] * lattices + u_item[:, None, None] +
+            # c1[:, None, None] * rand_l * sigma_item[:, None, None]
             input_lattice = c0[:, None, None] * lattices + c1[:, None, None] * rand_l
         else:
             input_lattice = lattices
@@ -148,8 +150,8 @@ class MatterGen(paddle.nn.Layer):
         if self.keep_coords is False:
             # get the noise, and add it to the coordinates
             rand_x = paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
-            sigmas = sigmas / (batch["num_atoms"]) ** (1 / 3)
-            sigmas_norm = sigma_norm_fn(sigmas)
+            # sigmas = sigmas / (batch["num_atoms"]) ** (1 / 3)
+            # sigmas_norm = sigma_norm_fn(sigmas)
             sigmas_per_atom = sigmas.repeat_interleave(repeats=batch["num_atoms"])[
                 :, None
             ]
@@ -187,9 +189,9 @@ class MatterGen(paddle.nn.Layer):
             loss_dict["loss_lattice"] = loss_lattice
 
         if self.keep_coords is False:
-            pred_x = cart_to_frac_coords(
-                pred_x, batch["num_atoms"], lattices=input_lattice
-            )
+            # pred_x = cart_to_frac_coords(
+            #     pred_x, batch["num_atoms"], lattices=input_lattice
+            # )
             tar_x = d_log_p_wrapped_normal(
                 sigmas_per_atom * rand_x, sigmas_per_atom
             ) / paddle.sqrt(x=sigmas_norm_per_atom)
@@ -221,11 +223,16 @@ class MatterGen(paddle.nn.Layer):
     def sample(self, batch, step_lr=1e-05):
         batch_size = batch["num_graphs"]
 
+        # u_item = (batch['num_atoms'] / 20) ** (1/3)
+        # sigma_item = (batch['num_atoms'] * 1) ** (1/3)
+
         # l_T = lattice_params_to_matrix_paddle(batch["lengths"], batch["angles"])
         l_T = paddle.randn(shape=[batch_size, 3, 3])
         l_T = l_T.tril() + l_T.tril(diagonal=-1).transpose([0, 2, 1])
         x_T = paddle.rand(shape=[batch["num_nodes"], 3])
         a_T = paddle.randint(low=0, high=self.num_classes, shape=[batch["num_nodes"]])
+
+        # l_T = u_item[:, None, None] + sigma_item[:, None, None] * l_T
 
         time_start = self.beta_scheduler.timesteps
         traj = {
@@ -244,15 +251,17 @@ class MatterGen(paddle.nn.Layer):
             alphas_cumprod = self.beta_scheduler.alphas_cumprod[t]
             sigmas = self.beta_scheduler.sigmas[t]
             sigma_x = self.sigma_scheduler.sigmas[t]
-            # sigma_norm = self.sigma_scheduler.sigmas_norm[t]
+            sigma_norm = self.sigma_scheduler.sigmas_norm[t]
             # todo:
-            sigma_x = sigma_x / (batch["num_atoms"]) ** (1 / 3)
-            sigma_norm = sigma_norm_fn(sigma_x)
-            sigma_x = sigma_x[0]
-            sigma_norm = sigma_norm[0]
+            # sigma_x = sigma_x / (batch["num_atoms"]) ** (1 / 3)
+            # sigma_norm = sigma_norm_fn(sigma_x)
+            # sigma_x = sigma_x[0]
+            # sigma_norm = sigma_norm[0]
 
             c0 = 1.0 / paddle.sqrt(x=alphas)
             c1 = (1 - alphas) / paddle.sqrt(x=1 - alphas_cumprod)
+            # c1_1 = paddle.sqrt(x=1.0 - alphas_cumprod)
+
             x_t = traj[t]["frac_coords"]
             l_t = traj[t]["lattices"]
             a_t = traj[t]["atom_types"]
@@ -271,7 +280,8 @@ class MatterGen(paddle.nn.Layer):
                 a_t,
                 batch["num_atoms"],
             )
-            pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=l_t)
+
+            # pred_x = cart_to_frac_coords(pred_x, batch["num_atoms"], lattices=l_t)
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
 
             x_t_minus_05 = (
@@ -295,7 +305,7 @@ class MatterGen(paddle.nn.Layer):
             )
             adjacent_sigma_x = self.sigma_scheduler.sigmas[t - 1]
             # todo:
-            adjacent_sigma_x = adjacent_sigma_x / (batch["num_atoms"][0]) ** (1 / 3)
+            # adjacent_sigma_x = adjacent_sigma_x / (batch["num_atoms"][0]) ** (1 / 3)
 
             step_size = sigma_x**2 - adjacent_sigma_x**2
             std_x = paddle.sqrt(
@@ -310,15 +320,18 @@ class MatterGen(paddle.nn.Layer):
                 a_t_minus_05,
                 batch["num_atoms"],
             )
-            pred_x = cart_to_frac_coords(
-                pred_x, batch["num_atoms"], lattices=l_t_minus_05
-            )
+            # pred_x = cart_to_frac_coords(
+            #     pred_x, batch["num_atoms"], lattices=l_t_minus_05
+            # )
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_1 = (
                 x_t_minus_05 - step_size * pred_x + std_x * rand_x
                 if not self.keep_coords
                 else x_t
             )
+            pred_l = (pred_l + pred_l.transpose([0, 2, 1])) / 2
+            # pred_l = (pred_l * sigma_item[:, None, None] * c1_1 +
+            # u_item[:, None, None])/c1_1
             l_t_minus_1 = (
                 c0 * (l_t_minus_05 - c1 * pred_l) + sigmas * rand_l
                 if not self.keep_lattice
