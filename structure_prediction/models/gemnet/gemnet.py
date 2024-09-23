@@ -415,7 +415,7 @@ class GemNetT(paddle.nn.Layer):
             atom_frac_coords: (N_atoms, 3)
             atom_types: (N_atoms, MAX_ATOMIC_NUM)
         """
-        pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
+        # pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
         pos = frac_coords
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
             repeats=num_atoms, axis=0
@@ -490,19 +490,20 @@ class GemNetT(paddle.nn.Layer):
             lattice_score = self.lattice_out_blocks[i](
                 paddle.concat([m, angles], axis=1)
             )
-            lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
-            v_sts = V_st.split(neighbors.numpy().tolist())
-            lattice_sub_layers = []
-            for j in range(len(lattice_scores)):
-                lattice_score = paddle.diag(lattice_scores[j])
-                ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
-                ll = ll / neighbors[j]
-                lattice_sub_layers.append(ll)
-            lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
-            if pred_l is None:
-                pred_l = lattice_sub_layers
-            else:
-                pred_l += lattice_sub_layers
+
+            # lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
+            # v_sts = V_st.split(neighbors.numpy().tolist())
+            # lattice_sub_layers = []
+            # for j in range(len(lattice_scores)):
+            #     lattice_score = paddle.diag(lattice_scores[j])
+            #     ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
+            #     ll = ll / neighbors[j]
+            #     lattice_sub_layers.append(ll)
+            # lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
+            # if pred_l is None:
+            #     pred_l = lattice_sub_layers
+            # else:
+            #     pred_l += lattice_sub_layers
 
         pred_a = self.type_out(h)
 
