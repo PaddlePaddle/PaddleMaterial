@@ -2,18 +2,14 @@ from __future__ import annotations
 
 import argparse
 import os
-import pickle
 import shutil
-import warnings
-import zipfile
+import time
 from collections import defaultdict
 
-import matplotlib.pyplot as plt
 import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
-import pandas as pd
 import yaml
 from dataset.cryst_dataset import CrystDataset
 from dataset.cryst_dataset import GenDataset
@@ -23,21 +19,15 @@ from models.diffusion import CSPDiffusionWithType
 from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
 from models.diffusion_pp import CSPDiffusionPP
+from models.mattergen import MatterGen
 from p_tqdm import p_map
-from pymatgen.core import Structure
-from tqdm import tqdm
-from utils.logger import init_logger
-from utils.misc import set_random_seed
-
-# To suppress warnings for clearer output
-warnings.simplefilter("ignore")
-import time
-
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from pyxtal.symmetry import Group
+from utils import logger
+from utils import save_load
+from utils.crystal import lattices_to_params_shape
+from utils.misc import set_random_seed
 
 if dist.get_world_size() > 1:
     fleet.init(is_collective=True)
@@ -124,6 +114,8 @@ def get_model(cfg):
         model = CSPDiffusionWithGuidanceD3PM(**model_cfg)
     elif model_name == "CSPDiffusionPP":
         model = CSPDiffusionPP(**model_cfg)
+    elif model_name == "MatterGen":
+        model = MatterGen(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
@@ -210,12 +202,49 @@ def get_optimizer(cfg, model):
     return optimizer, lr_scheduler
 
 
+def scale_shared_grads(model):
+    """Divide the gradients of the layers that are shared across multiple
+    blocks
+    by the number the weights are shared for
+    """
+    with paddle.no_grad():
+
+        def scale_grad(param, scale_factor):
+            if param.grad is None:
+                return
+            g_data = param.grad
+            new_grads = g_data / scale_factor
+            param.grad = new_grads  # .copy_(new_grads)
+
+        # import remote_pdb as pdb;pdb.set_trace()
+        if isinstance(model, paddle.distributed.parallel.DataParallel):
+            model = model._layers
+        shared_int_layers = [
+            model.decoder.mlp_rbf3,
+            model.decoder.mlp_cbf3,
+            model.decoder.mlp_rbf_h,
+        ]
+        # if not model.decoder.triplets_only:
+        #     shared_int_layers += [
+        #         model.decoder.mlp_rbf4,
+        #         model.decoder.mlp_cbf4,
+        #         model.decoder.mlp_sbf4,
+        #     ]
+        for i, layer in enumerate(shared_int_layers):
+            if i == 1:
+                scale_grad(layer.weight, model.decoder.num_blocks)
+            else:
+                scale_grad(layer.linear.weight, model.decoder.num_blocks)
+        scale_grad(
+            model.decoder.mlp_rbf_out.linear.weight, model.decoder.num_blocks + 1
+        )
+
+
 def train_epoch(
     model,
     loader,
     optimizer,
     epoch,
-    log,
 ):
     model.train()
     total_loss = defaultdict(list)
@@ -227,6 +256,8 @@ def train_epoch(
 
         train_loss = losses["loss"]
         train_loss.backward()
+        if cfg["model"].pop("__name__", None) == "MatterGen":
+            scale_shared_grads(model)
         optimizer.step()
         optimizer.clear_grad()
 
@@ -246,7 +277,7 @@ def train_epoch(
                 optimizer.get_lr(),
             )
             message += msg
-            log.info(message)
+            logger.info(message)
     total_loss = {
         key: sum(total_loss[key]) / total_num_data for key in total_loss.keys()
     }
@@ -254,7 +285,7 @@ def train_epoch(
 
 
 @paddle.no_grad()
-def eval_epoch(model, loader, log):
+def eval_epoch(model, loader):
     model.eval()
     total_loss = defaultdict(list)
     total_num_data = 0
@@ -274,62 +305,62 @@ def eval_epoch(model, loader, log):
 
 
 def train(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "train.log"))
     train_loader, val_loader, test_loader = get_dataloader(cfg)
 
     model = get_model(cfg)
 
     optimizer, lr_scheduler = get_optimizer(cfg, model)
 
-    global_step = 0
-    best_metric = float("inf")
+    best_metric = {"metric": float("inf"), "epoch": -1}
+    if cfg.get("resume_from") is not None:
+        loaded_metric = save_load.load_checkpoint(
+            cfg.get("resume_from"), model, optimizer
+        )
+        if isinstance(loaded_metric, dict):
+            best_metric.update(loaded_metric)
+    start_epoch = best_metric["epoch"] + 1
 
-    for epoch in range(cfg["epochs"]):
-        train_loss = train_epoch(model, train_loader, optimizer, epoch, log)
+    for epoch in range(start_epoch, cfg["epochs"]):
+        train_loss = train_epoch(model, train_loader, optimizer, epoch)
 
         if paddle.distributed.get_rank() == 0:
-            eval_loss = eval_epoch(model, val_loader, log)
+            eval_loss = eval_epoch(model, val_loader)
             lr_scheduler.step(eval_loss["loss"])
 
             msg = ""
             for key in train_loss.keys():
-                msg += f", train_{key}_loss: {train_loss[key].item():.6f}"
+                msg += f", train_{key}: {train_loss[key].item():.6f}"
             for key in eval_loss.keys():
-                msg += f", eval_{key}_loss: {eval_loss[key].item():.6f}"
+                msg += f", eval_{key}: {eval_loss[key].item():.6f}"
 
-            log.info(f"epoch: {epoch}" + msg)
-
-            if eval_loss["loss"] < best_metric:
-                best_metric = eval_loss["loss"]
-                paddle.save(
-                    model.state_dict(), "{}/best.pdparams".format(cfg["save_path"])
+            logger.info(f"epoch: {epoch}" + msg)
+            cur_metirc = eval_loss["loss"]
+            if cur_metirc < best_metric["metric"]:
+                best_metric["metric"] = eval_loss["loss"]
+                best_metric["epoch"] = epoch
+                save_load.save_checkpoint(
+                    model,
+                    optimizer,
+                    best_metric,
+                    output_dir=cfg["save_path"],
+                    prefix="best",
                 )
-                log.info("Saving best checkpoint at {}".format(cfg["save_path"]))
 
-            paddle.save(
-                model.state_dict(), "{}/latest.pdparams".format(cfg["save_path"])
+            save_load.save_checkpoint(
+                model,
+                optimizer,
+                {"metric": cur_metirc, "epoch": epoch},
+                output_dir=cfg["save_path"],
+                prefix="latest",
             )
-            if epoch % 500 == 0:
-                paddle.save(
-                    model.state_dict(),
-                    "{}/epoch_{}.pdparams".format(cfg["save_path"], epoch),
+            if epoch % 100 == 0:
+                save_load.save_checkpoint(
+                    model,
+                    optimizer,
+                    {"metric": cur_metirc, "epoch": epoch},
+                    output_dir=cfg["save_path"],
+                    prefix=f"epoch_{epoch}",
                 )
-
-
-def lattices_to_params_shape(lattices):
-    lengths = paddle.sqrt(x=paddle.sum(x=lattices**2, axis=-1))
-    angles = paddle.zeros_like(x=lengths)
-    for i in range(3):
-        j = (i + 1) % 3
-        k = (i + 2) % 3
-        angles[..., i] = paddle.clip(
-            x=paddle.sum(x=lattices[..., j, :] * lattices[..., k, :], axis=-1)
-            / (lengths[..., j] * lengths[..., k]),
-            min=-1.0,
-            max=1.0,
-        )
-    angles = paddle.acos(x=angles) * 180.0 / np.pi
-    return lengths, angles
 
 
 def diffusion(loader, model, step_lr):
@@ -337,7 +368,6 @@ def diffusion(loader, model, step_lr):
     num_atoms = []
     atom_types = []
     lattices = []
-    input_data_list = []
     for idx, batch in enumerate(loader):
         outputs, traj = model.sample(batch, step_lr=step_lr)
         frac_coords.append(outputs["frac_coords"].detach().cpu())
@@ -399,12 +429,12 @@ def get_pymatgen(crystal_array):
             coords_are_cartesian=False,
         )
         return structure
-    except:
+    except Exception as e:
+        print(f"pymatgen error: {e}")
         return None
 
 
 def test(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "test.log"))
     train_loader, val_loader, test_loader = get_dataloader(cfg)
 
     model = get_model(cfg)
@@ -418,12 +448,12 @@ def test(cfg):
     input_data_list = []
     start_time = time.time()
     for idx, batch in enumerate(test_loader):
-        batch_all_frac_coords = []
-        batch_all_lattices = []
         batch_frac_coords, batch_num_atoms, batch_atom_types = [], [], []
         batch_lattices = []
         for eval_idx in range(num_evals):
-            log.info(f"batch {idx} / {len(test_loader)}, sample {eval_idx} / {num_evals}")
+            logger.info(
+                f"batch {idx} / {len(test_loader)}, sample {eval_idx} / {num_evals}"
+            )
             outputs, traj = model.sample(batch, step_lr=step_lr)
             batch_frac_coords.append(outputs["frac_coords"].detach().cpu())
             batch_num_atoms.append(outputs["num_atoms"].detach().cpu())
@@ -490,7 +520,6 @@ def test(cfg):
 
 
 def sample(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "sample.log"))
     model = get_model(cfg)
 
     sample_loader = get_sample_dataloader(cfg)
@@ -503,16 +532,16 @@ def sample(cfg):
     crystal_list = get_crystals_list(frac_coords, atom_types, lengths, angles, num_atoms)
     strcuture_list = p_map(get_pymatgen, crystal_list)
     for i, structure in enumerate(strcuture_list):
+        formula = structure.formula.replace(" ", "-")
         tar_file = os.path.join(tar_dir, f"{formula}_{i + 1}.cif")
         if structure is not None:
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            print(f"{i + 1} Error Structure.")
+            logger.info(f"{i + 1} Error Structure.")
 
 
 def generation(cfg):
-    log = init_logger(log_file=os.path.join(cfg["save_path"], "generation.log"))
     model = get_model(cfg)
 
     sample_loader = get_gen_dataloader(cfg)
@@ -538,7 +567,7 @@ def generation(cfg):
             writer = CifWriter(structure)
             writer.write_file(tar_file)
         else:
-            print(f"{i + 1} Error Structure.")
+            logger.info(f"{i + 1} Error Structure.")
 
 
 if __name__ == "__main__":
@@ -566,6 +595,7 @@ if __name__ == "__main__":
             pass
 
     set_random_seed(cfg.get("seed", 42))
+    logger.init_logger(log_file=os.path.join(cfg["save_path"], f"{args.mode}.log"))
 
     if args.mode == "train":
         train(cfg)

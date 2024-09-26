@@ -1,0 +1,82 @@
+
+dataset:
+  num_targets: 1
+  readout: mean
+  max_atoms: 20
+  otf_graph: false
+  eval_model_name: mp20
+  train_max_epochs: 1000
+  early_stopping_patience: 100000
+  teacher_forcing_max_epoch: 500
+
+  common_args: &common_args
+    prop: mean_distance
+    niggli: true
+    primitive: False
+    graph_method: crystalnn
+    lattice_scale_method: scale_length
+    preprocess_workers: 30
+    tolerance: 0.1
+    use_space_group: false
+    use_pos_index: false
+
+  train:
+    name: train
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/train.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/train_ori.pkl
+    <<: *common_args
+  val:
+    name: val
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/val.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/val_ori.pkl
+    <<: *common_args
+
+  test:
+    name: test
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/test.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/test_ori.pkl
+    <<: *common_args
+
+  sample:
+    formula: Fe1Ag1Se1S1Br2
+    num_evals: 20
+
+model:
+  __name__: MatterGen
+  decoder_cfg:
+    num_targets: 1
+    num_blocks: 4
+    emb_size_atom: 512
+    emb_size_edge: 512
+    latent_dim: 256
+    regress_forces: true
+    max_neighbors: 20
+    cutoff: 7
+    otf_graph: True
+    scale_file: ./models/gemnet/gemnet-dT.json
+  beta_scheduler_cfg:
+    timesteps: 1000
+    scheduler_mode: cosine
+  sigma_scheduler_cfg:
+    timesteps: 1000
+    sigma_begin: 0.005
+    sigma_end: 0.5
+  time_dim: 256
+  cost_lattice: 1
+  cost_coord: 1
+  # pretrained: ./checkpoints/mattergen_2d/latest.pdparams
+
+
+lr_cfg:
+  learning_rate: 0.0001
+  factor: 0.6
+  patience: 100
+  min_lr: 0.000001
+epochs: 1000
+batch_size: 32
+num_workers: 0
+save_path: "./checkpoints/mattergen_2d_coor_lattices"
+
+sample_step_lr: 0.00001
+# grad_clip: 0.5
+num_evals: 20
