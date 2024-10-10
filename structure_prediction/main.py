@@ -20,6 +20,7 @@ from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
 from models.diffusion_pp import CSPDiffusionPP
 from models.mattergen import MatterGen
+from models.mattergen import MatterGenWithGuidance
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
@@ -116,6 +117,8 @@ def get_model(cfg):
         model = CSPDiffusionPP(**model_cfg)
     elif model_name == "MatterGen":
         model = MatterGen(**model_cfg)
+    elif model_name == "MatterGenWithGuidance":
+        model = MatterGenWithGuidance(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
