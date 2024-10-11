@@ -444,6 +444,7 @@ class GemNetT(paddle.nn.Layer):
         assert (property_emb is None and property_mask is None) or (
             property_emb is not None and property_mask is not None
         )
+    
         # pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
         pos = frac_coords
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
