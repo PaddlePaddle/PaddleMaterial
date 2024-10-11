@@ -4,55 +4,37 @@
  <img src="docs/logo.png" align="middle" width = "600"/>
 <p align="center">
 
-## 概述
+## 简介
 
-在一个维度上材料尺寸减小到极限的原子层厚度, 而在其他两个维度,材料尺寸相对较大。x，y方向上存在周期性。
-基于图神经网络和扩散模型，从公开已有的2万条的二维材料数据库，扩展到几十万，百万规模。
+晶体材料具有对称和周期性的结构，具有多种性能，广泛应用于从电子设备到能源应用的各个领域。为了发现晶体材料，传统的实验和计算方法通常既耗时又昂贵。近年来，由于晶体材料数据的爆炸性增长，数据驱动的材料发现引起了人们的极大兴趣。特别是，最近的进展利用了深度学习的表达能力来模拟晶体材料中高度复杂的原子系统，为快速准确的材料发现开辟了新的途径。PaddleScience-Material是一个基于PaddlePaddle的材料科学工具包，旨在帮助研究人员更高效地探索、发现和开发新的晶体材料。
+
+
+## 任务类型
 
 已整理好的数据、模型可从[此处](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6)下载。
 
-1. [基于GNN的二维材料稳定性预测](stability_prediction/README.md)
+### 1. 性质预测
 
-    <div align="center">
-        <img src="docs/flow.svg" width="900">
-    </div>
+预测晶体材料的性质是一个复杂而广泛的领域，涉及理论和实验方法。这项任务的复杂性归因于所涉及的众多变量和相互作用。最近，深度学习技术极大地推进了晶体材料的研究，越来越多的研究人员开发了复杂的模型来预测材料的性质。这些方法利用深度神经网络从数据集中捕获晶体结构和属性信息之间的映射关系，使其能够对各种材料属性进行预测。
 
-2. [基于扩散模型的二维材料结构生成](structure_prediction/README.md)
+[基于GNN的二维材料稳定性预测](stability_prediction/README.md)
 
-    <div align="center">
-        <img src="docs/diff_arch.png" width="900">
-    </div>
+<div align="center">
+    <img src="docs/flow.svg" width="900">
+</div>
+
+
+### 2. 结构生成
+
+传统上，新型晶体材料的发现在很大程度上依赖于直觉、试错实验和偶然性。然而，可能的晶体结构的化学空间是非常巨大的，因此仅通过物理合成和表征进行详尽的探索是不可行的。近年来，GANs、VAEs、扩散、流匹配、Transformer等深度生成模型为加速晶体材料的发现提供了一条有前景的新途径。通过从大型数据集中学习，它们展示了学习控制晶体材料结构-性质关系的潜在模式和规则的潜力。
+
+
+[基于扩散模型的二维材料结构生成](structure_prediction/README.md)
+
+<div align="center">
+    <img src="docs/diff_arch.png" width="900">
+</div>
 
 ## 环境安装
-#### 依赖环境：
-    python==3.10.9
-    paddlepaddle==2.6.1
-    pgl==2.2.3
-    pymatgen==2024.6.10
 
-#### 新建环境：
-    conda create -n test_env python=3.10.9
-    conda activate test_env
-
-#### 安装所需依赖包：
-    pip install -r requirments.txt
-
-
-由于PGL暂不兼容最新版本的Paddle，因此安装完成PGL后需要在安装路径内修改部分代码：
-例如我的安装路径为：anaconda3/envs/meg_paddle/lib/python3.10/site-packages/pgl
-
-1. 代码fluid替换为base:
-
-    a. 将pgl下所有文件中的 paddle.fluid 替换为 paddle.base
-
-    b. 将 paddle.base.core as core 替换为 paddle.base as core
-
-    该部分会涉及到3个文件的改动，修改后如下：
-    ![](docs/modify1.png)
-
-2. 删除"overwrite"参数：
-    在pgl/utils/helper.py中，将第109行 'overwrite' 参数删除，如下所示：
-
-        if non_static_mode():
-        # return _C_ops.scatter(x, index, updates, 'overwrite', overwrite)
-        return _C_ops.scatter(x, index, updates, overwrite)
+请参考[安装文档](install.md)进行环境配置。
