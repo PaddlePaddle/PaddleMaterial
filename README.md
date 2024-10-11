@@ -1,5 +1,9 @@
 # PaddleScience-Material
 
+<p align="center">
+ <img src="docs/logo.png" align="middle" width = "600"/>
+<p align="center">
+
 ## 概述
 
 在一个维度上材料尺寸减小到极限的原子层厚度, 而在其他两个维度,材料尺寸相对较大。x，y方向上存在周期性。
