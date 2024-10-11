@@ -74,7 +74,7 @@ model:
   cost_coord: 1.0
   cost_type: 1.0
   cost_type_ce: 0.01
-  # pretrained: ./checkpoints/mattergen_3d_v2/checkpoints/latest.pdparams
+  # pretrained: ./checkpoints/mattergen_3d/checkpoints/latest.pdparams
 
 
 lr_cfg:
@@ -85,7 +85,7 @@ lr_cfg:
 epochs: 1000
 batch_size: 32
 num_workers: 4
-save_path: "./checkpoints/mattergen_3d_v2"
+save_path: "./checkpoints/mattergen_3d"
 # checkpoint path for resume training, if None, start from scratch
 # such as: "./checkpoints/mattergen_3d/chekcpoints/latest"
 resume_from: null

@@ -3,7 +3,7 @@ from typing import Optional
 
 import paddle
 from utils import paddle_aux  # noqa: F401
-from utils.crystal import frac_to_cart_coords
+from utils.crystal import frac_to_cart_coords  # noqa: F401
 from utils.crystal import get_pbc_distances
 from utils.crystal import radius_graph_pbc
 
@@ -223,6 +223,30 @@ class GemNetT(paddle.nn.Layer):
 
         self.lattice_out_blocks = paddle.nn.LayerList(sublayers=lattice_out_blocks)
 
+        property_blocks = []
+        for i in range(num_blocks):
+            property_blocks.append(
+                paddle.nn.Sequential(
+                    paddle.nn.Linear(
+                        in_features=512, out_features=512, bias_attr=False
+                    ),
+                    paddle.nn.Silu(),
+                    paddle.nn.Linear(
+                        in_features=512, out_features=512, bias_attr=False
+                    ),
+                    paddle.nn.Silu(),
+                    paddle.nn.Linear(
+                        in_features=512,
+                        out_features=512,
+                        weight_attr=paddle.ParamAttr(
+                            initializer=paddle.nn.initializer.Constant(value=0.0)
+                        ),
+                        bias_attr=False,
+                    ),
+                )
+            )
+        self.property_blocks = paddle.nn.LayerList(sublayers=property_blocks)
+
         self.out_blocks = paddle.nn.LayerList(sublayers=out_blocks)
         self.int_blocks = paddle.nn.LayerList(sublayers=int_blocks)
         self.type_out = paddle.nn.Linear(
@@ -402,6 +426,8 @@ class GemNetT(paddle.nn.Layer):
         edge_index=None,
         to_jimages=None,
         num_bonds=None,
+        property_emb=None,
+        property_mask=None,
     ):
         """
         args:
@@ -415,7 +441,11 @@ class GemNetT(paddle.nn.Layer):
             atom_frac_coords: (N_atoms, 3)
             atom_types: (N_atoms, MAX_ATOMIC_NUM)
         """
-        pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
+        assert (property_emb is None and property_mask is None) or (
+            property_emb is not None and property_mask is not None
+        )
+    
+        # pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
         pos = frac_coords
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
             repeats=num_atoms, axis=0
@@ -457,18 +487,18 @@ class GemNetT(paddle.nn.Layer):
         rbf_out = self.mlp_rbf_out(rbf)
         E_t, F_st = self.out_blocks[0](h, m, rbf_out, idx_t)
 
-        angle1 = paddle.nn.functional.cosine_similarity(
-            lattices_edges[:, :, 0], V_st, axis=1
-        )
-        angle2 = paddle.nn.functional.cosine_similarity(
-            lattices_edges[:, :, 1], V_st, axis=1
-        )
-        angle3 = paddle.nn.functional.cosine_similarity(
-            lattices_edges[:, :, 2], V_st, axis=1
-        )
-        angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
+        # angle1 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 0], V_st, axis=1
+        # )
+        # angle2 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 1], V_st, axis=1
+        # )
+        # angle3 = paddle.nn.functional.cosine_similarity(
+        #     lattices_edges[:, :, 2], V_st, axis=1
+        # )
+        # angles = paddle.stack(x=[angle1, angle2, angle3], axis=1)
 
-        pred_l = None
+        # pred_l = None
         for i in range(self.num_blocks):
             h, m = self.int_blocks[i](
                 h=h,
@@ -487,22 +517,30 @@ class GemNetT(paddle.nn.Layer):
             F_st += F
             E_t += E
 
-            lattice_score = self.lattice_out_blocks[i](
-                paddle.concat([m, angles], axis=1)
-            )
-            lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
-            v_sts = V_st.split(neighbors.numpy().tolist())
-            lattice_sub_layers = []
-            for j in range(len(lattice_scores)):
-                lattice_score = paddle.diag(lattice_scores[j])
-                ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
-                ll = ll / neighbors[j]
-                lattice_sub_layers.append(ll)
-            lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
-            if pred_l is None:
-                pred_l = lattice_sub_layers
-            else:
-                pred_l += lattice_sub_layers
+            # lattice_score = self.lattice_out_blocks[i](
+            #     paddle.concat([m, angles], axis=1)
+            # )
+            if property_emb is not None:
+                property_features = self.property_blocks[i](property_emb)
+                property_features = property_features * property_mask
+                property_features = paddle.repeat_interleave(
+                    property_features, num_atoms, axis=0
+                )
+                h = h + property_features
+
+            # lattice_scores = lattice_score.squeeze().split(neighbors.numpy().tolist())
+            # v_sts = V_st.split(neighbors.numpy().tolist())
+            # lattice_sub_layers = []
+            # for j in range(len(lattice_scores)):
+            #     lattice_score = paddle.diag(lattice_scores[j])
+            #     ll = v_sts[j].transpose([1, 0]) @ lattice_score @ v_sts[j]
+            #     ll = ll / neighbors[j]
+            #     lattice_sub_layers.append(ll)
+            # lattice_sub_layers = paddle.stack(x=lattice_sub_layers, axis=0)
+            # if pred_l is None:
+            #     pred_l = lattice_sub_layers
+            # else:
+            #     pred_l += lattice_sub_layers
 
         pred_a = self.type_out(h)
 
