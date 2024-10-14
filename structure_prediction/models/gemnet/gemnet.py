@@ -278,16 +278,26 @@ class GemNetT(paddle.nn.Layer):
             Indices enumerating the copies of id3_ca for creating a padded matrix
         """
         idx_s, idx_t = edge_index
-        value = paddle.arange(dtype=idx_s.dtype, end=idx_s.shape[0])
+        # value = paddle.arange(dtype=idx_s.dtype, end=idx_s.shape[0])
 
-        from utils.paddle_sparse import SparseTensor
+        # from utils.paddle_sparse import SparseTensor
 
-        adj = SparseTensor(
-            row=idx_t, col=idx_s, value=value, sparse_sizes=(num_atoms, num_atoms)
-        )
-        adj_edges = adj[idx_t]
-        id3_ba = adj_edges.storage.value()
-        id3_ca = adj_edges.storage.row()
+        # adj = SparseTensor(
+        #     row=idx_t, col=idx_s, value=value, sparse_sizes=(num_atoms, num_atoms)
+        # )
+        # adj_edges_cus = adj[idx_t]
+        # id3_ba_cus = adj_edges_cus.storage.value()
+        # id3_ca_cus= adj_edges_cus.storage.row()
+
+        value = paddle.arange(start=1, end=idx_s.shape[0] + 1, dtype=idx_s.dtype)
+        from paddle.sparse import sparse_coo_tensor
+
+        indices = paddle.to_tensor([idx_t, idx_s])
+        adj = sparse_coo_tensor(indices, value, (num_atoms, num_atoms))
+        adj_edges = adj.to_dense()[idx_s].to_sparse_coo(2)
+        id3_ba = adj_edges.values() - 1
+        id3_ca = adj_edges.indices()[0]
+
         mask = id3_ba != id3_ca
         id3_ba = id3_ba[mask]
         id3_ca = id3_ca[mask]
@@ -444,7 +454,6 @@ class GemNetT(paddle.nn.Layer):
         assert (property_emb is None and property_mask is None) or (
             property_emb is not None and property_mask is not None
         )
-    
         # pos = frac_to_cart_coords(frac_coords, num_atoms, lattices=lattices)
         pos = frac_coords
         batch = paddle.arange(end=num_atoms.shape[0]).repeat_interleave(
