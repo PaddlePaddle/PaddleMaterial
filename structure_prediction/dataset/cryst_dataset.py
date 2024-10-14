@@ -1,6 +1,5 @@
 import os
 import pickle
-import sys
 
 import chemparse
 import numpy as np
@@ -9,13 +8,8 @@ import pandas as pd
 from dataset.utils import add_scaled_lattice_prop
 from dataset.utils import chemical_symbols
 from dataset.utils import preprocess
-from p_tqdm import p_map
-from pymatgen.core.lattice import Lattice
-from pymatgen.core.structure import Structure
-from pymatgen.io.cif import CifWriter
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from pyxtal.symmetry import Group
-from utils import paddle_aux
+from dataset.utils import preprocess_tensors
+from utils import paddle_aux  # noqa
 
 
 class CrystDataset(paddle.io.Dataset):
@@ -113,7 +107,7 @@ class CrystDataset(paddle.io.Dataset):
             data["spacegroup"] = [data_dict["spacegroup"]]
             data["ops"] = data_dict["wyckoff_ops"].astype("float32")
             data["anchor_index"] = data_dict["anchors"]
-            data["ops_inv"] = np.linalg.pinv(data["ops"][:,:3,:3]).astype('float32')
+            data["ops_inv"] = np.linalg.pinv(data["ops"][:, :3, :3]).astype("float32")
 
         if self.use_pos_index:
             pos_dic = {}
@@ -126,6 +120,70 @@ class CrystDataset(paddle.io.Dataset):
 
     def __repr__(self) -> str:
         return f"CrystDataset(self.name={self.name!r}, self.path={self.path!r})"
+
+
+class TensorCrystDataset(paddle.io.Dataset):
+    def __init__(
+        self,
+        crystal_array_list,
+        niggli,
+        primitive,
+        graph_method,
+        preprocess_workers,
+        lattice_scale_method,
+        **kwargs,
+    ):
+        super().__init__()
+        self.niggli = niggli
+        self.primitive = primitive
+        self.graph_method = graph_method
+        self.lattice_scale_method = lattice_scale_method
+
+        self.cached_data = preprocess_tensors(
+            crystal_array_list,
+            niggli=self.niggli,
+            primitive=self.primitive,
+            graph_method=self.graph_method,
+        )
+
+        add_scaled_lattice_prop(self.cached_data, lattice_scale_method)
+        self.lattice_scaler = None
+        self.scaler = None
+
+    def __len__(self) -> int:
+        return len(self.cached_data)
+
+    def __getitem__(self, index):
+        data_dict = self.cached_data[index]
+
+        (
+            frac_coords,
+            atom_types,
+            lengths,
+            angles,
+            edge_indices,
+            to_jimages,
+            num_atoms,
+        ) = data_dict["graph_arrays"]
+
+        # atom_coords are fractional coordinates
+        # edge_index is incremented during batching
+        # https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
+        data = dict(
+            frac_coords=frac_coords.astype("float32"),
+            atom_types=atom_types,
+            lengths=lengths.reshape(1, -1).astype("float32"),
+            angles=angles.reshape(1, -1).astype("float32"),
+            edge_index=edge_indices.T,
+            to_jimages=to_jimages,
+            num_atoms=num_atoms,
+            num_bonds=tuple(edge_indices.shape)[0],
+            num_nodes=num_atoms,
+        )
+        return data
+
+    def __repr__(self) -> str:
+        return f"TensorCrystDataset(len: {len(self.cached_data)})"
 
 
 class SampleDataset(paddle.io.Dataset):
