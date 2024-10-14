@@ -16,9 +16,9 @@ from dataset.cryst_dataset import GenDataset
 from dataset.cryst_dataset import SampleDataset
 from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
+from models.diffusion_pp import CSPDiffusionPP
 from models.diffusion_with_guidance import CSPDiffusionWithGuidance
 from models.diffusion_with_guidance_d3pm import CSPDiffusionWithGuidanceD3PM
-from models.diffusion_pp import CSPDiffusionPP
 from models.mattergen import MatterGen
 from models.mattergen import MatterGenWithGuidance
 from p_tqdm import p_map
@@ -64,7 +64,7 @@ def collate_fn_graph(batch):
             for x in batch:
                 new_array = x[key] + cumulative_length
                 result_arrays_edge_index.append(new_array)
-                cumulative_length += x['num_atoms']
+                cumulative_length += x["num_atoms"]
             new_batch[key] = np.concatenate(result_arrays_edge_index, axis=1)
         elif key in [
             "frac_coords",
@@ -78,7 +78,9 @@ def collate_fn_graph(batch):
             "spacegroup",
         ]:
             new_batch[key] = np.concatenate([x[key] for x in batch], axis=0)
-        elif key in ["anchor_index",]:
+        elif key in [
+            "anchor_index",
+        ]:
             cumulative_length = 0
             result_arrays_anchor_index = []
             for x in batch:
@@ -137,18 +139,30 @@ def get_dataloader(cfg):
 
     train_loader = paddle.io.DataLoader(
         train_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(train_data,batch_size=cfg["batch_size"],shuffle=False),
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            train_data,
+            batch_size=cfg["batch_size"],
+            shuffle=True,
+        ),
         collate_fn=collate_fn_graph,
         num_workers=cfg["num_workers"],
     )
     val_loader = paddle.io.DataLoader(
         val_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(val_data,batch_size=cfg["batch_size"],),
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            val_data,
+            batch_size=cfg["batch_size"],
+            shuffle=False,
+        ),
         collate_fn=collate_fn_graph,
     )
     test_loader = paddle.io.DataLoader(
         test_data,
-        batch_sampler=paddle.io.DistributedBatchSampler(test_data,batch_size=cfg["batch_size"],),
+        batch_sampler=paddle.io.DistributedBatchSampler(
+            test_data,
+            batch_size=cfg["batch_size"],
+            shuffle=False,
+        ),
         collate_fn=collate_fn_graph,
     )
 
@@ -531,8 +545,12 @@ def sample(cfg):
     tar_dir = os.path.join(cfg["save_path"], formula)
     os.makedirs(tar_dir, exist_ok=True)
 
-    frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(sample_loader, model, cfg["sample_step_lr"])
-    crystal_list = get_crystals_list(frac_coords, atom_types, lengths, angles, num_atoms)
+    frac_coords, atom_types, lattices, lengths, angles, num_atoms = diffusion(
+        sample_loader, model, cfg["sample_step_lr"]
+    )
+    crystal_list = get_crystals_list(
+        frac_coords, atom_types, lengths, angles, num_atoms
+    )
     strcuture_list = p_map(get_pymatgen, crystal_list)
     for i, structure in enumerate(strcuture_list):
         formula = structure.formula.replace(" ", "-")
