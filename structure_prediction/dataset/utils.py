@@ -1,6 +1,4 @@
-import networkx as nx
 import numpy as np
-import paddle
 import pandas as pd
 from p_tqdm import p_umap
 from pymatgen.analysis import local_env
@@ -9,8 +7,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pyxtal import pyxtal
-from pyxtal.symmetry import Group
-from utils import paddle_aux
+from utils import paddle_aux  # noqa
 
 chemical_symbols = [
     "X",
@@ -173,7 +170,7 @@ def get_symmetry_info(crystal, tol=0.01):
     c = pyxtal()
     try:
         c.from_seed(crystal, tol=0.01)
-    except:
+    except Exception:
         c.from_seed(crystal, tol=0.0001)
     space_group = c.group.number
     species = []
@@ -207,7 +204,7 @@ def build_crystal_graph(crystal, graph_method="crystalnn"):
     if graph_method == "crystalnn":
         try:
             crystal_graph = StructureGraph.with_local_env_strategy(crystal, CrystalNN)
-        except:
+        except Exception:
             crystalNN_tmp = local_env.CrystalNN(
                 distance_cutoffs=None,
                 x_diff_weight=-1,
@@ -274,11 +271,11 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     angles_r = np.radians([alpha, beta, gamma])
     cos_alpha, cos_beta, cos_gamma = np.cos(angles_r)
     sin_alpha, sin_beta, sin_gamma = np.sin(angles_r)
-    
+
     val = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha * sin_beta)
     val = abs_cap(val)
     gamma_star = np.arccos(val)
-    
+
     vector_a = [a * sin_beta, 0.0, a * cos_beta]
     vector_b = [
         -b * sin_alpha * np.cos(gamma_star),
@@ -335,6 +332,42 @@ def preprocess(
     ordered_results = [
         mpid_to_results[df.iloc[idx]["material_id"]] for idx in range(len(df))
     ]
+    return ordered_results
+
+
+def preprocess_tensors(crystal_array_list, niggli, primitive, graph_method):
+    def process_one(batch_idx, crystal_array, niggli, primitive, graph_method):
+        frac_coords = crystal_array["frac_coords"]
+        atom_types = crystal_array["atom_types"]
+        lengths = crystal_array["lengths"]
+        angles = crystal_array["angles"]
+        if isinstance(lengths, np.ndarray):
+            lengths = lengths.tolist()
+        if isinstance(angles, np.ndarray):
+            angles = angles.tolist()
+        crystal = Structure(
+            lattice=Lattice.from_parameters(*(lengths + angles)),
+            species=atom_types,
+            coords=frac_coords,
+            coords_are_cartesian=False,
+        )
+        graph_arrays = build_crystal_graph(crystal, graph_method)
+        result_dict = {
+            "batch_idx": batch_idx,
+            "graph_arrays": graph_arrays,
+        }
+        return result_dict
+
+    unordered_results = p_umap(
+        process_one,
+        list(range(len(crystal_array_list))),
+        crystal_array_list,
+        [niggli] * len(crystal_array_list),
+        [primitive] * len(crystal_array_list),
+        [graph_method] * len(crystal_array_list),
+        num_cpus=30,
+    )
+    ordered_results = list(sorted(unordered_results, key=lambda x: x["batch_idx"]))
     return ordered_results
 
 
