@@ -10,7 +10,7 @@ dataset:
   teacher_forcing_max_epoch: 500
 
   common_args: &common_args
-    prop: formation_energy_per_atom
+    prop: mean_distance
     niggli: true
     primitive: False
     graph_method: crystalnn
@@ -22,29 +22,24 @@ dataset:
 
   train:
     name: Formation energy train
-    path: data/mp_20/train.csv
-    save_path: data/mp_20/train_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/train.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/train_ori.pkl
     <<: *common_args
   val:
     name: Formation energy val
-    path: data/mp_20/val.csv
-    save_path: data/mp_20/val_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/val.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/val_ori.pkl
     <<: *common_args
 
   test:
     name: Formation energy test
-    path: data/mp_20/test.csv
-    save_path: data/mp_20/test_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/test.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/test_ori.pkl
     <<: *common_args
 
   sample:
-    formula: MoS2
-    num_evals: 1
-    spacegroup: 100
-
-  generation:
-    total_num: 10
-    spacegroup: 100
+    formula: Fe1Ag1Se1S1Br2
+    num_evals: 20
 
 model:
   __name__: CSPDiffusionPP
@@ -71,16 +66,19 @@ model:
   time_dim: 256
   cost_lattice: 1
   cost_coord: 1
-  pretrained: "/home/liuxuwei01/PaddleScience-Material/structure_prediction/checkpoints/diffcsp-pp_3d_debug/latest.pdparams"
+  #pretrained: ./checkpoints/diffcsp_2d_init/latest.pdparams
+
 
 lr_cfg:
-  learning_rate: 0.0001
+  learning_rate: 0.001
   factor: 0.6
   patience: 30
   min_lr: 0.0001
 epochs: 1000
-batch_size: 128
+batch_size: 256
 num_workers: 0
-save_path: "./checkpoints/diffcsp-pp_3d_debug"
+save_path: "./checkpoints/diffcsp-pp_2d_debug"
 
-sample_step_lr: 1e-5
+sample_step_lr: 0.00001
+# grad_clip: 0.5
+num_evals: 20

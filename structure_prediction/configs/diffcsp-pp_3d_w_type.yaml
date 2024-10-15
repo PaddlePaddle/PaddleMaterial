@@ -40,14 +40,13 @@ dataset:
   sample:
     formula: MoS2
     num_evals: 1
-    spacegroup: 100
+    spacegroup: 225
 
   generation:
     total_num: 10
-    spacegroup: 100
 
 model:
-  __name__: CSPDiffusionPP
+  __name__: CSPDiffusionPPWithType
   decoder_cfg:
     hidden_dim: 512
     latent_dim: 256
@@ -61,6 +60,8 @@ model:
     cutoff: 7
     ln: true
     ip: true
+    smooth: true
+    pred_type: true
   beta_scheduler_cfg:
     timesteps: 1000
     scheduler_mode: cosine
@@ -71,7 +72,8 @@ model:
   time_dim: 256
   cost_lattice: 1
   cost_coord: 1
-  pretrained: "/home/liuxuwei01/PaddleScience-Material/structure_prediction/checkpoints/diffcsp-pp_3d_debug/latest.pdparams"
+  cost_type: 20
+  pretrained: "/home/liuxuwei01/PaddleScience-Material/structure_prediction/checkpoints/diffcsp-pp_3d_w_type_debug/checkpoints/latest.pdparams"
 
 lr_cfg:
   learning_rate: 0.0001
@@ -79,8 +81,8 @@ lr_cfg:
   patience: 30
   min_lr: 0.0001
 epochs: 1000
-batch_size: 128
+batch_size: 1
 num_workers: 0
-save_path: "./checkpoints/diffcsp-pp_3d_debug"
+save_path: "./checkpoints/diffcsp-pp_3d_w_type_debug"
 
 sample_step_lr: 1e-5

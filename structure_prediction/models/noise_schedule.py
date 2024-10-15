@@ -1,9 +1,8 @@
 import math
-import sys
 
 import numpy as np
 import paddle
-from utils import paddle_aux
+from utils import paddle_aux  # noqa
 
 
 def cosine_beta_schedule(timesteps, s=0.008):
@@ -45,7 +44,7 @@ def d_log_p_wrapped_normal(x, sigma, N=10, T=1.0):
     p_ = 0
     for i in range(-N, N + 1):
         exp1 = paddle.exp(x=-((x + T * i) ** 2) / 2 / sigma**2)
-        p_ += ((x + T * i)/ sigma**2* exp1)
+        p_ += (x + T * i) / sigma**2 * exp1
     return p_ / p_wrapped_normal(x, sigma, N, T)
 
 

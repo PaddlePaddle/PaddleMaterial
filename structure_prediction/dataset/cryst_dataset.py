@@ -187,10 +187,11 @@ class TensorCrystDataset(paddle.io.Dataset):
 
 
 class SampleDataset(paddle.io.Dataset):
-    def __init__(self, formula, num_evals, lengths=None, angles=None):
+    def __init__(self, formula, num_evals, spacegroup=None, lengths=None, angles=None):
         super().__init__()
         self.formula = formula
         self.num_evals = num_evals
+        self.spacegroup = [spacegroup]
         self.lengths = np.asarray(lengths, dtype=np.float32).reshape(1, -1)
         self.angles = np.asarray(angles, dtype=np.float32).reshape(1, -1)
         self.get_structure()
@@ -212,6 +213,7 @@ class SampleDataset(paddle.io.Dataset):
             atom_types=self.chem_list,
             num_atoms=len(self.chem_list),
             num_nodes=len(self.chem_list),
+            spacegroup=self.spacegroup,
             lengths=self.lengths,
             angles=self.angles,
         )  # y=prop.view(1, -1))
@@ -343,6 +345,7 @@ class GenDataset(paddle.io.Dataset):
             len(self.distribution), total_num, p=self.distribution
         )
         self.property_value = property_value
+        self.spacegroup = [np.random.randint(1, 230)]
 
     def __len__(self) -> int:
         return self.total_num
@@ -356,4 +359,6 @@ class GenDataset(paddle.io.Dataset):
         if self.property_value is not None:
             prop = np.array(self.property_value, dtype=np.float32).reshape(1, -1)
             data["prop"] = prop
+        if self.spacegroup is not None:
+            data["spacegroup"] = self.spacegroup
         return data

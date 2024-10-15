@@ -1,5 +1,7 @@
 import math
+
 import paddle
+
 
 class SinusoidsEmbedding(paddle.nn.Layer):
     def __init__(self, n_frequencies=10, n_space=3):
@@ -14,6 +16,7 @@ class SinusoidsEmbedding(paddle.nn.Layer):
         emb = emb.reshape(-1, self.n_frequencies * self.n_space)
         emb = paddle.concat(x=(emb.sin(), emb.cos()), axis=-1)
         return emb
+
 
 class CSPPPLayer(paddle.nn.Layer):
     """Message passing layer for cspnet."""
@@ -45,7 +48,6 @@ class CSPPPLayer(paddle.nn.Layer):
         if self.ln:
             self.layer_norm = paddle.nn.LayerNorm(normalized_shape=hidden_dim)
 
-
     def edge_model(
         self,
         node_features,
@@ -62,9 +64,7 @@ class CSPPPLayer(paddle.nn.Layer):
         if self.dis_emb is not None:
             frac_diff = self.dis_emb(frac_diff)
         lattice_rep_edges = lattice_rep[edge2graph]
-        edges_input = paddle.concat(
-            x=[hi, hj, lattice_rep_edges, frac_diff], axis=1
-        )
+        edges_input = paddle.concat(x=[hi, hj, lattice_rep_edges, frac_diff], axis=1)
         edge_features = self.edge_mlp(edges_input)
         return edge_features
 
@@ -90,13 +90,17 @@ class CSPPPLayer(paddle.nn.Layer):
             property_features = self.prop_mlp(property_emb)
             if property_mask is not None:
                 property_features = property_features * property_mask
-            property_features = paddle.repeat_interleave(property_features, num_atoms, axis=0)
+            property_features = paddle.repeat_interleave(
+                property_features, num_atoms, axis=0
+            )
             node_features = node_features + property_features
 
         node_input = node_features
         if self.ln:
             node_features = self.layer_norm(node_input)
-        edge_features = self.edge_model(node_features, frac_coords, lattices, edge_index, edge2graph, frac_diff)
+        edge_features = self.edge_model(
+            node_features, frac_coords, lattices, edge_index, edge2graph, frac_diff
+        )
         node_output = self.node_model(node_features, edge_features, edge_index)
         return node_input + node_output
 
@@ -112,7 +116,7 @@ class CSPPPNet(paddle.nn.Layer):
         dis_emb="sin",
         num_freqs=10,
         edge_style="fc",
-        coord_style='node',
+        coord_style="node",
         cutoff=6.0,
         max_neighbors=20,
         ln=False,
@@ -123,7 +127,7 @@ class CSPPPNet(paddle.nn.Layer):
         smooth=False,
         ip=True,
         pred_scalar=False,
-        pooling='mean',
+        pooling="mean",
         num_classes=None,
     ):
         super(CSPPPNet, self).__init__()
@@ -151,15 +155,21 @@ class CSPPPNet(paddle.nn.Layer):
         for i in range(0, num_layers):
             self.add_sublayer(
                 name="csppp_layer_%d" % i,
-                sublayer=CSPPPLayer(hidden_dim, self.act_fn, self.dis_emb, ln=ln, ip=ip),
+                sublayer=CSPPPLayer(
+                    hidden_dim, self.act_fn, self.dis_emb, ln=ln, ip=ip
+                ),
             )
         self.num_layers = num_layers
         self.dense = dense
         hidden_dim_before_out = hidden_dim
         if self.dense:
             hidden_dim_before_out = hidden_dim_before_out * (num_layers + 1)
-        self.coord_out = paddle.nn.Linear(in_features=hidden_dim_before_out, out_features=3, bias_attr=False)
-        self.lattice_out = paddle.nn.Linear(in_features=hidden_dim_before_out, out_features=6, bias_attr=False)
+        self.coord_out = paddle.nn.Linear(
+            in_features=hidden_dim_before_out, out_features=3, bias_attr=False
+        )
+        self.lattice_out = paddle.nn.Linear(
+            in_features=hidden_dim_before_out, out_features=6, bias_attr=False
+        )
         self.edge_style = edge_style
         self.cutoff = cutoff
         self.max_neighbors = max_neighbors
@@ -173,10 +183,11 @@ class CSPPPNet(paddle.nn.Layer):
             )
         self.pred_scalar = pred_scalar
         if self.pred_scalar:
-            self.scalar_out = paddle.nn.Linear(in_features=hidden_dim_before_out, out_features=1)
+            self.scalar_out = paddle.nn.Linear(
+                in_features=hidden_dim_before_out, out_features=1
+            )
 
     def gen_edges(self, num_atoms, frac_coords):
-        lis = [paddle.ones(shape=[n, n]) for n in num_atoms]
         cum_num_atoms = paddle.cumsum(x=num_atoms)
         indices_pp = []
         rows = paddle.arange(num_atoms.max())
@@ -213,7 +224,7 @@ class CSPPPNet(paddle.nn.Layer):
         node_features = self.atom_latent_emb(node_features)
 
         h_list = [node_features]
-        
+
         for i in range(0, self.num_layers):
             node_features = eval("self.csppp_layer_%d" % i)(
                 node_features,
@@ -231,9 +242,9 @@ class CSPPPNet(paddle.nn.Layer):
 
         if self.ln:
             node_features = self.final_layer_norm(node_features)
-        
+
         h_list.append(node_features)
-        
+
         if self.dense:
             node_features = paddle.concat(x=h_list, axis=-1)
 
@@ -241,8 +252,7 @@ class CSPPPNet(paddle.nn.Layer):
 
         if self.pred_scalar:
             return self.scalar_out(graph_features)
-        
-                
+
         coord_out = self.coord_out(node_features)
         lattice_out = self.lattice_out(graph_features)
         if self.pred_type:
