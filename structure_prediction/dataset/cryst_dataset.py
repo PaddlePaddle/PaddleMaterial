@@ -191,7 +191,7 @@ class SampleDataset(paddle.io.Dataset):
         super().__init__()
         self.formula = formula
         self.num_evals = num_evals
-        self.spacegroup = [spacegroup]
+        self.spacegroup = [spacegroup] if spacegroup is not None else None
         self.lengths = np.asarray(lengths, dtype=np.float32).reshape(1, -1)
         self.angles = np.asarray(angles, dtype=np.float32).reshape(1, -1)
         self.get_structure()
@@ -213,10 +213,11 @@ class SampleDataset(paddle.io.Dataset):
             atom_types=self.chem_list,
             num_atoms=len(self.chem_list),
             num_nodes=len(self.chem_list),
-            spacegroup=self.spacegroup,
             lengths=self.lengths,
             angles=self.angles,
         )  # y=prop.view(1, -1))
+        if self.spacegroup is not None:
+            data["spacegroup"] = self.spacegroup
 
         return data
 
