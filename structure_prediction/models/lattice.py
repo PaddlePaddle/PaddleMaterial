@@ -1,40 +1,44 @@
+import numpy as np
 import paddle
 from paddle import linalg as LA
-import numpy as np
+from scipy.linalg import expm as scipy_expm
+
 
 class CrystalFamily(paddle.nn.Layer):
-
     def __init__(self):
-        
+
         super(CrystalFamily, self).__init__()
-        
+
         basis = self.get_basis()
         masks, biass = self.get_spacegroup_constraints()
         family = self.get_family_idx()
-        
-        self.register_buffer(name='basis', tensor=basis)
-        self.register_buffer(name='masks', tensor=masks)
-        self.register_buffer(name='biass', tensor=biass)
-        self.register_buffer(name='family', tensor=family)
+
+        self.register_buffer(name="basis", tensor=basis)
+        self.register_buffer(name="masks", tensor=masks)
+        self.register_buffer(name="biass", tensor=biass)
+        self.register_buffer(name="family", tensor=family)
 
     def get_basis(self):
-        
-        basis = paddle.to_tensor(data=[
-            [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]], 
-            [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], 
-            [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]], 
-            [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 0.0]], 
-            [[1.0, 0.0,0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -2.0]], 
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        ], dtype='float32')
-        
+
+        basis = paddle.to_tensor(
+            data=[
+                [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+                [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -2.0]],
+                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            ],
+            dtype="float32",
+        )
+
         # Normalize
         basis = basis / basis.norm(axis=(-1, -2)).unsqueeze(axis=-1).unsqueeze(axis=-1)
-        
+
         return basis
 
     def get_spacegroup_constraint(self, spacegroup):
-        
+
         mask = paddle.ones(shape=[6])
         bias = paddle.zeros(shape=[6])
         if 195 <= spacegroup <= 230:
@@ -80,7 +84,7 @@ class CrystalFamily(paddle.nn.Layer):
                 family.append(2)
             elif 0 <= spacegroup <= 2:
                 family.append(1)
-        return paddle.to_tensor(data=family, dtype='int64')
+        return paddle.to_tensor(data=family, dtype="int64")
 
     def de_so3(self, L):
         x = L
@@ -97,13 +101,13 @@ class CrystalFamily(paddle.nn.Layer):
             basis = self.basis
         elif dims == 5:
             basis = self.basis[:-1]
-        log_mat = paddle.einsum('bk, kij -> bij', vec, basis)
+        log_mat = paddle.einsum("bk, kij -> bij", vec, basis)
         mat = expm(log_mat)
         return mat
 
     def m2v(self, mat):
         log_mat = logm(mat)
-        vec = paddle.einsum('bij, kij -> bk', log_mat, self.basis)
+        vec = paddle.einsum("bij, kij -> bk", log_mat, self.basis)
         return vec
 
     def proj_k_to_spacegroup(self, vec, spacegroup):
@@ -116,20 +120,32 @@ class CrystalFamily(paddle.nn.Layer):
             biass = self.biass[spacegroup, :-1]
         return vec * masks + biass
 
+
 def logm(A):
     det = LA.det(x=A)
     mask = ~(det > 0)
     b = mask.sum()
     if b > 0:
-        A[mask] = paddle.eye(num_rows=3).unsqueeze(axis=0).to(A).expand(shape=[b, -1, -1])
-    
+        A[mask] = (
+            paddle.eye(num_rows=3).unsqueeze(axis=0).to(A).expand(shape=[b, -1, -1])
+        )
+
     eigenvalues, eigenvectors = LA.eig(x=A)
 
-    return paddle.to_tensor(np.real(np.einsum('bij,bj,bjk->bik', eigenvectors.numpy(), np.log(eigenvalues.numpy()), np.linalg.inv(eigenvectors.numpy()))))
+    return paddle.to_tensor(
+        np.real(
+            np.einsum(
+                "bij,bj,bjk->bik",
+                eigenvectors.numpy(),
+                np.log(eigenvalues.numpy()),
+                np.linalg.inv(eigenvectors.numpy()),
+            )
+        )
+    )
+
 
 def expm(A):
-    if isinstance(A, paddle.Tensor):
-        return LA.matrix_exp(A)
+    return paddle.to_tensor(scipy_expm(A.numpy()))
 
 
 def sqrtm(A):
@@ -137,12 +153,16 @@ def sqrtm(A):
     mask = ~(det > 0)
     b = mask.sum()
     if b > 0:
-        A[mask] = paddle.eye(num_rows=3).unsqueeze(axis=0).to(A).expand(shape=[b, -1, -1])
-    
+        A[mask] = (
+            paddle.eye(num_rows=3).unsqueeze(axis=0).to(A).expand(shape=[b, -1, -1])
+        )
+
     eigenvalues, eigenvectors = LA.eig(x=A)
     eigenvalues_real = paddle.real(eigenvalues)
     eigenvectors_real = paddle.real(eigenvectors)
-    
+
     eigenvectors_inv = paddle.linalg.pinv(eigenvectors_real)
-    
-    return paddle.einsum('bij,bj,bjk->bik', eigenvectors_real, eigenvalues_real.sqrt(), eigenvectors_inv)
+
+    return paddle.einsum(
+        "bij,bj,bjk->bik", eigenvectors_real, eigenvalues_real.sqrt(), eigenvectors_inv
+    )
