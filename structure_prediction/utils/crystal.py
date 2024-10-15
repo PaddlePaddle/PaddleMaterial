@@ -291,6 +291,17 @@ def radius_graph_pbc(
         return edge_index, unit_cell, num_neighbors_image, topk_mask
 
 
+def radius_graph_pbc_wrapper(
+    frac_coords, lattices, num_atoms, radius, max_num_neighbors_threshold, device
+):
+    cart_coords = frac_to_cart_coords(
+        frac_coords, num_atoms=num_atoms, lattices=lattices
+    )
+    return radius_graph_pbc(
+        cart_coords, lattices, num_atoms, radius, max_num_neighbors_threshold, device
+    )
+
+
 def frac_to_cart_coords(
     frac_coords, num_atoms, lengths=None, angles=None, lattices=None
 ):
