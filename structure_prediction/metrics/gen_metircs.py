@@ -225,7 +225,7 @@ class GenMetrics:
     def __init__(
         self,
         gt_file_path,
-        n_samples=1,
+        n_samples=1000,
         struc_cutoff=0.4,
         comp_cutoff=10,
         property_model_cfg_path=None,
