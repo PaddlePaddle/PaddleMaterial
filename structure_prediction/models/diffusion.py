@@ -1,9 +1,3 @@
-import copy
-import math
-from typing import Any
-from typing import Dict
-
-import numpy as np
 import paddle
 import paddle.nn as nn
 from models import initializer
@@ -64,7 +58,6 @@ class CSPDiffusion(paddle.nn.Layer):
         times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
         alphas_cumprod = self.beta_scheduler.alphas_cumprod[times]
-        beta = self.beta_scheduler.betas[times]
         c0 = paddle.sqrt(x=alphas_cumprod)
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
         sigmas = self.sigma_scheduler.sigmas[times]
@@ -87,7 +80,7 @@ class CSPDiffusion(paddle.nn.Layer):
             input_lattice = lattices
         pred_l, pred_x = self.decoder(
             time_emb,
-            batch["atom_types"],
+            batch["atom_types"] - 1,
             input_frac_coords,
             input_lattice,
             batch["num_atoms"],
@@ -151,7 +144,7 @@ class CSPDiffusion(paddle.nn.Layer):
             std_x = paddle.sqrt(x=2 * step_size)
             pred_l, pred_x = self.decoder(
                 time_emb,
-                batch["atom_types"],
+                batch["atom_types"] - 1,
                 x_t,
                 l_t,
                 batch["num_atoms"],
@@ -183,7 +176,7 @@ class CSPDiffusion(paddle.nn.Layer):
             )
             pred_l, pred_x = self.decoder(
                 time_emb,
-                batch["atom_types"],
+                batch["atom_types"] - 1,
                 x_t_minus_05,
                 l_t_minus_05,
                 batch["num_atoms"],
@@ -265,7 +258,6 @@ class CSPDiffusionWithType(paddle.nn.Layer):
         times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
         alphas_cumprod = self.beta_scheduler.alphas_cumprod[times]
-        beta = self.beta_scheduler.betas[times]
         c0 = paddle.sqrt(x=alphas_cumprod)
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
         sigmas = self.sigma_scheduler.sigmas[times]

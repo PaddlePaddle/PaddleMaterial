@@ -10,7 +10,8 @@ dataset:
   teacher_forcing_max_epoch: 500
 
   common_args: &common_args
-    prop: mean_distance
+    prop:
+      - mean_distance
     niggli: true
     primitive: False
     graph_method: crystalnn
@@ -22,19 +23,19 @@ dataset:
 
   train:
     name: Formation energy train
-    path: data/2d_structure/2d_structure_csv_ehull_200/train.csv
-    save_path: data/2d_structure/2d_structure_csv_ehull_200/train_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/train.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/train_ori.pkl
     <<: *common_args
   val:
     name: Formation energy val
-    path: data/2d_structure/2d_structure_csv_ehull_200/val.csv
-    save_path: data/2d_structure/2d_structure_csv_ehull_200/val_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/val.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/val_ori.pkl
     <<: *common_args
 
   test:
     name: Formation energy test
-    path: data/2d_structure/2d_structure_csv_ehull_200/test.csv
-    save_path: data/2d_structure/2d_structure_csv_ehull_200/test_ori.pkl
+    path: data/2d_structure/2d_structure_csv_ehull_200_condition/test.csv
+    save_path: data/2d_structure/2d_structure_csv_ehull_200_condition/test_ori.pkl
     <<: *common_args
 
   sample:
@@ -80,4 +81,4 @@ save_path: "./checkpoints/diffcsp_2d_debug"
 
 sample_step_lr: 0.00001
 # grad_clip: 0.5
-num_evals: 20
+num_evals: 1
