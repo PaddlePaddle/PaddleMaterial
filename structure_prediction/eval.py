@@ -407,6 +407,11 @@ def eval_ab_generation(cfg):
     metric = metric_fn(results)
     print(metric)
 
+    # 将results写入jsonl文件
+    with open(os.path.join(tar_dir, "output.jsonl"), "w") as f:
+        for result in results:
+            f.write(json.dumps(result) + "\n")
+
     # strcuture_list = p_map(get_pymatgen, crystal_list)
     # for i, structure in enumerate(strcuture_list):
     #     formula = structure.formula.replace(" ", "-")

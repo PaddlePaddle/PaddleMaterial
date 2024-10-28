@@ -195,8 +195,9 @@ def repeat_blocks(
     if not paddle.all(x=sizes_nonzero):
         try:
             assert block_inc == 0
-        except:
-            import pdb;pdb.set_trace()
+        except Exception:
+            # import pdb;pdb.set_trace()
+            raise ValueError("sizes must be non-zero")
         sizes = paddle.masked_select(x=sizes, mask=sizes_nonzero)
         if isinstance(repeats, paddle.Tensor):
             repeats = paddle.masked_select(x=repeats, mask=sizes_nonzero)

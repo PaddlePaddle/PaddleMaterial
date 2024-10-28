@@ -40,6 +40,9 @@ dataset:
   sample:
     formula: Fe1Ag1Se1S1Br2
     num_evals: 20
+  generation:
+    total_num: 10
+
 
 model:
   __name__: MatterGen
@@ -74,7 +77,7 @@ model:
   cost_type_ce: 0.01
   property_input_dim: 1
   property_dim: 512
-  # pretrained: ./checkpoints/mattergen_2d/checkpoints/latest.pdparams
+  # pretrained: ./checkpoints/mattergen_2d_no_guiduce_10_15/checkpoints/latest.pdparams
 
 
 lr_cfg:
@@ -82,10 +85,10 @@ lr_cfg:
   factor: 0.6
   patience: 100
   min_lr: 0.000001
-epochs: 1000
+epochs: 1500
 batch_size: 32
 num_workers: 4
-save_path: "./checkpoints/mattergen_2d_no_guiduce"
+save_path: "../../output/mattergen_2d_no_guiduce_10_16"
 # checkpoint path for resume training, if None, start from scratch
 # such as: "./checkpoints/mattergen_3d/chekcpoints/latest"
 resume_from: null
