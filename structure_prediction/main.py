@@ -14,6 +14,7 @@ import yaml
 from dataset.cryst_dataset import CrystDataset
 from dataset.cryst_dataset import GenDataset
 from dataset.cryst_dataset import SampleDataset
+from models.diffcsp_d3pm import CSPDiffusionWithD3PM
 from models.diffusion import CSPDiffusion
 from models.diffusion import CSPDiffusionWithType
 from models.diffusion_pp import CSPDiffusionPP
@@ -121,6 +122,8 @@ def get_model(cfg):
         model = MatterGen(**model_cfg)
     elif model_name == "MatterGenWithGuidance":
         model = MatterGenWithGuidance(**model_cfg)
+    elif model_name == "CSPDiffusionWithD3PM":
+        model = CSPDiffusionWithD3PM(**model_cfg)
     else:
         model = CSPDiffusion(**model_cfg)
     # model.set_dict(paddle.load('data/paddle_weight.pdparams'))
