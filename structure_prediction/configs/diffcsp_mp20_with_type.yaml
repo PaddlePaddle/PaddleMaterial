@@ -10,7 +10,8 @@ dataset:
   teacher_forcing_max_epoch: 500
 
   common_args: &common_args
-    prop: formation_energy_per_atom
+    prop:
+     - formation_energy_per_atom
     niggli: true
     primitive: False
     graph_method: crystalnn
@@ -21,18 +22,18 @@ dataset:
     use_pos_index: false
 
   train:
-    name: Formation energy train
+    name: train
     path: data/mp_20/train.csv
     save_path: data/mp_20/train_ori.pkl
     <<: *common_args
   val:
-    name: Formation energy val
+    name: val
     path: data/mp_20/val.csv
     save_path: data/mp_20/val_ori.pkl
     <<: *common_args
 
   test:
-    name: Formation energy test
+    name: test
     path: data/mp_20/test.csv
     save_path: data/mp_20/test_ori.pkl
     <<: *common_args
@@ -40,6 +41,8 @@ dataset:
   sample:
     formula: MoS2
     num_evals: 10
+  generation:
+    total_num: 10000
 
 model:
   __name__: CSPDiffusionWithType
@@ -70,7 +73,6 @@ model:
   cost_coord: 1
   cost_type: 20
 
-
 lr_cfg:
   learning_rate: 0.001
   factor: 0.6
@@ -79,6 +81,7 @@ lr_cfg:
 epochs: 1000
 batch_size: 256
 num_workers: 0
-save_path: "./checkpoints/diffcsp_3d_w_type"
+save_path: "./checkpoints/diffcsp_mp20_with_type"
 
-sample_step_lr: 1e-5
+sample_step_lr: 0.000005
+grad_clip: 0.5
