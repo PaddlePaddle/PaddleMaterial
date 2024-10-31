@@ -42,8 +42,14 @@
 
 ## Results
 
+### Task 1: Stable Structure Prediction
 
-### Task: Ab Initio Crystal Generation
+|    Model     | # of samples | Dataset  | Match rate | RMSE   | config                         | Checkpoint |
+| :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
+| diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
+
+
+### Task 2: Ab Initio Crystal Generation
 
 |    Model     |  Dataset  | Struc. Validity | Comp. Validity | COV-R | COV-P | $d_\rho$ | $d_E$  | $d_{ele}$ | config                         | Checkpoint |
 | :----------: | :-------: | :-------------: | :------------: | :---: | :---: | :------: | :----: | :-------: | :----------------------------: | :--------: |
