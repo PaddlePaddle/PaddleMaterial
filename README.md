@@ -38,3 +38,13 @@
 ## 环境安装
 
 请参考[安装文档](install.md)进行环境配置。
+
+
+## Results
+
+
+### Task: Ab Initio Crystal Generation
+
+|    Model     |  Dataset  | Struc. Validity | Comp. Validity | COV-R | COV-P | $d_\rho$ | $d_E$  | $d_{ele}$ | config                         | Checkpoint |
+| :----------: | :-------: | :-------------: | :------------: | :---: | :---: | :------: | :----: | :-------: | :----------------------------: | :--------: |
+| diffcsp(one-hot) | mp_20 | 99.95           | 84.51          | 99.61 | 99.32 | 0.2069   | 0.0659 | 0.4193    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
