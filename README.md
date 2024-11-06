@@ -28,7 +28,7 @@
 ##### Task 1: MP2018.6.1(formation energy per atom)
 
 The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992).
-For the convenience of training, we divided it into a ratio of 0.9:0.05:0.05，you can download it from [here](https://pan.baidu.com/s/1XXPqx8AiGk-TStY_dEfM1w?pwd=da3j)
+For the convenience of training, we divided it into a ratio of 0.9:0.05:0.05，you can download it from [here](https://pan.baidu.com/s/1yQY_qBRn-MvAAkWRRuWMAA?pwd=47ji)
 
 |    Dataset   | train | val  | test |
 | :----------: | :---: | :--: | :--: |
@@ -37,7 +37,7 @@ For the convenience of training, we divided it into a ratio of 0.9:0.05:0.05，y
 
 |    Model     | MAE(test dataset) | config    | Checkpoint |
 | :----------: | :---------------: | :-------: |  :-------: |
-| MegNet       | 0.03479           | [megnet_mp18](property_prediction/configs/megnet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1R2Vzuyy6MFYOvFzUbcO-TA?pwd=vdn9) |
+| MegNet       | 0.03479           | [megnet_mp18](property_prediction/configs/megnet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1yQY_qBRn-MvAAkWRRuWMAA?pwd=47ji) |
 
 
 #### Training
