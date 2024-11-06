@@ -23,6 +23,36 @@
     <img src="docs/flow.svg" width="900">
 </div>
 
+#### Results
+
+##### Task 1: MP2018.6.1(formation energy per atom)
+
+The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992).
+For the convenience of training, we divided it into a ratio of 0.9:0.05:0.05，you can download it from [here](https://pan.baidu.com/s/1yQY_qBRn-MvAAkWRRuWMAA?pwd=47ji)
+
+|    Dataset   | train | val  | test |
+| :----------: | :---: | :--: | :--: |
+| MP2018.6.1   | 62315 | 3461 | 3463 |
+
+
+|    Model     | MAE(test dataset) | config    | Checkpoint |
+| :----------: | :---------------: | :-------: |  :-------: |
+| MegNet       | 0.03479           | [megnet_mp18](property_prediction/configs/megnet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1yQY_qBRn-MvAAkWRRuWMAA?pwd=47ji) |
+
+
+#### Training
+
+```bash
+cd PaddleScience-Material
+PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" property_prediction/train.py
+```
+
+#### Test
+
+```bash
+cd PaddleScience-Material
+PYTHONPATH=$PWD python property_prediction/train.py --mode=test
+```
 
 ### 2. 结构生成
 
@@ -35,22 +65,22 @@
     <img src="docs/diff_arch.png" width="900">
 </div>
 
-## 环境安装
 
-请参考[安装文档](install.md)进行环境配置。
+#### Results
 
-
-## Results
-
-### Task 1: Stable Structure Prediction
+##### Task 1: Stable Structure Prediction
 
 |    Model     | # of samples | Dataset  | Match rate | RMSE   | config                         | Checkpoint |
 | :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
 | diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
 
 
-### Task 2: Ab Initio Crystal Generation
+##### Task 2: Ab Initio Crystal Generation
 
 |    Model     |  Dataset  | Struc. Validity | Comp. Validity | COV-R | COV-P | $d_\rho$ | $d_E$  | $d_{ele}$ | config                         | Checkpoint |
 | :----------: | :-------: | :-------------: | :------------: | :---: | :---: | :------: | :----: | :-------: | :----------------------------: | :--------: |
 | diffcsp(one-hot) | mp_20 | 99.95           | 84.51          | 99.61 | 99.32 | 0.2069   | 0.0659 | 0.4193    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
+
+## 环境安装
+
+请参考[安装文档](install.md)进行环境配置。
