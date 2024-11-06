@@ -142,3 +142,7 @@ structure_prediction/data/*
 structure_prediction/data_bak/*
 structure_prediction/log/*
 structure_prediction/checkpoints/*
+
+data/*
+log/*
+output/*
