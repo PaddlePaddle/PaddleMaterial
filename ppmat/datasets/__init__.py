@@ -11,9 +11,11 @@ from ppmat.utils import logger
 
 from . import collate_fn
 from .mp18_dataset import MP18Dataset  # noqa
+from .mp20_dataset import MP20Dataset  # noqa
 
 __all__ = [
     "MP18Dataset",
+    "MP20Dataset",
     "set_signal_handlers",
 ]
 

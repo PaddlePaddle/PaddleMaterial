@@ -1,33 +1,29 @@
-from __future__ import absolute_import
-from __future__ import annotations
-
 import os.path as osp
 import pickle
+from typing import Callable
 from typing import Dict
+from typing import Optional
 
 import numpy as np
+import paddle
 import pandas as pd
-from paddle.io import Dataset
 
 from ppmat.datasets.structure_converter import Structure2Graph
 from ppmat.datasets.utils import build_structure_from_str
 from ppmat.utils import logger
 
 
-class MP18Dataset(Dataset):
-    """mp.2018.6.1 dataset."""
-
+class MP20Dataset(paddle.io.Dataset):
     def __init__(
         self,
-        path: str = "./data/mp18/mp.2018.6.1.json",
+        path: str,
         niggli: bool = True,
         primitive: bool = False,
         converter_cfg: Dict = None,
-        transforms=None,
+        transforms: Optional[Callable] = None,
         cache: bool = True,
-        **kwargs,
     ):
-
+        super().__init__()
         self.path = path
         self.niggli = niggli
         self.primitive = primitive
@@ -35,8 +31,8 @@ class MP18Dataset(Dataset):
         self.transforms = transforms
         self.cache = cache
 
-        self.json_data = self.read_json(path)
-        self.num_samples = len(self.json_data["structure"])
+        self.csv_data = self.read_csv(path)
+        self.num_samples = len(self.csv_data["cif"])
 
         # when cache is True, load cached structures from cache file
         cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs.pkl")
@@ -47,9 +43,9 @@ class MP18Dataset(Dataset):
                 f"Load {len(self.structures)} cached structures from {cache_path}"
             )
         else:
-            # build structures from cif files
+            # build structures from cif
             self.structures = build_structure_from_str(
-                self.json_data["structure"], niggli=niggli, primitive=primitive
+                self.csv_data["cif"], niggli=niggli, primitive=primitive
             )
             logger.info(f"Build {len(self.structures)} structures")
             if self.cache:
@@ -82,28 +78,23 @@ class MP18Dataset(Dataset):
         else:
             self.graphs = None
 
-    def read_json(self, path):
-        data = pd.read_json(path)
-        data = {key: value.tolist() for key, value in data.items()}
-        logger.info(f"Total number of samples loaded is {len(data['structure'])}.")
+    def read_csv(self, path):
+        data = pd.read_csv(path)
+        logger.info(f"Read {len(data)} structures from {path}")
+        data = {key: data[key].tolist() for key in data if "Unnamed" not in key}
         return data
 
-    def __getitem__(self, idx: int):
-        """Get item at index idx."""
+    def __getitem__(self, idx):
         data = {}
-        # get graph
         if self.graphs is not None:
             data["graph"] = self.graphs[idx]
 
-        # get formation energy per atom
         data["formation_energy_per_atom"] = np.array(
-            [self.json_data["formation_energy_per_atom"][idx]]
+            [self.csv_data["formation_energy_per_atom"][idx]]
         ).astype("float32")
-        # get band gap
-        data["band_gap"] = np.array([self.json_data["band_gap"][idx]]).astype("float32")
+        data["band_gap"] = np.array([self.csv_data["band_gap"][idx]]).astype("float32")
 
         data = self.transforms(data) if self.transforms is not None else data
-
         return data
 
     def __len__(self):

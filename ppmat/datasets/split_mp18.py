@@ -30,6 +30,9 @@ if __name__ == "__main__":
         "formation_energy_per_atom": data["formation_energy_per_atom"][
             train_idx
         ].tolist(),
+        "band_gap": data["band_gap"][train_idx].tolist(),
+        "G": data["G"][train_idx].tolist(),
+        "K": data["K"][train_idx].tolist(),
     }
     val_data = {
         "structure": data["structure"][val_idx].tolist(),
@@ -37,6 +40,9 @@ if __name__ == "__main__":
         "formation_energy_per_atom": data["formation_energy_per_atom"][
             val_idx
         ].tolist(),
+        "band_gap": data["band_gap"][val_idx].tolist(),
+        "G": data["G"][val_idx].tolist(),
+        "K": data["K"][val_idx].tolist(),
     }
     test_data = {
         "structure": data["structure"][test_idx].tolist(),
@@ -44,6 +50,9 @@ if __name__ == "__main__":
         "formation_energy_per_atom": data["formation_energy_per_atom"][
             test_idx
         ].tolist(),
+        "band_gap": data["band_gap"][test_idx].tolist(),
+        "G": data["G"][test_idx].tolist(),
+        "K": data["K"][test_idx].tolist(),
     }
 
     save_file_base = args.src_path.rsplit(".", 1)[0]
