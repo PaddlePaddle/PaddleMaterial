@@ -24,7 +24,7 @@ class MP18Dataset(Dataset):
         primitive: bool = False,
         converter_cfg: Dict = None,
         transforms=None,
-        cache: bool = True,
+        cache: bool = False,
         **kwargs,
     ):
 
@@ -34,6 +34,13 @@ class MP18Dataset(Dataset):
         self.converter_cfg = converter_cfg
         self.transforms = transforms
         self.cache = cache
+
+        if cache:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "cached settings match your current settings."
+            )
 
         self.json_data = self.read_json(path)
         self.num_samples = len(self.json_data["structure"])

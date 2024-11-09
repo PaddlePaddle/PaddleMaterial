@@ -21,7 +21,7 @@ class MP20Dataset(paddle.io.Dataset):
         primitive: bool = False,
         converter_cfg: Dict = None,
         transforms: Optional[Callable] = None,
-        cache: bool = True,
+        cache: bool = False,
     ):
         super().__init__()
         self.path = path
@@ -30,6 +30,13 @@ class MP20Dataset(paddle.io.Dataset):
         self.converter_cfg = converter_cfg
         self.transforms = transforms
         self.cache = cache
+
+        if cache:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "cached settings match your current settings."
+            )
 
         self.csv_data = self.read_csv(path)
         self.num_samples = len(self.csv_data["cif"])
