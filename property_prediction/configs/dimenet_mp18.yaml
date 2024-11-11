@@ -1,28 +1,33 @@
 Global:
   epochs: 2000
-  output_dir: ./output/megnet_mp18
+  output_dir: ./output/dime_mp18
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
   cal_metric_during_train: True # True: the metric will be calculated on train dataset
-
+  # pretrained_model_path:
 
 Model:
-  __name__: MEGNetPlus
-  dim_node_embedding: 16
-  dim_edge_embedding: 100
-  dim_state_embedding: 2
-  nblocks: 3
-  nlayers_set2set: 1
-  niters_set2set: 2
-  bond_expansion_cfg:
-    rbf_type: "Gaussian"
-    initial: 0.0
-    final: 5.0
-    num_centers: 100
-    width: 0.5
+  __name__: DimeNetPlusPlusWrap
+  num_targets: 1
+  hidden_channels: 128
+  num_blocks: 4
+  int_emb_size: 64
+  basis_emb_size: 8
+  out_emb_channels: 256
+  num_spherical: 7
+  num_embeddings: 95
+  num_radial: 6
+  otf_graph: false
+  cutoff: 7.0
+  max_num_neighbors: 20
+  envelope_exponent: 5
+  num_before_skip: 1
+  num_after_skip: 2
+  num_output_layers: 3
+  readout: mean
 
 Loss:
   __name__: LossWarper
@@ -31,6 +36,7 @@ Loss:
       __name__: MSELoss
   weights:
     formation_energy_per_atom: 1.0 # weight for formation energy per atom
+
 
 Optimizer:
   __name__: Adam
@@ -61,8 +67,7 @@ Dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_train.json"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -75,14 +80,13 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 256
+      batch_size: 64
   val:
     dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_val.json"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -98,8 +102,7 @@ Dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_test.json"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
