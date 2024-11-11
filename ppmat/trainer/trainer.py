@@ -44,7 +44,7 @@ class Trainer:
         optimizer: Optional[optim.Optimizer] = None,
         metric_class: Optional[Callable] = None,
         lr_scheduler: Optional[optim.lr.LRScheduler] = None,
-        post_process_class: Optional[nn.Layer] = None,
+        post_process_class: Optional[Callable] = None,
     ):
         self.config = config
         self.model = model
@@ -182,6 +182,8 @@ class Trainer:
                     value = value.item()
                 total_loss[key].append(value)
 
+            if self.post_process_class is not None:
+                pred_data, batch_data = self.post_process_class(pred_data, batch_data)
             metric_dict = self.metric_class(pred_data, batch_data)
             batch_cost = time.perf_counter() - batch_tic
             if paddle.distributed.get_rank() == 0 and (
@@ -251,6 +253,10 @@ class Trainer:
                 self.lr_scheduler.step()
 
             if self.cal_metric_during_train:
+                if self.post_process_class is not None:
+                    pred_data, batch_data = self.post_process_class(
+                        pred_data, batch_data
+                    )
                 metric_dict = self.metric_class(pred_data, batch_data)
             else:
                 metric_dict = None
