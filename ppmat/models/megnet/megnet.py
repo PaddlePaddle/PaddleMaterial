@@ -36,7 +36,7 @@ class MEGNetPlus(paddle.nn.Layer):
         bond_expansion_cfg=None,
         cutoff: float = 4.0,
         property_names: Literal[
-            "energy", "force", "stress", "formation_energy_per_atom"
+            "band_gap", "formation_energy_per_atom"
         ] = "formation_energy_per_atom",
     ):
         super().__init__()
@@ -88,32 +88,12 @@ class MEGNetPlus(paddle.nn.Layer):
         self.node_s2s = Set2Set(dim_blocks_out, **s2s_kwargs)
 
         self.heads = {}
-        if "energy" in self.property_names:
-            self.heads["energy"] = MLP(
+        if "band_gap" in self.property_names:
+            self.heads["band_gap"] = MLP(
                 dims=[
                     2 * 2 * dim_blocks_out + dim_blocks_out,
                     *hidden_layer_sizes_output,
                     1,
-                ],
-                activation=activation,
-                activate_last=False,
-            )
-        if "force" in self.property_names:
-            self.heads["force"] = MLP(
-                dims=[
-                    2 * 2 * dim_blocks_out + dim_blocks_out,
-                    *hidden_layer_sizes_output,
-                    3,
-                ],
-                activation=activation,
-                activate_last=False,
-            )
-        if "stress" in self.property_names:
-            self.heads["stress"] = MLP(
-                dims=[
-                    2 * 2 * dim_blocks_out + dim_blocks_out,
-                    *hidden_layer_sizes_output,
-                    9,
                 ],
                 activation=activation,
                 activate_last=False,
@@ -151,9 +131,11 @@ class MEGNetPlus(paddle.nn.Layer):
         Returns:
             Prediction
         """
+
         g = batch["graph"]
-        state_attr = batch["state_attr"]
-        node_attr = g.node_feat["node_type"]
+        batch_size = g.num_graph
+        state_attr = paddle.zeros([batch_size, 2])
+        node_attr = g.node_feat["atom_types"]
         edge_attr = self.bond_expansion(g.edge_feat["bond_dist"])
         node_feat, edge_feat, state_feat = self.embedding(
             node_attr, edge_attr, state_attr
