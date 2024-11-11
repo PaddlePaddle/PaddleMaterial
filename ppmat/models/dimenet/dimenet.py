@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Callable
+from typing import Literal
 
 import paddle
 import sympy as sym
@@ -353,9 +354,6 @@ class DimeNetPlusPlus(paddle.nn.Layer):
 
     def triplets(self, edge_index, num_nodes):
         row, col = edge_index
-        # sort_index = col.argsort()
-        # row, col = row[sort_index], col[sort_index]
-
         value = paddle.arange(start=1, end=row.shape[0] + 1)
 
         indices = paddle.to_tensor([col, row])
@@ -401,12 +399,17 @@ class DimeNetPlusPlusWrap(DimeNetPlusPlus):
         num_after_skip=2,
         num_output_layers=3,
         readout="mean",
+        property_names: Literal[
+            "band_gap", "formation_energy_per_atom"
+        ] = "formation_energy_per_atom",
     ):
         self.num_targets = num_targets
         self.cutoff = cutoff
         self.max_num_neighbors = max_num_neighbors
         self.otf_graph = otf_graph
         self.readout = readout
+        assert property_names in ["band_gap", "formation_energy_per_atom"]
+        self.property_names = property_names
         super(DimeNetPlusPlusWrap, self).__init__(
             hidden_channels=hidden_channels,
             out_channels=num_targets,
@@ -425,7 +428,6 @@ class DimeNetPlusPlusWrap(DimeNetPlusPlus):
         )
 
     def forward(self, data):
-        # batch = data["batch"]
         graph = data["graph"]
         batch = graph.graph_node_id
 
@@ -473,19 +475,9 @@ class DimeNetPlusPlusWrap(DimeNetPlusPlus):
         ):
             x = interaction_block(x, rbf, sbf, idx_kj, idx_ji)
             P += output_block(x, rbf, i, num_nodes=pos.shape[0])
-        if batch is None:
-            if self.readout == "mean":
-                energy = P.mean(axis=0)
-            elif self.readout == "sum":
-                energy = P.sum(axis=0)
-            elif self.readout == "cat":
-                energy = paddle.concat(x=[P.sum(axis=0), P.mean(axis=0)])
-            else:
-                raise NotImplementedError
-        else:
-            energy = scatter(P, batch, dim=0, reduce=self.readout)
+        energy = scatter(P, batch, dim=0, reduce=self.readout)
         results = {}
-        results["formation_energy_per_atom"] = energy
+        results[self.property_names] = energy
         return results
 
     @property
