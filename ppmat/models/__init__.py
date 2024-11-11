@@ -1,11 +1,10 @@
 import copy
 
+from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import logger
 
-__all__ = [
-    MEGNetPlus,
-]
+__all__ = ["MEGNetPlus", "DimeNetPlusPlusWrap"]
 
 
 def build_model(cfg):
