@@ -1,6 +1,4 @@
 from functools import partial
-from math import pi as PI
-from math import sqrt
 from typing import Callable
 
 import paddle
@@ -15,15 +13,6 @@ from ppmat.utils.crystal import get_pbc_distances
 
 """This module is adapted from https://github.com/Open-Catalyst-Project/ocp/tree/master/ocpmodels/models
 """
-
-
-def glorot_orthogonal(tensor, scale):
-    # if tensor is not None:
-    #     init_Orthogonal = paddle.nn.initializer.Orthogonal()
-    #     init_Orthogonal(tensor)
-    #     scale /= ((tensor.shape[-2] + tensor.shape[-1]) * tensor.var())
-    #     tensor.data *= scale.sqrt()
-    pass
 
 
 class Envelope(paddle.nn.Layer):
@@ -72,14 +61,6 @@ class BesselBasisLayer(paddle.nn.Layer):
                 )
             ),
         )
-        self.freq.stop_gradient = False
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        with paddle.no_grad():
-            paddle.assign(
-                paddle.arange(start=1, end=self.freq.size + 1), output=self.freq
-            ).multiply_(y=paddle.to_tensor(PI))
         self.freq.stop_gradient = False
 
     def forward(self, dist: paddle.Tensor) -> paddle.Tensor:
@@ -150,17 +131,6 @@ class EmbeddingBlock(paddle.nn.Layer):
             in_features=3 * hidden_channels, out_features=hidden_channels
         )
 
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        with paddle.no_grad():
-            self.emb.weight.data.uniform_(min=-sqrt(3), max=sqrt(3))
-        self.emb.weight.stop_gradient = False
-        # self.emb.weight.data.uniform_(min=-sqrt(3), max=sqrt(3))
-
-    #     self.lin_rbf.reset_parameters()
-    #     self.lin.reset_parameters()
-
     def forward(
         self, x: paddle.Tensor, rbf: paddle.Tensor, i: paddle.Tensor, j: paddle.Tensor
     ) -> paddle.Tensor:
@@ -179,21 +149,6 @@ class ResidualLayer(paddle.nn.Layer):
         self.lin2 = paddle.nn.Linear(
             in_features=hidden_channels, out_features=hidden_channels
         )
-
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        glorot_orthogonal(self.lin1.weight, scale=2.0)
-        # self.lin1.bias.data.fill_(value=0)
-        with paddle.no_grad():
-            self.lin1.bias.data.fill_(value=0)
-        self.lin1.weight.stop_gradient = False
-
-        glorot_orthogonal(self.lin2.weight, scale=2.0)
-        # self.lin2.bias.data.fill_(value=0)
-        with paddle.no_grad():
-            self.lin2.bias.data.fill_(value=0)
-        self.lin2.weight.stop_gradient = False
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         return x + self.act(self.lin2(self.act(self.lin1(x))))
@@ -253,37 +208,6 @@ class InteractionPPBlock(paddle.nn.Layer):
             ]
         )
 
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        glorot_orthogonal(self.lin_rbf1.weight, scale=2.0)
-        glorot_orthogonal(self.lin_rbf2.weight, scale=2.0)
-        glorot_orthogonal(self.lin_sbf1.weight, scale=2.0)
-        glorot_orthogonal(self.lin_sbf2.weight, scale=2.0)
-        glorot_orthogonal(self.lin_kj.weight, scale=2.0)
-        with paddle.no_grad():
-            self.lin_kj.bias.data.fill_(value=0)
-        self.lin_kj.bias.stop_gradient = False
-        # self.lin_kj.bias.data.fill_(value=0)
-        glorot_orthogonal(self.lin_ji.weight, scale=2.0)
-        # self.lin_ji.bias.data.fill_(value=0)
-        with paddle.no_grad():
-            self.lin_ji.bias.data.fill_(value=0)
-        self.lin_ji.bias.stop_gradient = False
-
-        glorot_orthogonal(self.lin_down.weight, scale=2.0)
-        glorot_orthogonal(self.lin_up.weight, scale=2.0)
-        for res_layer in self.layers_before_skip:
-            res_layer.reset_parameters()
-        glorot_orthogonal(self.lin.weight, scale=2.0)
-        # self.lin.bias.data.fill_(value=0)
-        with paddle.no_grad():
-            self.lin.bias.data.fill_(value=0)
-        self.lin.bias.stop_gradient = False
-
-        for res_layer in self.layers_after_skip:
-            res_layer.reset_parameters()
-
     def forward(self, x, rbf, sbf, idx_kj, idx_ji):
         x_ji = self.act(self.lin_ji(x))
         x_kj = self.act(self.lin_kj(x))
@@ -333,22 +257,6 @@ class OutputPPBlock(paddle.nn.Layer):
         self.lin = paddle.nn.Linear(
             in_features=out_emb_channels, out_features=out_channels, bias_attr=False
         )
-
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        glorot_orthogonal(self.lin_rbf.weight, scale=2.0)
-        glorot_orthogonal(self.lin_up.weight, scale=2.0)
-        for lin in self.lins:
-            glorot_orthogonal(lin.weight, scale=2.0)
-            with paddle.no_grad():
-                lin.bias.data.fill_(0)
-            lin.bias.stop_gradient = False
-            # lin.bias.data.fill_(0)
-        # self.lin.weight.data.fill_(value=0)
-        with paddle.no_grad():
-            self.lin.weight.data.fill_(value=0)
-        self.lin.weight.stop_gradient = False
 
     def forward(self, x, rbf, i, num_nodes=None):
         x = self.lin_rbf(rbf) * x
@@ -442,16 +350,6 @@ class DimeNetPlusPlus(paddle.nn.Layer):
                 for _ in range(num_blocks)
             ]
         )
-
-        # self.reset_parameters()
-
-    def reset_parameters(self):
-        self.rbf.reset_parameters()
-        self.emb.reset_parameters()
-        for out in self.output_blocks:
-            out.reset_parameters()
-        for interaction in self.interaction_blocks:
-            interaction.reset_parameters()
 
     def triplets(self, edge_index, num_nodes):
         row, col = edge_index
