@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
+from ppmat.datasets.transform import build_post_process
 from ppmat.losses import build_loss
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
@@ -63,10 +64,15 @@ if __name__ == "__main__":
     test_data_cfg = config["Dataset"]["test"]
     test_loader = build_dataloader(test_data_cfg)
 
-    # build loss and metric from config
+    # build loss from config
     loss_cfg = config["Loss"]
     loss_class = build_loss(loss_cfg)
 
+    # build post processing from config
+    post_process_cfg = config["PostProcess"]
+    post_process_class = build_post_process(post_process_cfg)
+
+    # build metric from config
     metric_cfg = config["Metric"]
     metric_class = build_metric(metric_cfg)
 
@@ -85,6 +91,7 @@ if __name__ == "__main__":
         lr_scheduler=lr_scheduler,
         loss_class=loss_class,
         metric_class=metric_class,
+        post_process_class=post_process_class,
     )
     if args.mode == "train":
         trainer.train()
@@ -92,3 +99,4 @@ if __name__ == "__main__":
         loss_dict, metric_dict = trainer.eval()
     elif args.mode == "test":
         loss_dict, metric_dict = trainer.test()
+    loss_dict, metric_dict = trainer.test()
