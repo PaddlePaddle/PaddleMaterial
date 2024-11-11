@@ -304,6 +304,7 @@ class Cosine(LRBase):
         warmup_start_lr: float = 0.0,
         last_epoch: int = -1,
         by_epoch: bool = False,
+        T_max=None,
     ):
         super().__init__(
             epochs,
@@ -318,6 +319,8 @@ class Cosine(LRBase):
         self.eta_min = eta_min
         if self.by_epoch:
             self.T_max = self.epochs - self.warmup_epoch
+        if T_max is not None:
+            self.T_max = T_max
 
     def __call__(self):
         learning_rate = (

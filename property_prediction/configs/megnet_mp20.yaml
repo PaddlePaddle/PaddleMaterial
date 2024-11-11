@@ -1,6 +1,6 @@
 Global:
   epochs: 2000
-  output_dir: ./output/megnet_mp18
+  output_dir: ./output/megnet_mp20
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
@@ -23,6 +23,7 @@ Model:
     final: 5.0
     num_centers: 100
     width: 0.5
+  property_names: ["formation_energy_per_atom"]
 
 Loss:
   __name__: LossWarper
@@ -43,8 +44,8 @@ Optimizer:
 
 PostProcess:
   - Denormalize:
-      mean: -1.6519675510987046
-      std: 1.0694354273392233
+      mean: -1.219802737236023
+      std: 1.0293837785720825
       apply_keys: "formation_energy_per_atom" # apply normalization to this property
 
 Metric:
@@ -58,15 +59,14 @@ Metric:
 Dataset:
   train:
     dataset:
-      __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_train.json"
+      __name__: MP20Dataset
+      path: "./data/mp_20/train.csv"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
-            mean: -1.6519675510987046
-            std: 1.0694354273392233
+            mean: -1.219802737236023
+            std: 1.0293837785720825
             apply_keys: "formation_energy_per_atom" # apply normalization to this property
     loader:
       num_workers: 0
@@ -78,35 +78,33 @@ Dataset:
       batch_size: 256
   val:
     dataset:
-      __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_val.json"
+      __name__: MP20Dataset
+      path: "./data/mp_20/val.csv"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
-            mean: -1.6519675510987046
-            std: 1.0694354273392233
+            mean: -1.219802737236023
+            std: 1.0293837785720825
             apply_keys: "formation_energy_per_atom" # apply normalization to this property
     sampler:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 512
   test:
     dataset:
-      __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_test.json"
+      __name__: MP20Dataset
+      path: "./data/mp_20/test.csv"
       converter_cfg:
-        cutoff: 4.0
-        method: find_points_in_spheres
+        method: crystalnn
       transforms:
         - Normalize:
-            mean: -1.6519675510987046
-            std: 1.0694354273392233
+            mean: -1.219802737236023
+            std: 1.0293837785720825
             apply_keys: "formation_energy_per_atom" # apply normalization to this property
     sampler:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 512

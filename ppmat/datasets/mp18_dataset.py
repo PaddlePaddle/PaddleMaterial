@@ -4,6 +4,7 @@ from __future__ import annotations
 import os.path as osp
 import pickle
 from typing import Dict
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -24,6 +25,7 @@ class MP18Dataset(Dataset):
         primitive: bool = False,
         converter_cfg: Dict = None,
         transforms=None,
+        num_cpus: Optional[int] = None,
         cache: bool = False,
         **kwargs,
     ):
@@ -33,6 +35,7 @@ class MP18Dataset(Dataset):
         self.primitive = primitive
         self.converter_cfg = converter_cfg
         self.transforms = transforms
+        self.num_cpus = num_cpus
         self.cache = cache
 
         if cache:
@@ -56,7 +59,10 @@ class MP18Dataset(Dataset):
         else:
             # build structures from cif files
             self.structures = build_structure_from_str(
-                self.json_data["structure"], niggli=niggli, primitive=primitive
+                self.json_data["structure"],
+                niggli=niggli,
+                primitive=primitive,
+                num_cpus=num_cpus,
             )
             logger.info(f"Build {len(self.structures)} structures")
             if self.cache:

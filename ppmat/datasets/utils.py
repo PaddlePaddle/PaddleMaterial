@@ -4,7 +4,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
 
-def build_structure_from_str(crystal_str, niggli=True, primitive=False):
+def build_structure_from_str(crystal_str, niggli=True, primitive=False, num_cpus=None):
     """Build crystal from cif string."""
 
     def build_one(crystal_str):
@@ -24,7 +24,7 @@ def build_structure_from_str(crystal_str, niggli=True, primitive=False):
     if isinstance(crystal_str, str):
         return build_one(crystal_str)
     elif isinstance(crystal_str, list):
-        canonical_crystal = p_map(build_one, crystal_str)
+        canonical_crystal = p_map(build_one, crystal_str, num_cpus=num_cpus)
         return canonical_crystal
     else:
         raise TypeError("crystal_str must be str or list.")

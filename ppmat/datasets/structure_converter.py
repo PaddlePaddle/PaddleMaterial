@@ -1,4 +1,5 @@
 from typing import Literal
+from typing import Optional
 
 import numpy as np
 import pgl
@@ -10,6 +11,7 @@ from pymatgen.optimization.neighbors import find_points_in_spheres
 
 from ppmat.datasets.utils import lattice_params_to_matrix
 from ppmat.utils import DEFAULT_ELEMENTS
+from ppmat.utils import logger
 
 
 class Structure2Graph:
@@ -19,6 +21,7 @@ class Structure2Graph:
         pbc: tuple[int, int, int] = (1, 1, 1),
         method: Literal["crystalnn", "find_points_in_spheres"] = "crystalnn",
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
+        num_cpus: Optional[int] = None,
         eps: float = 1e-8,
         **kwargs,
     ) -> None:
@@ -36,6 +39,7 @@ class Structure2Graph:
         else:
             raise ValueError("element_types must be 'DEFAULT_ELEMENTS'.")
         self.element_to_index = {elem: idx for idx, elem in enumerate(element_types)}
+        self.num_cpus = num_cpus
         self.eps = eps
 
         self.CrystalNN = local_env.CrystalNN(
@@ -47,7 +51,9 @@ class Structure2Graph:
             if isinstance(structure, Structure):
                 graph = self.get_graph_by_crystalnn(structure)
             elif isinstance(structure, list):
-                graph = p_map(self.get_graph_by_crystalnn, structure)
+                graph = p_map(
+                    self.get_graph_by_crystalnn, structure, num_cpus=self.num_cpus
+                )
                 # the following code is equivalent to the above line, it is slower,
                 # but easier to debug.
                 # graph = [self.get_graph_by_crystalnn(struc) for struc in structure]
@@ -59,7 +65,11 @@ class Structure2Graph:
             if isinstance(structure, Structure):
                 graph = self.get_graph_by_find_points_in_spheres(structure)
             elif isinstance(structure, list):
-                graph = p_map(self.get_graph_by_find_points_in_spheres, structure)
+                graph = p_map(
+                    self.get_graph_by_find_points_in_spheres,
+                    structure,
+                    num_cpus=self.num_cpus,
+                )
                 # the following code is equivalent to the above line, it is slower,
                 # but easier to debug.
                 # graph = [self.get_graph_by_find_points_in_spheres(struc)
@@ -79,15 +89,32 @@ class Structure2Graph:
                 structure, self.CrystalNN
             )
         except Exception:
-            crystalNN_tmp = local_env.CrystalNN(
-                distance_cutoffs=None,
-                x_diff_weight=-1,
-                porous_adjustment=False,
-                search_cutoff=10,
-            )
-            structure_graph = StructureGraph.with_local_env_strategy(
-                structure, crystalNN_tmp
-            )
+            search_cutoff = 10
+            while True:
+                try:
+                    crystalNN_tmp = local_env.CrystalNN(
+                        distance_cutoffs=None,
+                        x_diff_weight=-1,
+                        porous_adjustment=False,
+                        search_cutoff=search_cutoff,
+                    )
+                    structure_graph = StructureGraph.with_local_env_strategy(
+                        structure, crystalNN_tmp
+                    )
+                    logger.info(
+                        "Successfully generated graph by CrystalNN with "
+                        f"search_cutoff={search_cutoff}."
+                    )
+                    break
+                except Exception:
+                    search_cutoff += 2
+                    logger.info(f"Searching for new search_cutoff{search_cutoff}...")
+                    if search_cutoff > 40:
+                        logger.info(
+                            "Failed to generate graph by CrystalNN with "
+                            f"search_cutoff={search_cutoff}. "
+                        )
+                        break
 
         # atom_types = np.array(structure.atomic_numbers)
         lattice_parameters = structure.lattice.parameters
