@@ -263,7 +263,9 @@ class Trainer:
                     return
                 g_data = param.grad
                 new_grads = g_data / scale_factor
-                param.grad.copy_(new_grads)
+                # param.grad.copy_(new_grads)
+                new_grads = g_data / scale_factor
+                param.grad = new_grads  # .copy_(new_grads)
 
             shared_int_layers = [
                 self.model.mlp_rbf3,
