@@ -39,7 +39,10 @@ def he_orthogonal_init(tensor):
 
     else:
         fan_in = tuple(tensor.shape)[0]
+    stop_gradient = tensor.stop_gradient
     with paddle.no_grad():
         tensor.data = _standardize(tensor.data)
         tensor.data *= (1 / fan_in) ** 0.5
+    tensor.stop_gradient = stop_gradient
+
     return tensor
