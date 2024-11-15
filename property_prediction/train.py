@@ -37,7 +37,7 @@ if __name__ == "__main__":
     config = OmegaConf.load(args.config)
     config = OmegaConf.to_container(config, resolve=True)
 
-    seed = config["Global"]["seed"]
+    seed = config["Global"].get("seed", 42)
     misc.set_random_seed(seed)
 
     if dist.get_rank() == 0:
@@ -50,6 +50,7 @@ if __name__ == "__main__":
     logger.init_logger(
         log_file=osp.join(config["Global"]["output_dir"], f"{args.mode}.log")
     )
+    logger.info(f"Set random seed to {seed}")
 
     # build model from config
     model_cfg = config["Model"]
@@ -99,4 +100,4 @@ if __name__ == "__main__":
         loss_dict, metric_dict = trainer.eval()
     elif args.mode == "test":
         loss_dict, metric_dict = trainer.test()
-    loss_dict, metric_dict = trainer.test()
+    # loss_dict, metric_dict = trainer.test()
