@@ -2,6 +2,7 @@ from typing import Literal
 from typing import Optional
 
 import paddle
+from paddle.nn.functional import swish
 from paddle.sparse import sparse_coo_tensor
 
 from ppmat.utils import paddle_aux  # noqa: F401
@@ -10,7 +11,6 @@ from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.crystal import radius_graph_pbc
 from ppmat.utils.default_elements import DEFAULT_ELEMENTS
 
-from .layers.atom_update_block import OutputBlock
 from .layers.base_layers import Dense
 from .layers.efficient import EfficientInteractionDownProjection
 from .layers.embedding_block import AtomEmbedding
@@ -23,6 +23,44 @@ from .utils import inner_product_normalized
 from .utils import ragged_range
 from .utils import repeat_blocks
 from .utils import scatter
+
+
+class OutputPPBlock(paddle.nn.Layer):
+    def __init__(
+        self,
+        num_radial,
+        hidden_channels,
+        out_emb_channels,
+        out_channels,
+        num_layers,
+        act=swish,
+    ):
+        super(OutputPPBlock, self).__init__()
+        self.act = act
+        self.lin_rbf = paddle.nn.Linear(
+            in_features=num_radial, out_features=hidden_channels, bias_attr=False
+        )
+        self.lin_up = paddle.nn.Linear(
+            in_features=hidden_channels, out_features=out_emb_channels, bias_attr=True
+        )
+        self.lins = paddle.nn.LayerList()
+        for _ in range(num_layers):
+            self.lins.append(
+                paddle.nn.Linear(
+                    in_features=out_emb_channels, out_features=out_emb_channels
+                )
+            )
+        self.lin = paddle.nn.Linear(
+            in_features=out_emb_channels, out_features=out_channels, bias_attr=False
+        )
+
+    def forward(self, x, rbf, i, num_nodes=None):
+        x = self.lin_rbf(rbf) * x
+        x = scatter(x, i, dim=0, dim_size=num_nodes)
+        x = self.lin_up(x)
+        for lin in self.lins:
+            x = self.act(lin(x))
+        return self.lin(x)
 
 
 class GemNetT(paddle.nn.Layer):
@@ -107,7 +145,6 @@ class GemNetT(paddle.nn.Layer):
         rbf: dict = {"name": "gaussian"},
         envelope: dict = {"name": "polynomial", "exponent": 5},
         cbf: dict = {"name": "spherical_harmonics"},
-        output_init: str = "HeOrthogonal",
         activation: str = "swish",
         scale_file: Optional[str] = None,
         element_types: tuple[str, ...] = DEFAULT_ELEMENTS,
@@ -153,17 +190,12 @@ class GemNetT(paddle.nn.Layer):
         int_blocks = []
         interaction_block = InteractionBlockTripletsOnly
         out_blocks.append(
-            OutputBlock(
-                emb_size_atom=emb_size_atom,
-                emb_size_edge=emb_size_edge,
-                emb_size_rbf=emb_size_rbf,
-                nHidden=num_atom,
-                num_targets=num_targets,
-                activation=activation,
-                output_init=output_init,
-                direct_forces=True,
-                scale_file=scale_file,
-                name=f"OutBlock_{0}",
+            OutputPPBlock(
+                emb_size_rbf,
+                128,
+                128,
+                128,
+                3,
             )
         )
         for i in range(num_blocks):
@@ -185,58 +217,17 @@ class GemNetT(paddle.nn.Layer):
                 )
             )
             out_blocks.append(
-                OutputBlock(
-                    emb_size_atom=emb_size_atom,
-                    emb_size_edge=emb_size_edge,
-                    emb_size_rbf=emb_size_rbf,
-                    nHidden=num_atom,
-                    num_targets=num_targets,
-                    activation=activation,
-                    output_init=output_init,
-                    direct_forces=True,
-                    scale_file=scale_file,
-                    name=f"OutBlock_{i+1}",
+                OutputPPBlock(
+                    emb_size_rbf,
+                    128,
+                    128,
+                    128,
+                    3,
                 )
             )
-        # for i in range(num_blocks):
-        #     int_blocks.append(
-        #         interaction_block(
-        #             emb_size_atom=emb_size_atom,
-        #             emb_size_edge=emb_size_edge,
-        #             emb_size_trip=emb_size_trip,
-        #             emb_size_rbf=emb_size_rbf,
-        #             emb_size_cbf=emb_size_cbf,
-        #             emb_size_bil_trip=emb_size_bil_trip,
-        #             num_before_skip=num_before_skip,
-        #             num_after_skip=num_after_skip,
-        #             num_concat=num_concat,
-        #             num_atom=num_atom,
-        #             activation=activation,
-        #             scale_file=scale_file,
-        #             name=f"IntBlock_{i + 1}",
-        #         )
-        #     )
-        # for i in range(num_blocks + 1):
-        #     out_blocks.append(
-        #         OutputBlock(
-        #             emb_size_atom=emb_size_atom,
-        #             emb_size_edge=emb_size_edge,
-        #             emb_size_rbf=emb_size_rbf,
-        #             nHidden=num_atom,
-        #             num_targets=num_targets,
-        #             activation=activation,
-        #             output_init=output_init,
-        #             direct_forces=True,
-        #             scale_file=scale_file,
-        #             name=f"OutBlock_{i}",
-        #         )
-        #     )
 
         self.out_blocks = paddle.nn.LayerList(sublayers=out_blocks)
         self.int_blocks = paddle.nn.LayerList(sublayers=int_blocks)
-        self.type_out = paddle.nn.Linear(
-            in_features=512, out_features=1, bias_attr=False
-        )
 
         self.shared_parameters = [
             (self.mlp_rbf3.linear.weight, self.num_blocks),
@@ -407,10 +398,10 @@ class GemNetT(paddle.nn.Layer):
         lattices = graph.node_feat["lattice"]
         pos = graph.node_feat["cart_coords"]
 
-        edge_index = graph.edges.T
-        to_jimages = graph.edge_feat["pbc_offset"]
+        # edge_index = graph.edges.T
+        # to_jimages = graph.edge_feat["pbc_offset"]
+        # num_bonds = graph.edge_feat["num_edges"]
         num_atoms = graph.node_feat["num_atoms"]
-        num_bonds = graph.edge_feat["num_edges"]
         atom_types = graph.node_feat["atom_types"]
 
         edge_index = None
@@ -444,7 +435,7 @@ class GemNetT(paddle.nn.Layer):
         cbf3 = self.mlp_cbf3(rad_cbf3, cbf3, id3_ca, id3_ragged_idx)
         rbf_h = self.mlp_rbf_h(rbf)
         rbf_out = self.mlp_rbf_out(rbf)
-        E_t = self.out_blocks[0](h, m, rbf_out, idx_t)
+        E_t = self.out_blocks[0](m, rbf_out, idx_t, num_nodes=pos.shape[0])
         for i in range(self.num_blocks):
             h, m = self.int_blocks[i](
                 h=h,
@@ -459,14 +450,11 @@ class GemNetT(paddle.nn.Layer):
                 idx_s=idx_s,
                 idx_t=idx_t,
             )
-            E = self.out_blocks[i + 1](h, m, rbf_out, idx_t)
+            E = self.out_blocks[i + 1](m, rbf_out, idx_t, num_nodes=pos.shape[0])
             E_t += E
 
         nMolecules = paddle.max(x=batch) + 1
         E_t = scatter(E_t, batch, dim=0, dim_size=nMolecules, reduce="mean")
-        # import pdb;pdb.set_trace()
-        # E_t = scatter(h, batch, dim=0, dim_size=nMolecules, reduce="mean")
-        # E_t = self.type_out(E_t)
         results = {}
         results[self.property_names] = E_t
         return results
