@@ -1,0 +1,15 @@
+{
+  "AtomUpdate_1_sum": 1.0829668045043945,
+  "AtomUpdate_2_sum": 1.0141222476959229,
+  "AtomUpdate_3_sum": 0.9649157524108887,
+  "AtomUpdate_4_sum": 0.8306474089622498,
+  "TripInteraction_1_had_rbf": 10.786843299865723,
+  "TripInteraction_1_sum_cbf": 8.425512313842773,
+  "TripInteraction_2_had_rbf": 10.340336799621582,
+  "TripInteraction_2_sum_cbf": 8.308704376220703,
+  "TripInteraction_3_had_rbf": 9.915666580200195,
+  "TripInteraction_3_sum_cbf": 8.041094779968262,
+  "TripInteraction_4_had_rbf": 9.214727401733398,
+  "TripInteraction_4_sum_cbf": 7.219170093536377,
+  "comment": "GemNetT_MP20Dataset"
+}

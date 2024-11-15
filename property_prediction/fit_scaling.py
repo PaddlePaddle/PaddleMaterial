@@ -12,10 +12,12 @@ from ppmat.datasets.transform import build_post_process
 from ppmat.losses import build_loss
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
+from ppmat.models.gemnet.layers.scaling import AutomaticFit
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.trainer import Trainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.utils.io import write_json
 
 if dist.get_world_size() > 1:
     dist.fleet.init(is_collective=True)
@@ -26,12 +28,17 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="./property_prediction/configs/megnet_mp18.yaml",
+        default="./property_prediction/configs/gemnet_mp20.yaml",
         help="Path to config file",
     )
     parser.add_argument(
-        "--mode", type=str, default="train", choices=["train", "eval", "test"]
+        "-e",
+        "--epoch",
+        type=int,
+        default=1,
+        help="Epoch number",
     )
+
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config)
@@ -48,9 +55,26 @@ if __name__ == "__main__":
             pass
 
     logger.init_logger(
-        log_file=osp.join(config["Global"]["output_dir"], f"{args.mode}.log")
+        log_file=osp.join(config["Global"]["output_dir"], "fit_scalling.log")
     )
     logger.info(f"Set random seed to {seed}")
+
+    comment = (
+        config["Model"]["__name__"]
+        + "_"
+        + config["Dataset"]["val"]["dataset"]["__name__"]
+    )
+
+    def init(scale_file):
+        preset = {"comment": comment}
+        write_json(scale_file, preset)
+
+    scale_file = config["Model"]["scale_file"]
+    if os.path.exists(scale_file):
+        print("Selected: Overwrite the current file.")
+    else:
+        init(scale_file)
+    AutomaticFit.set2fitmode()
 
     # build model from config
     model_cfg = config["Model"]
@@ -94,10 +118,14 @@ if __name__ == "__main__":
         metric_class=metric_class,
         post_process_class=post_process_class,
     )
-    if args.mode == "train":
-        trainer.train()
-    elif args.mode == "eval":
-        loss_dict, metric_dict = trainer.eval()
-    elif args.mode == "test":
-        loss_dict, metric_dict = trainer.test()
-    # loss_dict, metric_dict = trainer.test()
+
+    while not AutomaticFit.fitting_completed():
+        for i in range(args.epoch):
+            loss_dict, metric_dict = trainer.eval()
+
+        current_var = AutomaticFit.activeVar
+        if current_var is not None:
+            current_var.fit()
+        else:
+            print("Found no variable to fit. Something went wrong!")
+    print(f"\n Fitting done. Results saved to: {scale_file}")
