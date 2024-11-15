@@ -30,6 +30,26 @@ from ppmat.utils import logger
 from ppmat.utils import save_load
 
 
+def scale_shared_grads(model):
+    """Divide the gradients of the layers that are shared across multiple
+    blocks
+    by the number the weights are shared for
+    """
+    with paddle.no_grad():
+
+        def scale_grad(param, scale_factor):
+            if param.grad is None:
+                return
+            g_data = param.grad
+            new_grads = g_data / scale_factor
+            param.grad = new_grads  # .copy_(new_grads)
+
+        if isinstance(model, paddle.distributed.parallel.DataParallel):
+            model = model._layers
+        for layer, num_blocks in model.shared_parameters:
+            scale_grad(layer, num_blocks)
+
+
 class Trainer:
     """Class for Trainer."""
 
@@ -68,6 +88,7 @@ class Trainer:
         self.pretrained_model_path = config["Global"].get("pretrained_model_path", None)
         self.checkpoint_path = config["Global"].get("checkpoint_path", None)
         self.cal_metric_during_train = config["Global"]["cal_metric_during_train"]
+        self.scale_grad = config["Global"].get("scale_grad", False)
 
         self.iters_per_epoch = len(self.train_dataloader)
         self.metric_min_better = (
@@ -77,12 +98,14 @@ class Trainer:
             self.metric_class.main_indicator if self.metric_class is not None else None
         )
 
-        assert (
-            self.cal_metric_during_train and self.metric_class is not None
-        ), "Please specify 'metric_class' when 'cal_metric_during_train' is True."
-        assert (
-            self.eval_freq > 0 and self.metric_class is not None
-        ), "Please specify 'metric_class' when 'eval_freq' > 0."
+        if self.cal_metric_during_train:
+            assert (
+                self.metric_class is not None
+            ), "Please specify 'metric_class' when 'cal_metric_during_train' is True."
+        if self.eval_freq > 0:
+            assert (
+                self.metric_class is not None
+            ), "Please specify 'metric_class' when 'eval_freq' > 0."
 
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
@@ -110,7 +133,6 @@ class Trainer:
             }
         else:
             self.best_metric = {}
-
         # load model checkpoint, usually used for resume training
         if self.checkpoint_path is not None:
             if self.pretrained_model_path is not None:
@@ -236,6 +258,9 @@ class Trainer:
 
             loss = loss_dict["loss"]
             loss.backward()
+            if self.scale_grad:
+                scale_shared_grads(self.model)
+
             self.optimizer.step()
             self.optimizer.clear_grad()
 
