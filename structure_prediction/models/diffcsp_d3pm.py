@@ -50,6 +50,7 @@ class CSPDiffusionWithD3PM(paddle.nn.Layer):
         self.apply(self._init_weights)
         if self.pretrained is not None:
             self.set_dict(paddle.load(self.pretrained))
+            print("Load pre-trained model from {}".format(self.pretrained))
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -190,7 +191,18 @@ class CSPDiffusionWithD3PM(paddle.nn.Layer):
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]), paddle.rand(
             shape=[batch["num_nodes"], 3]
         )
-        t_T = paddle.randint(low=0, high=self.num_classes, shape=[batch["num_nodes"]])
+        if self.discrete_scheduler.forward_type == "uniform":
+            t_T = paddle.randint(
+                low=0, high=self.num_classes, shape=[batch["num_nodes"]]
+            )
+        elif self.discrete_scheduler.forward_type == "absorbing":
+            t_T = paddle.full(
+                shape=[batch["num_nodes"]],
+                fill_value=self.discrete_scheduler.mask_id,
+                dtype="int64",
+            )
+        else:
+            raise NotImplementedError
 
         if self.keep_coords:
             x_T = batch["frac_coords"]
