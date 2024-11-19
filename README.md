@@ -47,9 +47,9 @@
 |    Model     | Dataset | MAE(test dataset) | config    | Checkpoint |
 | :----------: | :---------------: | :---------------: | :-------: |  :-------: |
 | MegNet       | MP18           | 0.034           | [megnet_mp18](property_prediction/configs/megnet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
-| DimeNet       | MP18           | 0.030           | [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
+| DimeNet++       | MP18           | 0.030           | [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
 | MegNet       | MP20           | 0.028           | [megnet_mp20](property_prediction/configs/megnet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
-| DimeNet       | MP20           | 0.023           | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
+| DimeNet++       | MP20           | 0.023           | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 | GemNet       | MP20           | 0.023           | [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
 
 
