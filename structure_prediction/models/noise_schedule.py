@@ -105,29 +105,40 @@ class SigmaScheduler(paddle.nn.Layer):
 
 
 class DiscreteScheduler(paddle.nn.Layer):
-    def __init__(self, timesteps, num_classes, forward_type="uniform"):
+    def __init__(self, timesteps, num_classes, forward_type="uniform", eps=1e-06):
         super().__init__()
         self.timesteps = timesteps
-
-        steps = paddle.arange(dtype="float64", end=timesteps + 1) / timesteps
-        alpha_bar = paddle.cos(x=(steps + 0.008) / 1.008 * 3.1415926 / 2)
-        self.beta_t = paddle.minimum(
-            x=1 - alpha_bar[1:] / alpha_bar[:-1],
-            y=paddle.ones_like(x=alpha_bar[1:]) * 0.999,
-        )
-        self.eps = 1e-06
+        self.eps = eps
         self.num_classes = num_classes
+        self.forward_type = forward_type
         q_onestep_mats = []
         q_mats = []
-        for beta in self.beta_t:
-            if forward_type == "uniform":
+        if forward_type == "uniform":
+            steps = paddle.arange(dtype="float64", end=timesteps + 1) / timesteps
+            alpha_bar = paddle.cos(x=(steps + 0.008) / 1.008 * 3.1415926 / 2)
+            self.beta_t = paddle.minimum(
+                x=1 - alpha_bar[1:] / alpha_bar[:-1],
+                y=paddle.ones_like(x=alpha_bar[1:]) * 0.999,
+            )
+            for beta in self.beta_t:
                 mat = paddle.ones(shape=[num_classes, num_classes]) * beta / num_classes
                 mat.diagonal().fill_(
                     value=1 - (num_classes - 1) * beta.item() / num_classes
                 )
                 q_onestep_mats.append(mat)
-            else:
-                raise NotImplementedError(f"{forward_type} is not implemented.")
+        elif forward_type == "absorbing":
+            self.beta_t = 1.0 / paddle.linspace(timesteps, 1.0, timesteps)
+            self.mask_id = self.num_classes - 1
+            for beta in self.beta_t:
+                diag = paddle.full(shape=(self.num_classes,), fill_value=1.0 - beta)
+                mat = paddle.diag(diag, offset=0)
+                mat[:, self.num_classes - 1] += beta
+                q_onestep_mats.append(mat)
+        else:
+            raise NotImplementedError(
+                f'{forward_type} not implemented, use one of ["uniform","absorbing"]'
+            )
+
         q_one_step_mats = paddle.stack(x=q_onestep_mats, axis=0)
         x = q_one_step_mats
         q_one_step_transposed = x.transpose([0, 2, 1])
