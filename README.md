@@ -47,9 +47,9 @@
 |    Model     | Dataset | MAE(test dataset) | config    | Checkpoint |
 | :----------: | :---------------: | :---------------: | :-------: |  :-------: |
 | MegNet       | MP18           | 0.034           | [megnet_mp18](property_prediction/configs/megnet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
-| DimeNet       | MP18           | 0.030           | [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
+| DimeNet++       | MP18           | 0.030           | [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml) | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
 | MegNet       | MP20           | 0.028           | [megnet_mp20](property_prediction/configs/megnet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
-| DimeNet       | MP20           | 0.023           | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
+| DimeNet++       | MP20           | 0.023           | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 | GemNet       | MP20           | 0.023           | [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
 
 
@@ -68,26 +68,29 @@
 
 #### Task 1: Stable Structure Prediction
 
-|    Model     | # of samples | Dataset  | Match rate | RMSE   | config                         | Checkpoint |
+|    Model     | # of samples | Dataset  | Match rate | RMSE   | Config                         | Checkpoint |
 | :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
+| diffcsp-paper| 1            | mp_20 | 51.49          | 0.0631 | - | - |
 | diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
 
 
 #### Task 2: Ab Initio Crystal Generation
 
-|    Model     |  Dataset  | # of samples  | Struc. Validity | Comp. Validity | COV-R | COV-P | $d_\rho$ | $d_E$  | $d_{ele}$ | config                         | Checkpoint |
-| :----------: | :-------: | :-------:| :-------------: | :------------: | :---: | :---: | :------: | :----: | :-------: | :----------------------------: | :--------: |
-| diffcsp(one-hot) | mp_20 |  1000   | 99.95           | 84.51          | 99.61 | 99.32 | 0.2069   | 0.0659 | 0.4193    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
-| diffcsp(one-hot) | mp_20 | 5000    | 99.95           | 84.51          | 99.61 | 99.32 | 0.1170   | 0.0723 | 0.3988    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
-| diffcsp(d3pm) | mp_20 |  1000   | 99.95           | 82.19          | 99.51 | 99.73 | 0.1582   | 0.1292 | 0.1360    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
-| diffcsp(d3pm) | mp_20 |  1000   | 99.95           | 82.19          | 99.51 | 99.73 | 0.1651   | 0.0939 | 0.1310    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
+|             Model          |Dataset|samples|Validity<br>Struc. / Comp.| COV<br>R / P| $d_\rho$ | $d_E$  | $d_{ele}$ | Config                         | Checkpoint |
+| :------------------------: | :---: | :----:| :----------------------: | :---------: | :------: | :----: | :-------: | :----------------------------: | :--------: |
+| diffcsp<br>(one-hot)       | mp_20 | 1000  | 99.95 / 84.51            |99.61 / 99.32| 0.2069   | 0.0659 | 0.4193    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
+| diffcsp<br>(one-hot)       | mp_20 | 5000  | 99.95 / 84.51            |99.61 / 99.32| 0.1170   | 0.0723 | 0.3988    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
+| diffcsp<br>(d3pm-uniform)  | mp_20 |  1000 | 99.95 / 82.19            |99.51 / 99.73| 0.1582   | 0.1292 | 0.1360    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
+| diffcsp<br>(d3pm-uniform)  | mp_20 |  5000 | 99.95 / 82.19            |99.51 / 99.73| 0.1651   | 0.0939 | 0.1310    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
+| diffcsp<br>(d3pm-absorbing)  | mp_20 |  1000 | 99.89 / 82.66          |99.91 / 99.47| 0.2093   | 0.1186 | 0.1460    | [diffcsp_mp20_d3pm_absorbing](structure_prediction/configs/diffcsp_mp20_d3pm_absorbing.yaml) | [checkpoint](https://pan.baidu.com/s/1HbIrhvjLNk83aIon8Pz_5Q?pwd=815m) |
+| diffcsp<br>(d3pm-absorbing)  | mp_20 |  5000 | 99.89 / 82.66          |99.91 / 99.47| 0.1809   | 0.0988 | 0.1262    | [diffcsp_mp20_d3pm_absorbing](structure_prediction/configs/diffcsp_mp20_d3pm_absorbing.yaml) | [checkpoint](https://pan.baidu.com/s/1HbIrhvjLNk83aIon8Pz_5Q?pwd=815m) |
 
-The term "# of samples" refers to the valid samples of generated structures utilized for calculating $d_\rho$, $d_E$  and  $d_{ele}$.
+The term "samples" refers to the valid samples of generated structures utilized for calculating $d_\rho$, $d_E$  and  $d_{ele}$.
 
 # Install
 
 Please refer to the installation [document](install.md) for environment configuration.
 
-# Acknowledgements:
+# Acknowledgements
 
 This repo referenced the code of the following repos: [PaddleScience](https://github.com/PaddlePaddle/PaddleScience), [Matgl](https://github.com/materialsvirtuallab/matgl), [CDVAE](https://github.com/txie-93/cdvae), [DiffCSP](https://github.com/jiaor17/DiffCSP)
