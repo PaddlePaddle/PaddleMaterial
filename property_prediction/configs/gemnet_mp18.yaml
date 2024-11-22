@@ -1,0 +1,107 @@
+Global:
+  epochs: 2000
+  output_dir: ./output/gemnet_mp18
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 100 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+  scale_grad: True # True to scale the gradient
+  checkpoint_path: null # path to load checkpoint for resume training
+
+Model:
+  __name__: GemNetT
+  num_blocks: 3
+  emb_size_atom: 256
+  emb_size_edge: 256
+  cutoff: 7
+  # scale_file: ./ppmat/models/gemnet/gemnet-dT.json
+  scale_file: ./property_prediction/configs/gemnet-dT_mp20.json
+
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    formation_energy_per_atom: # loss function for formation energy per atom
+      __name__: MSELoss
+  weights:
+    formation_energy_per_atom: 1.0 # weight for formation energy per atom
+
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  clip_norm: 10.0
+  lr:
+    __name__: Cosine
+    learning_rate: 0.001
+    by_epoch: True
+
+PostProcess:
+  - Denormalize:
+      mean: -1.6519675510987046
+      std: 1.0694354273392233
+      apply_keys: "formation_energy_per_atom" # apply normalization to this property
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    formation_energy_per_atom:
+      __name__: MAEMetirc
+  main_indicator: formation_energy_per_atom # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  train:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_train.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: -1.6519675510987046
+            std: 1.0694354273392233
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_val.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: -1.6519675510987046
+            std: 1.0694354273392233
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: -1.6519675510987046
+            std: 1.0694354273392233
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32

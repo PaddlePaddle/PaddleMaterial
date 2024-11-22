@@ -142,6 +142,8 @@ class GemNetT(paddle.nn.Layer):
         num_concat: int = 1,
         num_atom: int = 3,
         cutoff: float = 7.0,
+        num_output_layers: int = 3,
+        max_num_neighbors: int = 20,
         rbf: dict = {"name": "gaussian"},
         envelope: dict = {"name": "polynomial", "exponent": 5},
         cbf: dict = {"name": "spherical_harmonics"},
@@ -165,6 +167,8 @@ class GemNetT(paddle.nn.Layer):
         self.property_names = property_names
         num_targets = 1
         self.num_targets = num_targets
+        self.num_output_layers = num_output_layers
+        self.max_num_neighbors = max_num_neighbors
         AutomaticFit.reset()
         self.radial_basis = RadialBasis(
             num_radial=num_radial, cutoff=cutoff, rbf=rbf, envelope=envelope
@@ -192,10 +196,10 @@ class GemNetT(paddle.nn.Layer):
         out_blocks.append(
             OutputPPBlock(
                 emb_size_rbf,
-                128,
-                128,
-                128,
-                3,
+                emb_size_edge,
+                emb_size_edge,
+                num_targets,
+                num_output_layers,
             )
         )
         for i in range(num_blocks):
@@ -219,10 +223,10 @@ class GemNetT(paddle.nn.Layer):
             out_blocks.append(
                 OutputPPBlock(
                     emb_size_rbf,
-                    128,
-                    128,
-                    128,
-                    3,
+                    emb_size_edge,
+                    emb_size_edge,
+                    num_targets,
+                    num_output_layers,
                 )
             )
 
@@ -344,7 +348,7 @@ class GemNetT(paddle.nn.Layer):
             lattices,
             num_atoms,
             self.cutoff,
-            20,
+            self.max_num_neighbors,
             device=num_atoms.place,
         )
 
