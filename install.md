@@ -15,8 +15,11 @@
     pip install -r requirments.txt
 
 
-由于PGL暂不兼容最新版本的Paddle，因此安装完成PGL后需要在安装路径内修改部分代码：
-例如我的安装路径为：anaconda3/envs/meg_paddle/lib/python3.10/site-packages/pgl
+由于PGL暂不兼容最新版本的Paddle，因此安装完成PGL后需要在安装路径内修改部分代码，可通过以下命令自动完成修改：
+
+    python ppmat/utils/fix_pgl.py
+
+也可手动替换修改，例如我的安装路径为：anaconda3/envs/meg_paddle/lib/python3.10/site-packages/pgl
 
 1. 代码fluid替换为base:
 
