@@ -14,6 +14,8 @@
 
 import copy
 
+import paddle
+
 from ppmat.optimizer import lr_scheduler
 from ppmat.optimizer.optimizer import LBFGS
 from ppmat.optimizer.optimizer import SGD
@@ -75,7 +77,21 @@ def build_optimizer(cfg, model_list, epochs, iters_per_epoch):
 
     # build optimizer
     opt_cls = cfg.pop("__name__")
-    optimizer = eval(opt_cls)(learning_rate=lr_scheduler, **cfg)(model_list)
+    if "clip_norm" in cfg:
+        clip_norm = cfg.pop("clip_norm")
+        grad_clip = paddle.nn.ClipGradByNorm(clip_norm=clip_norm)
+    elif "clip_norm_global" in cfg:
+        clip_norm = cfg.pop("clip_norm_global")
+        grad_clip = paddle.nn.ClipGradByGlobalNorm(clip_norm=clip_norm)
+    elif "clip_value" in cfg:
+        clip_value = cfg.pop("clip_value")
+        grad_clip = paddle.nn.ClipGradByValue(clip_value=clip_value)
+    else:
+        grad_clip = None
+
+    optimizer = eval(opt_cls)(learning_rate=lr_scheduler, grad_clip=grad_clip, **cfg)(
+        model_list
+    )
 
     if isinstance(lr_scheduler, float):
         return optimizer, None
