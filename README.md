@@ -70,7 +70,7 @@
 
 |    Model     | # of samples | Dataset  | Match rate | RMSE   | Config                         | Checkpoint |
 | :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
-| diffcsp-paper| 1            | mp_20 | 51.49          | 0.0631 | - | - |
+| [diffcsp-paper](https://arxiv.org/abs/2309.04475)| 1            | mp_20 | 51.49          | 0.0631 | - | - |
 | diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
 
 
@@ -78,6 +78,7 @@
 
 |             Model          |Dataset|samples|Validity<br>Struc. / Comp.| COV<br>R / P| $d_\rho$ | $d_E$  | $d_{ele}$ | Config                         | Checkpoint |
 | :------------------------: | :---: | :----:| :----------------------: | :---------: | :------: | :----: | :-------: | :----------------------------: | :--------: |
+| [diffcsp-paper](https://arxiv.org/abs/2309.04475) | mp_20 | 1000  | 100 / 83.25            |99.71 / 99.76| 0.3502   | 0.1247 | 0.3398    | - | - |
 | diffcsp<br>(one-hot)       | mp_20 | 1000  | 99.95 / 84.51            |99.61 / 99.32| 0.2069   | 0.0659 | 0.4193    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
 | diffcsp<br>(one-hot)       | mp_20 | 5000  | 99.95 / 84.51            |99.61 / 99.32| 0.1170   | 0.0723 | 0.3988    | [diffcsp_mp20_with_type](structure_prediction/configs/diffcsp_mp20_with_type.yaml) | [checkpoint](https://pan.baidu.com/s/1JiniNkRb2Rb_sGNhrKpU_w?pwd=1ath) |
 | diffcsp<br>(d3pm-uniform)  | mp_20 |  1000 | 99.95 / 82.19            |99.51 / 99.73| 0.1582   | 0.1292 | 0.1360    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
