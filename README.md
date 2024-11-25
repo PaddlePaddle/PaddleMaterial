@@ -84,6 +84,7 @@
 | diffcsp<br>(d3pm-uniform)  | mp_20 |  5000 | 99.95 / 82.19            |99.51 / 99.73| 0.1651   | 0.0939 | 0.1310    | [diffcsp_mp20_d3pm](structure_prediction/configs/diffcsp_mp20_d3pm.yaml) | [checkpoint](https://pan.baidu.com/s/1qU8TDMAhrrkp12zMuXg6VA?pwd=2jcc) |
 | diffcsp<br>(d3pm-absorbing)  | mp_20 |  1000 | 99.89 / 82.66          |99.91 / 99.47| 0.2093   | 0.1186 | 0.1460    | [diffcsp_mp20_d3pm_absorbing](structure_prediction/configs/diffcsp_mp20_d3pm_absorbing.yaml) | [checkpoint](https://pan.baidu.com/s/1HbIrhvjLNk83aIon8Pz_5Q?pwd=815m) |
 | diffcsp<br>(d3pm-absorbing)  | mp_20 |  5000 | 99.89 / 82.66          |99.91 / 99.47| 0.1809   | 0.0988 | 0.1262    | [diffcsp_mp20_d3pm_absorbing](structure_prediction/configs/diffcsp_mp20_d3pm_absorbing.yaml) | [checkpoint](https://pan.baidu.com/s/1HbIrhvjLNk83aIon8Pz_5Q?pwd=815m) |
+| mattergen<br>(d3pm-uniform)  | mp_20 |  5000 | 99.95 / 84.78          |99.75 / 99.37| 0.8866   | 0.0843 | 0.9575    | [mattergen_mp20](structure_prediction/configs/mattergen_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1yv_4YNi2vQtOnoP1ZpG87w?pwd=u77b) |
 
 The term "samples" refers to the valid samples of generated structures utilized for calculating $d_\rho$, $d_E$  and  $d_{ele}$.
 
