@@ -18,7 +18,7 @@
 [基于GNN的二维材料稳定性预测](stability_prediction/README.md)
 
 <div align="center">
-    <img src="docs/flow.svg" width="900">
+    <img src="docs/property_prediction.png" width="900">
 </div>
 
 ### Results
@@ -60,7 +60,7 @@
 [基于扩散模型的二维材料结构生成](structure_prediction/README.md)
 
 <div align="center">
-    <img src="docs/diff_arch.png" width="900">
+    <img src="docs/structure_generation.png" width="900">
 </div>
 
 
