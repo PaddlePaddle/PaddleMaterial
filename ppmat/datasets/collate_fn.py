@@ -16,14 +16,45 @@
 from __future__ import annotations
 
 import numbers
+from collections import defaultdict
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
+from typing import Dict
 from typing import List
 
 import numpy as np
 import paddle
 import pgl
+
+
+class Data(object):
+    def __init__(self, data: Dict):
+        for key, value in data.items():
+            assert isinstance(value, np.ndarray)
+            setattr(self, key, value)
+
+    @staticmethod
+    def batch(data_list):
+        feat = defaultdict(lambda: [])
+        for data in data_list:
+            for key in data.__dict__:
+                feat[key].append(data.__dict__[key])
+
+        ret_feat = {}
+        for key in feat:
+            ret_feat[key] = np.concatenate(feat[key], axis=0)
+        return Data(ret_feat)
+
+    def tensor(self):
+        for key, value in self.__dict__.items():
+            self.__dict__[key] = paddle.to_tensor(value)
+
+    def __str__(self):
+        return str(self.__dict__)
+
+    def __repr__(self):
+        return str(self.__dict__)
 
 
 class DefaultCollator(object):
@@ -66,6 +97,10 @@ class DefaultCollator(object):
             graphs = pgl.Graph.batch(batch)
             graphs.tensor()
             return graphs
+        elif isinstance(sample, Data):
+            data = Data.batch(batch)
+            data.tensor()
+            return data
         raise TypeError(
             "batch data can only contains: paddle.Tensor, numpy.ndarray, "
             f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
