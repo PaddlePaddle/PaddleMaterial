@@ -1,11 +1,17 @@
 import copy
 
+from ppmat.models.diffcsp.diffcsp import CSPDiffusion
 from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import logger
 
-__all__ = ["MEGNetPlus", "DimeNetPlusPlusWrap", "GemNetT"]
+__all__ = [
+    "MEGNetPlus",
+    "DimeNetPlusPlusWrap",
+    "GemNetT",
+    "CSPDiffusion",
+]
 
 
 def build_model(cfg):
