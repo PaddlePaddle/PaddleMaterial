@@ -71,26 +71,26 @@
 <table>
 	<head>
 		<tr>
-			<th >Model</th>
-			<th ><nobr># of samples</nobr></th>
-			<th >Dataset</th>
-			<th ><nobr>Match rate</nobr></th>
-			<th >RMSE</th>
-			<th >Config</th>
-			<th >Checkpoint</th>
-			<th >Train Script</th>
+			<th  nowrap="nowrap">Model</th>
+			<th  nowrap="nowrap"># of samples</th>
+			<th  nowrap="nowrap">Dataset</th>
+			<th  nowrap="nowrap">Match rate</th>
+			<th  nowrap="nowrap">RMSE</th>
+			<th  nowrap="nowrap">Config</th>
+			<th  nowrap="nowrap">Checkpoint</th>
+			<th  nowrap="nowrap">Train Script</th>
 		</tr>
 	</head>
 	<body>
 		<tr>
-			<td >diffcsp</td>
-			<td >1</td>
-			<td >mp_20</td>
-			<td >55.93</td>
-			<td >0.0500</td>
-			<td ><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
-			<td ><a href="https://pan.baidu.com/s/1IzJnLuWMcCNLDPwq3jeLRg?pwd=21h6">checkpoint</a></td>
-			<td ><nobr>PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</nobr></td>
+			<td  nowrap="nowrap">diffcsp</td>
+			<td  nowrap="nowrap">1</td>
+			<td  nowrap="nowrap">mp_20</td>
+			<td  nowrap="nowrap">55.93</td>
+			<td  nowrap="nowrap">0.0500</td>
+			<td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
+			<td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1IzJnLuWMcCNLDPwq3jeLRg?pwd=21h6">checkpoint</a></td>
+			<td  nowrap="nowrap">PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</td>
 		</tr>
 	</body>
 </table>
