@@ -5,7 +5,7 @@ from typing import Literal
 import paddle
 import paddle.nn as nn
 
-from ppmat.models import initializer
+from ppmat.models.common import initializer
 from ppmat.models.megnet.bond import BondExpansion
 from ppmat.models.megnet.layers import MLP
 from ppmat.models.megnet.layers import ActivationFunction
