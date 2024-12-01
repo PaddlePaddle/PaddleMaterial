@@ -68,10 +68,35 @@
 
 #### Task 1: Stable Structure Prediction
 
-|    Model     | # of samples | Dataset  | Match rate | RMSE   | Config                         | Checkpoint |
-| :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
-| [diffcsp-paper](https://arxiv.org/abs/2309.04475)| 1            | mp_20 | 51.49          | 0.0631 | - | - |
-| diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
+<table>
+	<head>
+		<tr>
+			<th >Model</th>
+			<th ><nobr># of samples</nobr></th>
+			<th >Dataset</th>
+			<th ><nobr>Match rate</nobr></th>
+			<th >RMSE</th>
+			<th >Config</th>
+			<th >Checkpoint</th>
+			<th >Train Script</th>
+		</tr>
+	</head>
+	<body>
+		<tr>
+			<td >diffcsp</td>
+			<td >1</td>
+			<td >mp_20</td>
+			<td >55.93</td>
+			<td >0.0500</td>
+			<td ><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
+			<td ><a href="https://pan.baidu.com/s/1IzJnLuWMcCNLDPwq3jeLRg?pwd=21h6">checkpoint</a></td>
+			<td ><nobr>PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</nobr></td>
+		</tr>
+	</body>
+</table>
+
+
+
 
 
 #### Task 2: Ab Initio Crystal Generation
