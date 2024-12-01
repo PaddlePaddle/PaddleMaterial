@@ -123,6 +123,22 @@ def lattices_to_params_shape_numpy(lattices):
     return lengths, angles
 
 
+def lattices_to_params_shape_numpy(lattices):
+    lengths = np.sum(lattices**2, axis=-1) ** 0.5
+    angles = np.zeros_like(lengths)
+    for i in range(3):
+        j = (i + 1) % 3
+        k = (i + 2) % 3
+        angles[..., i] = np.clip(
+            np.sum(lattices[..., j, :] * lattices[..., k, :], axis=-1)
+            / (lengths[..., j] * lengths[..., k]),
+            a_min=-1.0,
+            a_max=1.0,
+        )
+    angles = np.arccos(angles) * 180.0 / np.pi
+    return lengths, angles
+
+
 def get_pbc_distances(
     coords,
     edge_index,
