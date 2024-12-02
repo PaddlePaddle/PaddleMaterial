@@ -6,6 +6,7 @@ from paddle.io import BatchSampler  # noqa
 from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
+from ppmat.datasets.gen_dataset import GenDataset
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
@@ -16,6 +17,7 @@ from .mp20_dataset import MP20Dataset  # noqa
 __all__ = [
     "MP18Dataset",
     "MP20Dataset",
+    "GenDataset",
     "set_signal_handlers",
 ]
 
