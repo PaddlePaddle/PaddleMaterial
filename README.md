@@ -51,20 +51,22 @@ Pre-processed datasets and models are available for download [here](https://pan.
 | DimeNet++       | MP20           | 0.023           | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 | GemNet       | MP20           | 0.023           | [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
 
-###### Training:
+##### Training:
 
 
     # single GPU
     PYTHONPATH=$PWD python property_prediction/train.py -c property_prediction/configs/your_config.yaml
+
     # multi GPU, such as 2 GPUs
     PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" property_prediction/train.py -c property_prediction/configs/your_config.yaml
 
-###### Testing:
+##### Testing:
 
     # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
     #   Global:
     #        ...
     #        pretrained_model_path: your model path(.pdparams)
+
     PYTHONPATH=$PWD python property_prediction/train.py -c property_prediction/configs/your_config.yaml --mode=test
 
 
@@ -74,6 +76,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
     #   Global:
     #        ...
     #        pretrained_model_path: your model path(.pdparams)
+
     PYTHONPATH=$PWD python property_prediction/predict.py -c property_prediction/configs/your_config.yaml
 
 
@@ -121,6 +124,33 @@ Pre-processed datasets and models are available for download [here](https://pan.
 </table>
 
 
+##### Training:
+
+
+    # single GPU
+    PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/your_config.yaml
+
+    # multi GPU, such as 2 GPUs
+    PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" structure_generation/train.py -c structure_generation/configs/your_config.yaml
+
+##### Testing:
+
+    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
+    #   Global:
+    #        ...
+    #        pretrained_model_path: your model path(.pdparams)
+
+    PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/your_config.yaml --mode=test
+
+
+##### Prediction:
+
+    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
+    #   Global:
+    #        ...
+    #        pretrained_model_path: your model path(.pdparams)
+
+    PYTHONPATH=$PWD python structure_generation/predict.py -c structure_generation/configs/your_config.yaml
 
 
 
