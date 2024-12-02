@@ -68,10 +68,35 @@
 
 #### Task 1: Stable Structure Prediction
 
-|    Model     | # of samples | Dataset  | Match rate | RMSE   | Config                         | Checkpoint |
-| :----------: | :----------: | :-------: | :--------: | :----: | :----------------------------: | :--------: |
-| [diffcsp-paper](https://arxiv.org/abs/2309.04475)| 1            | mp_20 | 51.49          | 0.0631 | - | - |
-| diffcsp      | 1            | mp_20 | 54.53          | 0.0547 | [diffcsp_mp20](structure_prediction/configs/diffcsp_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/1aBhac-ctdBe1WWv09hVq7g?pwd=awi4) |
+<table>
+	<head>
+		<tr>
+			<th  nowrap="nowrap">Model</th>
+			<th  nowrap="nowrap"># of samples</th>
+			<th  nowrap="nowrap">Dataset</th>
+			<th  nowrap="nowrap">Match rate</th>
+			<th  nowrap="nowrap">RMSE</th>
+			<th  nowrap="nowrap">Config</th>
+			<th  nowrap="nowrap">Checkpoint</th>
+			<th  nowrap="nowrap">Train Script</th>
+		</tr>
+	</head>
+	<body>
+		<tr>
+			<td  nowrap="nowrap">diffcsp</td>
+			<td  nowrap="nowrap">1</td>
+			<td  nowrap="nowrap">mp_20</td>
+			<td  nowrap="nowrap">55.93</td>
+			<td  nowrap="nowrap">0.0500</td>
+			<td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
+			<td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1IzJnLuWMcCNLDPwq3jeLRg?pwd=21h6">checkpoint</a></td>
+			<td  nowrap="nowrap">PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</td>
+		</tr>
+	</body>
+</table>
+
+
+
 
 
 #### Task 2: Ab Initio Crystal Generation
