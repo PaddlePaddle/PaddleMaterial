@@ -6,16 +6,15 @@
 
 ## Introduction
 
-晶体材料具有对称和周期性的结构，具有多种性能，广泛应用于从电子设备到能源应用的各个领域。为了发现晶体材料，传统的实验和计算方法通常既耗时又昂贵。近年来，由于晶体材料数据的爆炸性增长，数据驱动的材料发现引起了人们的极大兴趣。特别是，最近的进展利用了深度学习的表达能力来模拟晶体材料中高度复杂的原子系统，为快速准确的材料发现开辟了新的途径。PaddleScience-Material是一个基于PaddlePaddle的材料科学工具包，旨在帮助研究人员更高效地探索、发现和开发新的晶体材料。
+**PaddleScience-Material** is a data-driven deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported crystalline materials and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported the equivalent graph networks-based model and will support the language-based model and multi-model model in the feature.
 
+**Crystalline materials**, characterized by their symmetrical and periodic structures, exhibit a wide range of properties and are widely applied in various fields, from electronic devices to energy applications. Traditional experimental and computational methods for discovering crystalline materials are often time-consuming and expensive. Data-driven approaches to material discovery have the power to model the highly complex atomic systems within crystalline materials, paving the way for rapid and accurate material discovery.
 
-
-
-已整理好的数据、模型可从[此处](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6)下载。
+Pre-processed datasets and models are available for download [here](https://pan.baidu.com/s/1payB2J7uJE8nOSa_wVSHLw?pwd=13k6).
 
 ## 1. Property prediction
 
-[基于GNN的二维材料稳定性预测](stability_prediction/README.md)
+[GNN-Based Prediction of 2D Material Stability](stability_prediction/README.md)
 
 <div align="center">
     <img src="docs/property_prediction.png" width="900">
@@ -57,7 +56,7 @@
 ## 2. Structure prediction
 
 
-[基于扩散模型的二维材料结构生成](structure_prediction/README.md)
+[Diffusion Model-Based Generation of 2D Material Structures](structure_prediction/README.md)
 
 <div align="center">
     <img src="docs/structure_generation.png" width="900">
