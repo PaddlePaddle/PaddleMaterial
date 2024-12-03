@@ -33,14 +33,15 @@ class Denormalize:
         self.std = std
         self.apply_keys = [apply_keys] if isinstance(apply_keys, str) else apply_keys
 
-    def __call__(self, pred_data, batch_data):
+    def __call__(self, pred_data, batch_data=None):
 
         for key in self.apply_keys:
             assert key in pred_data, f"Key {key} does not exist in pred_data."
             pred_data[key] = pred_data[key] * self.std + self.mean
 
-        for key in self.apply_keys:
-            assert key in batch_data, f"Key {key} does not exist in batch_data."
-            batch_data[key] = batch_data[key] * self.std + self.mean
+        if batch_data is not None:
+            for key in self.apply_keys:
+                assert key in batch_data, f"Key {key} does not exist in batch_data."
+                batch_data[key] = batch_data[key] * self.std + self.mean
 
         return pred_data, batch_data
