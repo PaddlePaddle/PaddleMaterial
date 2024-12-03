@@ -46,7 +46,7 @@ class Compose(vision.Compose):
 
 def build_transforms(cfg):
     if not cfg:
-        return Compose([])
+        return None
     cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:
@@ -60,7 +60,7 @@ def build_transforms(cfg):
 
 def build_post_process(cfg):
     if not cfg:
-        return Compose([])
+        return None
     cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:

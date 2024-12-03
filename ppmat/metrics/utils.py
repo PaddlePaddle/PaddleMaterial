@@ -100,7 +100,12 @@ class Crystal(object):
                 lattices = np.array(crys_array_dict["lattices"])
             self.lengths, self.angles = lattices_to_params_shape_numpy(lattices)
 
-        self.dict = crys_array_dict
+        self.dict = {
+            "frac_coords": self.frac_coords,
+            "atom_types": self.atom_types,
+            "lengths": self.lengths,
+            "angles": self.angles,
+        }
         if len(tuple(self.atom_types.shape)) > 1:
             self.dict["atom_types"] = np.argmax(self.atom_types, axis=-1) + 1
             self.atom_types = np.argmax(self.atom_types, axis=-1) + 1
@@ -131,12 +136,12 @@ class Crystal(object):
                     coords_are_cartesian=False,
                 )
                 self.constructed = True
+                if self.structure.volume < 0.1:
+                    self.constructed = False
+                    self.invalid_reason = "unrealistically_small_lattice"
             except Exception:
                 self.constructed = False
                 self.invalid_reason = "construction_raises_exception"
-            if self.structure.volume < 0.1:
-                self.constructed = False
-                self.invalid_reason = "unrealistically_small_lattice"
 
     def get_composition(self):
         elem_counter = Counter(self.atom_types)

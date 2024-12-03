@@ -5,14 +5,14 @@ import pickle
 import time
 from collections import defaultdict
 
+import numpy as np
 import paddle
 import paddle.distributed as dist
 from omegaconf import OmegaConf
-from pymatgen.io.cif import CifWriter
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
-from ppmat.datasets.utils import build_structure_from_array
+from ppmat.datasets.transform import build_post_process
 from ppmat.models import build_model
 from ppmat.utils import logger
 from ppmat.utils import misc
@@ -22,9 +22,13 @@ if dist.get_world_size() > 1:
     dist.fleet.init(is_collective=True)
 
 
-def predict(model, dataloader, step_lr, log_freq=1, is_save_traj=False):
+def predict(model, dataloader, log_freq=1):
 
-    """predict function."""
+    """Eval program for one epoch.
+
+    Args:
+        epoch_id (int): Epoch id.
+    """
     reader_cost = 0.0
     batch_cost = 0.0
     reader_tic = time.perf_counter()
@@ -32,20 +36,17 @@ def predict(model, dataloader, step_lr, log_freq=1, is_save_traj=False):
     model.eval()
 
     data_length = len(dataloader)
-    logger.info(f"Total Test Steps: {data_length}")
-    pred_data_total = {"result": [], "traj": defaultdict(list)}
+    all_preds = defaultdict(list)
     for iter_id, batch_data in enumerate(dataloader):
         reader_cost = time.perf_counter() - reader_tic
 
         with paddle.no_grad():
-            pred_data = model.sample(
-                batch_data, step_lr=step_lr, is_save_traj=is_save_traj
-            )
+            pred_data = model(batch_data)
 
-        pred_data_total["result"].extend(pred_data["result"])
-        if is_save_traj:
-            for key, value in pred_data["traj"].items():
-                pred_data_total["traj"][key].extend(value)
+        if post_process_class is not None:
+            # since the label data may be not in batch_data, we need to pass it to
+            # post_process_class
+            pred_data, _ = post_process_class(pred_data)
 
         batch_cost = time.perf_counter() - batch_tic
         if paddle.distributed.get_rank() == 0 and (
@@ -56,9 +57,14 @@ def predict(model, dataloader, step_lr, log_freq=1, is_save_traj=False):
             msg += f" | reader cost: {reader_cost:.5f}s"
             msg += f" | batch cost: {batch_cost:.5f}s"
             logger.info(msg)
+        for key, value in pred_data.items():
+            all_preds[key].append(value.detach().cpu().numpy())
         batch_tic = time.perf_counter()
         reader_tic = time.perf_counter()
-    return pred_data_total
+
+    for key, value in all_preds.items():
+        all_preds[key] = np.concatenate(all_preds[key], axis=0)
+    return all_preds
 
 
 if __name__ == "__main__":
@@ -67,7 +73,7 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="./structure_generation/configs/diffcsp_mp20.yaml",
+        default="./property_prediction/configs/megnet_mp18.yaml",
         help="Path to config file",
     )
     args, dynamic_args = parser.parse_known_args()
@@ -96,42 +102,20 @@ if __name__ == "__main__":
         save_load.load_pretrain(model, pretrained_model_path)
     else:
         logger.warning("No pretrained model path provided.")
-
     # build dataloader from config
     set_signal_handlers()
     predict_data_cfg = config["Dataset"]["predict"]
     predict_loader = build_dataloader(predict_data_cfg)
 
+    # build post processing from config
+    post_process_cfg = config["PostProcess"]
+    post_process_class = build_post_process(post_process_cfg)
+
     log_freq = config["Global"].get("log_freq", 1)
-    is_save_traj = config["Global"].get("is_save_traj", False)
-    step_lr = config["Global"].get("step_lr", 0.000005)
 
-    results = predict(
-        model,
-        predict_loader,
-        step_lr=step_lr,
-        log_freq=log_freq,
-        is_save_traj=is_save_traj,
-    )
+    results = predict(model, predict_loader, log_freq=log_freq)
 
-    # convert results to structures
-    structures = build_structure_from_array(results["result"], niggli=False)
-    # save structures to cif file
-    output_path = osp.join(config["Global"]["output_dir"], "cifs")
-    os.makedirs(output_path, exist_ok=True)
-    logger.info(f"Save result to {output_path}")
-    for i, structure in enumerate(structures):
-        formula = structure.formula.replace(" ", "-")
-        tar_file = os.path.join(output_path, f"{formula}_{i + 1}.cif")
-        if structure is not None:
-            writer = CifWriter(structure)
-            writer.write_file(tar_file)
-        else:
-            logger.info(f"{i + 1} Error Structure.")
-
-    # save results
-    if is_save_traj:
-        save_path = osp.join(config["Global"]["output_dir"], "result_traj.pkl")
-        logger.info(f"Save result to {save_path}")
-        with open(save_path, "wb") as f:
-            pickle.dump(results["traj"], f)
+    save_path = osp.join(config["Global"]["output_dir"], "result.pkl")
+    logger.info(f"Save result to {save_path}")
+    with open(save_path, "wb") as f:
+        pickle.dump(results, f)

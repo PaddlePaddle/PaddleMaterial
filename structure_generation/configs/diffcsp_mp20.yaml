@@ -50,7 +50,8 @@ Optimizer:
     factor: 0.6
     by_epoch: True
     patience: 30
-    indicator: "eval_loss"
+    min_lr: 0.0001
+    indicator: "train_loss"
 
 
 Dataset:
