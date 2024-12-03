@@ -3,6 +3,8 @@ from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
+from ppmat.utils.crystal import lattices_to_params_shape_numpy
+
 
 def build_structure_from_str(crystal_str, niggli=True, primitive=False, num_cpus=None):
     """Build crystal from cif string."""
@@ -28,6 +30,57 @@ def build_structure_from_str(crystal_str, niggli=True, primitive=False, num_cpus
         return canonical_crystal
     else:
         raise TypeError("crystal_str must be str or list.")
+
+
+def build_structure_from_array(
+    crystal_array, niggli=True, primitive=False, num_cpus=None
+):
+    """Build crystal from cif string."""
+
+    def build_one(crystal_array):
+
+        frac_coords = crystal_array["frac_coords"]
+        atom_types = crystal_array["atom_types"]
+
+        if "lengths" in crystal_array and "angles" in crystal_array:
+            lengths = crystal_array["lengths"]
+            angles = crystal_array["angles"]
+        else:
+            lattices = crystal_array["lattices"]
+            if isinstance(lattices, list):
+                lattices = np.asarray(lattices)
+                lengths, angles = lattices_to_params_shape_numpy(lattices)
+
+        if isinstance(lengths, np.ndarray):
+            lengths = lengths.tolist()
+        if isinstance(angles, np.ndarray):
+            angles = angles.tolist()
+
+        crystal = Structure(
+            lattice=Lattice.from_parameters(*(lengths + angles)),
+            species=atom_types,
+            coords=frac_coords,
+            coords_are_cartesian=False,
+        )
+        if primitive:
+            crystal = crystal.get_primitive_structure()
+        if niggli:
+            crystal = crystal.get_reduced_structure()
+        canonical_crystal = Structure(
+            lattice=Lattice.from_parameters(*crystal.lattice.parameters),
+            species=crystal.species,
+            coords=crystal.frac_coords,
+            coords_are_cartesian=False,
+        )
+        return canonical_crystal
+
+    if isinstance(crystal_array, dict):
+        return build_one(crystal_array)
+    elif isinstance(crystal_array, list):
+        canonical_crystal = p_map(build_one, crystal_array, num_cpus=num_cpus)
+        return canonical_crystal
+    else:
+        raise TypeError("crystal_array must be dict or list.")
 
 
 def abs_cap(val, max_abs_val=1):
