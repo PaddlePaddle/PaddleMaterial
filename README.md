@@ -62,22 +62,12 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 ##### Testing:
 
-    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
-    #   Global:
-    #        ...
-    #        pretrained_model_path: your model path(.pdparams)
-
-    PYTHONPATH=$PWD python property_prediction/train.py -c property_prediction/configs/your_config.yaml --mode=test
+    PYTHONPATH=$PWD python property_prediction/train.py -c property_prediction/configs/your_config.yaml --mode=test Global.pretrained_model_path="your model path(.pdparams)"
 
 
 ##### Prediction:
 
-    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
-    #   Global:
-    #        ...
-    #        pretrained_model_path: your model path(.pdparams)
-
-    PYTHONPATH=$PWD python property_prediction/predict.py -c property_prediction/configs/your_config.yaml
+    PYTHONPATH=$PWD python property_prediction/predict.py -c property_prediction/configs/your_config.yaml  Global.pretrained_model_path="your model path(.pdparams)"
 
 
 
@@ -135,22 +125,14 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 ##### Testing:
 
-    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
-    #   Global:
-    #        ...
-    #        pretrained_model_path: your model path(.pdparams)
 
-    PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/your_config.yaml --mode=test
+    PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/your_config.yaml --mode=test  Global.pretrained_model_path="your model path(.pdparams)"
 
 
 ##### Prediction:
 
-    # Modify the field of the configuration file 'Global/pretrained_model_path' to the path of the trained model
-    #   Global:
-    #        ...
-    #        pretrained_model_path: your model path(.pdparams)
 
-    PYTHONPATH=$PWD python structure_generation/predict.py -c structure_generation/configs/your_config.yaml
+    PYTHONPATH=$PWD python structure_generation/predict.py -c structure_generation/configs/your_config.yaml  Global.pretrained_model_path="your model path(.pdparams)"
 
 
 
