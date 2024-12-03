@@ -1,7 +1,6 @@
 import argparse
 import os
 import os.path as osp
-import shutil
 
 import paddle.distributed as dist
 from omegaconf import OmegaConf
@@ -32,24 +31,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode", type=str, default="train", choices=["train", "eval", "test"]
     )
-    args = parser.parse_args()
+    args, dynamic_args = parser.parse_known_args()
 
     config = OmegaConf.load(args.config)
-    config = OmegaConf.to_container(config, resolve=True)
+    cli_config = OmegaConf.from_dotlist(dynamic_args)
+    config = OmegaConf.merge(config, cli_config)
 
-    seed = config["Global"].get("seed", 42)
-    misc.set_random_seed(seed)
+    config = OmegaConf.load(args.config)
+    cli_config = OmegaConf.from_dotlist(dynamic_args)
+    config = OmegaConf.merge(config, cli_config)
 
     if dist.get_rank() == 0:
         os.makedirs(config["Global"]["output_dir"], exist_ok=True)
-        try:
-            shutil.copy(args.config, config["Global"]["output_dir"])
-        except shutil.SameFileError:
-            pass
+        config_name = os.path.basename(args.config)
+        OmegaConf.save(config, osp.join(config["Global"]["output_dir"], config_name))
+
+    config = OmegaConf.to_container(config, resolve=True)
 
     logger.init_logger(
         log_file=osp.join(config["Global"]["output_dir"], f"{args.mode}.log")
     )
+    seed = config["Global"].get("seed", 42)
+    misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 
     # build model from config
