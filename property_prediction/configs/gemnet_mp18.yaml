@@ -105,3 +105,14 @@ Dataset:
       shuffle: False
       drop_last: False
       batch_size: 32
+  predict:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32

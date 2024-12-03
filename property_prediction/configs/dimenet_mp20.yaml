@@ -112,3 +112,14 @@ Dataset:
       shuffle: False
       drop_last: False
       batch_size: 512
+  predict:
+    dataset:
+      __name__: MP20Dataset
+      path: "./data/mp_20/test.csv"
+      converter_cfg:
+        method: crystalnn
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 512
