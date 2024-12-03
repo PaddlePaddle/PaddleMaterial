@@ -108,13 +108,3 @@ Dataset:
       shuffle: False
       drop_last: False
       batch_size: 128
-  predict:
-    dataset:
-      __name__: GenDataset
-      total_num: 20
-      formula: MoSi2
-    sampler:
-      __name__: BatchSampler
-      shuffle: False
-      drop_last: False
-      batch_size: 128
