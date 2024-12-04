@@ -1,6 +1,7 @@
 import copy
 
 from ppmat.models.diffcsp.diffcsp import CSPDiffusion
+from ppmat.models.diffcsp.diffcsp_with_type import CSPDiffusionWithType
 from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
 from ppmat.models.megnet.megnet import MEGNetPlus
@@ -11,6 +12,7 @@ __all__ = [
     "DimeNetPlusPlusWrap",
     "GemNetT",
     "CSPDiffusion",
+    "CSPDiffusionWithType",
 ]
 
 
