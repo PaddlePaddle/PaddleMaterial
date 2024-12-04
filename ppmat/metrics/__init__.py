@@ -15,10 +15,11 @@
 import copy
 
 from ppmat.metrics.csp_metric import CSPMetric
+from ppmat.metrics.gen_metric import GenMetric
 from ppmat.metrics.mae_metric import MAEMetirc
 from ppmat.metrics.metric_warper import MetricWarper
 
-__all__ = ["MAEMetirc", "MetricWarper", "CSPMetric"]
+__all__ = ["MAEMetirc", "MetricWarper", "CSPMetric", "GenMetric"]
 
 
 def build_metric(cfg):
