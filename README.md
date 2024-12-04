@@ -104,10 +104,10 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">diffcsp</td>
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">mp_20</td>
-            <td  nowrap="nowrap">55.93</td>
-            <td  nowrap="nowrap">0.0500</td>
+            <td  nowrap="nowrap">53.47</td>
+            <td  nowrap="nowrap">0.0540</td>
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
-            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1IzJnLuWMcCNLDPwq3jeLRg?pwd=21h6">checkpoint</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1Sqv_qL2A9tvycfMv6P-rEw?pwd=4kk7">checkpoint</a></td>
             <td  nowrap="nowrap">PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</td>
         </tr>
     </body>

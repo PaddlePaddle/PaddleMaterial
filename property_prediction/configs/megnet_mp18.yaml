@@ -122,3 +122,15 @@ Dataset:
       shuffle: False
       drop_last: False
       batch_size: 128
+  predict:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_test.json"
+      converter_cfg:
+        cutoff: 4.0
+        method: find_points_in_spheres
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
