@@ -159,7 +159,7 @@ class GenMetric:
     def __init__(
         self,
         gt_file_path,
-        n_samples=1000,
+        n_samples=[1000, 5000],
         struc_cutoff=0.4,
         comp_cutoff=10,
         property_model_cfg_path=None,
@@ -168,11 +168,6 @@ class GenMetric:
     ):
         self.gt_file_path = gt_file_path
         self.gt_crys = None
-        # if gt_file_path is not None:
-        #     csv = pd.read_csv(self.gt_file_path)
-        #     self.gt_crys = p_map(get_gt_crys_ori, csv["cif"])
-        # else:
-        #     self.gt_crys = None
 
         self.n_samples = n_samples
         self.struc_cutoff = struc_cutoff
@@ -217,7 +212,6 @@ class GenMetric:
         return {"wdist_prop": wdist_prop}
 
     def get_coverage(self, pred_crys, gt_crys):
-        # cutoff_dict = COV_Cutoffs[self.eval_model_name]
         (cov_metrics_dict, combined_dist_dict) = compute_cov(
             pred_crys,
             gt_crys,
@@ -251,22 +245,31 @@ class GenMetric:
                 )
             gt_crys = self.gt_crys
 
-        valid_crys = [c for c in pred_crys if c.valid]
-        if len(valid_crys) >= self.n_samples:
-            sampled_indices = np.random.choice(
-                len(valid_crys), self.n_samples, replace=False
-            )
-            valid_samples = [valid_crys[i] for i in sampled_indices]
-        else:
-            raise Exception(
-                "Not enough valid crystals in the predicted set:"
-                f" {len(valid_crys)}/{self.n_samples}"
-            )
-
         metrics = {}
         metrics.update(self.get_validity(pred_crys))
-        metrics.update(self.get_density_wdist(valid_samples, gt_crys))
-        metrics.update(self.get_prop_wdist(valid_samples, gt_crys))
-        metrics.update(self.get_num_elem_wdist(valid_samples, gt_crys))
         metrics.update(self.get_coverage(pred_crys, gt_crys))
+
+        for n_sample in self.n_samples:
+            metrics[f"n_sample_{n_sample}"] = {}
+            valid_crys = [c for c in pred_crys if c.valid]
+            if len(valid_crys) >= n_sample:
+                sampled_indices = np.random.choice(
+                    len(valid_crys), n_sample, replace=False
+                )
+                valid_samples = [valid_crys[i] for i in sampled_indices]
+            else:
+                raise Exception(
+                    "Not enough valid crystals in the predicted set:"
+                    f" {len(valid_crys)}/{n_sample}"
+                )
+
+            metrics[f"n_sample_{n_sample}"].update(
+                self.get_density_wdist(valid_samples, gt_crys)
+            )
+            metrics[f"n_sample_{n_sample}"].update(
+                self.get_prop_wdist(valid_samples, gt_crys)
+            )
+            metrics[f"n_sample_{n_sample}"].update(
+                self.get_num_elem_wdist(valid_samples, gt_crys)
+            )
         return metrics
