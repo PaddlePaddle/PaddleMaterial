@@ -85,7 +85,7 @@ def build_optimizer(cfg, model_list, epochs, iters_per_epoch):
         grad_clip = paddle.nn.ClipGradByGlobalNorm(clip_norm=clip_norm)
     elif "clip_value" in cfg:
         clip_value = cfg.pop("clip_value")
-        grad_clip = paddle.nn.ClipGradByValue(clip_value=clip_value)
+        grad_clip = paddle.nn.ClipGradByValue(clip_value)
     else:
         grad_clip = None
 
