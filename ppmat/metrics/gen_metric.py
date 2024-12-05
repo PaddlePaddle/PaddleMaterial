@@ -177,6 +177,13 @@ class GenMetric:
         if property_model_cfg_path is not None:
             assert property_model_weights_path is not None
 
+        if property_model_cfg_path is None and property_model_weights_path is None:
+
+            property_model_cfg_path = "./ppmat/metrics/prop_models/dimenet_mp20.yaml"
+            property_model_weights_path = (
+                "./ppmat/metrics/prop_models/epoch=839-step=89039_paddle.pdparams"
+            )
+
         self.property_model_cfg_path = property_model_cfg_path
         self.property_model_weights_path = property_model_weights_path
 
