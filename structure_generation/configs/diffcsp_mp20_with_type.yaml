@@ -1,6 +1,6 @@
 Global:
   epochs: 1000
-  output_dir: ./output/diffcsp_mp20_with_type_v4
+  output_dir: ./output/diffcsp_mp20_with_type
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
