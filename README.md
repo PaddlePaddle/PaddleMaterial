@@ -6,7 +6,7 @@
 
 ## Introduction
 
-**PaddleScience-Material** is a data-driven deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported crystalline materials and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported the equivalent graph networks-based model and will support the language-based model and multi-model model in the feature.
+**PaddleScience-Material** is a data-driven deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported crystalline materials and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported the equivalent graph networks-based model and will support the language-based model and multi-modal model in the feature.
 
 **Crystalline materials**, characterized by their symmetrical and periodic structures, exhibit a wide range of properties and are widely applied in various fields, from electronic devices to energy applications. Traditional experimental and computational methods for discovering crystalline materials are often time-consuming and expensive. Data-driven approaches to material discovery have the power to model the highly complex atomic systems within crystalline materials, paving the way for rapid and accurate material discovery.
 
@@ -114,6 +114,82 @@ Pre-processed datasets and models are available for download [here](https://pan.
 </table>
 
 
+#### Task 2: Ab Initio Crystal Generation
+
+<table>
+    <head>
+        <tr>
+            <th  nowrap="nowrap">Model</th>
+            <th  nowrap="nowrap">Dataset</th>
+            <th  nowrap="nowrap">samples</th>
+            <th  nowrap="nowrap">Validity<br>Struc. / Comp.</th>
+            <th  nowrap="nowrap">COV R / P</th>
+            <th  nowrap="nowrap"><i>d<sub>&#x3C1</sub></i></th>
+            <th  nowrap="nowrap"><i>d<sub>E</sub></i></th>
+            <th  nowrap="nowrap"><i>d<sub>ele</sub></i></th>
+            <th  nowrap="nowrap">Config</th>
+            <th  nowrap="nowrap">Checkpoint</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(one-hot)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">99.94/84.18</td>
+            <td  nowrap="nowrap">99.51/99.33</td>
+            <td  nowrap="nowrap">0.1808</td>
+            <td  nowrap="nowrap">0.1282</td>
+            <td  nowrap="nowrap">0.5039</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_with_type.yaml">diffcsp_mp20_with_type</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/10Em9kiOTPFffoP7vfGf_Dg?pwd=mghq">checkpoint</a></td>
+        </tr>
+    </body>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(one-hot)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">5000</td>
+            <td  nowrap="nowrap">99.94/84.18</td>
+            <td  nowrap="nowrap">99.51/99.33</td>
+            <td  nowrap="nowrap">0.1802</td>
+            <td  nowrap="nowrap">0.1182</td>
+            <td  nowrap="nowrap">0.5119</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_with_type.yaml">diffcsp_mp20_with_type</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/10Em9kiOTPFffoP7vfGf_Dg?pwd=mghq">checkpoint</a></td>
+        </tr>
+    </body>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(d3pm-uniform)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">99.89/82.54</td>
+            <td  nowrap="nowrap">99.67/99.66</td>
+            <td  nowrap="nowrap">0.1354</td>
+            <td  nowrap="nowrap">0.1107</td>
+            <td  nowrap="nowrap">0.0870</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_uniform.yaml">diffcsp_mp20_d3pm_uniform</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1DDi196dl3BNFdDWjhCR9CQ?pwd=9f9w">checkpoint</a></td>
+        </tr>
+    </body>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(d3pm-uniform)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">5000</td>
+            <td  nowrap="nowrap">99.89/82.54</td>
+            <td  nowrap="nowrap">99.67/99.66</td>
+            <td  nowrap="nowrap">0.0714</td>
+            <td  nowrap="nowrap">0.0851</td>
+            <td  nowrap="nowrap">0.1156</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_uniform.yaml">diffcsp_mp20_d3pm_uniform</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1DDi196dl3BNFdDWjhCR9CQ?pwd=9f9w">checkpoint</a></td>
+        </tr>
+    </body>
+</table>
+
+
 ##### Training:
 
 
@@ -136,7 +212,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 
 
-#### Task 2: Ab Initio Crystal Generation
+#### Task 2: Ab Initio Crystal Generation-legacy
 
 |                       Model                       | Dataset | samples | Validity<br>Struc. / Comp. | COV<br>R / P  | $d_\rho$ | $d_E$  | $d_{ele}$ |                                            Config                                            |                               Checkpoint                               |
 | :-----------------------------------------------: | :-----: | :-----: | :------------------------: | :-----------: | :------: | :----: | :-------: | :------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
