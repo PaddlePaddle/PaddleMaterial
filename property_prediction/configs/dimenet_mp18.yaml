@@ -57,7 +57,7 @@ Metric:
   __name__: MetricWarper
   metric_fn:
     formation_energy_per_atom:
-      __name__: MAEMetirc
+      __name__: MAEMetric
   main_indicator: formation_energy_per_atom # the main indicator to monitor and save model
   min_better: True
 

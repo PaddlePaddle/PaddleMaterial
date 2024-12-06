@@ -17,7 +17,7 @@ from __future__ import annotations
 import paddle.nn.functional as F
 
 
-class MAEMetirc:
+class MAEMetric:
     r"""Mean absolute error."""
 
     def __init__(self):
