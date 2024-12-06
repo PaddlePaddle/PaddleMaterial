@@ -144,8 +144,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_with_type.yaml">diffcsp_mp20_with_type</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/10Em9kiOTPFffoP7vfGf_Dg?pwd=mghq">checkpoint</a></td>
         </tr>
-    </body>
-    <body>
         <tr>
             <td  nowrap="nowrap">diffcsp(one-hot)</td>
             <td  nowrap="nowrap">mp_20</td>
@@ -158,8 +156,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_with_type.yaml">diffcsp_mp20_with_type</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/10Em9kiOTPFffoP7vfGf_Dg?pwd=mghq">checkpoint</a></td>
         </tr>
-    </body>
-    <body>
         <tr>
             <td  nowrap="nowrap">diffcsp(d3pm-uniform)</td>
             <td  nowrap="nowrap">mp_20</td>
@@ -172,8 +168,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_uniform.yaml">diffcsp_mp20_d3pm_uniform</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1DDi196dl3BNFdDWjhCR9CQ?pwd=9f9w">checkpoint</a></td>
         </tr>
-    </body>
-    <body>
         <tr>
             <td  nowrap="nowrap">diffcsp(d3pm-uniform)</td>
             <td  nowrap="nowrap">mp_20</td>
@@ -185,6 +179,30 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">0.1156</td>
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_uniform.yaml">diffcsp_mp20_d3pm_uniform</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1DDi196dl3BNFdDWjhCR9CQ?pwd=9f9w">checkpoint</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(d3pm-absorbing)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">99.89/82.54</td>
+            <td  nowrap="nowrap">99.59/99.66</td>
+            <td  nowrap="nowrap">0.1302</td>
+            <td  nowrap="nowrap">0.0349</td>
+            <td  nowrap="nowrap">0.0760</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_absorbing.yaml">diffcsp_mp20_d3pm_absorbing</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1kP14XO-VW7tKgeFtClonUg?pwd=38w9">checkpoint</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">diffcsp(d3pm-absorbing)</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">5000</td>
+            <td  nowrap="nowrap">99.89/82.54</td>
+            <td  nowrap="nowrap">99.59/99.66</td>
+            <td  nowrap="nowrap">0.1176</td>
+            <td  nowrap="nowrap">0.0395</td>
+            <td  nowrap="nowrap">0.1116</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_absorbing.yaml">diffcsp_mp20_d3pm_absorbing</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1kP14XO-VW7tKgeFtClonUg?pwd=38w9">checkpoint</a></td>
         </tr>
     </body>
 </table>
