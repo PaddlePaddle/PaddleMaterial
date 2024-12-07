@@ -51,6 +51,30 @@ Pre-processed datasets and models are available for download [here](https://pan.
 | DimeNet++ |  MP20   |       0.023       | [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml) | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 |  GemNet   |  MP20   |       0.023       |  [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)  | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
 
+
+#### Task 2: Band Gap
+
+<table>
+    <head>
+        <tr>
+            <th  nowrap="nowrap">Model</th>
+            <th  nowrap="nowrap">Dataset</th>
+            <th  nowrap="nowrap">MAE<br>(test dataset)</th>
+            <th  nowrap="nowrap">Config</th>
+            <th  nowrap="nowrap">Checkpoint</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">MegNet</td>
+            <td  nowrap="nowrap">MP18</td>
+            <td  nowrap="nowrap">0.315</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_mp18_band_gap.yaml">megnet_mp18_band_gap</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1h8I8-d1kDqXDSNyCsE5_Eg?pwd=3man">checkpoint</a></td>
+        </tr>
+    </body>
+</table>
+
 ##### Training:
 
 
@@ -96,7 +120,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <th  nowrap="nowrap">RMSE</th>
             <th  nowrap="nowrap">Config</th>
             <th  nowrap="nowrap">Checkpoint</th>
-            <th  nowrap="nowrap">Train Script</th>
         </tr>
     </head>
     <body>
@@ -108,7 +131,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">0.0540</td>
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1Sqv_qL2A9tvycfMv6P-rEw?pwd=4kk7">checkpoint</a></td>
-            <td  nowrap="nowrap">PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</td>
         </tr>
     </body>
 </table>
