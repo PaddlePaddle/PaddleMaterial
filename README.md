@@ -96,7 +96,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <th  nowrap="nowrap">RMSE</th>
             <th  nowrap="nowrap">Config</th>
             <th  nowrap="nowrap">Checkpoint</th>
-            <th  nowrap="nowrap">Train Script</th>
         </tr>
     </head>
     <body>
@@ -108,7 +107,6 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">0.0540</td>
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20.yaml">diffcsp_mp20</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1Sqv_qL2A9tvycfMv6P-rEw?pwd=4kk7">checkpoint</a></td>
-            <td  nowrap="nowrap">PYTHONPATH=$PWD python structure_generation/train.py -c structure_generation/configs/diffcsp_mp20.yaml</td>
         </tr>
     </body>
 </table>
