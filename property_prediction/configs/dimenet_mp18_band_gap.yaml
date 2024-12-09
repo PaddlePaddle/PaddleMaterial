@@ -1,0 +1,127 @@
+Global:
+  epochs: 2000
+  output_dir: ./output/dime_mp18_band_gap
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 10 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+  # pretrained_model_path:
+
+Model:
+  __name__: DimeNetPlusPlusWrap
+  num_targets: 1
+  hidden_channels: 128
+  num_blocks: 4
+  int_emb_size: 64
+  basis_emb_size: 8
+  out_emb_channels: 256
+  num_spherical: 7
+  num_embeddings: 95
+  num_radial: 6
+  otf_graph: false
+  cutoff: 7.0
+  max_num_neighbors: 20
+  envelope_exponent: 5
+  num_before_skip: 1
+  num_after_skip: 2
+  num_output_layers: 3
+  readout: mean
+  property_names: band_gap
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    band_gap: # loss function for formation energy per atom
+      __name__: MSELoss
+  weights:
+    band_gap: 1.0 # weight for formation energy per atom
+
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  lr:
+    __name__: Cosine
+    learning_rate: 0.001
+    by_epoch: True
+
+PostProcess:
+  - Denormalize:
+      mean: 1.3462
+      std: 1.6214
+      apply_keys: "band_gap" # apply normalization to this property
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    band_gap:
+      __name__: MAEMetric
+  main_indicator: band_gap # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  train:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_train.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: 1.3462
+            std: 1.6214
+            apply_keys: "band_gap" # apply normalization to this property
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 64
+  val:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_val.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: 1.3462
+            std: 1.6214
+            apply_keys: "band_gap" # apply normalization to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
+  test:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
+      transforms:
+        - Normalize:
+            mean: 1.3462
+            std: 1.6214
+            apply_keys: "band_gap" # apply normalization to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
+  predict:
+    dataset:
+      __name__: MP18Dataset
+      path: "./data/mp18/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
