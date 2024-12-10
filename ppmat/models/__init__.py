@@ -5,6 +5,7 @@ from ppmat.models.diffcsp.diffcsp_d3pm import CSPDiffusionWithD3PM
 from ppmat.models.diffcsp.diffcsp_with_type import CSPDiffusionWithType
 from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
+from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import logger
 
@@ -15,6 +16,7 @@ __all__ = [
     "CSPDiffusion",
     "CSPDiffusionWithType",
     "CSPDiffusionWithD3PM",
+    "MatterGen",
 ]
 
 
