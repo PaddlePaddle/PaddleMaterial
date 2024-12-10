@@ -1,0 +1,107 @@
+Global:
+  epochs: 1000
+  output_dir: ./output/mattergen_mp20_d3pm_uniform
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 10 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  is_save_traj: False
+  step_lr: 0.000005
+  pretrained_model_path: null
+
+Metric:
+  __name__: GenMetric
+  gt_file_path: "./data/mp_20/test.csv"
+  polar_decompose: True
+
+
+Model:
+  __name__: MatterGen
+  decoder_cfg:
+    num_targets: 1
+    num_blocks: 4
+    emb_size_atom: 512
+    emb_size_edge: 512
+    latent_dim: 256
+    regress_forces: true
+    max_neighbors: 20
+    cutoff: 7
+    otf_graph: True
+    scale_file: structure_generation/configs/gemnet-dT_mp20.json
+    index_start: 0 # this is the index of the first element, e.g., 0 for H, 1 for He
+    num_classes: 100
+  beta_scheduler_cfg:
+    timesteps: 1000
+    scheduler_mode: cosine
+  sigma_scheduler_cfg:
+    timesteps: 1000
+    sigma_begin: 0.005
+    sigma_end: 0.5
+  discrete_scheduler_cfg:
+    timesteps: 1000
+    num_classes: 100
+    forward_type: uniform
+  time_dim: 256
+  lattice_loss_weight: 1
+  coord_loss_weight: 1
+  type_loss_weight: 1
+  type_ce_loss_weight: 0.01
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  clip_value: 0.5
+  lr:
+    __name__: ReduceOnPlateau
+    learning_rate: 0.0001
+    factor: 0.6
+    by_epoch: True
+    patience: 100
+    min_lr: 0.000001
+    indicator: "train_loss"
+
+
+Dataset:
+  train:
+    dataset:
+      __name__: MP20Dataset
+      path: "./data/mp_20/train.csv"
+      cache: True
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val:
+    dataset:
+      __name__: MP20Dataset
+      path: "./data/mp_20/val.csv"
+      cache: True
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: GenDataset
+      total_num: 10000
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  predict:
+    dataset:
+      __name__: GenDataset
+      total_num: 10
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
