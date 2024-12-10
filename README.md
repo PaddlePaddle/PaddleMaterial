@@ -287,6 +287,8 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 #### Task 2: Ab Initio Crystal Generation-legacy
 
+This table will be obsolete in the future
+
 |                       Model                       | Dataset | samples | Validity<br>Struc. / Comp. | COV<br>R / P  | $d_\rho$ | $d_E$  | $d_{ele}$ |                                            Config                                            |                               Checkpoint                               |
 | :-----------------------------------------------: | :-----: | :-----: | :------------------------: | :-----------: | :------: | :----: | :-------: | :------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
 | [diffcsp-paper](https://arxiv.org/abs/2309.04475) |  mp_20  |  1000   |        100 / 83.25         | 99.71 / 99.76 |  0.3502  | 0.1247 |  0.3398   |                                              -                                               |                                   -                                    |
