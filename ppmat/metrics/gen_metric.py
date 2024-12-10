@@ -164,6 +164,7 @@ class GenMetric:
         comp_cutoff=10,
         property_model_cfg_path=None,
         property_model_weights_path=None,
+        polar_decompose=False,
         seed=42,
     ):
         self.gt_file_path = gt_file_path
@@ -172,6 +173,7 @@ class GenMetric:
         self.n_samples = n_samples
         self.struc_cutoff = struc_cutoff
         self.comp_cutoff = comp_cutoff
+        self.polar_decompose = polar_decompose
         self.seed = seed
 
         if property_model_cfg_path is not None:
@@ -248,7 +250,10 @@ class GenMetric:
                 # read the ground truth from csv file
                 csv = pd.read_csv(self.gt_file_path)
                 self.gt_crys = p_map(
-                    get_crys_from_cif, csv["cif"], desc="Loading ground truth from CSV"
+                    get_crys_from_cif,
+                    csv["cif"],
+                    [self.polar_decompose] * len(csv["cif"]),
+                    desc="Loading ground truth from CSV",
                 )
             gt_crys = self.gt_crys
 
