@@ -235,6 +235,30 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./structure_generation/configs/diffcsp_mp20_d3pm_absorbing.yaml">diffcsp_mp20_d3pm_absorbing</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1kP14XO-VW7tKgeFtClonUg?pwd=38w9">checkpoint</a></td>
         </tr>
+        <tr>
+            <td  nowrap="nowrap">matteregen</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">99.82/85.13</td>
+            <td  nowrap="nowrap">99.69/99.45</td>
+            <td  nowrap="nowrap">0.8684</td>
+            <td  nowrap="nowrap">0.0610</td>
+            <td  nowrap="nowrap">0.9889</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/mattergen_mp20_d3pm_uniform.yaml">mattergen_mp20_d3pm_uniform</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1yv_4YNi2vQtOnoP1ZpG87w?pwd=u77b">checkpoint</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">matteregen</td>
+            <td  nowrap="nowrap">mp_20</td>
+            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">99.82/85.13</td>
+            <td  nowrap="nowrap">99.69/99.45</td>
+            <td  nowrap="nowrap">0.9336</td>
+            <td  nowrap="nowrap">0.0645</td>
+            <td  nowrap="nowrap">0.9753</td>
+            <td  nowrap="nowrap"><a href="./structure_generation/configs/mattergen_mp20_d3pm_uniform.yaml">mattergen_mp20_d3pm_uniform</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1yv_4YNi2vQtOnoP1ZpG87w?pwd=u77b">checkpoint</a></td>
+        </tr>
     </body>
 </table>
 
@@ -262,6 +286,8 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 
 #### Task 2: Ab Initio Crystal Generation-legacy
+
+This table will be obsolete in the future
 
 |                       Model                       | Dataset | samples | Validity<br>Struc. / Comp. | COV<br>R / P  | $d_\rho$ | $d_E$  | $d_{ele}$ |                                            Config                                            |                               Checkpoint                               |
 | :-----------------------------------------------: | :-----: | :-----: | :------------------------: | :-----------: | :------: | :----: | :-------: | :------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
