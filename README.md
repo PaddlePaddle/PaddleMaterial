@@ -250,7 +250,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
         <tr>
             <td  nowrap="nowrap">matteregen</td>
             <td  nowrap="nowrap">mp_20</td>
-            <td  nowrap="nowrap">1000</td>
+            <td  nowrap="nowrap">5000</td>
             <td  nowrap="nowrap">99.82/85.13</td>
             <td  nowrap="nowrap">99.69/99.45</td>
             <td  nowrap="nowrap">0.9336</td>
