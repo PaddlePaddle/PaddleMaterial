@@ -112,7 +112,9 @@ class SphericalBasisLayer(paddle.nn.Layer):
         rbf = self.envelope(dist).unsqueeze(axis=-1) * rbf
         cbf = paddle.stack(x=[f(angle) for f in self.sph_funcs], axis=1)
         n, k = self.num_spherical, self.num_radial
-        out = (rbf[idx_kj].view(-1, n, k) * cbf.view(-1, n, 1)).view(-1, n * k)
+        out = (rbf[idx_kj].reshape([-1, n, k]) * cbf.reshape([-1, n, 1])).reshape(
+            [-1, n * k]
+        )
         return out
 
 
