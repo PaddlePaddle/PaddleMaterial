@@ -237,7 +237,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1kP14XO-VW7tKgeFtClonUg?pwd=38w9">checkpoint</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">matteregen</td>
+            <td  nowrap="nowrap">mattergen</td>
             <td  nowrap="nowrap">mp_20</td>
             <td  nowrap="nowrap">1000</td>
             <td  nowrap="nowrap">99.82/85.13</td>
@@ -249,7 +249,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1yv_4YNi2vQtOnoP1ZpG87w?pwd=u77b">checkpoint</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">matteregen</td>
+            <td  nowrap="nowrap">mattergen</td>
             <td  nowrap="nowrap">mp_20</td>
             <td  nowrap="nowrap">5000</td>
             <td  nowrap="nowrap">99.82/85.13</td>
