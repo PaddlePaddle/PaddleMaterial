@@ -26,12 +26,12 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 - MP2018.6.1
 
-    The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992).
-    For the convenience of training, we divided it into a ratio of 0.9:0.05:0.05，you can download it from [here](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)
+    The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). We have two ways to split the data. The first is 0.9 for training, 0.05 for validation, and 0.05 for testing. We call this MP18. The second has 60000 training samples, just like MegNet and Comformer. We name this mp2018_train_6k.
 
-    |  Dataset   | train |  val  | test  |
-    | :--------: | :---: | :---: | :---: |
-    | MP2018.6.1 | 62315 | 3461  | 3463  |
+    |                                   Dataset                                   | train |  val  | test  |
+    | :-------------------------------------------------------------------------: | :---: | :---: | :---: |
+    |      [MP18](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)       | 62315 | 3461  | 3463  |
+    | [mp2018_train_6k](https://pan.baidu.com/s/1Zl-OOQKkTC4YfhP2q6aJzQ?pwd=xg1p) | 60000 | 5000  | 4239  |
 
 - MP20
     The MP20 dataset can download from [here](https://github.com/jiaor17/DiffCSP/tree/main/data/mp_20).
