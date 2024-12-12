@@ -3,12 +3,14 @@ from typing import Optional
 
 import numpy as np
 import pgl
+from jarvis.core.atoms import Atoms
 from p_tqdm import p_map
 from pymatgen.analysis import local_env
 from pymatgen.analysis.graphs import StructureGraph
 from pymatgen.core.structure import Structure
 from pymatgen.optimization.neighbors import find_points_in_spheres
 
+from ppmat.datasets.comformer_graph_utils import atom_dgl_multigraph
 from ppmat.datasets.utils import lattice_params_to_matrix
 from ppmat.utils import DEFAULT_ELEMENTS
 from ppmat.utils import logger
@@ -19,7 +21,14 @@ class Structure2Graph:
         self,
         cutoff: float = 5.0,
         pbc: tuple[int, int, int] = (1, 1, 1),
-        method: Literal["crystalnn", "find_points_in_spheres"] = "crystalnn",
+        neighbor_strategy: str = "k-nearest",  # only used for method='comformer_graph'
+        max_neighbors: int = 25,  # only used for method='comformer_graph'
+        atom_features: str = "cgcnn",  # only used for method='comformer_graph'
+        use_canonize: bool = True,  # only used for method='comformer_graph'
+        use_lattice: bool = True,  # only used for method='comformer_graph'
+        method: Literal[
+            "crystalnn", "find_points_in_spheres", "comformer_graph"
+        ] = "crystalnn",
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
         num_cpus: Optional[int] = None,
         eps: float = 1e-8,
@@ -27,11 +36,17 @@ class Structure2Graph:
     ) -> None:
         self.cutoff = cutoff
         self.pbc = np.array(pbc, dtype=int)
+        self.neighbor_strategy = neighbor_strategy
+        self.max_neighbors = max_neighbors
+        self.atom_features = atom_features
+        self.use_canonize = use_canonize
+        self.use_lattice = use_lattice
 
         assert method in [
             "crystalnn",
             "find_points_in_spheres",
-        ], "method must be 'crystalnn' or 'find_points_in_spheres'."
+            "comformer_graph",
+        ], "method must be 'crystalnn' 'comformer_graph' or 'find_points_in_spheres'."
         self.method = method
 
         if element_types.upper() == "DEFAULT_ELEMENTS":
@@ -42,9 +57,10 @@ class Structure2Graph:
         self.num_cpus = num_cpus
         self.eps = eps
 
-        self.CrystalNN = local_env.CrystalNN(
-            distance_cutoffs=None, x_diff_weight=-1, porous_adjustment=False
-        )
+        if self.method == "crystalnn":
+            self.CrystalNN = local_env.CrystalNN(
+                distance_cutoffs=None, x_diff_weight=-1, porous_adjustment=False
+            )
 
     def __call__(self, structure: Structure):
         if self.method == "crystalnn":
@@ -78,8 +94,50 @@ class Structure2Graph:
                 raise TypeError(
                     "The input must be a pymatgen.Structure or a list of them."
                 )
+        elif self.method == "comformer_graph":
+            if isinstance(structure, Structure):
+                graph = self.get_graph_by_comformer_graph(structure)
+            elif isinstance(structure, list):
+                graph = p_map(
+                    self.get_graph_by_comformer_graph,
+                    structure,
+                    num_cpus=self.num_cpus,
+                )
+                # the following code is equivalent to the above line, it is slower,
+                # but easier to debug.
+                # graph = [
+                #     self.get_graph_by_comformer_graph(struc) for struc in structure
+                # ]
+
         else:
             raise NotImplementedError()
+        return graph
+
+    def get_graph_by_comformer_graph(self, structure: Structure):
+        # Convert pymatgen structure to jarvis atoms
+        lattice_mat = structure.lattice.matrix
+        coords = structure.frac_coords
+        elements = [site.specie.symbol for site in structure]
+        atoms = Atoms(lattice_mat=lattice_mat, coords=coords, elements=elements)
+        edge_index, node_features, r, nei, atom_lat = atom_dgl_multigraph(
+            atoms,
+            neighbor_strategy=self.neighbor_strategy,
+            cutoff=self.cutoff,
+            max_neighbors=self.max_neighbors,
+            atom_features=self.atom_features,
+            use_canonize=self.use_canonize,
+            use_lattice=self.use_lattice,
+        )
+        graph = self.build_pgl_graph(
+            structure,
+            edge_indices=edge_index,
+            to_jimages=None,
+            node_features={"node_feat": node_features, "atom_lat": atom_lat},
+            edge_features={
+                "r": r,
+                "nei": nei,
+            },
+        )
         return graph
 
     def get_graph_by_crystalnn(self, structure: Structure):
@@ -159,7 +217,16 @@ class Structure2Graph:
         graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
         return graph
 
-    def build_pgl_graph(self, structure: Structure, edge_indices, to_jimages):
+    def build_pgl_graph(
+        self,
+        structure: Structure,
+        edge_indices,
+        to_jimages,
+        node_features=None,
+        edge_features=None,
+    ):
+        assert node_features is None or isinstance(node_features, dict)
+        assert edge_features is None or isinstance(edge_features, dict)
 
         # get atom types
         atom_types = np.array(
@@ -174,7 +241,8 @@ class Structure2Graph:
 
         # convert to numpy array
         edge_indices = np.array(edge_indices)
-        to_jimages = np.array(to_jimages)
+        if to_jimages is not None:
+            to_jimages = np.array(to_jimages)
         num_atoms = tuple(atom_types.shape)[0]
 
         # After multiple graph batch operations by the dataloader,
@@ -199,13 +267,19 @@ class Structure2Graph:
         graph.node_feat["num_atoms"] = np.array([num_atoms])
 
         # edge features: pbc_offset, bond_vec, bond_dist
-        graph.edge_feat["pbc_offset"] = to_jimages
-        offset = np.matmul(to_jimages, lattice)
-        dst_pos = graph.node_feat["cart_coords"][graph.edges[:, 1]] + offset
-        src_pos = graph.node_feat["cart_coords"][graph.edges[:, 0]]
-        bond_vec = dst_pos - src_pos
-        bond_dist = np.linalg.norm(bond_vec, axis=1)
-        graph.edge_feat["bond_vec"] = bond_vec.astype("float32")
-        graph.edge_feat["bond_dist"] = bond_dist.astype("float32")
+        if to_jimages is not None:
+            graph.edge_feat["pbc_offset"] = to_jimages
+            offset = np.matmul(to_jimages, lattice)
+            dst_pos = graph.node_feat["cart_coords"][graph.edges[:, 1]] + offset
+            src_pos = graph.node_feat["cart_coords"][graph.edges[:, 0]]
+            bond_vec = dst_pos - src_pos
+            bond_dist = np.linalg.norm(bond_vec, axis=1)
+            graph.edge_feat["bond_vec"] = bond_vec.astype("float32")
+            graph.edge_feat["bond_dist"] = bond_dist.astype("float32")
         graph.edge_feat["num_edges"] = np.array([edge_indices.shape[0]])
+
+        if node_features is not None:
+            graph.node_feat.update(node_features)
+        if edge_features is not None:
+            graph.edge_feat.update(edge_features)
         return graph
