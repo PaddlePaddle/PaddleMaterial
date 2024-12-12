@@ -73,7 +73,10 @@ class MP20Dataset(paddle.io.Dataset):
         # build graphs from structures
         if converter_cfg is not None:
             # load cached graphs from cache file
-            cache_path = osp.join(path.rsplit(".", 1)[0] + "_graphs.pkl")
+            graph_method = converter_cfg["method"]
+            cache_path = osp.join(
+                path.rsplit(".", 1)[0] + f"_{graph_method}_graphs.pkl"
+            )
             if self.cache and osp.exists(cache_path):
                 with open(cache_path, "rb") as f:
                     self.graphs = pickle.load(f)
