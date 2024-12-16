@@ -14,10 +14,11 @@
 
 import copy
 
+from ppmat.losses.l1_loss import L1Loss
 from ppmat.losses.loss_warper import LossWarper
 from ppmat.losses.mse_loss import MSELoss
 
-__all__ = [MSELoss, LossWarper]
+__all__ = ["MSELoss", "L1Loss", "LossWarper", "build_loss"]
 
 
 def build_loss(cfg):
