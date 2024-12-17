@@ -1,0 +1,110 @@
+Global:
+  epochs: 500
+  output_dir: ./output/comformer_mp2018_train_60k_band_gap
+  save_freq: 100
+  log_freq: 100
+  start_eval_epoch: 1
+  eval_freq: 1
+  seed: 42
+  cal_metric_during_train: true
+
+Model:
+  __name__: iComformer
+  property_names: band_gap
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    band_gap:
+      __name__: L1Loss
+  weights:
+    band_gap: 1.0
+Optimizer:
+  __name__: Adam
+  lr:
+    __name__: Linear
+    learning_rate: 0.0005
+    end_lr: 1.0e-05
+    by_epoch: false
+PostProcess:
+- Denormalize:
+    mean: 1.3462
+    std: 1.6214
+    apply_keys: band_gap
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    band_gap:
+      __name__: MAEMetric
+  main_indicator: band_gap
+  min_better: true
+Dataset:
+  train:
+    dataset:
+      __name__: MP18Dataset
+      path: ./data/mp2018_train_60k/mp.2018.6.1_train.json
+      converter_cfg:
+        cutoff: 4.0
+        method: comformer_graph
+        num_cpus: 10
+      transforms:
+      - Normalize:
+          mean: 1.3462
+          std: 1.6214
+          apply_keys: band_gap
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: true
+      drop_last: true
+      batch_size: 16
+  val:
+    dataset:
+      __name__: MP18Dataset
+      path: ./data/mp2018_train_60k/mp.2018.6.1_val.json
+      converter_cfg:
+        cutoff: 4.0
+        method: comformer_graph
+        num_cpus: 10
+      transforms:
+      - Normalize:
+          mean: 1.3462
+          std: 1.6214
+          apply_keys: band_gap
+    sampler:
+      __name__: BatchSampler
+      shuffle: false
+      drop_last: false
+      batch_size: 32
+  test:
+    dataset:
+      __name__: MP18Dataset
+      path: ./data/mp2018_train_60k/mp.2018.6.1_test.json
+      converter_cfg:
+        cutoff: 4.0
+        method: comformer_graph
+        num_cpus: 10
+      transforms:
+      - Normalize:
+          mean: 1.3462
+          std: 1.6214
+          apply_keys: band_gap
+    sampler:
+      __name__: BatchSampler
+      shuffle: false
+      drop_last: false
+      batch_size: 64
+  predict:
+    dataset:
+      __name__: MP18Dataset
+      path: ./data/mp2018_train_60k/mp.2018.6.1_test.json
+      converter_cfg:
+        cutoff: 4.0
+        method: comformer_graph
+        num_cpus: 10
+    sampler:
+      __name__: BatchSampler
+      shuffle: false
+      drop_last: false
+      batch_size: 16
