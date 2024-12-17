@@ -1,6 +1,6 @@
 Global:
   epochs: 2000
-  output_dir: ./output/megnet_mp2018_train_6k_band_gap
+  output_dir: ./output/megnet_mp2018_train_60k_band_gap
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 50 # log frequency [step]
   start_eval_epoch: 1
@@ -61,7 +61,7 @@ Dataset:
   train:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_train.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
       converter_cfg:
         cutoff: 4.0
         method: find_points_in_spheres
@@ -81,7 +81,7 @@ Dataset:
   val:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_val.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
       converter_cfg:
         cutoff: 4.0
         method: find_points_in_spheres
@@ -98,7 +98,7 @@ Dataset:
   test:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
       converter_cfg:
         cutoff: 4.0
         method: find_points_in_spheres
@@ -115,7 +115,7 @@ Dataset:
   predict:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
       converter_cfg:
         cutoff: 4.0
         method: find_points_in_spheres

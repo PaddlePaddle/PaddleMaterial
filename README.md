@@ -26,12 +26,12 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 - MP2018.6.1
 
-    The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). We have two ways to split the data. The first is 0.9 for training, 0.05 for validation, and 0.05 for testing. We call this MP18. The second has 60000 training samples, just like MegNet and Comformer. We name this mp2018_train_6k.
+    The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). We have two ways to split the data. The first is 0.9 for training, 0.05 for validation, and 0.05 for testing. We call this MP18. The second has 60000 training samples, just like MegNet and Comformer. We name this mp2018_train_60k.
 
     |                                   Dataset                                   | train |  val  | test  |
     | :-------------------------------------------------------------------------: | :---: | :---: | :---: |
     |      [MP18](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)       | 62315 | 3461  | 3463  |
-    | [mp2018_train_6k](https://pan.baidu.com/s/1Zl-OOQKkTC4YfhP2q6aJzQ?pwd=xg1p) | 60000 | 5000  | 4239  |
+    | [mp2018_train_60k](https://pan.baidu.com/s/1GyjEyW9kL9OZiO15P5LuKQ?pwd=uzzg) | 60000 | 5000  | 4239  |
 
 - MP20
     The MP20 dataset can download from [here](https://github.com/jiaor17/DiffCSP/tree/main/data/mp_20).
@@ -47,8 +47,8 @@ Pre-processed datasets and models are available for download [here](https://pan.
 | :-------: | :-------------: | :---------------: | :---------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
 |  MegNet   |      MP18       |       0.034       |                      [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                      | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
 | DimeNet++ |      MP18       |       0.030       |                     [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                     | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
-|  MegNet   | mp2018_train_6k |       0.028       |    [megnet_mp2018_train_6k_e_form](property_prediction/configs/megnet_mp2018_train_6k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1wzigoq7PeA6XFdPeeV3eIA?pwd=2s4i) |
-| Comformer | mp2018_train_6k |       0.018       | [comformer_mp2018_train_6k_e_form](property_prediction/configs/comformer_mp2018_train_6k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1qwSHCjP7ITqb_r43bcJH2A?pwd=fz6x) |
+|  MegNet   | mp2018_train_60k |       0.028       |    [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1wzigoq7PeA6XFdPeeV3eIA?pwd=2s4i) |
+| Comformer | mp2018_train_60k |       0.018       | [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1qwSHCjP7ITqb_r43bcJH2A?pwd=fz6x) |
 |  MegNet   |      MP20       |       0.028       |                      [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
 | DimeNet++ |      MP20       |       0.023       |                     [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                     | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 |  GemNet   |      MP20       |       0.023       |                      [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
@@ -83,9 +83,9 @@ Pre-processed datasets and models are available for download [here](https://pan.
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
-            <td  nowrap="nowrap">mp2018_train_6k</td>
+            <td  nowrap="nowrap">mp2018_train_60k</td>
             <td  nowrap="nowrap">0.290</td>
-            <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_mp2018_train_6k_band_gap.yaml">megnet_mp2018_train_6k_band_gap</a></td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_mp2018_train_60k_band_gap.yaml">megnet_mp2018_train_60k_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1Uk1yaz92I59XYzHp3wFaAw?pwd=x8aj">checkpoint</a></td>
         </tr>
     </body>
