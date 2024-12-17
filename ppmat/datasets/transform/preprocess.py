@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from typing import Tuple
 from typing import Union
 
@@ -37,4 +38,34 @@ class Normalize:
         for key in self.apply_keys:
             assert key in data, f"Key {key} does not exist in data."
             data[key] = (data[key] - self.mean) / self.std
+        return data
+
+
+class ClipData:
+    """Normalize data class."""
+
+    def __init__(
+        self,
+        min: Optional[float] = None,
+        max: Optional[float] = None,
+        apply_keys: Tuple[str, ...] = ("input", "label"),
+    ):
+        assert min is not None or max is not None
+        self.min = min
+        self.max = max
+        self.apply_keys = [apply_keys] if isinstance(apply_keys, str) else apply_keys
+
+    def __call__(self, data):
+        for key in self.apply_keys:
+            assert key in data, f"Key {key} does not exist in data."
+            if self.min is not None and data[key] < self.min:
+                if isinstance(data[key], np.ndarray):
+                    data[key] = np.full_like(data[key], self.min)
+                else:
+                    data[key] = self.min
+            elif self.max is not None and data[key] > self.max:
+                if isinstance(data[key], np.ndarray):
+                    data[key] = np.full_like(data[key], self.max)
+                else:
+                    data[key] = self.max
         return data
