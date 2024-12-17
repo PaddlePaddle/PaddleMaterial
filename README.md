@@ -47,8 +47,8 @@ Pre-processed datasets and models are available for download [here](https://pan.
 | :-------: | :-------------: | :---------------: | :---------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
 |  MegNet   |      MP18       |       0.034       |                      [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                      | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
 | DimeNet++ |      MP18       |       0.030       |                     [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                     | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
-|  MegNet   | mp2018_train_60k |       0.028       |    [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1wzigoq7PeA6XFdPeeV3eIA?pwd=2s4i) |
-| Comformer | mp2018_train_60k |       0.018       | [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1qwSHCjP7ITqb_r43bcJH2A?pwd=fz6x) |
+|  MegNet   | mp2018_train_60k |       0.028       |    [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1Wko511TRiqSfUDopTswbTQ?pwd=b6ts) |
+| Comformer | mp2018_train_60k |       0.018       | [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1j2heh6_P23_Bb4LZM5AI6Q?pwd=5nit) |
 |  MegNet   |      MP20       |       0.028       |                      [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
 | DimeNet++ |      MP20       |       0.023       |                     [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                     | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 |  GemNet   |      MP20       |       0.023       |                      [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
@@ -86,7 +86,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">mp2018_train_60k</td>
             <td  nowrap="nowrap">0.290</td>
             <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_mp2018_train_60k_band_gap.yaml">megnet_mp2018_train_60k_band_gap</a></td>
-            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1Uk1yaz92I59XYzHp3wFaAw?pwd=x8aj">checkpoint</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1oYTjiZ2fcZzwMVj6Z1HXmw?pwd=m669">checkpoint</a></td>
         </tr>
     </body>
 </table>
