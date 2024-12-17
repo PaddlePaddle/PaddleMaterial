@@ -1,8 +1,8 @@
 Global:
-  epochs: 2000
-  output_dir: ./output/megnet_mp2018_train_6k_e_form
+  epochs: 500
+  output_dir: ./output/comformer_mp2018_train_60k_e_form
   save_freq: 100 # set 0 to disable saving during training
-  log_freq: 50 # log frequency [step]
+  log_freq: 100 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
@@ -10,19 +10,7 @@ Global:
 
 
 Model:
-  __name__: MEGNetPlus
-  dim_node_embedding: 16
-  dim_edge_embedding: 100
-  dim_state_embedding: 2
-  nblocks: 3
-  nlayers_set2set: 1
-  niters_set2set: 2
-  bond_expansion_cfg:
-    rbf_type: "Gaussian"
-    initial: 0.0
-    final: 5.0
-    num_centers: 100
-    width: 0.5
+  __name__: iComformer
 
 Loss:
   __name__: LossWarper
@@ -33,13 +21,10 @@ Loss:
     formation_energy_per_atom: 1.0 # weight for formation energy per atom
 
 Optimizer:
-  __name__: Adam
-  beta1: 0.9
-  beta2: 0.999
+  __name__: AdamW
   lr:
-    __name__: Cosine
-    learning_rate: 0.001
-    eta_min: 0.0001
+    __name__: OneCycleLR
+    max_learning_rate: 0.001
     by_epoch: True
 
 PostProcess:
@@ -60,10 +45,11 @@ Dataset:
   train:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_train.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
       converter_cfg:
         cutoff: 4.0
-        method: find_points_in_spheres
+        method: comformer_graph
+        num_cpus: 10
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -75,15 +61,16 @@ Dataset:
     sampler:
       __name__: DistributedBatchSampler
       shuffle: True
-      drop_last: False
-      batch_size: 128
+      drop_last: True
+      batch_size: 32
   val:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_val.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
       converter_cfg:
         cutoff: 4.0
-        method: find_points_in_spheres
+        method: comformer_graph
+        num_cpus: 10
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -93,14 +80,15 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 32
   test:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
       converter_cfg:
         cutoff: 4.0
-        method: find_points_in_spheres
+        method: comformer_graph
+        num_cpus: 10
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -110,16 +98,17 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 64
   predict:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp2018_train_6k/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
       converter_cfg:
         cutoff: 4.0
-        method: find_points_in_spheres
+        method: comformer_graph
+        num_cpus: 10
     sampler:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 16
