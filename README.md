@@ -88,6 +88,13 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_mp2018_train_60k_band_gap.yaml">megnet_mp2018_train_60k_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1oYTjiZ2fcZzwMVj6Z1HXmw?pwd=m669">checkpoint</a></td>
         </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">mp2018_train_60k</td>
+            <td  nowrap="nowrap">0.207</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_mp2018_train_60k_band_gap.yaml">comformer_mp2018_train_60k_band_gap</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/18tOuo4rVtcINnLzLnejskQ?pwd=tugi">checkpoint</a></td>
+        </tr>
     </body>
 </table>
 
