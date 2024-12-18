@@ -1,0 +1,138 @@
+Global:
+  epochs: 2000
+  output_dir: ./output/megnet_2d_0621_train_18k_e_form
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 50 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+
+
+Model:
+  __name__: MEGNetPlus
+  dim_node_embedding: 16
+  dim_edge_embedding: 100
+  dim_state_embedding: 2
+  nblocks: 3
+  nlayers_set2set: 1
+  niters_set2set: 2
+  bond_expansion_cfg:
+    rbf_type: "Gaussian"
+    initial: 0.0
+    final: 5.0
+    num_centers: 100
+    width: 0.5
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    formation_energy_per_atom: # loss function for formation energy per atom
+      __name__: MSELoss
+  weights:
+    formation_energy_per_atom: 1.0 # weight for formation energy per atom
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  lr:
+    __name__: Cosine
+    learning_rate: 0.001
+    eta_min: 0.0001
+    by_epoch: True
+
+PostProcess:
+  - Denormalize:
+      mean: -1.3171
+      std: 1.2241
+      apply_keys: "formation_energy_per_atom" # apply normalization to this property
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    formation_energy_per_atom:
+      __name__: MAEMetric
+  main_indicator: formation_energy_per_atom # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  train:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/train.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      converter_cfg:
+        cutoff: 4.0
+        method: find_points_in_spheres
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 128
+  val:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      converter_cfg:
+        cutoff: 4.0
+        method: find_points_in_spheres
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
+  test:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      converter_cfg:
+        cutoff: 4.0
+        method: find_points_in_spheres
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
+  predict:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      converter_cfg:
+        cutoff: 4.0
+        method: find_points_in_spheres
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
