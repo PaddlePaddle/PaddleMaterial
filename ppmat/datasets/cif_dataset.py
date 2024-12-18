@@ -31,7 +31,7 @@ class CIFDataset(Dataset):
         transforms=None,
         num_cpus: Optional[int] = None,
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
-        cache: bool = True,
+        cache: bool = False,
         **kwargs,
     ):
 
