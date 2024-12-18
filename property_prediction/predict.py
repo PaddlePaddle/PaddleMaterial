@@ -1,13 +1,12 @@
 import argparse
 import os
 import os.path as osp
-import pickle
 import time
 from collections import defaultdict
 
-import numpy as np
 import paddle
 import paddle.distributed as dist
+import pandas as pd
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
@@ -57,13 +56,12 @@ def predict(model, dataloader, log_freq=1):
             msg += f" | reader cost: {reader_cost:.5f}s"
             msg += f" | batch cost: {batch_cost:.5f}s"
             logger.info(msg)
+        if "id" in batch_data:
+            all_preds["id"].extend(batch_data["id"])
         for key, value in pred_data.items():
-            all_preds[key].append(value.detach().cpu().numpy())
+            all_preds[key].extend(paddle.squeeze(value, axis=-1).tolist())
         batch_tic = time.perf_counter()
         reader_tic = time.perf_counter()
-
-    for key, value in all_preds.items():
-        all_preds[key] = np.concatenate(all_preds[key], axis=0)
     return all_preds
 
 
@@ -115,7 +113,9 @@ if __name__ == "__main__":
 
     results = predict(model, predict_loader, log_freq=log_freq)
 
-    save_path = osp.join(config["Global"]["output_dir"], "result.pkl")
+    save_path = osp.join(config["Global"]["output_dir"], "result.csv")
+    # save result to csv file use pandas
+    df = pd.DataFrame(results)
+    df.to_csv(save_path, index=False)
+
     logger.info(f"Save result to {save_path}")
-    with open(save_path, "wb") as f:
-        pickle.dump(results, f)

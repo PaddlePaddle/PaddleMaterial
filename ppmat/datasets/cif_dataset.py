@@ -154,14 +154,17 @@ class CIFDataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
 
         # get formation energy per atom
-        data["formation_energy_per_atom"] = np.array(
-            [self.property_data["formation_energy_per_atom"][idx]]
-        ).astype("float32")
+        if "formation_energy_per_atom" in self.property_data:
+            data["formation_energy_per_atom"] = np.array(
+                [self.property_data["formation_energy_per_atom"][idx]]
+            ).astype("float32")
         # get band gap
         if "band_gap" in self.property_data:
             data["band_gap"] = np.array([self.property_data["band_gap"][idx]]).astype(
                 "float32"
             )
+        # use cif file name as id
+        data["id"] = self.property_data["cif"][idx]
 
         data = self.transforms(data) if self.transforms is not None else data
 

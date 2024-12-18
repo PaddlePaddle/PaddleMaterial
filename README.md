@@ -24,34 +24,73 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 #### Datasets:
 
-- MP2018.6.1
+- MP2018.6.1:
 
     The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). We have two ways to split the data. The first is 0.9 for training, 0.05 for validation, and 0.05 for testing. We call this MP18. The second has 60000 training samples, just like MegNet and Comformer. We name this mp2018_train_60k.
 
-    |                                   Dataset                                   | train |  val  | test  |
-    | :-------------------------------------------------------------------------: | :---: | :---: | :---: |
-    |      [MP18](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)       | 62315 | 3461  | 3463  |
+    |                                   Dataset                                    | train |  val  | test  |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
+    |       [MP18](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)       | 62315 | 3461  | 3463  |
     | [mp2018_train_60k](https://pan.baidu.com/s/1GyjEyW9kL9OZiO15P5LuKQ?pwd=uzzg) | 60000 | 5000  | 4239  |
 
-- MP20
+- MP20:
+
     The MP20 dataset can download from [here](https://github.com/jiaor17/DiffCSP/tree/main/data/mp_20).
 
     | Dataset | train |  val  | test  |
     | :-----: | :---: | :---: | :---: |
     |  MP20   | 27136 | 9047  | 9046  |
 
+- 2D Materials:
+    The 2d_0621_train_18k dataset can download from [here](https://pan.baidu.com/s/1qg5WV9QHqumZQLAKIicV1A).
+
+    |      Dataset      | train |  val  |
+    | :---------------: | :---: | :---: |
+    | 2d_0621_train_18k | 18000 | 3684  |
+
 #### Task 1: formation energy per atom
 
-
-|   Model   |     Dataset     | MAE(test dataset) |                                                config                                                 |                               Checkpoint                               |
-| :-------: | :-------------: | :---------------: | :---------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
-|  MegNet   |      MP18       |       0.034       |                      [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                      | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
-| DimeNet++ |      MP18       |       0.030       |                     [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                     | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
+3D Materials:
+|   Model   |     Dataset      | MAE(test dataset) |                                                 config                                                  |                               Checkpoint                               |
+| :-------: | :--------------: | :---------------: | :-----------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
+|  MegNet   |       MP18       |       0.034       |                       [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                       | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
+| DimeNet++ |       MP18       |       0.030       |                      [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                      | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
 |  MegNet   | mp2018_train_60k |       0.028       |    [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1Wko511TRiqSfUDopTswbTQ?pwd=b6ts) |
 | Comformer | mp2018_train_60k |       0.018       | [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1j2heh6_P23_Bb4LZM5AI6Q?pwd=5nit) |
-|  MegNet   |      MP20       |       0.028       |                      [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
-| DimeNet++ |      MP20       |       0.023       |                     [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                     | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
-|  GemNet   |      MP20       |       0.023       |                      [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
+|  MegNet   |       MP20       |       0.028       |                       [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
+| DimeNet++ |       MP20       |       0.023       |                      [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
+|  GemNet   |       MP20       |       0.023       |                       [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
+
+2D Materials:
+<table>
+    <head>
+        <tr>
+            <th  nowrap="nowrap">Model</th>
+            <th  nowrap="nowrap">Dataset</th>
+            <th  nowrap="nowrap">MAE</th>
+            <th  nowrap="nowrap">Config</th>
+            <th  nowrap="nowrap">Checkpoint</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td  nowrap="nowrap">MegNet</td>
+            <td  nowrap="nowrap">2d_0621_train_18k</td>
+            <td  nowrap="nowrap">0.079</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_2d_0621_train_18k_e_form.yaml">megnet_2d_0621_train_18k_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1hszXvxjK6YLUK3KLslPPRA">checkpoint</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">2d_0621_train_18k</td>
+            <td  nowrap="nowrap">0.042</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_2d_0621_train_18k_e_form.yaml">comformer_2d_0621_train_18k_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1km_NjqYj1b6cXPV46WLydw">checkpoint</a></td>
+        </tr>
+    </body>
+</table>
+
+
 
 
 #### Task 2: Band Gap
