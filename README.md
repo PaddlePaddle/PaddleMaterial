@@ -74,6 +74,13 @@ Pre-processed datasets and models are available for download [here](https://pan.
     </head>
     <body>
         <tr>
+            <td  nowrap="nowrap">MegNet</td>
+            <td  nowrap="nowrap">2d_0621_train_18k</td>
+            <td  nowrap="nowrap">0.079</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/megnet_2d_0621_train_18k_e_form.yaml">megnet_2d_0621_train_18k_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1hszXvxjK6YLUK3KLslPPRA">checkpoint</a></td>
+        </tr>
+        <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">2d_0621_train_18k</td>
             <td  nowrap="nowrap">0.042</td>
