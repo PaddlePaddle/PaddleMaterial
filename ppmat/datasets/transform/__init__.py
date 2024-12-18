@@ -20,9 +20,16 @@ from typing import Tuple
 from paddle import vision
 
 from ppmat.datasets.transform.post_process import Denormalize
+from ppmat.datasets.transform.preprocess import ClipData
 from ppmat.datasets.transform.preprocess import Normalize
 
-__all__ = ["Normalize", "Denormalize", "build_transforms", "build_post_process"]
+__all__ = [
+    "Normalize",
+    "Denormalize",
+    "ClipData",
+    "build_transforms",
+    "build_post_process",
+]
 
 
 class Compose(vision.Compose):
@@ -55,7 +62,7 @@ def build_transforms(cfg):
         transform = eval(transform_cls)(**transform_cfg)
         transform_list.append(transform)
 
-    return Compose(transform_list)
+    return vision.Compose(transform_list)
 
 
 def build_post_process(cfg):

@@ -83,6 +83,30 @@ def build_structure_from_array(
         raise TypeError("crystal_array must be dict or list.")
 
 
+def build_structure_from_file(file_names, niggli=True, primitive=False, num_cpus=None):
+    """Build crystal from cif string."""
+
+    def build_one(file_names):
+        crystal = Structure.from_file(file_names, primitive=primitive)
+        if niggli:
+            crystal = crystal.get_reduced_structure()
+            crystal = Structure(
+                lattice=Lattice.from_parameters(*crystal.lattice.parameters),
+                species=crystal.species,
+                coords=crystal.frac_coords,
+                coords_are_cartesian=False,
+            )
+        return crystal
+
+    if isinstance(file_names, str):
+        return build_one(file_names)
+    elif isinstance(file_names, list):
+        canonical_crystal = p_map(build_one, file_names, num_cpus=num_cpus)
+        return canonical_crystal
+    else:
+        raise TypeError("file_names must be str or list.")
+
+
 def abs_cap(val, max_abs_val=1):
     """
     Returns the value with its absolute value capped at max_abs_val.

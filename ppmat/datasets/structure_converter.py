@@ -88,8 +88,10 @@ class Structure2Graph:
                 )
                 # the following code is equivalent to the above line, it is slower,
                 # but easier to debug.
-                # graph = [self.get_graph_by_find_points_in_spheres(struc)
-                #             for struc in structure]
+                # graph = [
+                # self.get_graph_by_find_points_in_spheres(struc)
+                #     for struc in structure
+                # ]
             else:
                 raise TypeError(
                     "The input must be a pymatgen.Structure or a list of them."
@@ -195,24 +197,45 @@ class Structure2Graph:
     def get_graph_by_find_points_in_spheres(self, structure: Structure):
         lattice_matrix = structure.lattice.matrix
         cart_coords = structure.cart_coords
-        src_id, dst_id, images, bond_dist = find_points_in_spheres(
-            cart_coords,
-            cart_coords,
-            r=self.cutoff,
-            pbc=self.pbc,
-            lattice=lattice_matrix,
-            tol=self.eps,
-        )
-        exclude_self = (src_id != dst_id) | (bond_dist > self.eps)
-        src_id, dst_id, images, bond_dist = (
-            src_id[exclude_self],
-            dst_id[exclude_self],
-            images[exclude_self],
-            bond_dist[exclude_self],
-        )
 
-        edge_indices = [(u, v) for u, v in zip(src_id, dst_id)]
-        to_jimages = np.array(images, dtype="float32")
+        cutoff = self.cutoff
+        attempt = 3
+        while attempt > 0:
+            src_id, dst_id, images, bond_dist = find_points_in_spheres(
+                cart_coords,
+                cart_coords,
+                r=cutoff,
+                pbc=self.pbc,
+                lattice=lattice_matrix,
+                tol=self.eps,
+            )
+            exclude_self = (src_id != dst_id) | (bond_dist > self.eps)
+            src_id, dst_id, images, bond_dist = (
+                src_id[exclude_self],
+                dst_id[exclude_self],
+                images[exclude_self],
+                bond_dist[exclude_self],
+            )
+
+            edge_indices = [(u, v) for u, v in zip(src_id, dst_id)]
+            to_jimages = np.array(images, dtype="float32")
+            if len(edge_indices) == 0:
+                logger.warning(
+                    f"No edges found within cutoff {cutoff:.5f}. Trying again with "
+                    "larger cutoff."
+                )
+                cutoff *= 2
+                attempt -= 1
+            else:
+                break
+        if len(edge_indices) == 0:
+            import pdb
+
+            pdb.set_trace()
+            raise RuntimeError(
+                f"No edges found within cutoff {cutoff:.5f}. Please increase the "
+                "cutoff."
+            )
 
         graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
         return graph
