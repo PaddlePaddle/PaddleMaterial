@@ -145,11 +145,17 @@ class MP18Dataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
 
         # get formation energy per atom
-        data["formation_energy_per_atom"] = np.array(
-            [self.json_data["formation_energy_per_atom"][idx]]
-        ).astype("float32")
+        if "formation_energy_per_atom" in self.json_data:
+            data["formation_energy_per_atom"] = np.array(
+                [self.json_data["formation_energy_per_atom"][idx]]
+            ).astype("float32")
         # get band gap
-        data["band_gap"] = np.array([self.json_data["band_gap"][idx]]).astype("float32")
+        if "band_gap" not in self.json_data:
+            data["band_gap"] = np.array([self.json_data["band_gap"][idx]]).astype(
+                "float32"
+            )
+
+        data["id"] = self.json_data["material_id"][idx]
 
         data = self.transforms(data) if self.transforms is not None else data
 
