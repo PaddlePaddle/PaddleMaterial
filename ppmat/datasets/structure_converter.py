@@ -229,9 +229,6 @@ class Structure2Graph:
             else:
                 break
         if len(edge_indices) == 0:
-            import pdb
-
-            pdb.set_trace()
             raise RuntimeError(
                 f"No edges found within cutoff {cutoff:.5f}. Please increase the "
                 "cutoff."
