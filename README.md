@@ -36,9 +36,9 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 - MP2024.11.1:
 
-    |                               Dataset                                | train  |  val  |  test  |
-    | :------------------------------------------------------------------: | :----: | :---: | :----: |
-    | [mp2024_train_130k](https://pan.baidu.com/s/1LELaQICx96e4H5YmDiFcaw) | 130000 | 10000 | 155361 |
+    |                                    Dataset                                    | train  |  val  |  test  |
+    | :---------------------------------------------------------------------------: | :----: | :---: | :----: |
+    | [mp2024_train_130k](https://pan.baidu.com/s/1U1EfPvhzHRGJyQVupVyjRA?pwd=eges) | 130000 | 10000 | 155361 |
 
 
 - MP20:
