@@ -59,15 +59,16 @@ Pre-processed datasets and models are available for download [here](https://pan.
 #### Task 1: formation energy per atom
 
 3D Materials:
-|   Model   |     Dataset      | MAE(test dataset) |                                                 config                                                  |                               Checkpoint                               |
-| :-------: | :--------------: | :---------------: | :-----------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
-|  MegNet   |       MP18       |       0.034       |                       [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                       | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
-| DimeNet++ |       MP18       |       0.030       |                      [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                      | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
-|  MegNet   | mp2018_train_60k |       0.028       |    [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)    | [checkpoint](https://pan.baidu.com/s/1Wko511TRiqSfUDopTswbTQ?pwd=b6ts) |
-| Comformer | mp2018_train_60k |       0.018       | [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/1j2heh6_P23_Bb4LZM5AI6Q?pwd=5nit) |
-|  MegNet   |       MP20       |       0.028       |                       [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
-| DimeNet++ |       MP20       |       0.023       |                      [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                      | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
-|  GemNet   |       MP20       |       0.023       |                       [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
+|   Model   |      Dataset      | MAE(test dataset) |                                                  config                                                   |                               Checkpoint                               |
+| :-------: | :---------------: | :---------------: | :-------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------: |
+|  MegNet   |       MP18        |       0.034       |                        [megnet_mp18](property_prediction/configs/megnet_mp18.yaml)                        | [checkpoint](https://pan.baidu.com/s/128VPZFjBmhObyJSkoCxUxA?pwd=kv82) |
+| DimeNet++ |       MP18        |       0.030       |                       [dimenet_mp18](property_prediction/configs/dimenet_mp18.yaml)                       | [checkpoint](https://pan.baidu.com/s/1QdafA1DSQ9yj9UzgXTNmiA?pwd=ke3x) |
+|  MegNet   | mp2018_train_60k  |       0.028       |     [megnet_mp2018_train_60k_e_form](property_prediction/configs/megnet_mp2018_train_60k_e_form.yaml)     | [checkpoint](https://pan.baidu.com/s/1Wko511TRiqSfUDopTswbTQ?pwd=b6ts) |
+| Comformer | mp2018_train_60k  |       0.018       |  [comformer_mp2018_train_60k_e_form](property_prediction/configs/comformer_mp2018_train_60k_e_form.yaml)  | [checkpoint](https://pan.baidu.com/s/1j2heh6_P23_Bb4LZM5AI6Q?pwd=5nit) |
+|  MegNet   |       MP20        |       0.028       |                        [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
+| DimeNet++ |       MP20        |       0.023       |                       [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
+|  GemNet   |       MP20        |       0.023       |                        [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
+| Comformer | mp2024_train_130k |       0.018       | [comformer_mp2024_train_130k_e_form](property_prediction/configs/comformer_mp2024_train_130k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/14XvY1KdKfOHny-YfwBSTzg?pwd=inpc) |
 
 2D Materials:
 <table>
