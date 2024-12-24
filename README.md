@@ -33,6 +33,14 @@ Pre-processed datasets and models are available for download [here](https://pan.
     |       [MP18](https://pan.baidu.com/s/1Y6ye2hu3y0v9ofDs06tejg?pwd=n3my)       | 62315 | 3461  | 3463  |
     | [mp2018_train_60k](https://pan.baidu.com/s/1GyjEyW9kL9OZiO15P5LuKQ?pwd=uzzg) | 60000 | 5000  | 4239  |
 
+
+- MP2024.11.1:
+
+    |                               Dataset                                | train  |  val  |  test  |
+    | :------------------------------------------------------------------: | :----: | :---: | :----: |
+    | [mp2024_train_130k](https://pan.baidu.com/s/1LELaQICx96e4H5YmDiFcaw) | 130000 | 10000 | 155361 |
+
+
 - MP20:
 
     The MP20 dataset can download from [here](https://github.com/jiaor17/DiffCSP/tree/main/data/mp_20).
