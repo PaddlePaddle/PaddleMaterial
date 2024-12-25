@@ -295,7 +295,7 @@ class Graph:
 
     def to(self, filename="graph.json") -> None:
         """Save graph dictionary to file."""
-        write_json(self.as_dict(), filename)
+        write_json(filename, self.as_dict())
 
     def __repr__(self) -> str:
         """Return string representation of the Graph."""
