@@ -68,7 +68,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
 |  MegNet   |       MP20        |       0.028       |                        [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
 | DimeNet++ |       MP20        |       0.023       |                       [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 |  GemNet   |       MP20        |       0.023       |                        [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
-| Comformer | mp2024_train_130k |       0.018       | [comformer_mp2024_train_130k_e_form](property_prediction/configs/comformer_mp2024_train_130k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/14XvY1KdKfOHny-YfwBSTzg?pwd=inpc) |
+| Comformer | mp2024_train_130k |       0.028       | [comformer_mp2024_train_130k_e_form](property_prediction/configs/comformer_mp2024_train_130k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/14XvY1KdKfOHny-YfwBSTzg?pwd=inpc) |
 
 2D Materials:
 <table>
