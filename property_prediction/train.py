@@ -37,10 +37,6 @@ if __name__ == "__main__":
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
 
-    config = OmegaConf.load(args.config)
-    cli_config = OmegaConf.from_dotlist(dynamic_args)
-    config = OmegaConf.merge(config, cli_config)
-
     if dist.get_rank() == 0:
         os.makedirs(config["Global"]["output_dir"], exist_ok=True)
         config_name = os.path.basename(args.config)

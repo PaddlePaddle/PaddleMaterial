@@ -30,7 +30,7 @@ for file_path in file_paths:
     content = read_file(full_path)
     new_content = content.replace("paddle.fluid", "paddle.base")
     new_content = new_content.replace("paddle.base.core as core", "paddle.base as core")
-    new_content = content.replace(
+    new_content = new_content.replace(
         "from paddle.base.layers import core", "from paddle.base import core"
     )
     write_file(full_path, new_content)
