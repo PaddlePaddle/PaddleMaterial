@@ -1,5 +1,6 @@
 import functools
 import os
+import pickle
 import random
 import warnings
 from collections.abc import Sequence
@@ -380,8 +381,13 @@ class GraphData(paddle.io.Dataset):
                 idx = random.randint(0, len(self) - 1)
                 return self.__getitem__(idx)
             try:
-                graph_path = os.path.join(self.graph_path, f"{graph_id}.pt")
-                crystal_graph = CrystalGraph.from_file(graph_path)
+                graph_path = os.path.join(self.graph_path, f"{graph_id}.pkl")
+                with open(graph_path, "rb") as f:
+                    data = pickle.load(f)
+                for key, value in data.items():
+                    if isinstance(value, np.ndarray):
+                        data[key] = paddle.to_tensor(data=value)
+                crystal_graph = CrystalGraph.from_dict(data)
                 targets = {}
                 for key in self.targets:
                     if key == "e":
@@ -785,34 +791,39 @@ def get_train_val_test_loader(
     random.shuffle(indices)
     train_size = int(train_ratio * total_size)
     val_size = int(val_ratio * total_size)
-    train_loader = paddle.io.DataLoader(
+
+    train_dataset, val_dataset, test_dataset = paddle.io.random_split(
         dataset,
-        batch_size=batch_size,
+        lengths=[train_size, val_size, total_size - train_size - val_size],
+    )
+
+    train_loader = paddle.io.DataLoader(
+        train_dataset,
         collate_fn=collate_graphs,
-        sampler=paddle.io.SubsetRandomSampler(indices=indices[0:train_size]),
+        batch_sampler=paddle.io.BatchSampler(
+            train_dataset,
+            batch_size=batch_size,
+        ),
         num_workers=num_workers,
-        pin_memory=pin_memory,
     )
     val_loader = paddle.io.DataLoader(
         dataset,
-        batch_size=batch_size,
         collate_fn=collate_graphs,
-        sampler=paddle.io.SubsetRandomSampler(
-            indices=indices[train_size : train_size + val_size]
+        batch_sampler=paddle.io.BatchSampler(
+            val_dataset,
+            batch_size=batch_size,
         ),
         num_workers=num_workers,
-        pin_memory=pin_memory,
     )
     if return_test:
         test_loader = paddle.io.DataLoader(
             dataset,
-            batch_size=batch_size,
             collate_fn=collate_graphs,
-            sampler=paddle.io.SubsetRandomSampler(
-                indices=indices[train_size + val_size :]
+            batch_sampler=paddle.io.BatchSampler(
+                test_dataset,
+                batch_size=batch_size,
             ),
             num_workers=num_workers,
-            pin_memory=pin_memory,
         )
         return train_loader, val_loader, test_loader
     return train_loader, val_loader

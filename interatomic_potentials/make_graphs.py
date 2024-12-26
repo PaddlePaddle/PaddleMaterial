@@ -1,4 +1,5 @@
 import os
+import pickle
 import random
 
 import paddle
@@ -9,6 +10,7 @@ from interatomic_potentials.dataset import StructureJsonData
 from ppmat.models.chgnet.graph import CrystalGraphConverter
 from ppmat.utils import io
 
+Tensor = paddle.Tensor
 random.seed(100)
 
 
@@ -61,8 +63,15 @@ def make_one_graph(mp_id: str, graph_id: str, data, graph_dir) -> dict | bool:
     struct = Structure.from_dict(dct.pop("structure"))
     try:
         graph = data.graph_converter(struct, graph_id=graph_id, mp_id=mp_id)
-        paddle.save(graph, os.path.join(graph_dir, f"{graph_id}.pt"))
-    except Exception:
+        graph_data = graph.to_dict()
+        for key, value in graph_data.items():
+            if isinstance(value, Tensor):
+                graph_data[key] = value.numpy()
+        # paddle.save(graph, os.path.join(graph_dir, f"{graph_id}.pt"))
+        with open(os.path.join(graph_dir, f"{graph_id}.pkl"), "wb") as f:
+            pickle.dump(graph_data, f)
+    except Exception as e:
+        print(e)
         return False
     else:
         return dct

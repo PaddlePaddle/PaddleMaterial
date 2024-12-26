@@ -6,7 +6,7 @@ from collections.abc import Sequence
 import paddle
 from paddle import nn
 
-from ppmat.models.common import scatter
+# from ppmat.models.common import scatter
 
 
 def aggregate(
@@ -36,21 +36,22 @@ def aggregate(
             x=[bin_count, paddle.ones(shape=difference, dtype=bin_count.dtype)]
         )
 
-    # output0 = paddle.zeros(shape=[tuple(bin_count.shape)[0], tuple(data.
-    #     shape)[1]], dtype=data.dtype)
-    # output0.stop_gradient = False
-    # output = output0.index_add(axis=0, index=owners.cast('int32'), value=data)
+    output0 = paddle.zeros(
+        shape=[tuple(bin_count.shape)[0], tuple(data.shape)[1]], dtype=data.dtype
+    )
+    output0.stop_gradient = False
+    output = output0.index_add(axis=0, index=owners.cast("int32"), value=data)
 
     # this is a atternative to the above code,
-    output = scatter.scatter(data, owners.cast("int32"), dim=0)
-    if bin_count.shape[0] > output.shape[0]:
-        diff = paddle.zeros(
-            shape=[bin_count.shape[0] - output.shape[0], output.shape[1]]
-        )
-        diff.stop_gradient = False
-        output = paddle.concat(
-            x=[output, diff],
-        )
+    # output = scatter.scatter(data, owners.cast("int32"), dim=0)
+    # if bin_count.shape[0] > output.shape[0]:
+    #     diff = paddle.zeros(
+    #         shape=[bin_count.shape[0] - output.shape[0], output.shape[1]]
+    #     )
+    #     diff.stop_gradient = False
+    #     output = paddle.concat(
+    #         x=[output, diff],
+    #     )
 
     if average:
         output = (output.T / bin_count).T

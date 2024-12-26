@@ -1,0 +1,50 @@
+Global:
+  epochs: 500
+  output_dir: ./output/chgnet
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 100 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+
+
+Model:
+  __name__: iComformer
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    formation_energy_per_atom: # loss function for formation energy per atom
+      __name__: MSELoss
+  weights:
+    formation_energy_per_atom: 1.0 # weight for formation energy per atom
+
+Optimizer:
+  __name__: AdamW
+  lr:
+    __name__: OneCycleLR
+    max_learning_rate: 0.001
+    by_epoch: True
+
+PostProcess:
+  - Denormalize:
+      mean: -1.4471
+      std: 1.20221
+      apply_keys: "formation_energy_per_atom" # apply normalization to this property
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    formation_energy_per_atom:
+      __name__: MAEMetric
+  main_indicator: formation_energy_per_atom # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  dataset:
+    __name__: GraphData
+    graph_path: "./data/MPtrj_chgnet_100_graph"
+    labels: "labels.json"
+  sampler:
+    batch_size: 4

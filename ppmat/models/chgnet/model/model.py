@@ -485,7 +485,7 @@ class CHGNet(paddle.nn.Layer):
             force = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.atom_positions,
-                create_graph=False,
+                create_graph=True,
                 retain_graph=True,
             )
             prediction["f"] = [(-1 * force_dim) for force_dim in force]
@@ -493,7 +493,7 @@ class CHGNet(paddle.nn.Layer):
             stress = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.strains,
-                create_graph=False,
+                create_graph=True,
                 retain_graph=True,
             )
             scale = 1 / g.volumes * 160.21766208
