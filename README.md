@@ -96,6 +96,13 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_2d_0621_train_18k_e_form.yaml">comformer_2d_0621_train_18k_e_form</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1km_NjqYj1b6cXPV46WLydw">checkpoint</a></td>
         </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">mp2024_train_130k(pretrain) <br> 2d_0621_train_18k(finetune)</td>
+            <td  nowrap="nowrap">0.035</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_2d_0621_train_18k_e_form_finetune_e500_lr001.yaml">comformer_2d_0621_train_18k_e_form_finetune_e500_lr001</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1dKy_Ib11egjr2PWQKPhqCQ">checkpoint</a></td>
+        </tr>
     </body>
 </table>
 
