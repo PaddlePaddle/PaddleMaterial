@@ -249,9 +249,7 @@ class Trainer:
         Args:
             epoch_id (int): Epoch id.
         """
-        import pdb
 
-        pdb.set_trace()
         reader_cost = 0.0
         batch_cost = 0.0
         reader_tic = time.perf_counter()
