@@ -2,10 +2,13 @@ from ase.io.trajectory import Trajectory
 from pymatgen.core import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 
+import interatomic_potentials.eager_comp_setting as eager_comp_setting
 from ppmat.models.chgnet.model import StructOptimizer
 from ppmat.models.chgnet.model.dynamics import MolecularDynamics
 from ppmat.models.chgnet.model.model import CHGNet
 from ppmat.models.chgnet.utils.vasp_utils import solve_charge_by_mag
+
+eager_comp_setting.setting_eager_mode(enable=True)
 
 chgnet = CHGNet.load()
 structure = Structure.from_file("interatomic_potentials/mp-18767-LiMnO2.cif")
