@@ -62,8 +62,6 @@ class CHGNetCalculator(Calculator):
         self,
         model: CHGNet | None = None,
         *,
-        use_device: str | None = None,
-        check_cuda_mem: bool = False,
         stress_weight: float | None = 1 / 160.21766208,
         on_isolated_atoms: Literal["ignore", "warn", "error"] = "warn",
         **kwargs,
@@ -88,14 +86,14 @@ class CHGNetCalculator(Calculator):
             **kwargs: Passed to the Calculator parent class.
         """
         super().__init__(**kwargs)
-        self.device = "gpu"
+        # self.device = "gpu"
         if model is None:
             self.model = CHGNet.load()
         else:
-            self.model = model.to(self.device)
+            self.model = model  # .to(self.device)
         self.model.graph_converter.set_isolated_atom_response(on_isolated_atoms)
         self.stress_weight = stress_weight
-        print(f"CHGNet will run on {self.device}")
+        # print(f"CHGNet will run on {self.device}")
 
     @classmethod
     def from_file(cls, path: str, use_device: str | None = None, **kwargs) -> Self:

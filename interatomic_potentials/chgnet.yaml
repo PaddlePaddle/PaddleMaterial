@@ -1,5 +1,5 @@
 Global:
-  epochs: 500
+  epochs: 200
   output_dir: ./output/chgnet
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 100 # log frequency [step]
@@ -10,7 +10,8 @@ Global:
 
 
 Model:
-  __name__: iComformer
+  __name__: CHGNet
+
 
 Loss:
   __name__: LossWarper
@@ -21,10 +22,12 @@ Loss:
     formation_energy_per_atom: 1.0 # weight for formation energy per atom
 
 Optimizer:
-  __name__: AdamW
+  __name__: Adam
   lr:
-    __name__: OneCycleLR
-    max_learning_rate: 0.001
+    __name__: Cosine
+    T_max: 2000
+    learning_rate: 1e-3
+    eta_min: 1e-5
     by_epoch: True
 
 PostProcess:

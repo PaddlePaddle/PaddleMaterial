@@ -1,5 +1,8 @@
+import copy
 import functools
+import json
 import os
+import os.path as osp
 import pickle
 import random
 import warnings
@@ -7,14 +10,20 @@ from collections.abc import Sequence
 
 import numpy as np
 import paddle
+from p_tqdm import p_map
+from paddle.io import BatchSampler  # noqa
+from paddle.io import DataLoader
+from paddle.io import DistributedBatchSampler  # noqa
 from pymatgen.core.structure import Structure
 from typing_extensions import Self
 
+from ppmat.datasets.transform import build_transforms
 from ppmat.models.chgnet import TrainTask
 from ppmat.models.chgnet import utils
 from ppmat.models.chgnet.graph import CrystalGraph
 from ppmat.models.chgnet.graph import CrystalGraphConverter
 from ppmat.utils import io
+from ppmat.utils import logger
 
 warnings.filterwarnings("ignore")
 DTYPE = "float32"
@@ -182,6 +191,62 @@ class StructureData(paddle.io.Dataset):
         else:
             idx = random.randint(0, len(self) - 1)
             return self.__getitem__(idx)
+
+
+class SturctureDataFromJsonl(StructureData):
+    def __init__(
+        self,
+        data_path: str,
+        structure_ids: list | None = None,
+        graph_converter: CrystalGraphConverter | None = None,
+        shuffle: bool = True,
+    ) -> None:
+        self.data_path = data_path
+
+        structures, energies, forces, stresses, magmoms = self.read_file(data_path)
+        super().__init__(
+            structures=structures,
+            energies=energies,
+            forces=forces,
+            stresses=stresses,
+            magmoms=magmoms,
+            structure_ids=structure_ids,
+            graph_converter=graph_converter,
+            shuffle=shuffle,
+        )
+
+    def read_file(self, file_path):
+        def convert_to_structure(data_point):
+            structure = Structure.from_dict(data_point["structure"])
+            return structure
+
+        structures = []
+        energies = []
+        forces = []
+        stresses = []
+        magmoms = []
+
+        data_lines = []
+        with open(file_path, "r") as f:
+            for line in f:
+                data_point = json.loads(line)
+                data_lines.append(data_point)
+
+        cache_path = osp.join(file_path.rsplit(".", 1)[0] + "_strucs.pkl")
+        if osp.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                structures = pickle.load(f)
+        else:
+            structures = p_map(convert_to_structure, data_lines)
+            with open(cache_path, "wb") as f:
+                pickle.dump(structures, f)
+
+        for data_point in data_lines:
+            energies.append(data_point["energy"])
+            forces.append(data_point["forces"])
+            stresses.append(data_point.get("stresses"))
+            magmoms.append(data_point.get("magmom"))
+        return structures, energies, forces, stresses, magmoms
 
 
 class CIFData(paddle.io.Dataset):
@@ -803,6 +868,7 @@ def get_train_val_test_loader(
         batch_sampler=paddle.io.BatchSampler(
             train_dataset,
             batch_size=batch_size,
+            shuffle=True,
         ),
         num_workers=num_workers,
     )
@@ -854,3 +920,41 @@ def get_loader(
         shuffle=True,
         num_workers=num_workers,
     )
+
+
+def build_dataloader(cfg):
+    cfg = copy.deepcopy(cfg)
+
+    dataset_cfg = cfg["dataset"]
+    cls_name = dataset_cfg.pop("__name__")
+    if "transforms" in dataset_cfg:
+        dataset_cfg["transforms"] = build_transforms(dataset_cfg.pop("transforms"))
+    dataset = eval(cls_name)(**dataset_cfg)
+
+    loader_config = cfg.get("loader")
+    if loader_config is None:
+        loader_config = {
+            "num_workers": 0,
+            "use_shared_memory": True,
+            "collate_fn": "DefaultCollator",
+        }
+        logger.message("No loader config is provided, use default config.")
+        logger.message("Default loader config: {}".format(loader_config))
+
+    num_workers = loader_config.get("num_workers", 0)
+    use_shared_memory = loader_config.get("use_shared_memory", True)
+
+    sampler_cfg = cfg["sampler"]
+    cls_name = sampler_cfg.pop("__name__")
+    batch_sampler = eval(cls_name)(dataset, **sampler_cfg)
+
+    data_loader = DataLoader(
+        dataset=dataset,
+        batch_sampler=batch_sampler,
+        num_workers=num_workers,
+        return_list=True,
+        use_shared_memory=use_shared_memory,
+        collate_fn=collate_graphs,
+    )
+
+    return data_loader
