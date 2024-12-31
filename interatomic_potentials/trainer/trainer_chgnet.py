@@ -202,8 +202,15 @@ class Trainer:
                     pred_data[key] = paddle.concat(pred_data[key], axis=0)
                 if isinstance(batch_data[1][key], list):
                     batch_data[1][key] = paddle.concat(batch_data[1][key], axis=0)
+            for key in pred_data:
+                if isinstance(pred_data[key], paddle.Tensor):
+                    pred_data[key] = pred_data[key].detach()
 
             loss_dict = self.loss_class(pred_data, batch_data[1])
+
+            for key, value in loss_dict.items():
+                if isinstance(value, paddle.Tensor):
+                    loss_dict[key] = value.detach()
 
             for key, value in loss_dict.items():
                 if isinstance(value, paddle.Tensor):
@@ -215,6 +222,11 @@ class Trainer:
                     pred_data, batch_data[1]
                 )
             metric_dict = self.metric_class(pred_data, batch_data[1])
+
+            for key, value in metric_dict.items():
+                if isinstance(value, paddle.Tensor):
+                    metric_dict[key] = value.detach()
+
             batch_cost = time.perf_counter() - batch_tic
             if paddle.distributed.get_rank() == 0 and (
                 iter_id % self.log_freq == 0 or iter_id == data_length - 1
@@ -237,7 +249,6 @@ class Trainer:
 
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
-
         total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
         metric_dict = self.metric_class.get_metric()
 
@@ -323,6 +334,13 @@ class Trainer:
                             v = v.item()
                         msg += f" | {k}(metric): {v:.5f}"
                 logger.info(msg)
+
+            if iter_id % 500 == 0:
+                print("save model")
+                paddle.save(
+                    self.model.state_dict(),
+                    f"{self.output_dir}/checkpoints/model_{epoch_id}_{iter_id}.pdparams",
+                )
 
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
