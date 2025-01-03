@@ -335,12 +335,15 @@ class Trainer:
                         msg += f" | {k}(metric): {v:.5f}"
                 logger.info(msg)
 
-            if iter_id % 500 == 0:
-                print("save model")
+            if iter_id != 0 and iter_id % 500 == 0 and dist.get_rank() == 0:
+                model_name = (
+                    f"{self.output_dir}/checkpoints/model_{epoch_id}_{iter_id}.pdparams"
+                )
                 paddle.save(
                     self.model.state_dict(),
-                    f"{self.output_dir}/checkpoints/model_{epoch_id}_{iter_id}.pdparams",
+                    model_name,
                 )
+                logger.info(f"save model: {model_name}")
 
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
