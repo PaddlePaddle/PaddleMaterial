@@ -33,7 +33,7 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="./interatomic_potentials/configs/chgnet_2d_lessatom20.yaml",
+        default="./interatomic_potentials/configs/chgnet_2d_lessatom20_st.yaml",
         help="Path to config file",
     )
 
@@ -60,6 +60,7 @@ if __name__ == "__main__":
     model_cfg = config["Model"]
     model = build_model(model_cfg)
     model.set_state_dict(paddle.load(config["Global"]["pretrained_model_path"]))
+    logger.info(f"Loaded model from {config['Global']['pretrained_model_path']}")
 
     relaxer = StructOptimizer(model=model)
 
@@ -92,24 +93,18 @@ if __name__ == "__main__":
         # Relax the structure
         result = relaxer.relax(structure, verbose=False)
 
-        # print("Relaxed structure:\n")
-        # print(result["final_structure"])
-
-        # print(result["trajectory"].energies)
         preds[os.path.basename(cif_file)] = result["trajectory"].energies[-1]
 
-        print(
-            "preds and labels: ",
-            result["trajectory"].energies[-1],
-            label_dict[os.path.basename(cif_file)],
-            structure.n_elems,
-            len(structure.sites),
+        logger.info(
+            f"preds and labels: {result['trajectory'].energies[-1]}, "
+            f"{label_dict[os.path.basename(cif_file)]}, n_elems: {structure.n_elems}, "
+            f"n_sites: {len(structure.sites)}"
         )
 
         diff.append(
             abs(
-                result["trajectory"].energies[-1]
-                - label_dict[os.path.basename(cif_file)]
+                result["trajectory"].energies[-1] / len(structure.sites)
+                - label_dict[os.path.basename(cif_file)] / len(structure.sites)
             )
         )
         logger.info(f"idx: {idx}, mae: {sum(diff)/len(diff)}")
