@@ -1,13 +1,14 @@
 Global:
   epochs: 50
-  output_dir: ./output/chgnet_2d_lessatom20_bs128
+  output_dir: ./output/chgnet_2d_lessatom20_bs128_st
   save_freq: 1 # set 0 to disable saving during training
   log_freq: 1 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
   cal_metric_during_train: True # True: the metric will be calculated on train dataset
-  pretrained_model_path: "./interatomic_potentials/pretrained/chgnet_3.0_state_dict.pdparams"
+  # pretrained_model_path: "./interatomic_potentials/pretrained/chgnet_3.0_state_dict.pdparams"
+  pretrained_model_path: "./output/chgnet_2d_lessatom20_bs128/checkpoints/best.pdparams"
 
 Model:
   __name__: CHGNet
