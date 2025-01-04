@@ -195,7 +195,7 @@ class Trainer:
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
 
-            pred_data = self.model(batch_data[0], task="ef")
+            pred_data = self.model(batch_data, task="ef")
 
             # for key in "ef":
             #     if isinstance(pred_data[key], list):
