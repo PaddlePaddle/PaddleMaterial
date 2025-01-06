@@ -36,9 +36,9 @@ Pre-processed datasets and models are available for download [here](https://pan.
 
 - MP2024.11.1:
 
-    |                                    Dataset                                    | train  |  val  |  test  |
-    | :---------------------------------------------------------------------------: | :----: | :---: | :----: |
-    | [mp2024_train_130k](https://pan.baidu.com/s/1U1EfPvhzHRGJyQVupVyjRA?pwd=eges) | 130000 | 10000 | 155361 |
+    |                                    Dataset                                    | train  |  val  | test  |
+    | :---------------------------------------------------------------------------: | :----: | :---: | :---: |
+    | [mp2024_train_130k](https://pan.baidu.com/s/1U1EfPvhzHRGJyQVupVyjRA?pwd=eges) | 130000 | 10000 | 15361 |
 
 
 - MP20:
@@ -68,7 +68,7 @@ Pre-processed datasets and models are available for download [here](https://pan.
 |  MegNet   |       MP20        |       0.028       |                        [megnet_mp20](property_prediction/configs/megnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/15BRj5_-N1yw767vldm8qFg?pwd=bmat) |
 | DimeNet++ |       MP20        |       0.023       |                       [dimenet_mp20](property_prediction/configs/dimenet_mp20.yaml)                       | [checkpoint](https://pan.baidu.com/s/17SkyrvOOsoSgdsWAr3fwIA?pwd=bnnn) |
 |  GemNet   |       MP20        |       0.023       |                        [gemnet_mp20](property_prediction/configs/gemnet_mp20.yaml)                        | [checkpoint](https://pan.baidu.com/s/1MWkFZ9xkyTfinf8pwt5SxA?pwd=8k68) |
-| Comformer | mp2024_train_130k |       0.018       | [comformer_mp2024_train_130k_e_form](property_prediction/configs/comformer_mp2024_train_130k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/14XvY1KdKfOHny-YfwBSTzg?pwd=inpc) |
+| Comformer | mp2024_train_130k |       0.028       | [comformer_mp2024_train_130k_e_form](property_prediction/configs/comformer_mp2024_train_130k_e_form.yaml) | [checkpoint](https://pan.baidu.com/s/14XvY1KdKfOHny-YfwBSTzg?pwd=inpc) |
 
 2D Materials:
 <table>
@@ -95,6 +95,13 @@ Pre-processed datasets and models are available for download [here](https://pan.
             <td  nowrap="nowrap">0.042</td>
             <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_2d_0621_train_18k_e_form.yaml">comformer_2d_0621_train_18k_e_form</a></td>
             <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1km_NjqYj1b6cXPV46WLydw">checkpoint</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">mp2024_train_130k(pretrain) <br> 2d_0621_train_18k(finetune)</td>
+            <td  nowrap="nowrap">0.035</td>
+            <td  nowrap="nowrap"><a href="./property_prediction/configs/comformer_2d_0621_train_18k_e_form_finetune_e500_lr001.yaml">comformer_2d_0621_train_18k_e_form_finetune_e500_lr001</a></td>
+            <td  nowrap="nowrap"><a href="https://pan.baidu.com/s/1dKy_Ib11egjr2PWQKPhqCQ">checkpoint</a></td>
         </tr>
     </body>
 </table>

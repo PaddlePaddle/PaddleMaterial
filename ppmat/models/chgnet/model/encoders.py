@@ -107,7 +107,7 @@ class BondEncoder(paddle.nn.Layer):
         bond_vectors = center - neighbor
         bond_lengths = paddle.linalg.norm(x=bond_vectors, axis=1)
         bond_vectors = bond_vectors / bond_lengths[:, None]
-        undirected_bond_lengths = paddle.index_select(
+        undirected_bond_lengths = paddle.gather(
             x=bond_lengths, axis=0, index=undirected2directed
         )
         bond_basis_ag = self.rbf_expansion_ag(undirected_bond_lengths)

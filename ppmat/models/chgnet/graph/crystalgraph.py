@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -162,7 +163,11 @@ class CrystalGraph:
         Returns:
             CrystalGraph: The loaded graph.
         """
-        return paddle.load(path=str(file_name))
+        # return paddle.load(path=str(file_name))
+        # load data by pickle
+        with open(file_name, "rb") as f:
+            data = pickle.load(f)
+        return data
 
     @classmethod
     def from_dict(cls, dic: dict[str, Any]) -> Self:

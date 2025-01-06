@@ -485,7 +485,7 @@ class CHGNet(paddle.nn.Layer):
             force = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.atom_positions,
-                create_graph=False,
+                create_graph=True,
                 retain_graph=True,
             )
             prediction["f"] = [(-1 * force_dim) for force_dim in force]
@@ -493,7 +493,7 @@ class CHGNet(paddle.nn.Layer):
             stress = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.strains,
-                create_graph=False,
+                create_graph=True,
                 retain_graph=True,
             )
             scale = 1 / g.volumes * 160.21766208
@@ -766,7 +766,7 @@ class BatchedGraph:
             strains.append(strain)
             atom_cart_coords = graph.atom_frac_coord @ lattice
             if graph.atom_graph.dim() == 1:
-                graph.atom_graph = graph.atom_graph.reshape(0, 2)
+                graph.atom_graph = graph.atom_graph.reshape([0, 2])
             bond_basis_ag, bond_basis_bg, bond_vectors = bond_basis_expansion(
                 center=atom_cart_coords[graph.atom_graph[:, 0]],
                 neighbor=atom_cart_coords[graph.atom_graph[:, 1]],
