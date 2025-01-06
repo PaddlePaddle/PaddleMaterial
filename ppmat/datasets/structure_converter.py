@@ -1,4 +1,9 @@
-from typing import Any, Literal, Union, List, Tuple
+from __future__ import annotations
+
+import sys
+from abc import ABC
+from abc import abstractmethod
+from typing import Literal, Any, Literal, Union, List, Tuple
 from typing import Optional
 
 import numpy as np
@@ -13,11 +18,8 @@ from pymatgen.optimization.neighbors import find_points_in_spheres
 from ppmat.datasets.comformer_graph_utils import atom_dgl_multigraph
 from ppmat.datasets.utils import lattice_params_to_matrix
 from ppmat.utils import DEFAULT_ELEMENTS
+from ppmat.utils import ELEMENTS_94
 from ppmat.utils import logger
-
-from rdkit import Chem
-from rdkit.Chem.rdchem import Mol
-from rdkit.Chem.rdchem import BondType as BT
 
 
 class Structure2Graph:
@@ -30,8 +32,10 @@ class Structure2Graph:
         atom_features: str = "cgcnn",  # only used for method='comformer_graph'
         use_canonize: bool = True,  # only used for method='comformer_graph'
         use_lattice: bool = True,  # only used for method='comformer_graph'
+        atom_graph_cutoff: float = 6.0,  # only used for method='chgnet_graph'
+        bond_graph_cutoff: float = 3.0,  # only used for method='chgnet_graph'
         method: Literal[
-            "crystalnn", "find_points_in_spheres", "comformer_graph"
+            "crystalnn", "find_points_in_spheres", "comformer_graph", "chgnet_graph"
         ] = "crystalnn",
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
         num_cpus: Optional[int] = None,
@@ -46,15 +50,24 @@ class Structure2Graph:
         self.use_canonize = use_canonize
         self.use_lattice = use_lattice
 
+        self.atom_graph_cutoff = atom_graph_cutoff
+        self.bond_graph_cutoff = bond_graph_cutoff
+
         assert method in [
             "crystalnn",
             "find_points_in_spheres",
             "comformer_graph",
-        ], "method must be 'crystalnn' 'comformer_graph' or 'find_points_in_spheres'."
+            "chgnet_graph",
+        ], (
+            "method must be 'crystalnn' 'comformer_graph' 'find_points_in_spheres' "
+            "or 'chgnet_graph'."
+        )
         self.method = method
 
         if element_types.upper() == "DEFAULT_ELEMENTS":
             self.element_types = DEFAULT_ELEMENTS
+        elif element_types.upper() == "ELEMENTS_94":
+            self.element_types = ELEMENTS_94
         else:
             raise ValueError("element_types must be 'DEFAULT_ELEMENTS'.")
         self.element_to_index = {elem: idx for idx, elem in enumerate(element_types)}
@@ -114,6 +127,25 @@ class Structure2Graph:
                 # graph = [
                 #     self.get_graph_by_comformer_graph(struc) for struc in structure
                 # ]
+        elif self.method == "chgnet_graph":
+            if isinstance(structure, Structure):
+                graph = self.get_graph_by_chgnet_graph(structure)
+            elif isinstance(structure, list):
+                graph = p_map(
+                    self.get_graph_by_chgnet_graph,
+                    structure,
+                    num_cpus=self.num_cpus,
+                )
+                # the following code is equivalent to the above line, it is slower,
+                # but easier to debug.
+                # graph = [
+                #     self.get_graph_by_chgnet_graph(struc) for struc in structure
+                # ]
+                # graph = []
+                # for i, struc in enumerate(structure):
+                #     print(i)
+                #     g = self.get_graph_by_chgnet_graph(struc)
+                #     graph.append(g)
 
         else:
             raise NotImplementedError()
@@ -144,6 +176,87 @@ class Structure2Graph:
                 "nei": nei,
             },
         )
+        return graph
+
+    def get_graph_by_chgnet_graph(self, structure: Structure):
+        n_atoms = len(structure)
+
+        # for graph
+        center_index, neighbor_index, image, distance = structure.get_neighbor_list(
+            r=self.atom_graph_cutoff, sites=structure.sites, numerical_tol=1e-08
+        )
+        graph_utils = GraphUtils([Node(index=idx) for idx in range(n_atoms)])
+        for ii, jj, img, dist in zip(
+            center_index, neighbor_index, image, distance, strict=True
+        ):
+            graph_utils.add_edge(
+                center_index=ii, neighbor_index=jj, image=img, distance=dist
+            )
+        atom_graph, directed2undirected = graph_utils.adjacency_list()
+        bond_graph, undirected2directed = graph_utils.line_graph_adjacency_list(
+            cutoff=self.bond_graph_cutoff
+        )
+        n_isolated_atoms = len({*range(n_atoms)} - {*center_index})
+        if n_isolated_atoms:
+            atom_graph_cutoff = self.atom_graph_cutoff
+            msg = (
+                f"Structure has {n_isolated_atoms} isolated "
+                f"atom(s) with atom_graph_cutoff={atom_graph_cutoff!r}. "
+                "The fllowing calculation will likely go wrong"
+            )
+            raise ValueError(msg)
+        edge_indices = [
+            (idx1, idx2) for idx1, idx2 in zip(center_index, neighbor_index)
+        ]
+
+        if len(bond_graph) == 0:
+            bond_graph = np.zeros((0, 5)).astype(np.int64)
+        graph = self.build_pgl_graph(
+            structure,
+            edge_indices=edge_indices,
+            to_jimages=image,
+            edge_features={
+                "atom_graph": np.asarray(atom_graph),
+                "bond_graph": np.asarray(bond_graph),
+                "directed2undirected": np.asarray(directed2undirected),
+                "undirected2directed": np.asarray(undirected2directed),
+                "directed2undirected_len": np.array([len(directed2undirected)]),
+                "undirected2directed_len": np.array([len(undirected2directed)]),
+                "image": np.asarray(image),
+            },
+        )
+
+        atom_types = graph.node_feat["atom_types"]
+        composition_fea = np.bincount(
+            atom_types - 1, minlength=len(self.element_types) - 1
+        )
+        composition_fea = composition_fea / atom_types.shape[0]
+        graph.node_feat["composition_fea"] = np.asarray([composition_fea]).astype(
+            np.float32
+        )
+
+        graph.edge_feat["bond_vec"] = (
+            graph.edge_feat["bond_vec"] / graph.edge_feat["bond_dist"][:, None]
+        )
+
+        graph.edge_feat["undirected_bond_lengths"] = graph.edge_feat["bond_dist"][
+            undirected2directed
+        ]
+
+        if len(bond_graph) != 0:
+            graph.edge_feat["bond_vec_i"] = graph.edge_feat["bond_vec"][
+                np.asarray(bond_graph)[:, 2]
+            ]
+            graph.edge_feat["bond_vec_j"] = graph.edge_feat["bond_vec"][
+                np.asarray(bond_graph)[:, 4]
+            ]
+        else:
+            graph.edge_feat["bond_vec_i"] = np.zeros((0, 3), dtype=np.float32)
+            graph.edge_feat["bond_vec_j"] = np.zeros((0, 3), dtype=np.float32)
+
+        graph.edge_feat["num_atom_graph"] = np.array([len(atom_graph)])
+        graph.edge_feat["num_bond_graph"] = np.array([len(bond_graph)])
+
         return graph
 
     def get_graph_by_crystalnn(self, structure: Structure):
@@ -289,7 +402,6 @@ class Structure2Graph:
         # graph.node_feat['num_atoms'] is a tensor of shape (batch_size),
         # where each value is the number of atoms in the corresponding graph.
         graph.node_feat["num_atoms"] = np.array([num_atoms])
-
         # edge features: pbc_offset, bond_vec, bond_dist
         if to_jimages is not None:
             graph.edge_feat["pbc_offset"] = to_jimages

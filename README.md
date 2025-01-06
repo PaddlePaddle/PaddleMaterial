@@ -373,6 +373,19 @@ This table will be obsolete in the future
 
 The term "samples" refers to the valid samples of generated structures utilized for calculating $d_\rho$, $d_E$  and  $d_{ele}$.
 
+
+## 3. Interatomic Potentials
+
+This feature requires the installation of the [PaddlePaddle develop](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/develop/install/pip/linux-pip.html) version
+
+##### Structure Optimization:
+
+    # You need to first set the path of CIF(cif_dir and label) in the structure_optimization.py file
+    PYTHONPATH=$PWD python interatomic_potentials/structure_optimization.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_st.yaml  Global.pretrained_model_path="your model path(.pdparams)"
+
+
+
+
 # Install
 
 Please refer to the installation [document](install.md) for environment configuration.

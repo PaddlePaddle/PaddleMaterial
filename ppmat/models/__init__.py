@@ -1,5 +1,7 @@
 import copy
 
+from ppmat.models.chgnet.model import CHGNet
+from ppmat.models.chgnet_v2.model.model_v2 import CHGNet_v2
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.diffcsp.diffcsp import CSPDiffusion
 from ppmat.models.diffcsp.diffcsp_d3pm import CSPDiffusionWithD3PM
@@ -21,6 +23,8 @@ __all__ = [
     "MatterGen",
     "iComformer",
     "MolecularGraphTransformer"
+    "CHGNet",
+    "CHGNet_v2",
 ]
 
 
