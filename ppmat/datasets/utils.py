@@ -5,9 +5,11 @@ from pymatgen.core.structure import Structure
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
+from rdkit import Chem, RDLogger
+from rdkit.Chem.rdchem import Mol
 
 def build_structure_from_str(crystal_str, niggli=True, primitive=False, num_cpus=None):
-    """Build crystal from cif string."""
+    """Build crystal structure of pymatgen object from cif string."""
 
     def build_one(crystal_str):
         crystal = Structure.from_str(crystal_str, fmt="cif")
@@ -84,7 +86,7 @@ def build_structure_from_array(
 
 
 def build_structure_from_file(file_names, niggli=True, primitive=False, num_cpus=None):
-    """Build crystal from cif string."""
+    """Build crystal structure of pymatgen object from cif string."""
 
     def build_one(file_names):
         crystal = Structure.from_file(file_names, primitive=primitive)
@@ -110,7 +112,7 @@ def build_structure_from_file(file_names, niggli=True, primitive=False, num_cpus
 def build_structure_from_dict(
     crystal_dict, niggli=True, primitive=False, num_cpus=None
 ):
-    """Build crystal from cif string."""
+    """Build crystal structure of pymatgen object from cif string."""
 
     def build_one(crystal_dict):
         crystal = Structure.from_dict(crystal_dict)
@@ -170,3 +172,52 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     ]
     vector_c = [0.0, 0.0, float(c)]
     return np.array([vector_a, vector_b, vector_c])
+
+def build_molecules_from_smiles(smiles_str, remove_h=None, num_cpus=None):
+    """Build molecules of rdkit object from smiles."""
+    
+    RDLogger.DisableLog('rdApp.*')
+    
+    def build_one(smiles_str):
+        mol = Chem.MolFromSmiles(smiles_str)
+        return mol
+    
+    if isinstance(smiles_str, str):
+        return build_one(crystal_str)
+    elif isinstance(smiles_str, list):
+        mols = p_map(build_one, smiles_str, num_cpus=num_cpus)
+        return mols
+    else:
+        raise TypeError("crystal_str must be str or list.")
+
+def numericalize_text(text, vocab_to_id, dim):
+    """
+    将给定的文本转换为对应的 token id 。
+
+    参数:
+        text (str): 输入文本为一个字符串，单词以空格分隔。
+        vocab_to_id (dict): 词汇表字典，将单词映射为唯一的 id。
+        dim (int): 返回的每个 token id 列表的长度。
+
+    返回:
+        list of list: 对应的数值化 token id ，文本对应一个长度为 dim 的 token id 。
+    """
+
+    # 如果输入文本为空，则返回长度为 dim 且全为 0 的列表
+    if not text:
+        token_ids = [0] * dim
+    else:
+        # 将文本按空格进行分割，生成单词列表
+        words = text.split(" ")
+
+        # 使用词汇表字典将每个单词转换为对应的 id，如果不在词汇表中则使用 <unk> 的 id
+        token_ids = [vocab_to_id.get(word, vocab_to_id["<unk>"]) for word in words]
+
+        # 如果 token_ids 长度小于 dim，则在后面补充 0
+        if len(token_ids) < dim:
+            token_ids += [0] * (dim - len(token_ids))
+        # 如果 token_ids 长度超过 dim，则截断到 dim 长度
+        else:
+            token_ids = token_ids[:dim]
+
+    return token_ids

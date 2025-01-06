@@ -8,7 +8,7 @@ matplotlib==3.9.0
 numba==0.60.0
 numpy==1.26.4
 p_tqdm==1.4.0
-paddlepaddle-gpu==2.6.1
+# paddlepaddle-gpu==2.6.1
 pandas==2.2.2
 pgl==2.2.3
 pymatgen==2024.6.10
@@ -24,3 +24,4 @@ tqdm==4.66.4
 typing_extensions==4.12.2
 visualdl==2.5.3
 wandb==0.18.3
+rdkit==2024.9.1
