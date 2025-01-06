@@ -8,6 +8,7 @@ from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.megnet.megnet import MEGNetPlus
+from ppmat.models.digress.digress import MolecularGraphTransformer
 from ppmat.utils import logger
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "CSPDiffusionWithD3PM",
     "MatterGen",
     "iComformer",
+    "MolecularGraphTransformer"
 ]
 
 

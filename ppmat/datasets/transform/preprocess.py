@@ -69,3 +69,54 @@ class ClipData:
                 else:
                     data[key] = self.max
         return data
+
+class SelecTargetTransform:
+    """Dynamically select specific dimensions or targets from the data."""
+    
+    def __init__(
+        self,
+        target_indices: Union[int, Tuple[int, ...]],
+        apply_keys: Tuple[str, ...] = ("input", "label"),
+    ):
+        if isinstance(target_indices, int):
+            target_indices = (target_indices,)
+        self.target_indices = target_indices
+        self.apply_keys = apply_keys
+
+    def __call__(self, data):
+        for key in self.apply_keys:
+            assert key in data, f"Key {key} does not exist in data."
+            target = data[key]
+            if isinstance(target, np.ndarray):
+                data[key] = target[..., self.target_indices]
+        return data
+
+class RemoveYTransform:
+    def __init__(
+        self
+    ):
+        pass
+        
+    def __call__(self, data):
+        data.y = np.zeros((1, 0), dtype='float32')
+        return data
+
+
+class SelectMuTransform:
+    def __init__(
+        self
+    ):
+        pass
+    def __call__(self, data):
+        data.y = data.y[..., :1]
+        return data
+
+
+class SelectHOMOTransform:
+    def __init__(
+        self
+    ):
+        pass
+    def __call__(self, data):
+        data.y = data.y[..., 1:]
+        return data
