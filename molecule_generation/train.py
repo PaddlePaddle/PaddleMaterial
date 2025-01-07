@@ -10,7 +10,10 @@ from ppmat.datasets import set_signal_handlers
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
-from ppmat.trainer.trainer_diffusion_v2 import DiscreteDenoisingDiffusionMolecular_condition, CLIP_molecule_nmr, DiscreteDenoisingDiffusionCondition
+from ppmat.trainer.trainer_multimodal import (
+    TrainerGraph, 
+    TrainerCLIP, 
+    TrainerMultiModal
 from ppmat.utils import logger
 from ppmat.utils import misc
 
@@ -75,7 +78,7 @@ if __name__ == "__main__":
     )
     # initialize trainer
     if args.step == 1:
-        trainer = DiscreteDenoisingDiffusionMolecular_condition(
+        trainer = TrainerGraph(
             config,
             model,
             train_dataloader=train_loader,
@@ -86,7 +89,7 @@ if __name__ == "__main__":
             metric_class=metric_class,
         )
     elif args.mode == 2:
-        trainer = CLIP_molecule_nmr(
+        trainer = TrainerCLIP(
             config,
             model,
             train_dataloader=train_loader,
@@ -97,7 +100,7 @@ if __name__ == "__main__":
             metric_class=metric_class,
         )
     elif args.mode == 3:
-        trainer = DiscreteDenoisingDiffusionCondition(
+        trainer = TrainerMultiModal(
             config,
             model,
             train_dataloader=train_loader,
