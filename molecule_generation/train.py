@@ -14,7 +14,6 @@ from ppmat.trainer.trainer_multimodal import (
     TrainerGraph, 
     TrainerCLIP, 
     TrainerMultiModal
-)
 from ppmat.utils import logger
 from ppmat.utils import misc
 
