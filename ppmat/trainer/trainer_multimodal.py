@@ -1,3 +1,17 @@
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 import sys
 import time
@@ -12,18 +26,36 @@ import paddle.nn.functional as F
 
 import numpy as np
 
-from ppmat.models.digress.molecularGT import molecularGT
-from ppmat.models.digress.contrastGT import molecularGT
-from ppmat.models.digress.conditionGT import ConditionGT
+from ppmat.models.digress.base_model import (
+    MolecularGraphTransformer, 
+    ContrastGraphTransformer, 
+    ConditionGraphTransformer
+)
 
-from ppmat.models.digress.noise_schedule import DiscreteUniformTransition, PredefinedNoiseScheduleDiscrete, MarginalUniformTransition
+from ppmat.models.digress.noise_schedule import (
+    DiscreteUniformTransition, 
+    PredefinedNoiseScheduleDiscrete, 
+    MarginalUniformTransition
+)
 from ppmat.models.digress import diffusion_utils
-from ppmat.metrics.TrainLossDiscrete import TrainLossDiscrete
+from ppmat.metrics.train_metrics import TrainLossDiscrete
 from ppmat.metrics.abstract_metrics import SumExceptBatchMetric, SumExceptBatchKL, NLL
 from ppmat.utils import digressutils as utils
 
-class DiscreteDenoisingDiffusionMolecular_condition(nn.Layer):
-    def __init__(self, cfg, dataset_infos, train_metrics, sampling_metrics, visualization_tools, extra_features, domain_features):
+from ppmat.trainer.trainer_diffusion import TrainerDiffusion
+
+
+class MolecularModel(TrainerDiffusion):
+    def __init__(
+        self, 
+        cfg, 
+        dataset_infos, 
+        train_metrics, 
+        sampling_metrics, 
+        visualization_tools, 
+        extra_features, 
+        domain_features
+    ):
         super().__init__()
         # ---------------------
         # 1. 初始化配置信息
@@ -81,7 +113,7 @@ class DiscreteDenoisingDiffusionMolecular_condition(nn.Layer):
         self.domain_features = domain_features
 
         # 2. 构造网络
-        self.model = molecularGT(
+        self.model = MolecularGraphTransformer(
             n_layers_GT=cfg.model.n_layers,
             input_dims=input_dims,
             hidden_mlp_dims=cfg.model.hidden_mlp_dims,
@@ -170,6 +202,19 @@ class DiscreteDenoisingDiffusionMolecular_condition(nn.Layer):
         )
         return loss
 
+    def forward(self, noisy_data, extra_data, node_mask, X, E):
+        """
+        将 (noisy_data, extra_data) 拼接为网络输入, 调用 self.model
+        """
+        # 将去噪输入拼到一起
+        X_ = paddle.concat([noisy_data['X_t'], extra_data.X], axis=2)  # (bs, n, dX + extra)
+        E_ = paddle.concat([noisy_data['E_t'], extra_data.E], axis=3)  # (bs, n, n, dE + extra)
+        y_ = paddle.concat([noisy_data['y_t'], extra_data.y], axis=1)  # (bs, dy + extra)
+
+        return self.model(X_, E_, y_, node_mask, X, E)
+
+
+
     def val_step(self, data, i: int):
         """
         验证阶段: 计算验证损失 + KL + 记录必要信息
@@ -248,17 +293,6 @@ class DiscreteDenoisingDiffusionMolecular_condition(nn.Layer):
     # ----------------------
     #  前向 & 模型推断相关
     # ----------------------
-    def forward(self, noisy_data, extra_data, node_mask, X, E):
-        """
-        替代LightningModule的 forward:
-        将 (noisy_data, extra_data) 拼接为网络输入, 调用 self.model
-        """
-        # 将去噪输入拼到一起
-        X_ = paddle.concat([noisy_data['X_t'], extra_data.X], axis=2)  # (bs, n, dX + extra)
-        E_ = paddle.concat([noisy_data['E_t'], extra_data.E], axis=3)  # (bs, n, n, dE + extra)
-        y_ = paddle.concat([noisy_data['y_t'], extra_data.y], axis=1)  # (bs, dy + extra)
-
-        return self.model(X_, E_, y_, node_mask, X, E)
 
     @paddle.no_grad()
     def forward_sample(self, noisy_data, extra_data, node_mask, batch_X, batch_E):
@@ -693,12 +727,15 @@ class DiscreteDenoisingDiffusionMolecular_condition(nn.Layer):
             mol = None
         return mol
 
-class CLIP_molecule_nmr(nn.Layer):
+"""
+
+class TrainerGraph(TrainerDiffusion):
+    def __init__(self):
+        super().__init__()
+
+class TrainerCLIP():
     def __init__(self, cfg, dataset_infos, train_metrics, sampling_metrics, visualization_tools, extra_features,
                  domain_features):
-        """
-        Paddle版本的CLIP_molecule_nmr模型，不再继承pl.LightningModule，而是普通的nn.Layer。
-        """
         super().__init__()
 
         input_dims = dataset_infos.input_dims
@@ -741,7 +778,7 @@ class CLIP_molecule_nmr(nn.Layer):
         self.domain_features = domain_features
 
         # 构造 backbone (contrastGT)
-        self.model = contrastGT(
+        self.model = ContrastGraphTransformer(
             n_layers_GT=cfg.model.n_layers,
             input_dims=input_dims,
             hidden_mlp_dims=cfg.model.hidden_mlp_dims,
@@ -803,9 +840,6 @@ class CLIP_molecule_nmr(nn.Layer):
         self.vocabDim = 256
 
     def forward(self, noisy_data, extra_data, node_mask, X, E, condition):
-        """
-        前向逻辑：和LightningModule的 forward 不同，这里是普通方法
-        """
         # 拼接
         X_ = paddle.concat([noisy_data['X_t'], extra_data.X], axis=2).astype('float32')
         E_ = paddle.concat([noisy_data['E_t'], extra_data.E], axis=3).astype('float32')
@@ -822,12 +856,7 @@ class CLIP_molecule_nmr(nn.Layer):
     # 训练阶段
     # --------------------------
     def train_step(self, data, i):
-        """
-        原Lightning的 training_step => 自定义函数
-        data: batch data
-        i: iteration index
-        return: dict(loss=...)
-        """
+
         if data.edge_index.size(0) == 0:
             print("Found a batch with no edges. Skipping.")
             return None
@@ -877,9 +906,7 @@ class CLIP_molecule_nmr(nn.Layer):
     # 验证阶段
     # --------------------------
     def val_step(self, data, i):
-        """
-        类似Lightning的 validation_step
-        """
+
         dense_data, node_mask = utils.to_dense(data.x, data.edge_index, data.edge_attr, data.batch)
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
@@ -918,9 +945,7 @@ class CLIP_molecule_nmr(nn.Layer):
     # 测试阶段
     # --------------------------
     def test_step(self, data, i):
-        """
-        类似Lightning的 test_step
-        """
+
         # 可根据需求实现
         pass
 
@@ -928,9 +953,6 @@ class CLIP_molecule_nmr(nn.Layer):
     # apply_noise
     # --------------------------
     def apply_noise(self, X, E, y, node_mask):
-        """
-        Sample noise and apply it to the data.
-        """
         bs = X.shape[0]
         # t_int in [1, T]
         t_int = paddle.randint(low=1, high=self.T+1, shape=[bs,1], dtype='int64')
@@ -967,9 +989,6 @@ class CLIP_molecule_nmr(nn.Layer):
         return noisy_data
 
     def compute_extra_data(self, noisy_data):
-        """
-        生成额外特征（extra_features + domain_features），并拼接 t
-        """
         extra_features = self.extra_features(noisy_data)
         extra_molecular_features = self.domain_features(noisy_data)
 
@@ -1007,7 +1026,7 @@ class CLIP_molecule_nmr(nn.Layer):
     def on_test_epoch_end(self):
         print("Done testing.")
 
-class DiscreteDenoisingDiffusionCondition(nn.Layer):
+class TrainerMultiModal():
     def __init__(self, cfg, dataset_infos, train_metrics, sampling_metrics, visualization_tools,
                  extra_features, domain_features):
         super().__init__()
@@ -1071,7 +1090,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         self.domain_features = domain_features
 
         # 构建 ConditionGT 模型
-        self.model = ConditionGT(
+        self.model = ConditionGraphTransformer(
             n_layers_GT=cfg.model.n_layers,
             input_dims=input_dims,
             hidden_mlp_dims=cfg.model.hidden_mlp_dims,
@@ -1141,19 +1160,8 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
             weight_decay=self.cfg.train.weight_decay
         )
 
-    # -------------------------
-    # 训练循环 (Lightning => 手动 train_step)
-    # -------------------------
     def train_step(self, data, i):
-        """
-        在外部训练循环中:
-          for i, batch_data in enumerate(train_dataloader):
-              loss_dict = model.train_step(batch_data, i)
-              loss = loss_dict['loss']
-              loss.backward()
-              optimizer.step()
-              optimizer.clear_grad()
-        """
+
         if data.edge_index.size(1) == 0:
             print("Found a batch with no edges. Skipping.")
             return None
@@ -1260,9 +1268,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
     # 噪声 & Q
     # -------------------------
     def apply_noise(self, X, E, y, node_mask):
-        """
-        随机选择 t in [1, T], 根据 alpha_t_bar 计算 X_t, E_t
-        """
+
         bs = X.shape[0]
         lowest_t = 1
         t_int = paddle.randint(lowest_t, self.T+1, shape=[bs,1], dtype='int64').astype('float32')
@@ -1301,9 +1307,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         return noisy_data
 
     def compute_val_loss(self, pred, noisy_data, X, E, y, node_mask, condition, test=False):
-        """
-        估计 variational lower bound
-        """
+
         t = noisy_data['t']
         N = paddle.sum(node_mask, axis=1).astype('int64')
         log_pN = self.node_dist.log_prob(N)
@@ -1331,9 +1335,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
     # forward => 组装拼接 + 调用 ConditionGT
     # -------------------------
     def forward(self, noisy_data, extra_data, node_mask, condition):
-        """
-        注：Lightning的 forward => 这里是普通 forward
-        """
+
         X_ = paddle.concat([noisy_data['X_t'], extra_data.X], axis=2).astype('float32')
         E_ = paddle.concat([noisy_data['E_t'], extra_data.E], axis=3).astype('float32')
         y_ = paddle.concat([noisy_data['y_t'], extra_data.y], axis=1).astype('float32')
@@ -1342,9 +1344,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         return self.model(X_, E_, y_, node_mask, condition_t)
 
     def forward_sample(self, noisy_data, extra_data, node_mask, condition):
-        """
-        用于sample时: 只是不记录梯度
-        """
+
         X_ = paddle.concat([noisy_data['X_t'], extra_data.X], axis=2).astype('float32')
         E_ = paddle.concat([noisy_data['E_t'], extra_data.E], axis=3).astype('float32')
         y_ = paddle.concat([noisy_data['y_t'], extra_data.y], axis=1).astype('float32')
@@ -1379,9 +1379,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         return diffusion_utils.sum_except_batch(kl_distance_X) + diffusion_utils.sum_except_batch(kl_distance_E)
 
     def compute_Lt(self, X, E, y, pred, noisy_data, node_mask, test):
-        """
-        逐步KL
-        """
+
         pred_probs_X = F.softmax(pred.X, axis=-1)
         pred_probs_E = F.softmax(pred.E, axis=-1)
         pred_probs_y = F.softmax(pred.y, axis=-1)
@@ -1417,9 +1415,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         return self.T * (kl_x + kl_e)
 
     def reconstruction_logp(self, t, X, E, node_mask, condition):
-        """
-        L0: -log p(X,E | z0)
-        """
+
         t_zeros = paddle.zeros_like(t)
         beta_0 = self.noise_schedule(t_zeros)
         Q0 = self.transition_model.get_Qt(beta_t=beta_0, device=self.device)
@@ -1469,9 +1465,7 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
         ...
 
     def mol_from_graphs(self, node_list, adjacency_matrix):
-        """
-        Convert graphs to rdkit molecules
-        """
+
         atom_decoder = self.dataset_info.atom_decoder
         mol = Chem.RWMol()
 
@@ -1558,3 +1552,5 @@ class DiscreteDenoisingDiffusionCondition(nn.Layer):
 
     def on_test_epoch_end(self):
         print("Done testing.")
+
+"""

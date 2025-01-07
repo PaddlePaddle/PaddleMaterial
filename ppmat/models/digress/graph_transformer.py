@@ -114,6 +114,99 @@ class GraphTransformer(nn.Layer):
 
         return PlaceHolder(X=X, E=E, y=y).mask(node_mask)
 
+class GraphTransformer_C(nn.Layer):
+    """
+    n_layers : int -- number of layers
+    dims : dict -- contains dimensions for each feature type
+    """
+    def __init__(self, n_layers: int, input_dims: dict, hidden_mlp_dims: dict, 
+                 hidden_dims: dict, output_dims: dict,
+                 act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU()):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dim_X = output_dims['X']
+        self.out_dim_E = output_dims['E']
+        self.out_dim_y = output_dims['y']
+
+        self.mlp_in_X = nn.Sequential(
+            nn.Linear(input_dims['X'], hidden_mlp_dims['X']), act_fn_in,
+            nn.Linear(hidden_mlp_dims['X'], hidden_dims['dx']), act_fn_in
+        )
+
+        self.mlp_in_E = nn.Sequential(
+            nn.Linear(input_dims['E'], hidden_mlp_dims['E']), act_fn_in,
+            nn.Linear(hidden_mlp_dims['E'], hidden_dims['de']), act_fn_in
+        )
+
+        self.mlp_in_y = nn.Sequential(
+            nn.Linear(input_dims['y'], hidden_mlp_dims['y']), act_fn_in,
+            nn.Linear(hidden_mlp_dims['y'], hidden_dims['dy']), act_fn_in
+        )
+
+        # 用 LayerList 存放多层 Transformer
+        self.tf_layers = nn.LayerList([
+            XEyTransformerLayer(dx=hidden_dims['dx'],
+                                de=hidden_dims['de'],
+                                dy=hidden_dims['dy'],
+                                n_head=hidden_dims['n_head'],
+                                dim_ffX=hidden_dims['dim_ffX'],
+                                dim_ffE=hidden_dims['dim_ffE'])
+            for _ in range(n_layers)
+        ])
+
+        self.mlp_out_X = nn.Sequential(
+            nn.Linear(hidden_dims['dx'], hidden_mlp_dims['X']), act_fn_out,
+            nn.Linear(hidden_mlp_dims['X'], 512)
+        )
+
+        # 其他输出层（如 E, y）在原示例里注释了，可自行添加
+        # self.mlp_out_E = ...
+        # self.mlp_out_y = ...
+
+    def forward(self, X, E, y, node_mask):
+        """
+        X: (bs, n, input_dims['X'])
+        E: (bs, n, n, input_dims['E'])
+        y: (bs, input_dims['y'])
+        node_mask: (bs, n)
+        """
+        bs, n = X.shape[0], X.shape[1]
+
+        # 构建对角 mask (如需用)
+        diag_mask = paddle.eye(n, dtype='bool')  # (n, n)
+        diag_mask = paddle.logical_not(diag_mask)
+        diag_mask = diag_mask.unsqueeze(0).unsqueeze(-1).expand([bs, -1, -1, -1])  # (bs,n,n,1)
+
+        # 保存原来的 X/E/y 部分给 skip-connection（如果需要）
+        X_to_out = X[..., :self.out_dim_X]
+        E_to_out = E[..., :self.out_dim_E]
+        y_to_out = y[..., :self.out_dim_y]
+
+        # MLP in
+        new_E = self.mlp_in_E(E)
+        # 对称化
+        E_t = paddle.transpose(new_E, perm=[0, 2, 1, 3])
+        new_E = (new_E + E_t) / 2.0
+
+        X = self.mlp_in_X(X)
+        Y = self.mlp_in_y(y)
+
+        after_in = PlaceHolder(X, E=new_E, y=Y).mask(node_mask)
+        X, E, Y = after_in.X, after_in.E, after_in.y
+
+        # 多层 Transformer
+        for layer in self.tf_layers:
+            X, E, Y = layer(X, E, Y, node_mask)
+
+        # Output
+        X = self.mlp_out_X(X)                # (bs, n, 512)
+        X_mean = paddle.mean(X, axis=1)      # (bs, 512)
+
+        # 如果还需要输出 E,y，可以在此添加 mlp_out_E, mlp_out_y
+        # 并做对称化/加 skip connection 等
+
+        return X_mean
+
 class XEyTransformerLayer(nn.Layer):
     """ Transformer that updates node, edge and global features
         d_x: node features
@@ -198,7 +291,6 @@ class XEyTransformerLayer(nn.Layer):
         y = self.norm_y2(y + ff_output_y)
 
         return X, E, y
-
 
 class NodeEdgeBlock(nn.Layer):
     """ Self attention layer that also updates the representations on the edges. """
