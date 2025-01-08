@@ -499,32 +499,29 @@ class Structure2Graph:
             cutoff=self.bond_graph_cutoff
         )
         n_isolated_atoms = len({*range(n_atoms)} - {*center_index})
-        if n_isolated_atoms:
-            atom_graph_cutoff = self.atom_graph_cutoff
-            msg = (
-                f"Structure has {n_isolated_atoms} isolated "
-                f"atom(s) with atom_graph_cutoff={atom_graph_cutoff!r}. "
-                "The fllowing calculation will likely go wrong"
-            )
-            raise ValueError(msg)
+
         edge_indices = [
             (idx1, idx2) for idx1, idx2 in zip(center_index, neighbor_index)
         ]
 
         if len(bond_graph) == 0:
-            bond_graph = np.zeros((0, 5)).astype(np.int64)
+            bond_graph = np.zeros((0, 5)).astype(np.int32)
         graph = self.build_pgl_graph(
             structure,
             edge_indices=edge_indices,
             to_jimages=image,
             edge_features={
-                "atom_graph": np.asarray(atom_graph),
-                "bond_graph": np.asarray(bond_graph),
-                "directed2undirected": np.asarray(directed2undirected),
-                "undirected2directed": np.asarray(undirected2directed),
-                "directed2undirected_len": np.array([len(directed2undirected)]),
-                "undirected2directed_len": np.array([len(undirected2directed)]),
-                "image": np.asarray(image),
+                "atom_graph": np.asarray(atom_graph, dtype=np.int32),
+                "bond_graph": np.asarray(bond_graph, dtype=np.int32),
+                "directed2undirected": np.asarray(directed2undirected, dtype=np.int32),
+                "undirected2directed": np.asarray(undirected2directed, dtype=np.int32),
+                "directed2undirected_len": np.array(
+                    [len(directed2undirected)], dtype=np.int32
+                ),
+                "undirected2directed_len": np.array(
+                    [len(undirected2directed)], dtype=np.int32
+                ),
+                "image": np.asarray(image, dtype="float32"),
             },
         )
 
@@ -556,8 +553,13 @@ class Structure2Graph:
             graph.edge_feat["bond_vec_i"] = np.zeros((0, 3), dtype=np.float32)
             graph.edge_feat["bond_vec_j"] = np.zeros((0, 3), dtype=np.float32)
 
-        graph.edge_feat["num_atom_graph"] = np.array([len(atom_graph)])
-        graph.edge_feat["num_bond_graph"] = np.array([len(bond_graph)])
+        graph.edge_feat["num_atom_graph"] = np.array([len(atom_graph)], dtype=np.int32)
+        graph.edge_feat["num_bond_graph"] = np.array([len(bond_graph)], dtype=np.int32)
+
+        if n_isolated_atoms:
+            graph.node_feat["isolation_flag"] = np.array([1])
+        else:
+            graph.node_feat["isolation_flag"] = np.array([0])
 
         return graph
 
