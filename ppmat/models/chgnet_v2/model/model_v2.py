@@ -21,6 +21,7 @@ from ppmat.models.chgnet_v2.model.layers import AtomConv
 from ppmat.models.chgnet_v2.model.layers import BondConv
 from ppmat.models.chgnet_v2.model.layers import GraphAttentionReadOut
 from ppmat.models.chgnet_v2.model.layers import GraphPooling
+from ppmat.utils import logger
 from ppmat.utils.crystal import frac_to_cart_coords
 
 if TYPE_CHECKING:
@@ -63,6 +64,7 @@ class CHGNet_v2(paddle.nn.Layer):
         readout_norm: str | None = "layer",
         task: str = "ef",
         graph_converter_cfg: dict | None = None,
+        is_freeze: bool = False,
         version: str | None = None,
         **kwargs,
     ) -> None:
@@ -149,6 +151,7 @@ class CHGNet_v2(paddle.nn.Layer):
         self.n_conv = n_conv
         self.task = task
         self.graph_converter_cfg = graph_converter_cfg
+        self.is_freeze = is_freeze
         if graph_converter_cfg is not None:
             self.graph_converter = Structure2Graph(**graph_converter_cfg)
         else:
@@ -282,7 +285,26 @@ class CHGNet_v2(paddle.nn.Layer):
                 paddle.nn.Linear(in_features=mlp_hidden_dims[-1], out_features=1),
             )
         version_str = f" v{version}" if version else ""
-        print(f"CHGNet{version_str} initialized with {self.n_params:,} parameters")
+        logger.info(
+            f"CHGNet{version_str} initialized with {self.n_params:,} parameters"
+        )
+        if is_freeze:
+            self.freeze_weights()
+            logger.info("Some weights are frozen.")
+
+    def freeze_weights(self) -> None:
+        for layer in [
+            self.atom_embedding,
+            self.bond_embedding,
+            self.angle_embedding,
+            self.bond_basis_expansion,
+            self.angle_basis_expansion,
+            self.atom_conv_layers[:-1],
+            self.bond_conv_layers,
+            self.angle_layers,
+        ]:
+            for param in layer.parameters():
+                param.stop_gradient = True
 
     @property
     def n_params(self) -> int:
