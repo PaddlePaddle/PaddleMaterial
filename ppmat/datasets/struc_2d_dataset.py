@@ -2,6 +2,7 @@ import json
 import os
 import os.path as osp
 import pickle
+import random
 from typing import Callable
 from typing import Dict
 from typing import Literal
@@ -12,6 +13,7 @@ import paddle
 from p_tqdm import p_map
 from pymatgen.core.structure import Structure
 
+from ppmat.datasets.collate_fn import ConcatData
 from ppmat.datasets.collate_fn import Data
 from ppmat.datasets.structure_converter import Structure2Graph
 from ppmat.utils import DEFAULT_ELEMENTS
@@ -42,12 +44,14 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         converter_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
+        select_energy_range: Optional[tuple] = None,
         cache: bool = False,
     ):
         super().__init__()
         self.path = path
         self.converter_cfg = converter_cfg
         self.transforms = transforms
+        self.select_energy_range = select_energy_range
         self.cache = cache
 
         if cache:
@@ -59,6 +63,7 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
 
         self.jsonl_data = self.read_jsonl(path)
         self.num_samples = len(self.jsonl_data)
+
         if element_types.upper() == "DEFAULT_ELEMENTS":
             self.element_types = DEFAULT_ELEMENTS
         elif element_types.upper() == "ELEMENTS_94":
@@ -66,7 +71,7 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         else:
             raise ValueError("element_types must be 'DEFAULT_ELEMENTS'.")
         # when cache is True, load cached structures from cache file
-        cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs_dev.pkl")
+        cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs_v2_2.pkl")
         if self.cache and osp.exists(cache_path):
             with open(cache_path, "rb") as f:
                 self.structures = pickle.load(f)
@@ -116,6 +121,27 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         else:
             self.graphs = None
 
+        if select_energy_range is not None:
+            energy_min, energy_max = select_energy_range
+            index = list(range(self.num_samples))
+            select_idx = [
+                idx
+                for idx in index
+                if energy_min <= self.jsonl_data[idx].get("energy") < energy_max
+            ]
+
+            logger.info(
+                f"Select {len(select_idx)} samples within energy range "
+                f"{energy_min:.2f}-{energy_max:.2f}"
+                f"({len(index)-len(select_idx)} removed)"
+            )
+
+            self.jsonl_data = [self.jsonl_data[idx] for idx in select_idx]
+            self.num_samples = len(self.jsonl_data)
+            self.structures = [self.structures[idx] for idx in select_idx]
+            if self.graphs is not None:
+                self.graphs = [self.graphs[idx] for idx in select_idx]
+
     def read_jsonl(self, file_path):
 
         data_lines = []
@@ -158,6 +184,9 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
                     data["graph"] = pickle.load(f)
             else:
                 data["graph"] = self.graphs[idx]
+            flag = data["graph"].node_feat.get("isolation_flag", np.array([0]))
+            if flag[0] == 1:
+                return self.__getitem__(random.randint(0, len(self) - 1))
         else:
             structure = self.structures[idx]
             data["structure_array"] = self.get_structure_array(structure)
@@ -173,22 +202,16 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         if "energy" in self.jsonl_data[idx]:
             data["e"] = np.array(self.jsonl_data[idx]["energy"]).astype("float32")
 
-        interatomic_properties = {}
         if self.jsonl_data[idx].get("forces", None) is not None:
-            interatomic_properties["f"] = np.array(
-                self.jsonl_data[idx]["forces"]
-            ).astype("float32")
-        if self.jsonl_data[idx].get("stress", None) is not None:
-            interatomic_properties["stress"] = np.array(
-                self.jsonl_data[idx]["stress"]
-            ).astype("float32")
+            data["f"] = ConcatData(
+                np.array(self.jsonl_data[idx]["forces"]).astype("float32")
+            )
+        if self.jsonl_data[idx].get("stresses", None) is not None:
+            data["s"] = np.array(self.jsonl_data[idx]["stresses"]).astype("float32")
         if self.jsonl_data[idx].get("magmom", None) is not None:
-            interatomic_properties["magmom"] = np.array(
-                self.jsonl_data[idx]["magmom"]
-            ).astype("float32")
-
-        if interatomic_properties:
-            data["interatomic_properties"] = Data(interatomic_properties)
+            data["m"] = ConcatData(
+                np.array(self.jsonl_data[idx]["magmom"]).astype("float32")
+            )
 
         if "material_id" in self.jsonl_data[idx]:
             data["id"] = self.jsonl_data[idx]["material_id"]
