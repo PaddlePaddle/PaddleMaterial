@@ -11,6 +11,9 @@ Global:
 
 Model:
   __name__: CHGNet_v2
+  graph_converter_cfg:
+    method: 'chgnet_graph'
+    element_types: "ELEMENTS_94"
 
 Loss:
   __name__: LossWarper
