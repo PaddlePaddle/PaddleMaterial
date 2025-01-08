@@ -91,7 +91,7 @@ class CHGNetCalculator(Calculator):
             self.model = CHGNet.load()
         else:
             self.model = model  # .to(self.device)
-        self.model.graph_converter.set_isolated_atom_response(on_isolated_atoms)
+        # self.model.graph_converter.set_isolated_atom_response(on_isolated_atoms)
         self.stress_weight = stress_weight
         # print(f"CHGNet will run on {self.device}")
 
