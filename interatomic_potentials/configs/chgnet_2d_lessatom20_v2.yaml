@@ -1,0 +1,92 @@
+Global:
+  epochs: 50
+  output_dir: ./output/chgnet_2d_lessatom20_bs128_v2_2
+  save_freq: 1 # set 0 to disable saving during training
+  log_freq: 10 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+  pretrained_model_path: "./interatomic_potentials/pretrained/chgnet_3.0_state_dict.pdparams"
+
+Model:
+  __name__: CHGNet_v2
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    e: # loss function for energy
+      __name__: MSELoss
+    f: # loss function for force
+      __name__: MSELoss
+  weights:
+    e: 1.0 # weight for energy
+    f: 1.0 # weight for force
+
+Optimizer:
+  __name__: Adam
+  lr:
+    __name__: Cosine
+    learning_rate: 1e-3
+    eta_min: 1e-5
+    by_epoch: True
+
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    e:
+      __name__: MAEMetric
+    f:
+      __name__: MAEMetric
+  main_indicator: e # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  train:
+    dataset:
+      __name__: SturctureDataFromJsonl
+      path: "./data/2d_lessatom20/train.jsonl"
+      converter_cfg:
+        method: 'chgnet_graph'
+        element_types: "ELEMENTS_94"
+      element_types: "ELEMENTS_94"
+      cache: True
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: True
+      batch_size: 128
+  val:
+    dataset:
+      __name__: SturctureDataFromJsonl
+      path: "./data/2d_lessatom20/val.jsonl"
+      converter_cfg:
+        method: 'chgnet_graph'
+        element_types: "ELEMENTS_94"
+      element_types: "ELEMENTS_94"
+      cache: True
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: BatchSampler
+      batch_size: 40
+  test:
+    dataset:
+      __name__: SturctureDataFromJsonl
+      path: "./data/2d_lessatom20/test.jsonl"
+      converter_cfg:
+        method: 'chgnet_graph'
+        element_types: "ELEMENTS_94"
+      element_types: "ELEMENTS_94"
+      cache: True
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: BatchSampler
+      batch_size: 40
