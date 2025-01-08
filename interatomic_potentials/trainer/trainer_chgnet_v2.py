@@ -195,7 +195,7 @@ class Trainer:
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
 
-            pred_data = self.model(batch_data, task="ef")
+            pred_data = self.model(batch_data)
 
             # for key in "ef":
             #     if isinstance(pred_data[key], list):
@@ -203,11 +203,6 @@ class Trainer:
             #     if isinstance(batch_data[1][key], list):
             #         batch_data[1][key] = paddle.concat(batch_data[1][key], axis=0)
 
-            batch_data = {
-                "e": batch_data["e"],
-                "f": batch_data["interatomic_properties"].f,
-            }
-            pred_data["f"] = pred_data["f"][0]
             for key in pred_data:
                 if isinstance(pred_data[key], paddle.Tensor):
                     pred_data[key] = pred_data[key].detach()
@@ -283,11 +278,7 @@ class Trainer:
             #         pred_data[key] = paddle.concat(pred_data[key], axis=0)
             #     if isinstance(batch_data[1][key], list):
             #         batch_data[1][key] = paddle.concat(batch_data[1][key], axis=0)
-            batch_data = {
-                "e": batch_data["e"],
-                "f": batch_data["interatomic_properties"].f,
-            }
-            pred_data["f"] = pred_data["f"][0]
+
             loss_dict = self.loss_class(pred_data, batch_data)
             loss = loss_dict["loss"]
 
