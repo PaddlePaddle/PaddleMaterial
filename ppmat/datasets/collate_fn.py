@@ -28,6 +28,23 @@ import paddle
 import pgl
 
 
+class ConcatData(object):
+    def __init__(self, data) -> None:
+        self.data = data
+
+    @staticmethod
+    def batch(data_list):
+        data_list = [data.data for data in data_list]
+        data = np.concatenate(data_list, axis=0)
+        return data
+
+    def __str__(self):
+        return str(self.__dict__)
+
+    def __repr__(self):
+        return str(self.__dict__)
+
+
 class Data(object):
     def __init__(self, data: Dict):
         for key, value in data.items():
@@ -101,6 +118,8 @@ class DefaultCollator(object):
             data = Data.batch(batch)
             data.tensor()
             return data
+        elif isinstance(sample, ConcatData):
+            return ConcatData.batch(batch)
         raise TypeError(
             "batch data can only contains: paddle.Tensor, numpy.ndarray, "
             f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
