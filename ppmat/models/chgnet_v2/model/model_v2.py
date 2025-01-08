@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,8 +9,7 @@ from typing import Literal
 import paddle
 from pymatgen.core import Structure
 
-from ppmat.models.chgnet_v2.graph import CrystalGraph
-from ppmat.models.chgnet_v2.graph import CrystalGraphConverter
+from ppmat.datasets.structure_converter import Structure2Graph
 from ppmat.models.chgnet_v2.model.composition_model import AtomRef
 from ppmat.models.chgnet_v2.model.encoders import AngleEncoder
 from ppmat.models.chgnet_v2.model.encoders import AtomEmbedding
@@ -24,10 +22,10 @@ from ppmat.models.chgnet_v2.model.layers import AtomConv
 from ppmat.models.chgnet_v2.model.layers import BondConv
 from ppmat.models.chgnet_v2.model.layers import GraphAttentionReadOut
 from ppmat.models.chgnet_v2.model.layers import GraphPooling
+from ppmat.utils.crystal import frac_to_cart_coords
 
 if TYPE_CHECKING:
     from chgnet_v2 import PredTask
-    from typing_extensions import Self
 module_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -60,11 +58,12 @@ class CHGNet_v2(paddle.nn.Layer):
         non_linearity: Literal["silu", "relu", "tanh", "gelu"] = "silu",
         atom_graph_cutoff: float = 6,
         bond_graph_cutoff: float = 3,
-        graph_converter_algorithm: Literal["legacy", "fast"] = "fast",
         cutoff_coeff: int = 8,
         learnable_rbf: bool = True,
         gMLP_norm: str | None = "layer",
         readout_norm: str | None = "layer",
+        task: str = "ef",
+        graph_converter_cfg: dict | None = None,
         version: str | None = None,
         **kwargs,
     ) -> None:
@@ -131,12 +130,6 @@ class CHGNet_v2(paddle.nn.Layer):
             bond_graph_cutoff (float): cutoff radius (A) in creating bond_graph,
                 this need to be consistent with value in training dataloader
                 Default = 3
-            graph_converter_algorithm ('legacy' | 'fast'): algorithm to use
-                for converting pymatgen.core.Structure to CrystalGraph.
-                'legacy': python implementation of graph creation
-                'fast': C implementation of graph creation, this is faster,
-                    but will need the cygraph.c file correctly compiled from pip install
-                default = 'fast'
             cutoff_coeff (float): cutoff strength used in graph smooth cutoff function.
                 the smaller this coeff is, the smoother the basis is
                 Default = 5
@@ -150,19 +143,18 @@ class CHGNet_v2(paddle.nn.Layer):
             version (str): Pretrained checkpoint version.
             **kwargs: Additional keyword arguments
         """
-        self.model_args = {
-            key: val
-            for key, val in locals().items()
-            if key not in {"self", "__class__", "kwargs"}
-        }
-        self.model_args.update(kwargs)
-        if version:
-            self.model_args["version"] = version
         super().__init__()
         self.atom_fea_dim = atom_fea_dim
         self.bond_fea_dim = bond_fea_dim
         self.is_intensive = is_intensive
         self.n_conv = n_conv
+        self.task = task
+        self.graph_converter_cfg = graph_converter_cfg
+        if graph_converter_cfg is not None:
+            self.graph_converter = Structure2Graph(**graph_converter_cfg)
+        else:
+            self.graph_converter = None
+
         if isinstance(composition_model, paddle.nn.Layer):
             self.composition_model = composition_model
         elif isinstance(composition_model, str):
@@ -173,12 +165,6 @@ class CHGNet_v2(paddle.nn.Layer):
         if self.composition_model is not None:
             for param in self.composition_model.parameters():
                 param.stop_gradient = True
-        self.graph_converter = CrystalGraphConverter(
-            atom_graph_cutoff=atom_graph_cutoff,
-            bond_graph_cutoff=bond_graph_cutoff,
-            algorithm=graph_converter_algorithm,
-            verbose=kwargs.pop("converter_verbose", False),
-        )
         self.atom_embedding = AtomEmbedding(atom_feature_dim=atom_fea_dim)
         self.bond_basis_expansion = BondEncoder(
             atom_graph_cutoff=atom_graph_cutoff,
@@ -300,11 +286,6 @@ class CHGNet_v2(paddle.nn.Layer):
         print(f"CHGNet{version_str} initialized with {self.n_params:,} parameters")
 
     @property
-    def version(self) -> str | None:
-        """Return the version of the loaded checkpoint."""
-        return self.model_args.get("version")
-
-    @property
     def n_params(self) -> int:
         """Return the number of parameters in the model."""
         return sum(p.size for p in self.parameters())
@@ -314,7 +295,7 @@ class CHGNet_v2(paddle.nn.Layer):
         batch_data,
         # graphs: Sequence[CrystalGraph],
         *,
-        task: PredTask = "ef",
+        task: PredTask | None = "ef",
         return_site_energies: bool = False,
         return_atom_feas: bool = False,
         return_crystal_feas: bool = False,
@@ -335,20 +316,21 @@ class CHGNet_v2(paddle.nn.Layer):
         Returns:
             model output (dict).
         """
+        task = task if task is not None else self.task
         graphs = batch_data["graph"]
         comp_energy = (
             0 if self.composition_model is None else self.composition_model(graphs)
         )
 
-        atom_graph = graphs.edge_feat["atom_graph"]
-        num_atoms = graphs.node_feat["num_atoms"]
-        num_edges = graphs.edge_feat["num_edges"]
+        atom_graph = graphs.edge_feat["atom_graph"].astype("int32")
+        num_atoms = graphs.node_feat["num_atoms"].astype("int32")
+        num_edges = graphs.edge_feat["num_edges"].astype("int32")
         batch_size = graphs.num_graph
         atom_owners = graphs.graph_node_id
-        directed2undirected = graphs.edge_feat["directed2undirected"]
-        undirected2directed = graphs.edge_feat["undirected2directed"]
+        directed2undirected = graphs.edge_feat["directed2undirected"].astype("int32")
+        undirected2directed = graphs.edge_feat["undirected2directed"].astype("int32")
 
-        atomic_numbers = graphs.node_feat["atom_types"]
+        atomic_numbers = graphs.node_feat["atom_types"].astype("int32")
 
         frac_coords = graphs.node_feat["frac_coords"]
         frac_coords.stop_gradient = False
@@ -356,35 +338,36 @@ class CHGNet_v2(paddle.nn.Layer):
         lattice.stop_gradient = False
 
         if "s" not in task:
-            strains = [None, None]
+            strains = None
+            volumes = None
         else:
-            strain = paddle.to_tensor(
-                paddle.zeros([3, 3], dtype="float32"), stop_gradient=False
+            strains = paddle.to_tensor(
+                paddle.zeros([batch_size, 3, 3], dtype="float32"), stop_gradient=False
             )
-            lattice = paddle.matmul(lattice, paddle.eye(3, dtype="float32") + strain)
-        volumes = []
-        for i in range(batch_size):
-            volumes.append(
-                paddle.dot(
-                    x=lattice[i][0],
-                    y=paddle.cross(x=lattice[i][1], y=lattice[i][2], axis=-1),
-                )
+            lattice = paddle.matmul(
+                lattice, paddle.eye(3, dtype="float32")[None, :, :] + strains
             )
-        volumes = paddle.to_tensor(data=volumes, dtype="float32")
-        # 使用einsum 与 @ 计算矩阵乘法有误差
-        # atom_positions_einsum = frac_to_cart_coords(
-        #     graphs.node_feat['frac_coords'],
-        #     num_atoms=num_atoms,
-        #     lattices=graphs.node_feat['lattice'],
-        # )
 
-        atom_positions = []
-        start = 0
-        for i in range(batch_size):
-            end = start + num_atoms[i]
-            atom_positions.append(frac_coords[start:end] @ lattice[i])
-            start = end
-        atom_positions = paddle.concat(atom_positions)
+            volumes = paddle.dot(
+                lattice[:, 0], paddle.cross(x=lattice[:, 1], y=lattice[:, 2], axis=-1)
+            )
+            volumes.stop_gradient = True
+
+        if "s" not in task:
+            # 使用einsum 与 @ 计算矩阵乘法有误差
+            atom_positions = frac_to_cart_coords(
+                frac_coords,
+                num_atoms=num_atoms,
+                lattices=lattice,
+            )
+        else:
+            atom_positions = []
+            start = 0
+            for i in range(batch_size):
+                end = start + num_atoms[i]
+                atom_positions.append(frac_coords[start:end] @ lattice[i])
+                start = end
+            atom_positions = paddle.concat(atom_positions)
 
         # 存储了每个晶体图的边信息，shape=[2, N], 其中N为边数，
         # 每个元素代表了两个原子的index
@@ -402,15 +385,23 @@ class CHGNet_v2(paddle.nn.Layer):
         # 计算晶体图中每个边的向量和距离
         center = atom_positions[atom_graph[:, 0]]
         neighbor = atom_positions[atom_graph[:, 1]]
-        image = graphs.edge_feat["image"].astype("float32")
-        offset = []
-        start = 0
-        for i in range(batch_size):
-            end = start + num_edges[i]
-            offset.append(image[start:end] @ lattice[i])
-            start = end
+        image = graphs.edge_feat["image"]
 
-        offset = paddle.concat(offset)
+        if "s" not in task:
+            lattice_edges = paddle.repeat_interleave(
+                x=lattice, repeats=num_edges, axis=0
+            )
+            offset = paddle.einsum("bi,bij->bj", image, lattice_edges)
+        else:
+            offset = []
+            start = 0
+            for i in range(batch_size):
+                end = start + num_edges[i]
+                offset.append(image[start:end] @ lattice[i])
+                start = end
+
+            offset = paddle.concat(offset)
+
         neighbor = neighbor + offset
         bond_vectors = center - neighbor
         bond_lengths = paddle.linalg.norm(x=bond_vectors, axis=1)
@@ -440,26 +431,12 @@ class CHGNet_v2(paddle.nn.Layer):
             undirected_bond_lengths
         )
 
-        num_bond_graph = graphs.edge_feat["num_bond_graph"].astype("int64")
+        num_bond_graph = graphs.edge_feat["num_bond_graph"]
         bond_vec_index_offset = paddle.repeat_interleave(
             num_edges_cumsum, num_bond_graph
         )
 
-        graphs.edge_feat["bond_graph"] = graphs.edge_feat["bond_graph"].astype("int64")
-
-        bond_vecs_i_index = (
-            graphs.edge_feat["bond_graph"][:, 2].astype("int64") + bond_vec_index_offset
-        )
-        bond_vecs_j_index = (
-            graphs.edge_feat["bond_graph"][:, 4].astype("int64") + bond_vec_index_offset
-        )
-        bond_vecs_i = paddle.gather(x=bond_vectors, axis=0, index=bond_vecs_i_index)
-        bond_vecs_j = paddle.gather(x=bond_vectors, axis=0, index=bond_vecs_j_index)
-        angle_bases = self.angle_basis_expansion(bond_vecs_i, bond_vecs_j)
-
-        bond_graph_new = paddle.zeros([graphs.edge_feat["bond_graph"].shape[0], 3])
-        offset_tmp = paddle.repeat_interleave(num_atoms_cumsum, num_bond_graph)
-        bond_graph_new[:, 0] = graphs.edge_feat["bond_graph"][:, 0] + offset_tmp
+        # graphs.edge_feat["bond_graph"] = graphs.edge_feat["bond_graph"]
 
         undirected2directed_len_cumsum = paddle.cumsum(
             graphs.edge_feat["undirected2directed_len"]
@@ -472,11 +449,29 @@ class CHGNet_v2(paddle.nn.Layer):
         )
         undirected2directed_len_cumsum = undirected2directed_len_cumsum[:-1]
 
-        offset_tmp = paddle.repeat_interleave(
-            undirected2directed_len_cumsum, num_bond_graph
-        )
-        bond_graph_new[:, 1] = graphs.edge_feat["bond_graph"][:, 1] + offset_tmp
-        bond_graph_new[:, 2] = graphs.edge_feat["bond_graph"][:, 3] + offset_tmp
+        if num_bond_graph.max() != 0:
+            bond_vecs_i_index = (
+                graphs.edge_feat["bond_graph"][:, 2] + bond_vec_index_offset
+            )
+            bond_vecs_j_index = (
+                graphs.edge_feat["bond_graph"][:, 4] + bond_vec_index_offset
+            )
+            bond_vecs_i = paddle.gather(x=bond_vectors, axis=0, index=bond_vecs_i_index)
+            bond_vecs_j = paddle.gather(x=bond_vectors, axis=0, index=bond_vecs_j_index)
+            angle_bases = self.angle_basis_expansion(bond_vecs_i, bond_vecs_j)
+
+            bond_graph_new = paddle.zeros([graphs.edge_feat["bond_graph"].shape[0], 3])
+            offset_tmp = paddle.repeat_interleave(num_atoms_cumsum, num_bond_graph)
+            bond_graph_new[:, 0] = graphs.edge_feat["bond_graph"][:, 0] + offset_tmp
+
+            offset_tmp = paddle.repeat_interleave(
+                undirected2directed_len_cumsum, num_bond_graph
+            )
+            bond_graph_new[:, 1] = graphs.edge_feat["bond_graph"][:, 1] + offset_tmp
+            bond_graph_new[:, 2] = graphs.edge_feat["bond_graph"][:, 3] + offset_tmp
+        else:
+            angle_bases = paddle.to_tensor(data=[])
+            bond_graph_new = paddle.to_tensor(data=[])
 
         offset_tmp = paddle.repeat_interleave(undirected2directed_len_cumsum, num_edges)
         directed2undirected = directed2undirected + offset_tmp
@@ -490,10 +485,11 @@ class CHGNet_v2(paddle.nn.Layer):
             batched_bond_graph=bond_graph_new,
             atom_owners=atom_owners,
             directed2undirected=directed2undirected,
-            atom_positions=atom_positions,
+            atom_positions=atom_positions,  # atom_positions_list,
             strains=strains,
             volumes=volumes,
         )
+
         prediction = self._compute(
             batched_graph,
             compute_force="f" in task,
@@ -635,19 +631,25 @@ class CHGNet_v2(paddle.nn.Layer):
             force = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.atom_positions,
-                create_graph=True,
-                retain_graph=True,
+                create_graph=self.training,
+                retain_graph=self.training,
             )
-            prediction["f"] = [(-1 * force_dim) for force_dim in force]
+            if isinstance(g.atom_positions, paddle.Tensor):
+                force = force[0]
+            # prediction["f"] = [(-1 * force_dim) for force_dim in force]
+            prediction["f"] = -1 * force
         if compute_stress:
             stress = paddle.grad(
                 outputs=energy.sum(),
                 inputs=g.strains,
-                create_graph=True,
-                retain_graph=True,
+                create_graph=self.training,
+                retain_graph=self.training,
             )
+            if isinstance(g.strains, paddle.Tensor):
+                stress = stress[0]
             scale = 1 / g.volumes * 160.21766208
-            stress = [(i * j) for i, j in zip(stress, scale, strict=False)]
+            stress = stress * scale[:, None, None]
+            # stress = [(i * j) for i, j in zip(stress, scale, strict=False)]
             prediction["s"] = stress
 
         if self.is_intensive:
@@ -704,7 +706,7 @@ class CHGNet_v2(paddle.nn.Layer):
 
     def predict_graph(
         self,
-        graph: CrystalGraph | Sequence[CrystalGraph],
+        graph,
         *,
         task: PredTask = "efsm",
         return_site_energies: bool = False,
@@ -735,93 +737,31 @@ class CHGNet_v2(paddle.nn.Layer):
                 m (Tensor) : magnetic moments of sites [num_atoms, 3] in Bohr
                     magneton mu_B
         """
-        if not isinstance(graph, CrystalGraph | Sequence):
-            raise TypeError(
-                f"type(graph)={type(graph)!r} must be CrystalGraph or list "
-                "of CrystalGraphs"
-            )
-        # next(iter(self.parameters())).place
-        graphs = [graph] if isinstance(graph, CrystalGraph) else graph
+
         self.eval()
-        predictions: list[dict[str, paddle.Tensor]] = [{} for _ in range(len(graphs))]
-        n_steps = math.ceil(len(graphs) / batch_size)
-        for step in range(n_steps):
-            prediction = self.forward(
-                [g for g in graphs[batch_size * step : batch_size * (step + 1)]],
-                task=task,
-                return_site_energies=return_site_energies,
-                return_atom_feas=return_atom_feas,
-                return_crystal_feas=return_crystal_feas,
-            )
-            for key in {
-                "e",
-                "f",
-                "s",
-                "m",
-                "site_energies",
-                "atom_fea",
-                "crystal_fea",
-            } & {*prediction}:
-                for idx, tensor in enumerate(prediction[key]):
-                    predictions[step * batch_size + idx][key] = (
-                        tensor.cpu().detach().numpy()
-                    )
-        return predictions[0] if len(graphs) == 1 else predictions
-
-    def as_dict(self) -> dict:
-        """Return the CHGNet weights and args in a dictionary."""
-        return {"state_dict": self.state_dict(), "model_args": self.model_args}
-
-    def todict(self) -> dict:
-        """Needed for ASE JSON serialization when saving CHGNet potential to
-        trajectory file (https://github.com/CederGroupHub/chgnet/issues/48).
-        """
-        return {"model_name": type(self).__name__, "model_args": self.model_args}
-
-    @classmethod
-    def from_dict(cls, dct: dict, **kwargs) -> Self:
-        """Build a CHGNet from a saved dictionary."""
-        chgnet = cls(**dct["model_args"], **kwargs)
-        chgnet.set_state_dict(state_dict=dct["state_dict"])
-        return chgnet
-
-    @classmethod
-    def from_file(cls, path: str, **kwargs) -> Self:
-        """Build a CHGNet from a saved file."""
-        state = paddle.load(path=str(path))
-        return cls.from_dict(state["model"], **kwargs)
-
-    @classmethod
-    def load(cls, *, model_name: str = "0.3.0") -> Self:
-        """Load pretrained CHGNet model.
-
-        Args:
-            model_name (str, optional):
-                Default = "0.3.0".
-            use_device (str, optional): The device to be used for predictions,
-                either "cpu", "cuda", or "mps". If not specified, the default device is
-                automatically selected based on the available options.
-                Default = None
-            check_cuda_mem (bool): Whether to use cuda with most available memory
-                Default = False
-            verbose (bool): whether to print model device information
-                Default = True
-        Raises:
-            ValueError: On unknown model_name.
-        """
-        assert model_name in ("0.3.0"), f"Unknown model_name={model_name}"
-        checkpoint_path = {
-            "0.3.0": "../pretrained/0.3.0/chgnet_0.3.0_paddle.pdparams",
-        }.get(model_name)
-        if checkpoint_path is None:
-            raise ValueError(f"Unknown model_name={model_name!r}")
-        model = cls.from_file(
-            os.path.join(module_dir, checkpoint_path),
-            mlp_out_bias=model_name == "0.2.0",
-            version=model_name,
+        print("in model predict")
+        if not graph.is_tensor():
+            graph.tensor()
+        # predictions: list[dict[str, paddle.Tensor]] = [{} for _ in range(len(graph))]
+        prediction = self.forward(
+            {"graph": graph},
+            task=task,
+            return_site_energies=return_site_energies,
+            return_atom_feas=return_atom_feas,
+            return_crystal_feas=return_crystal_feas,
         )
-
-        return model
+        for key in prediction.keys():
+            if isinstance(prediction[key], list):
+                prediction[key] = [
+                    prediction[key][i].numpy() for i in range(len(prediction[key]))
+                ]
+            else:
+                prediction[key] = prediction[key].numpy()
+            if key == "s" and len(prediction["s"].shape) == 3:
+                prediction[key] = prediction[key][0]
+            if key == "m" and isinstance(prediction[key], list):
+                prediction[key] = prediction[key][0]
+        return prediction
 
 
 @dataclass
