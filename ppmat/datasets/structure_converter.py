@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 from abc import ABC
 from abc import abstractmethod
-from typing import Literal, Any, Literal, Union, List, Tuple
+from typing import List
+from typing import Literal
 from typing import Optional
+from typing import Union
 
 import numpy as np
 import pgl
@@ -14,6 +16,8 @@ from pymatgen.analysis import local_env
 from pymatgen.analysis.graphs import StructureGraph
 from pymatgen.core.structure import Structure
 from pymatgen.optimization.neighbors import find_points_in_spheres
+from rdkit.Chem import DataStructs as Mol
+from rdkit.Chem.rdchem import BondType as BT
 
 from ppmat.datasets.comformer_graph_utils import atom_dgl_multigraph
 from ppmat.datasets.utils import lattice_params_to_matrix
@@ -660,7 +664,7 @@ class Structure2Graph:
 
     def build_pgl_graph(
         self,
-        mol: Structure,
+        structure: Structure,
         edge_indices,
         to_jimages,
         node_features=None,
@@ -724,21 +728,20 @@ class Structure2Graph:
             graph.edge_feat.update(edge_features)
         return graph
 
+
 class Mol2Graph:
     def __init__(
         self,
-        method: Literal[
-            "general"
-        ] = "general",
+        method: Literal["general"] = "general",
         remove_hydrogen: bool = False,
-        num_cpus: Optional[int] = None, 
+        num_cpus: Optional[int] = None,
         **kwargs,
     ):
         assert method in ["general"], "method must be 'general'."
         self.method = method
         self.remove_h = remove_hydrogen
         self.num_cpus = num_cpus
-    
+
     def __call__(self, mol: Union[Mol, List[Mol]]):
         if self.method == "general":
             if isinstance(mol, Mol):
@@ -756,66 +759,73 @@ class Mol2Graph:
                 )
         else:
             raise NotImplementedError()
-        return 
-    
-    def get_graph_by_general_method(self, mol:Mol):
+        return graph
+
+    def get_graph_by_general_method(self, mol: Mol):
         # Convert rdkit mol to graph by general method
         bonds = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-        types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4, 'P': 5, 'S': 6, 'Cl': 7, 'Br': 8, 'I': 9}
+        types = {
+            "H": 0,
+            "C": 1,
+            "N": 2,
+            "O": 3,
+            "F": 4,
+            "P": 5,
+            "S": 6,
+            "Cl": 7,
+            "Br": 8,
+            "I": 9,
+        }
 
         # Number of atoms
         N = mol.GetNumAtoms()
-        
+
         # Atom type indices
         type_idx = [types[atom.GetSymbol()] for atom in mol.GetAtoms()]
-        
-        #Edge construction
+
+        # Edge construction
         row, col, edge_type = [], [], []
         for bond in mol.GetBonds():
             start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
             row += [start, end]
             col += [end, start]
             edge_type += 2 * [bonds[bond.GetBondType()] + 1]
-        
+
         edge_index = np.array([row, col], dtype=np.int64)
         edge_attr = np.eye(len(bonds) + 1)[edge_type].astype(np.float32)
-        
+
         # Sort edges
         perm = (edge_index[0] * N + edge_index[1]).argsort()
         edge_index = edge_index[:, perm]
         edge_attr = edge_attr[perm]
-        
+
         # Node features
         x = np.eye(len(types))[type_idx].astype(np.float32)
-        
+
         # Remove hydrogens if specified
         if self.remove_h:
             to_keep = np.array(type_idx) > 0
             edge_index, edge_attr = self.subgraph(to_keep, edge_index, edge_attr)
             x = x[to_keep][:, 1:]  # Remove hydrogen feature)
-                
+
             x = x[to_keep]
             x = x[:, 1:]
-        
+
         # Placeholder for graph-lever features
         y = np.zeros((1, 0), dtype=np.float32)
-        
+
         # Build the graph
         graph = self.build_pgl_graph(
             mol,
             edge_indexs=edge_index,
-            node_features = {"x": x},
-            edge_features = {"edge_attr": edge_attr},
-            graph_features = {"graphe_lever_features": y}
+            node_features={"x": x},
+            edge_features={"edge_attr": edge_attr},
+            graph_features={"graphe_lever_features": y},
         )
         return graph
-    
+
     def build_pgl_graph(
-        self,
-        edge_indices,
-        node_features = None,
-        edge_features = None,
-        graph_features = None
+        self, edge_indices, node_features=None, edge_features=None, graph_features=None
     ):
         num_nodes = node_features["x"].shape[0]
 
@@ -836,8 +846,7 @@ class Mol2Graph:
                 graph.graph_feat[key] = value
 
         return graph
-    
-    
+
     @staticmethod
     def subgraph(to_keep, edge_index, edge_attr):
         mask = np.isin(edge_index, np.where(to_keep)[0]).all(axis=0)
