@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from typing import Literal
 
 import paddle
-from pymatgen.core import Structure
 
 from ppmat.datasets.structure_converter import Structure2Graph
 from ppmat.models.chgnet_v2.model.composition_model import AtomRef
@@ -657,53 +656,6 @@ class CHGNet_v2(paddle.nn.Layer):
         prediction["e"] = energy
         return prediction
 
-    def predict_structure(
-        self,
-        structure: Structure | Sequence[Structure],
-        *,
-        task: PredTask = "efsm",
-        return_site_energies: bool = False,
-        return_atom_feas: bool = False,
-        return_crystal_feas: bool = False,
-        batch_size: int = 16,
-    ) -> dict[str, paddle.Tensor] | list[dict[str, paddle.Tensor]]:
-        """Predict from pymatgen.core.Structure.
-
-        Args:
-            structure (Structure | Sequence[Structure]): structure or a list of
-                structures to predict.
-            task (str): can be 'e' 'ef', 'em', 'efs', 'efsm'
-                Default = "efsm"
-            return_site_energies (bool): whether to return per-site energies.
-                Default = False
-            return_atom_feas (bool): whether to return atom features.
-                Default = False
-            return_crystal_feas (bool): whether to return crystal features.
-                Default = False
-            batch_size (int): batch_size for predict structures.
-                Default = 16
-
-        Returns:
-            prediction (dict): dict or list of dict containing the fields:
-                e (Tensor) : energy of structures float in eV/atom
-                f (Tensor) : force on atoms [num_atoms, 3] in eV/A
-                s (Tensor) : stress of structure [3, 3] in GPa
-                m (Tensor) : magnetic moments of sites [num_atoms, 3] in Bohr
-                    magneton mu_B
-        """
-        if self.graph_converter is None:
-            raise ValueError("graph_converter cannot be None!")
-        structures = [structure] if isinstance(structure, Structure) else structure
-        graphs = [self.graph_converter(struct) for struct in structures]
-        return self.predict_graph(
-            graphs,
-            task=task,
-            return_site_energies=return_site_energies,
-            return_atom_feas=return_atom_feas,
-            return_crystal_feas=return_crystal_feas,
-            batch_size=batch_size,
-        )
-
     def predict_graph(
         self,
         graph,
@@ -712,7 +664,6 @@ class CHGNet_v2(paddle.nn.Layer):
         return_site_energies: bool = False,
         return_atom_feas: bool = False,
         return_crystal_feas: bool = False,
-        batch_size: int = 16,
     ) -> dict[str, paddle.Tensor] | list[dict[str, paddle.Tensor]]:
         """Predict from CrustalGraph.
 
