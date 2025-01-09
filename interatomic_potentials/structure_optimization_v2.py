@@ -5,6 +5,8 @@ import os
 import os.path as osp
 import warnings
 
+import matplotlib.pyplot as plt
+import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
@@ -27,6 +29,34 @@ if dist.get_world_size() > 1:
     fleet.init(is_collective=True)
 
 
+def plot(predictions, labels, save_path):
+    if not isinstance(predictions, np.ndarray):
+        predictions = np.asarray(predictions)
+    if not isinstance(labels, np.ndarray):
+        labels = np.asarray(labels)
+
+    # create a new figure and axis
+    fig, ax = plt.subplots()
+
+    # plot the data as a scatter plot
+    ax.scatter(predictions, labels, marker="^", facecolors="b", edgecolors="k")
+
+    # set the title and axis labels
+    ax.set_title("Comparison of Energy Levels per Atom")
+    ax.set_xlabel("Prediction(eV/atom)")
+    ax.set_ylabel("Label(eV/atom)")
+
+    # plot the line y=x
+    # set the axis limits to the same range as the data
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+
+    x_vals = np.linspace(min(xlim[0], ylim[0]), max(xlim[1], ylim[1]), 100)
+    y_vals = x_vals
+    ax.plot(x_vals, y_vals, "--", color="black")
+    fig.savefig(save_path)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -45,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--label_path",
         type=str,
-        default=None,  # "./data/2d_1k/1000/relax.csv",
+        default="./data/2d_1k/1000/relax.csv",
         help="Path to label path",
     )
 
@@ -118,6 +148,8 @@ if __name__ == "__main__":
 
         relaxed_structure = result["final_structure"]
         final_energy = result["trajectory"].energies[-1]
+        if isinstance(final_energy, np.ndarray):
+            final_energy = final_energy[0]
         final_energy_per_atom = final_energy / len(structure)
 
         optimized_cif_file_path = os.path.join(cif_dir, cif_name)
@@ -157,3 +189,12 @@ if __name__ == "__main__":
             f"Prediction results saved to "
             f"{osp.join(config['Global']['output_dir'], 'predictions.csv')}"
         )
+    plot(
+        preds["pred_energy_per_atom"],
+        preds["true_energy_per_atom"],
+        osp.join(config["Global"]["output_dir"], "predictions.png"),
+    )
+    logger.info(
+        f"Plot of predicted vs true energies saved to "
+        f"{osp.join(config['Global']['output_dir'], 'predictions.png')}"
+    )
