@@ -11,6 +11,27 @@ Global:
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
   pretrained_model_path: null # set your pretrained model path here
 
+  # General settings
+  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
+  gpus: 1                     # Multi-gpu is not implemented on this branch
+     # Use absolute path
+  test_only: null
+  check_val_every_n_epochs: 1
+  sample_every_val: 1
+
+  val_check_interval: null
+  samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
+  samples_to_save: 1
+  chains_to_save: 1
+  log_every_steps: 500
+  number_chain_steps: 1        # Number of frames in each gif
+
+  final_model_samples_to_generate: 512
+  final_model_samples_to_save: 512
+  final_model_chains_to_save: 512
+
+  evaluate_all_checkpoints: False
+
 Metric:
   __name__: CSPMetric
   gt_file_path: "./data/mp_20/test.csv"
@@ -18,7 +39,20 @@ Metric:
 Model:
   __name__: MolecularGraphTransformer
   encoder_cfg:
-    hidden_dim: 512
+    hidden_mlp_dims: {
+      'X': 256, 
+      'E': 128, 
+      'y': 256
+    }
+    hidden_dim: {
+      'dx': 256, 
+      'de': 64, 
+      'dy': 256, 
+      'n_head': 8, 
+      'dim_ffX': 256, 
+      'dim_ffE': 128, 
+      'dim_ffy': 256
+    }
     latent_dim: 256
     max_atoms: 100
     num_layers: 6
@@ -31,7 +65,20 @@ Model:
     ln: true
     ip: true
   decoder_cfg:
-    hidden_dim: 512
+    hidden_mlp_dims: {
+      'X': 256, 
+      'E': 128, 
+      'y': 256
+    }
+    hidden_dim: {
+      'dx': 256, 
+      'de': 64, 
+      'dy': 256, 
+      'n_head': 8, 
+      'dim_ffX': 256, 
+      'dim_ffE': 128, 
+      'dim_ffy': 256
+    }
     latent_dim: 256
     max_atoms: 100
     num_layers: 6
@@ -58,13 +105,6 @@ Model:
     hidden_dims : {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
     lambda_train: [5, 0]
     conditdim: 512  
-  beta_scheduler_cfg:
-    timesteps: 1000
-    scheduler_mode: cosine
-  sigma_scheduler_cfg:
-    timesteps: 1000
-    sigma_begin: 0.005
-    sigma_end: 0.5
   time_dim: 256
 
 

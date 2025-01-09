@@ -64,27 +64,27 @@ if __name__ == "__main__":
     logger.info(f"Set random seed to {seed}")
 
     # load dataloader from config
-    train_data_cfg = config["Dataset"]["train"]
-    train_loader = build_dataloader(train_data_cfg)
-    val_data_cfg = config["Dataset"]["val"]
-    val_loader = build_dataloader(val_data_cfg)
-    test_data_cfg = config["Dataset"]["test"]
-    test_loader = build_dataloader(test_data_cfg)
+    #train_data_cfg = config["Dataset"]["train"]
+    #train_loader = build_dataloader(train_data_cfg)
+    #val_data_cfg = config["Dataset"]["val"]
+    #val_loader = build_dataloader(val_data_cfg)
+    #test_data_cfg = config["Dataset"]["test"]
+    #test_loader = build_dataloader(test_data_cfg)
 
     # build datasetinfo
-    dataset_infos = CHnmr_dataset.CHnmrinfos(datamodule=train_loader, cfg=config)
-    train_smiles = CHnmr_dataset.get_train_smiles(cfg=config, train_dataloader=train_loader,
-                                                        dataset_infos=dataset_infos, evaluate_dataset=False)
+    #dataset_infos = CHnmr_dataset.CHnmrinfos(datamodule=train_loader, cfg=config)
+    #train_smiles = CHnmr_dataset.get_train_smiles(cfg=config, train_dataloader=train_loader,
+    #                                                    dataset_infos=dataset_infos, evaluate_dataset=False)
     
     # extra features
-    if config.model.model_setting.extra_features is not None:
-        extra_features = ExtraFeatures(config.model.model_setting.extra_features, dataset_info=dataset_infos)
-        domain_features = ExtraFeatures(config.model.model_setting.extra_features, dataset_infos=dataset_infos)
+    if config["Model"]["model_setting"]["extra_features"] is not None:
+        extra_features = ExtraFeatures(config["Model"]["model_setting"]["extra_features"], dataset_info=dataset_infos)
+        domain_features = ExtraFeatures(config["Model"]["model_setting"]["extra_features"], dataset_infos=dataset_infos)
     else:
         extra_features = DummyExtraFeatures()
         domain_features = DummyExtraFeatures()
     
-    dataset_infos.compute_input_output_dims(datamodule=train_loader, extra_features=extra_features, domain_features=domain_features, conditionDim=config.model.model_setting.conditdim)
+    #dataset_infos.compute_input_output_dims(datamodule=train_loader, extra_features=extra_features, domain_features=domain_features, conditionDim=config.model.model_setting.conditdim)
     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
     sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
     visualization_tools = MolecularVisualization(config.Dataset.train.remove_h, dataset_infos=dataset_infos)
