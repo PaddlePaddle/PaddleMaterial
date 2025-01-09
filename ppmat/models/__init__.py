@@ -10,11 +10,12 @@ from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.digress.base_model import (
-    MolecularGraphTransformer,
-    ContrastGraphTransformer,
-    ConditionGraphTransformer
-)
+
+# from ppmat.models.digress.base_model import (
+#     MolecularGraphTransformer,
+#     ContrastGraphTransformer,
+#     ConditionGraphTransformer
+# )
 from ppmat.utils import logger
 
 __all__ = [
@@ -26,9 +27,9 @@ __all__ = [
     "CSPDiffusionWithD3PM",
     "MatterGen",
     "iComformer",
-    "MolecularGraphTransformer",
-    "ContrastGraphTransformer",
-    "ConditionGraphTransformer",
+    # "MolecularGraphTransformer",
+    # "ContrastGraphTransformer",
+    # "ConditionGraphTransformer",
     "CHGNet",
     "CHGNet_v2",
 ]
