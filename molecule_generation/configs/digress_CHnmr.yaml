@@ -104,7 +104,8 @@ Model:
     # The dimensions should satisfy dx % n_head == 0
     hidden_dims : {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
     lambda_train: [5, 0]
-    conditdim: 512  
+    conditdim: 512
+    
   time_dim: 256
 
 
@@ -127,6 +128,8 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/train.csv"
+      data: "./data/CHnmr/train.csv"
+      stage: "./data/CHnmr/train.csv"
       cache: True
       remove_h: True
     loader:

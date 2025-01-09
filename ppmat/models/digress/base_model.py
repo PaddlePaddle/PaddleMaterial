@@ -22,6 +22,8 @@ from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
 
+import rdkit
+
 
 class MolecularGraphTransformer(paddle.nn.Layer):
     def __init__(
@@ -29,29 +31,29 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         extra_features, domain_features
     ) -> None:
         super().__init__()
-
-        input_dims = dataset_infos.input_dims
-        output_dims = dataset_infos.output_dims
-        nodes_dist = dataset_infos.nodes_dist
-
+        
+        #############################################################
+        # configure general variables settings
+        #############################################################
         self.cfg = cfg
         self.name = cfg.general.name
         self.model_dtype = cfg.model.model_dtype
         self.T = cfg.model.diffusion_steps
-
-        # use for loss calculation
-        self.Xdim = input_dims['X']
-        self.Edim = input_dims['E']
-        self.ydim = input_dims['y']
-        self.Xdim_output = output_dims['X']
-        self.Edim_output = output_dims['E']
-        self.ydim_output = output_dims['y']
-        self.node_dist = nodes_dist
-
+        self.visualization_tools = visualization_tools
+        
+        #############################################################
+        # configure datasets inter-varibles
+        #############################################################
+        input_dims = dataset_infos.input_dims
+        output_dims = dataset_infos.output_dims
+        self.nodes_dist = dataset_infos.nodes_dist
         self.dataset_info = dataset_infos
+        self.extra_features = extra_features
+        self.domain_features = domain_features
 
-        self.train_loss = TrainLossDiscrete(self.cfg.model.lambda_train)
-
+        #############################################################
+        # configure generated datas for visualization after forward
+        #############################################################
         self.val_nll = NLL()
         self.val_X_kl = SumExceptBatchKL()
         self.val_E_kl = SumExceptBatchKL()
@@ -75,39 +77,9 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
 
-        self.visualization_tools = visualization_tools
-        self.extra_features = extra_features
-        self.domain_features = domain_features
-        
-        self.model_dtype = "float32"
-        self.T = cfg.model.diffusion_steps
-
-        self.con_input_dim = dataset_infos.input_dims
-        self.con_input_dim["X"] = self.input_dims["X"] - 8
-        self.con_input_dim["y"] = 1024
-        self.con_output_dim = dataset_infos.output_dims
-        self.node_dist = dataset_infos.nodes_dist
-
-        self.Xdim = dataset_infos.input_dims["X"]
-        self.Edim = dataset_infos.input_dims["E"]
-        self.ydim = dataset_infos.input_dims["y"]
-        self.Xdim_output = dataset_infos.output_dims["X"]
-        self.Edim_output = dataset_infos.output_dims["E"]
-        self.ydim_output = dataset_infos.output_dims["y"]
-
-        self.dataset_info = dataset_infos
-
-        # container
-        self.val_y_collection = []
-        self.val_atomCount = []
-        self.val_data_X = []
-        self.val_data_E = []
-        self.test_y_collection = []
-        self.test_atomCount = []
-        self.test_data_X = []
-        self.test_data_E = []
-
+        #############################################################
         # configure model
+        #############################################################
         self.encoder = GraphTransformer_C(
             n_layers=self.cfg["Model"]["encoder_cfg"]["hidden_dims"],
             input_dims = input_dims,
@@ -118,20 +90,40 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             act_fn_out = nn.ReLU(),
         )
         
+        self.con_input_dim = dataset_infos.input_dims
+        self.con_input_dim["X"] = self.input_dims["X"] - 8
+        self.con_input_dim["y"] = 1024
+        self.con_output_dim = dataset_infos.output_dims
+        
         self.decoder = GraphTransformer(
             n_layers=self.cfg["Model"]["encoder_cfg"]["hidden_dims"],
             input_dims = self.con_input_dim,
             hidden_mlp_dims = self.cfg["Model"]["hidden_mlp_dims"],
             hidden_dims = self.cfg["Model"]["hidden_dims"],
-            output_dims = self.con_output_dims,
+            output_dims = self.con_output_dim,
             act_fn_in = nn.ReLU(),
             act_fn_out = nn.ReLU(),
         )
 
-        # noise scheduler
+        #############################################################
+        # configure noise scheduler
+        #############################################################
         self.noise_scheduler = PredefinedNoiseScheduleDiscrete(
-            self.cfg["model"]["model_setting"]["diffusion_noise_schedule"], timesteps=self.T
+            self.cfg["model"]["model_setting"]["diffusion_noise_schedule"], 
+            timesteps=self.T
         )
+        
+        
+        #############################################################
+        # configure loss calculation with initialization of transition model
+        #############################################################
+        self.Xdim = input_dims['X']
+        self.Edim = input_dims['E']
+        self.ydim = input_dims['y']
+        self.Xdim_output = output_dims['X']
+        self.Edim_output = output_dims['E']
+        self.ydim_output = output_dims['y']
+        self.node_dist = dataset_infos.nodes_dist
 
         # Transition Model
         if cfg.model.transition == "uniform":
@@ -146,10 +138,10 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             self.limit_dist = utils.PlaceHolder(X=x_limit, E=e_limit, y=y_limit)
 
         elif cfg.model.transition == "marginal":
-            node_types = self.dataset_info.node_types.astype("float32")
+            node_types = self.dataset_info.node_types.astype(self.model_dtype)
             x_marginals = node_types / paddle.sum(node_types)
 
-            edge_types = self.dataset_info.edge_types.astype("float32")
+            edge_types = self.dataset_info.edge_types.astype(self.model_dtype)
             e_marginals = edge_types / paddle.sum(edge_types)
             print(
                 f"Marginal distribution of classes: {x_marginals} for nodes, {e_marginals} for edges"
@@ -165,14 +157,31 @@ class MolecularGraphTransformer(paddle.nn.Layer):
                 E=e_marginals,
                 y=paddle.ones([self.ydim_output]) / self.ydim_output,
             )
-
-        # other properties
+        
+        # configure loss
+        self.train_loss = TrainLossDiscrete(self.cfg.model.lambda_train)
+        
+        #############################################################
+        # configure training setting and other properties
+        #############################################################
         self.start_epoch_time = None
         self.best_val_nll = 1e8
         self.val_counter = 0
         self.vocabDim = 256
         self.number_chain_steps = self.cfg["general"]["number_chain_steps"]
         self.log_every_steps = self.cfg["general"]["log_every_steps"]
+        
+        #############################################################
+        # configure key data container
+        #############################################################
+        self.val_y_collection = []
+        self.val_atomCount = []
+        self.val_data_X = []
+        self.val_data_E = []
+        self.test_y_collection = []
+        self.test_atomCount = []
+        self.test_data_X = []
+        self.test_data_E = []
 
     def forward(self, batch, i: int):
 
@@ -180,8 +189,6 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         if batch.edge_index.numel() == 0:
             print("Found a batch with no edges. Skipping.")
             return None
-        
-        # transfer to dense graph from sparse graph
         dense_data, node_mask = utils.to_dense(
             batch.x, batch.edge_index, batch.edge_attr, batch.batch
         )
@@ -189,7 +196,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         X, E = dense_data.X, dense_data.E
 
         # add noise to the inputs (X, E)
-        noisy_data = self.apply_noise(X, E, batch.y, node_mask)
+        noisy_data = self.apply_noise(dense_data.X, dense_data.E, batch.y, node_mask)
         extra_data = self.compute_extra_data(noisy_data)
 
         
@@ -241,18 +248,15 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         """
         Sample noise and apply it to the data.
         """
-        bs = X.shape[0]
-        # t_int in [1, T]
-        t_int = paddle.randint(low=1, high=self.T + 1, shape=[bs, 1], dtype="int64")
-        t_int = t_int.astype("float32")
+        t_int = paddle.randint(low=1, high=self.T + 1, shape=[X.shape[0], 1], dtype="int64").astype("float32")
         s_int = t_int - 1
 
         t_float = t_int / self.T
         s_float = s_int / self.T
 
-        beta_t = self.noise_schedule(t_normalized=t_float)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s_float)
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)
+        beta_t = self.noise_scheduler(t_normalized=t_float)
+        alpha_s_bar = self.noise_scheduler.get_alpha_bar(t_normalized=s_float)
+        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_normalized=t_float)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=None)
         # probX = X @ Qtb.X => paddle.matmul(X, Qtb.X)
@@ -296,117 +300,76 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
     @paddle.no_grad()
-    def sample(self, data, i):
-
-        self.on_validation_epoch_start()
-
+    def sample(self, batch, i):
+        # transfer to dense graph from sparse graph
         dense_data, node_mask = utils.to_dense(
-            data.x, data.edge_index, data.edge_attr, data.batch
+            batch.x, batch.edge_index, batch.edge_attr, batch.batch
         )
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
-        noisy_data = self.apply_noise(dense_data.X, dense_data.E, data.y, node_mask)
+
+        # add noise to the inputs (X, E)
+        noisy_data = self.apply_noise(dense_data.X, dense_data.E, batch.y, node_mask)
         extra_data = self.compute_extra_data(noisy_data)
 
-        batch_length = data.num_graphs
-        conditionAll = data.conditionVec
-        conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
-
         pred = self.forward(noisy_data, extra_data, node_mask, X, E)
-        self.val_y_collection.append(data.conditionVec)
-        self.val_atomCount.append(data.atom_count)
-        self.val_data_X.append(X)
-        self.val_data_E.append(E)
+        
+        # input_X
+        input_X = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype(
+            "float32"
+        )
+        
+        # input_E
+        input_E = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype(
+            "float32"
+        )
+        
+        # input_y
+        input_y = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype(
+            "float32"
+        )
+        y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
+        conditionVec = self.encoder(X, E, y_condition, node_mask)
+        input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
+        
+        # forward of decoder with encoder output as condition vector of input of decoder
+        pred = self.decoder(input_X, input_E, input_y, node_mask)
+        
+        # evaluate the loss especially in the inference stage
         loss = self.train_loss(
             masked_pred_X=pred.X,
             masked_pred_E=pred.E,
             pred_y=pred.y,
             true_X=X,
             true_E=E,
-            true_y=data.y,
+            true_y=batch.y,
             log=i % self.log_every_steps == 0,
         )
         if i % 10 == 0:
             print(f"val_loss:{loss}")
+
+        batch_length = batch.num_graphs
+        conditionAll = batch.conditionVec
+        conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
+        
         nll = self.compute_val_loss(
             pred,
             noisy_data,
             dense_data.X,
             dense_data.E,
-            data.y,
+            batch.y,
             node_mask,
             condition=conditionAll,
             test=False,
         )
+        
+        # save the data for visualization
+        self.val_y_collection.append(batch.conditionVec)
+        self.val_atomCount.append(batch.atom_count)
+        self.val_data_X.append(X)
+        self.val_data_E.append(E)
+        
         return {"loss": nll}
-
-    # ----------------------
-    #  前向 & 模型推断相关
-    # ----------------------
-
-    @paddle.no_grad()
-    def forward_sample(self, noisy_data, extra_data, node_mask, batch_X, batch_E):
-        """
-        用于 sampling 时的推断：同上，但不记录梯度
-        """
-        X = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype("float32")
-        E = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype("float32")
-        y = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype("float32")
-        return self.model(X, E, y, node_mask, batch_X, batch_E)
-
-    # ----------------------
-    #  Noise / Posterior 相关
-    # ----------------------
-    def apply_noise(self, X, E, y, node_mask):
-        """
-        1. 在 [1, T] 范围内随机抽样 t
-        2. 将 X,E 按照 alpha_t_bar 变为 X_t, E_t
-        """
-        lowest_t = 1
-        t_int = paddle.randint(
-            lowest_t, self.T + 1, shape=[X.shape[0], 1], dtype="int64"
-        ).astype(
-            "float32"
-        )  # (bs,1)
-        s_int = t_int - 1
-
-        t_float = t_int / self.T
-        s_float = s_int / self.T
-
-        # 取得 beta_t, alpha_s_bar, alpha_t_bar
-        beta_t = self.noise_schedule(t_normalized=t_float)  # (bs,1)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s_float)
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)
-
-        # 计算 Q_t^bar
-        Qtb = self.transition_model.get_Qt_bar(
-            alpha_t_bar, device=None
-        )  # 不显式 device, Paddle 中 tensor 会自动管理
-        probX = paddle.matmul(X, Qtb.X)  # (bs,n,dx_out)
-        # 对 E 做 broadcast
-        probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs,n,n,de_out)
-
-        # Sample x_t, e_t
-        sampled_t = diffusion_utils.sample_discrete_features(
-            probX=probX, probE=probE, node_mask=node_mask
-        )
-        X_t = F.one_hot(sampled_t.X, num_classes=self.Xdim_output)
-        E_t = F.one_hot(sampled_t.E, num_classes=self.Edim_output)
-
-        z_t = utils.PlaceHolder(X=X_t, E=E_t, y=y).astype("float32").mask(node_mask)
-
-        noisy_data = {
-            "t_int": t_int,
-            "t": t_float,
-            "beta_t": beta_t,
-            "alpha_s_bar": alpha_s_bar,
-            "alpha_t_bar": alpha_t_bar,
-            "X_t": z_t.X,
-            "E_t": z_t.E,
-            "y_t": z_t.y,
-            "node_mask": node_mask,
-        }
-        return noisy_data
 
     def compute_val_loss(
         self, pred, noisy_data, X, E, y, node_mask, condition, test=False
@@ -440,7 +403,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         nll = (self.test_nll if test else self.val_nll)(nlls)
 
         return nll
-
+    
     def kl_prior(self, X, E, node_mask):
         """
         KL between q(zT|x) and prior p(zT)=Uniform(...)
@@ -448,7 +411,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         bs = X.shape[0]
         ones = paddle.ones([bs, 1], dtype="float32")
         Ts = self.T * ones
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_int=Ts)  # (bs,1)
+        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_int=Ts)  # (bs,1)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, None)
         probX = paddle.matmul(X, Qtb.X)  # (bs,n,dx_out)
@@ -479,7 +442,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         klX_sum = diffusion_utils.sum_except_batch(kl_distance_X)
         klE_sum = diffusion_utils.sum_except_batch(kl_distance_E)
         return klX_sum + klE_sum
-
+    
     def compute_Lt(self, X, E, y, pred, noisy_data, node_mask, test):
         """
         逐步扩散的 KL 估计
@@ -543,14 +506,14 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             prob_true.E, paddle.log(prob_pred.E + 1e-10)
         )
         return self.T * (kl_x + kl_e)
-
+    
     def reconstruction_logp(self, t, X, E, node_mask, condition):
         """
         L0: - log p(X,E|z0)
         这里随机从 X0, E0 采样, 再前向
         """
         t_zeros = paddle.zeros_like(t)
-        beta_0 = self.noise_schedule(t_zeros)
+        beta_0 = self.noise_scheduler(t_zeros)
         Q0 = self.transition_model.get_Qt(beta_t=beta_0, device=None)
 
         probX0 = paddle.matmul(X, Q0.X)
@@ -590,10 +553,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
 
         # 返回概率
         return utils.PlaceHolder(X=probX0, E=probE0, y=proby0)
-
-    # -----------------------
-    # Sampling 相关
-    # -----------------------
+    
+    
     @paddle.no_grad()
     def sample_batch(
         self,
@@ -723,15 +684,25 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         return molecule_list, molecule_list_True
 
     @paddle.no_grad()
+    def forward_sample(self, noisy_data, extra_data, node_mask, batch_X, batch_E):
+        """
+        用于 sampling 时的推断：同上，但不记录梯度
+        """
+        X = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype("float32")
+        E = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype("float32")
+        y = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype("float32")
+        return self.model(X, E, y, node_mask, batch_X, batch_E)
+
+    @paddle.no_grad()
     def sample_p_zs_given_zt(
         self, s, t, X_t, E_t, y_t, node_mask, conditionVec, batch_X, batch_E
     ):
         """
         从 p(z_s | z_t) 采样: 反向扩散一步
         """
-        beta_t = self.noise_schedule(t_normalized=t)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
+        beta_t = self.r(t_normalized=t)
+        alpha_s_bar = self.noise_scheduler.get_alpha_bar(t_normalized=s)
+        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_normalized=t)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, None)
         Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, None)
@@ -798,23 +769,6 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         )
 
         return out_one_hot.mask(node_mask), out_discrete.mask(node_mask, collapse=True)
-
-    # -----------------------
-    # 额外特征
-    # -----------------------
-    def compute_extra_data(self, noisy_data):
-        """将 extra_features 与 domain_features 结合到X/E/y最终输入中。"""
-        extra_features = self.extra_features(noisy_data)
-        extra_molecular_features = self.domain_features(noisy_data)
-
-        extra_X = paddle.concat([extra_features.X, extra_molecular_features.X], axis=-1)
-        extra_E = paddle.concat([extra_features.E, extra_molecular_features.E], axis=-1)
-        extra_y = paddle.concat([extra_features.y, extra_molecular_features.y], axis=-1)
-
-        t = noisy_data["t"]
-        extra_y = paddle.concat([extra_y, t], axis=1)
-
-        return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
     # -----------------------
     # 分子可视化/对比
