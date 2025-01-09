@@ -7,14 +7,21 @@ from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
-from ppmat.metrics import build_metric
-from ppmat.models import build_model
-from ppmat.optimizer import build_optimizer
-from ppmat.trainer.trainer_multimodal import (
-    TrainerGraph, 
-    TrainerCLIP, 
-    TrainerMultiModal
+from ppmat.datasets import CHnmr_dataset
+from ppmat.models.digress.extra_features_graph import DummyExtraFeatures, ExtraFeatures
+from ppmat.metrics.molecular_metrics_discrete import TrainMolecularMetricsDiscrete
+from ppmat.metrics.molecular_metrics import SamplingMolecularMetrics
+from ppmat.utils.visualization import MolecularVisualization
+from ppmat.models.digress.base_model import (
+    MolecularGraphTransformer,
+    ContrastGraphTransformer,
+    ConditionGraphTransformer
 )
+
+from ppmat.optimizer import build_optimizer
+from ppmat.trainer.trainer_multimodal import TrainerCLIP
+from ppmat.trainer.trainer_multimodal import TrainerGraph
+from ppmat.trainer.trainer_multimodal import TrainerMultiModal
 from ppmat.utils import logger
 from ppmat.utils import misc
 
@@ -56,11 +63,7 @@ if __name__ == "__main__":
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 
-    # build model from config
-    model_cfg = config["Model"]
-    model = build_model(model_cfg)
-    # build dataloader from config
-    set_signal_handlers()
+    # load dataloader from config
     train_data_cfg = config["Dataset"]["train"]
     train_loader = build_dataloader(train_data_cfg)
     val_data_cfg = config["Dataset"]["val"]
@@ -68,17 +71,38 @@ if __name__ == "__main__":
     test_data_cfg = config["Dataset"]["test"]
     test_loader = build_dataloader(test_data_cfg)
 
-    # build metric from config
-    metric_cfg = config["Metric"]
-    metric_class = build_metric(metric_cfg)
-    # metric_class = None
+    # build datasetinfo
+    dataset_infos = CHnmr_dataset.CHnmrinfos(datamodule=train_loader, cfg=config)
+    train_smiles = CHnmr_dataset.get_train_smiles(cfg=config, train_dataloader=train_loader,
+                                                        dataset_infos=dataset_infos, evaluate_dataset=False)
+    
+    # extra features
+    if config.model.model_setting.extra_features is not None:
+        extra_features = ExtraFeatures(config.model.model_setting.extra_features, dataset_info=dataset_infos)
+        domain_features = ExtraFeatures(config.model.model_setting.extra_features, dataset_infos=dataset_infos)
+    else:
+        extra_features = DummyExtraFeatures()
+        domain_features = DummyExtraFeatures()
+    
+    dataset_infos.compute_input_output_dims(datamodule=train_loader, extra_features=extra_features, domain_features=domain_features, conditionDim=config.model.model_setting.conditdim)
+    train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
+    sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
+    visualization_tools = MolecularVisualization(config.Dataset.train.remove_h, dataset_infos=dataset_infos)
+    
+    model_kwargs = {'dataset_infos': dataset_infos,
+                    'train_metrics': train_metrics,
+                    'sampling_metrics': sampling_metrics,
+                    'visualization_tools': visualization_tools,
+                    'extra_features': extra_features,
+                    'domain_features': domain_features}
 
-    # build optimizer and learning rate scheduler from config
-    optimizer, lr_scheduler = build_optimizer(
-        config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
-    )
     # initialize trainer
     if args.step == 1:
+        model = MolecularGraphTransformer(config["Model"], **model_kwargs)
+        # build optimizer and learning rate scheduler from config
+        optimizer, lr_scheduler = build_optimizer(
+            config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
+        )
         trainer = TrainerGraph(
             config,
             model,
@@ -87,9 +111,15 @@ if __name__ == "__main__":
             test_dataloader=test_loader,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
-            metric_class=metric_class,
+            metric_class=train_metrics,
         )
+
     elif args.mode == 2:
+        model = ContrastGraphTransformer(config["Model"], **model_kwargs)
+        # build optimizer and learning rate scheduler from config
+        optimizer, lr_scheduler = build_optimizer(
+            config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
+        )
         trainer = TrainerCLIP(
             config,
             model,
@@ -98,9 +128,15 @@ if __name__ == "__main__":
             test_dataloader=test_loader,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
-            metric_class=metric_class,
+            metric_class=train_metrics,
         )
+
     elif args.mode == 3:
+        model = ConditionGraphTransformer(config["Model"], **model_kwargs)
+        # build optimizer and learning rate scheduler from config
+        optimizer, lr_scheduler = build_optimizer(
+            config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
+        )
         trainer = TrainerMultiModal(
             config,
             model,
@@ -109,7 +145,7 @@ if __name__ == "__main__":
             test_dataloader=test_loader,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
-            metric_class=metric_class,
+            metric_class=train_metrics,
         )
     if args.mode == "train":
         trainer.train()

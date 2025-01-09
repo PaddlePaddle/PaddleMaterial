@@ -1,11 +1,76 @@
 import paddle
 import wandb
 from rdkit import Chem
-from src.analysis.rdkit_functions import compute_molecular_metrics
-from torchmetrics import MeanAbsoluteError
-from torchmetrics import MeanSquaredError
-from torchmetrics import Metric
-from torchmetrics import MetricCollection
+from ppmat.datasets.ext_rdkit import compute_molecular_metrics
+from paddle.metric import Metric
+
+###### custom base metrics ######
+# Mean Absolute Error (MAE)
+class MeanAbsoluteError(paddle.metric.Metric):
+    def __init__(self):
+        super().__init__()
+        self.reset()
+
+    def reset(self):
+        self.sum_abs_error = 0.0
+        self.total_samples = 0
+
+    def update(self, preds, target):
+        abs_error = paddle.abs(preds - target).sum().item()
+        self.sum_abs_error += abs_error
+        self.total_samples += target.shape[0]
+
+    def accumulate(self):
+        return self.sum_abs_error / self.total_samples if self.total_samples > 0 else 0.0
+
+    def name(self):
+        return "mean_absolute_error"
+
+# Mean Squared Error (MSE)
+class MeanSquaredError(paddle.metric.Metric):
+    def __init__(self):
+        super().__init__()
+        self.reset()
+
+    def reset(self):
+        self.sum_squared_error = 0.0
+        self.total_samples = 0
+
+    def update(self, preds, target):
+        squared_error = paddle.square(preds - target).sum().item()
+        self.sum_squared_error += squared_error
+        self.total_samples += target.shape[0]
+
+    def accumulate(self):
+        return self.sum_squared_error / self.total_samples if self.total_samples > 0 else 0.0
+
+    def name(self):
+        return "mean_squared_error"
+
+# Metric Collection
+class MetricCollection:
+    def __init__(self, metrics):
+        self.metrics = metrics
+
+    def update(self, preds, target):
+        for metric in self.metrics.values():
+            metric.update(preds, target)
+
+    def compute(self):
+        results = {}
+        for name, metric in self.metrics.items():
+            results[name] = metric.accumulate()
+        return results
+
+    def reset(self):
+        for metric in self.metrics.values():
+            metric.reset()
+
+##############################################################
+
+
+
+
 
 
 class TrainMolecularMetrics(paddle.nn.Layer):
@@ -462,5 +527,16 @@ class BondMetrics(MetricCollection):
         super().__init__([mse_no_bond, mse_SI, mse_DO, mse_TR, mse_AR])
 
 
+# 示例用法
 if __name__ == "__main__":
-    from torchmetrics.utilities import check_forward_full_state_property
+    mae = MeanAbsoluteError()
+    mse = MeanSquaredError()
+    metric_collection = MetricCollection({"mae": mae, "mse": mse})
+
+    preds = paddle.to_tensor([3.0, 2.0, 7.0])
+    targets = paddle.to_tensor([2.0, 2.0, 6.0])
+
+    metric_collection.update(preds, targets)
+    results = metric_collection.compute()
+    print("Results:", results)
+

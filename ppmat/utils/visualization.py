@@ -7,7 +7,6 @@ import imageio
 import networkx as nx
 import numpy as np
 import rdkit.Chem
-import wandb
 import matplotlib.pyplot as plt
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -74,9 +73,6 @@ class MolecularVisualization:
                 ][1].numpy())
             try:
                 Draw.MolToFile(mol, file_path)
-                if wandb.run and log is not None:
-                    print(f'Saving {file_path} to wandb')
-                    wandb.log({log: wandb.Image(file_path)}, commit=True)
             except rdkit.Chem.KekulizeException:
                 print("Can't kekulize molecule")
 
@@ -105,9 +101,6 @@ class MolecularVisualization:
                 fp2 = RDKFingerprint(mol_true)
                 similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
                 print(f'Tanimoto相似度: {similarity}')
-                if wandb.run and log is not None:
-                    print(f'Saving {file_path} to wandb')
-                    wandb.log({log: wandb.Image(file_path)}, commit=True)
             except rdkit.Chem.KekulizeException:
                 print("Can't kekulize molecule")
 
@@ -140,10 +133,6 @@ class MolecularVisualization:
             .split('/')[-1]))
         imgs.extend([imgs[-1]] * 10)
         imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)
-        if wandb.run:
-            print(f'Saving {gif_path} to wandb')
-            wandb.log({'chain': wandb.Video(gif_path, fps=5, format='gif')},
-                commit=True)
         try:
             img = Draw.MolsToGridImage(mols, molsPerRow=10, subImgSize=(200,
                 200))
@@ -206,8 +195,6 @@ class NonMolecularVisualization:
                 )
             self.visualize_non_molecule(graph=graph, pos=None, path=file_path)
             im = plt.imread(file_path)
-            if wandb.run and log is not None:
-                wandb.log({log: [wandb.Image(im, caption=file_path)]})
 
     def visualize_chain(self, path, nodes_list, adjacency_matrix):
         graphs = [self.to_networkx(nodes_list[i], adjacency_matrix[i]) for
@@ -226,6 +213,3 @@ class NonMolecularVisualization:
             .split('/')[-1]))
         imgs.extend([imgs[-1]] * 10)
         imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)
-        if wandb.run:
-            wandb.log({'chain': [wandb.Video(gif_path, caption=gif_path,
-                format='gif')]})

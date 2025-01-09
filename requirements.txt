@@ -25,3 +25,4 @@ tqdm==4.66.4
 typing_extensions==4.12.2
 visualdl==2.5.3
 wandb==0.18.3
+imageio
