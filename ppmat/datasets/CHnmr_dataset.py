@@ -1,9 +1,11 @@
 import os
+import warnings
 
 # import random
 from typing import Callable
 from typing import List
 from typing import Literal
+from typing import Optional
 from typing import Tuple
 from typing import Union
 
@@ -11,14 +13,12 @@ import numpy as np
 import paddle
 import paddle.nn.functional as F
 import pandas as pd
+import pgl
 from paddle.io import Dataset
 from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
-
-from ppmat.datasets.base_dataset import GraphData
-from ppmat.datasets.base_dataset import subgraph
 
 # from ppmat.datasets.ext_rdkit import build_molecule_with_partial_charges
 # from ppmat.datasets.ext_rdkit import compute_molecular_metrics
@@ -53,14 +53,15 @@ class CHnmrData:
 
     def __init__(
         self,
-        data_path: Union[str, List[str]],
+        path: Union[str, List[str]],
         vocab_path: str,
         remove_h=False,
         pre_transform: Callable = None,
         pre_filter: Callable = None,
         split_ratio: Tuple = (0.9, 0.05, 0.05),
+        stage: Literal["train", "val", "test"] = None,
     ):
-        self.data_path = data_path
+        self.path = path
         self.vocab_path = vocab_path
         self.remove_h = remove_h
         self.pre_transform = pre_transform
@@ -71,20 +72,19 @@ class CHnmrData:
         self.vocab_to_id = {"<blank>": 0, "<unk>": 1}
 
         self.get_vocab_id_dict()
-        if isinstance(data_path, str):
-            dataset = self.load_data(data_path, True)
-        elif len(data_path) == 3:
-            dataset = [self.load_data(path, False) for path in data_path]
+        if stage is not None:
+            dataset = self.load_data(path, False)
+            setattr(self, stage, dataset)
         else:
-            raise ValueError("data_path should 'str' or 'tuple' with lenght==3")
+            dataset = self.load_data(path, True)
 
-        dataset_proc = []
-        for target_df in dataset:
-            dataset_proc.append(self.process(target_df))
+            dataset_proc = []
+            for target_df in dataset:
+                dataset_proc.append(self.process(target_df))
 
-        setattr(self, "train", dataset_proc[0])
-        setattr(self, "val", dataset_proc[1])
-        setattr(self, "test", dataset_proc[2])
+            setattr(self, "train", dataset_proc[0])
+            setattr(self, "val", dataset_proc[1])
+            setattr(self, "test", dataset_proc[2])
 
     def get_vocab_id_dict(self):
         with open(self.vocab_path, "r", encoding="utf-8") as vocab_file:
@@ -111,7 +111,7 @@ class CHnmrData:
             dataset.sample(frac=1, random_state=42), [n_train, n_val + n_train]
         )
 
-        data_dir = os.path.dirname(self.data_path)
+        data_dir = os.path.dirname(self.path)
         train_file_path = os.path.join(data_dir, "train_paddle.csv")
         val_file_path = os.path.join(data_dir, "val_paddle.csv")
         test_file_path = os.path.join(data_dir, "test_paddle.csv")
@@ -195,9 +195,15 @@ class CHnmrData:
                 x = x[:, 1:]
 
             # 创建 Data 对象，并包含额外的信息（tokenized_input 和 atom_count）
-            data = GraphData(
-                x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, idx=idx
+            data = pgl.Graph(
+                num_nodes=x.shape[0],
+                edges=edge_index.T.numpy(),
+                node_feat={"feat": x.numpy()},
+                edge_feat={"feat": edge_attr.numpy()},
+                y=y,
+                idx=idx,
             )
+
             data.conditionVec = paddle.to_tensor(
                 numericalize_text(
                     text=tokenized_input,
@@ -219,7 +225,25 @@ class CHnmrData:
 
 
 class CHnmrDataset(Dataset):
-    def __init__(self, data, stage: Literal["train", "val", "test"], **kwargs):
+    def __init__(
+        self,
+        path: Union[str, List[str]],
+        vocab_path: str,
+        remove_h=False,
+        pre_transform: Callable = None,
+        pre_filter: Callable = None,
+        split_ratio: Tuple = (0.9, 0.05, 0.05),
+        stage: Literal["train", "val", "test"] = "test",
+        **kwargs,
+    ):
+        data = CHnmrData(
+            path,
+            vocab_path,
+            remove_h,
+            pre_transform,
+            pre_filter,
+            split_ratio,
+        )
         self.dataset = getattr(data, stage)
 
         # # TODO: apply transform
@@ -477,3 +501,152 @@ class CHnmrDatasetInfos:
 #     print("Number of invalid molecules", invalid)
 #     print("Number of disconnected molecules", disconnected)
 #     return mols_smiles
+
+
+def subgraph(
+    subset: Union[paddle.Tensor, List[int]],
+    edge_index: paddle.Tensor,
+    edge_attr: paddle.Tensor = None,
+    relabel_nodes: bool = False,
+    num_nodes: Optional[int] = None,
+    *,
+    return_edge_mask: bool = False,
+) -> Union[Tuple[paddle.Tensor], Tuple[paddle.Tensor]]:
+    r"""Returns the induced subgraph of :obj:`(edge_index, edge_attr)`
+    containing the nodes in :obj:`subset`.
+    """
+
+    if isinstance(subset, (list, tuple)):
+        subset = paddle.to_tensor(subset, dtype=paddle.int64)
+
+    assert subset.dtype == paddle.bool, "subset.dtype should be paddle.bool now."
+
+    num_nodes = subset.shape[0]
+    node_mask = subset
+    node_mask_int = node_mask.astype("int64")
+    subset = paddle.nonzero(node_mask_int).reshape([-1])
+    edge_mask = node_mask_int[edge_index[0]] & node_mask_int[edge_index[1]]
+    edge_index = paddle.gather(
+        edge_index, paddle.nonzero(edge_mask).reshape([-1]), axis=1
+    )
+    edge_attr = (
+        paddle.gather(edge_attr, paddle.nonzero(edge_mask).reshape([-1]), axis=0)
+        if edge_attr is not None
+        else None
+    )
+
+    if relabel_nodes:
+        edge_index_mapped, _ = map_index(
+            src=edge_index.reshape([-1]),
+            index=subset,
+            max_index=num_nodes,
+            inclusive=True,
+        )
+        edge_index = edge_index_mapped.reshape([2, -1])
+
+    if return_edge_mask:
+        return edge_index, edge_attr, edge_mask
+    else:
+        return edge_index, edge_attr
+
+
+def map_index(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    max_index: Optional[Union[int, paddle.Tensor]] = None,
+    inclusive: bool = False,
+) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
+    if src.dtype in [paddle.float32, paddle.float64]:
+        raise ValueError(f"Expected 'src' to be an index (got '{src.dtype}')")
+    if index.dtype in [paddle.float32, paddle.float64]:
+        raise ValueError(f"Expected 'index' to be an index (got '{index.dtype}')")
+    if str(src.place) != str(index.place):
+        raise ValueError(
+            "Both 'src' and 'index' must be on the same device "
+            f"(got '{src.place}' and '{index.place}')"
+        )
+
+    if max_index is None:
+        max_index = paddle.maximum(src.max(), index.max()).item()
+
+    # Thresholds may need to be adjusted based on memory constraints
+    THRESHOLD = 40_000_000 if src.place.is_gpu_place() else 10_000_000
+    if max_index <= THRESHOLD:
+        if inclusive:
+            assoc = paddle.empty((max_index + 1,), dtype=src.dtype)
+        else:
+            assoc = paddle.full((max_index + 1,), -1, dtype=src.dtype)
+        assoc = assoc.scatter(index, paddle.arange(index.numel(), dtype=src.dtype))
+        out = assoc.gather(src)
+
+        if inclusive:
+            return out, None
+        else:
+            mask = out != -1
+            return out[mask], mask
+
+    WITH_CUDF = False
+    if src.place.is_gpu_place():
+        try:
+            import cudf
+
+            WITH_CUDF = True
+        except ImportError:
+            warnings.warn(
+                "Using CPU-based processing within 'map_index' which may "
+                "cause slowdowns and device synchronization. "
+                "Consider installing 'cudf' to accelerate computation"
+            )
+
+    if not WITH_CUDF:
+        src_np = src.cpu().numpy()
+        index_np = index.cpu().numpy()
+        left_ser = pd.Series(src_np, name="left_ser")
+        right_ser = pd.Series(
+            index=index_np, data=np.arange(0, len(index_np)), name="right_ser"
+        )
+
+        result = pd.merge(
+            left_ser, right_ser, how="left", left_on="left_ser", right_index=True
+        )
+        out_numpy = result["right_ser"].values
+
+        out = paddle.to_tensor(out_numpy, place=src.place)
+
+        if inclusive:
+            return out, None
+        else:
+            mask = out != -1
+            return out[mask], mask
+
+    else:
+        left_ser = cudf.Series(src.numpy(), name="left_ser")
+        right_ser = cudf.Series(
+            index=index.numpy(),
+            data=cudf.RangeIndex(0, len(index.numpy())),
+            name="right_ser",
+        )
+
+        result = cudf.merge(
+            left_ser,
+            right_ser,
+            how="left",
+            left_on="left_ser",
+            right_index=True,
+            sort=True,
+        )
+
+        if inclusive:
+            out = paddle.to_tensor(result["right_ser"].to_numpy(), dtype=src.dtype)
+        else:
+            out = paddle.to_tensor(
+                result["right_ser"].fillna(-1).to_numpy(), dtype=src.dtype
+            )
+
+        out = out[src.argsort().argsort()]  # Restore original order.
+
+        if inclusive:
+            return out, None
+        else:
+            mask = out != -1
+            return out[mask], mask

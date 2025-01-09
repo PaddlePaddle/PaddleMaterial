@@ -40,17 +40,17 @@ Model:
   __name__: MolecularGraphTransformer
   encoder_cfg:
     hidden_mlp_dims: {
-      'X': 256, 
-      'E': 128, 
+      'X': 256,
+      'E': 128,
       'y': 256
     }
     hidden_dim: {
-      'dx': 256, 
-      'de': 64, 
-      'dy': 256, 
-      'n_head': 8, 
-      'dim_ffX': 256, 
-      'dim_ffE': 128, 
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
       'dim_ffy': 256
     }
     latent_dim: 256
@@ -66,17 +66,17 @@ Model:
     ip: true
   decoder_cfg:
     hidden_mlp_dims: {
-      'X': 256, 
-      'E': 128, 
+      'X': 256,
+      'E': 128,
       'y': 256
     }
     hidden_dim: {
-      'dx': 256, 
-      'de': 64, 
-      'dy': 256, 
-      'n_head': 8, 
-      'dim_ffX': 256, 
-      'dim_ffE': 128, 
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
       'dim_ffy': 256
     }
     latent_dim: 256
@@ -104,7 +104,7 @@ Model:
     # The dimensions should satisfy dx % n_head == 0
     hidden_dims : {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
     lambda_train: [5, 0]
-    conditdim: 512  
+    conditdim: 512
   time_dim: 256
 
 
@@ -126,9 +126,11 @@ Dataset:
   train:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/train.csv"
+      path: "./molecule_generation/data/CHnmr/train.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
       cache: True
       remove_h: True
+      stage: "train"
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -140,9 +142,11 @@ Dataset:
   val:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/val.csv"
+      path: "./molecule_generation/data/CHnmr/val.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
       cache: True
       remove_h: True
+      stage: "val"
     sampler:
       __name__: BatchSampler
       shuffle: False
@@ -151,9 +155,11 @@ Dataset:
   test:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/test.csv"
+      path: "./molecule_generation/data/CHnmr/test.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
       cache: True
       remove_h: True
+      stage: "test"
     sampler:
       __name__: BatchSampler
       shuffle: False
