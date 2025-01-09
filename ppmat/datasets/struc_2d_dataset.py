@@ -10,6 +10,7 @@ from typing import Optional
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 from p_tqdm import p_map
 from pymatgen.core.structure import Structure
 
@@ -72,52 +73,77 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
             raise ValueError("element_types must be 'DEFAULT_ELEMENTS'.")
         # when cache is True, load cached structures from cache file
         cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs_v2_2.pkl")
-        if self.cache and osp.exists(cache_path):
-            with open(cache_path, "rb") as f:
-                self.structures = pickle.load(f)
-            logger.info(
-                f"Load {len(self.structures)} cached structures from {cache_path}"
-            )
+        if self.cache:
+            if osp.exists(cache_path):
+                with open(cache_path, "rb") as f:
+                    self.structures = pickle.load(f)
+                logger.info(
+                    f"Load {len(self.structures)} cached structures from {cache_path}"
+                )
+            else:
+                if dist.get_rank() == 0:
+                    # build structures from cif
+                    structure_dicts = [data["structure"] for data in self.jsonl_data]
+                    self.structures = build_structure_from_dict(structure_dicts)
+                    logger.info(f"Build {len(self.structures)} structures")
+                    with open(cache_path, "wb") as f:
+                        pickle.dump(self.structures, f)
+                    logger.info(
+                        f"Save {len(self.structures)} built structures to {cache_path}"
+                    )
+                # sync all processes
+                if dist.is_initialized():
+                    dist.barrier()
+                # load cached structures from cache file
+                with open(cache_path, "rb") as f:
+                    self.structures = pickle.load(f)
+                logger.info(
+                    f"Load {len(self.structures)} cached structures from {cache_path}"
+                )
         else:
             # build structures from cif
             structure_dicts = [data["structure"] for data in self.jsonl_data]
             self.structures = build_structure_from_dict(structure_dicts)
             logger.info(f"Build {len(self.structures)} structures")
-            if self.cache:
-                with open(cache_path, "wb") as f:
-                    pickle.dump(self.structures, f)
-                logger.info(
-                    f"Save {len(self.structures)} built structures to {cache_path}"
-                )
+
         # build graphs from structures
         if converter_cfg is not None:
             # load cached graphs from cache file
             graph_method = converter_cfg["method"]
             cache_path = osp.join(path.rsplit(".", 1)[0] + f"_{graph_method}_graphs")
-            if osp.exists(cache_path):
-                self.graphs = [
-                    osp.join(cache_path, f"{i}.pkl")
-                    for i in range(len(self.structures))
-                ]
-                logger.info(f"Load {len(self.graphs)} cached graphs from {cache_path}")
-                assert len(self.graphs) == len(self.structures)
+
+            if self.cache:
+                if osp.exists(cache_path):
+                    self.graphs = [
+                        osp.join(cache_path, f"{i}.pkl")
+                        for i in range(len(self.structures))
+                    ]
+                    logger.info(
+                        f"Load {len(self.graphs)} cached graphs from {cache_path}"
+                    )
+                    assert len(self.graphs) == len(self.structures)
+                else:
+                    if dist.get_rank() == 0:
+                        # build graphs from structures
+                        self.converter = Structure2Graph(**self.converter_cfg)
+                        self.graphs = self.converter(self.structures)
+                        os.makedirs(cache_path, exist_ok=True)
+                        for i, graph in enumerate(self.graphs):
+                            with open(os.path.join(cache_path, f"{i}.pkl"), "wb") as f:
+                                pickle.dump(graph, f)
+                    if dist.is_initialized():
+                        dist.barrier()
+                    self.graphs = [
+                        osp.join(cache_path, f"{i}.pkl")
+                        for i in range(len(self.structures))
+                    ]
+                    logger.info(
+                        f"Load {len(self.graphs)} cached graphs from {cache_path}"
+                    )
+                    assert len(self.graphs) == len(self.structures)
             else:
-                # build graphs from structures
                 self.converter = Structure2Graph(**self.converter_cfg)
                 self.graphs = self.converter(self.structures)
-                os.makedirs(cache_path, exist_ok=True)
-                for i, graph in enumerate(self.graphs):
-                    with open(os.path.join(cache_path, f"{i}.pkl"), "wb") as f:
-                        pickle.dump(graph, f)
-
-                self.graphs = [
-                    osp.join(cache_path, f"{i}.pkl")
-                    for i in range(len(self.structures))
-                ]
-
-                logger.info(f"Load {len(self.graphs)} cached graphs from {cache_path}")
-                assert len(self.graphs) == len(self.structures)
-
         else:
             self.graphs = None
 
