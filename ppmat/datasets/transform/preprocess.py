@@ -70,9 +70,10 @@ class ClipData:
                     data[key] = self.max
         return data
 
+
 class SelecTargetTransform:
     """Dynamically select specific dimensions or targets from the data."""
-    
+
     def __init__(
         self,
         target_indices: Union[int, Tuple[int, ...]],
@@ -91,32 +92,29 @@ class SelecTargetTransform:
                 data[key] = target[..., self.target_indices]
         return data
 
+
 class RemoveYTransform:
-    def __init__(
-        self
-    ):
+    def __init__(self):
         pass
-        
+
     def __call__(self, data):
-        data.y = np.zeros((1, 0), dtype='float32')
+        data.y = np.zeros((1, 0), dtype="float32")
         return data
 
 
 class SelectMuTransform:
-    def __init__(
-        self
-    ):
+    def __init__(self):
         pass
+
     def __call__(self, data):
         data.y = data.y[..., :1]
         return data
 
 
 class SelectHOMOTransform:
-    def __init__(
-        self
-    ):
+    def __init__(self):
         pass
+
     def __call__(self, data):
         data.y = data.y[..., 1:]
         return data

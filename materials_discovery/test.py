@@ -1,7 +1,7 @@
-# # import paddle 
-# # import torch 
-# # import torch_scatter 
-# # import numpy as np 
+# # import paddle
+# # import torch
+# # import torch_scatter
+# # import numpy as np
 # # from typing import Optional
 
 # # # # def _scatter_sum(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
@@ -40,8 +40,6 @@
 # # # #     return paddle.put_along_axis(arr=out, indices=index, values=src, axis=dim, reduce=reduce, include_self=False)
 
 
-
-
 # # def _broadcast(src: paddle.Tensor, other: paddle.Tensor, dim: int):
 # #     if dim < 0:
 # #         dim = other.dim() + dim
@@ -68,7 +66,7 @@
 # #             size[dim] = int(index.max()) + 1
 # #         out = paddle.zeros(size, dtype=src.dtype)
 # #     return paddle.put_along_axis(arr=out, indices=index, values=src, axis=dim, reduce='add')
- 
+
 
 # # def _scatter_add(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
 # #                 out: Optional[paddle.Tensor] = None,
@@ -136,9 +134,7 @@
 # # print(tsout)
 
 
-
-
-# import paddle 
+# import paddle
 # x = paddle.create_parameter(shape=[128, 1], dtype='float32')
 # # init_Orthogonal = paddle.nn.initializer.Orthogonal()
 # # init_Orthogonal(x)
@@ -160,14 +156,18 @@
 
 import paddle
 
-
 paddle.base.core.set_prim_eager_enabled(True)
+
 
 class MyNet(paddle.nn.Layer):
     def __init__(self):
         super(MyNet, self).__init__()
-        self.weight = self.create_parameter(shape=(2,2), dtype=paddle.float32, is_bias=False)
-        self.bias = self.create_parameter(shape=(2,2), dtype=paddle.float32, is_bias=True)
+        self.weight = self.create_parameter(
+            shape=(2, 2), dtype=paddle.float32, is_bias=False
+        )
+        self.bias = self.create_parameter(
+            shape=(2, 2), dtype=paddle.float32, is_bias=True
+        )
         self.add_parameter("weight", self.weight)
         self.add_parameter("bias", self.bias)
 
@@ -176,7 +176,7 @@ class MyNet(paddle.nn.Layer):
         return paddle.tanh(y)
 
 
-x = paddle.randn(shape=(2,2), dtype=paddle.float32)
+x = paddle.randn(shape=(2, 2), dtype=paddle.float32)
 net = MyNet()
 y = net(x)
 

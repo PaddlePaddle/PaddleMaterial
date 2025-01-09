@@ -1,7 +1,8 @@
 import argparse
-import random
-import pandas as pd
 import os
+import random
+
+import pandas as pd
 
 # supported file format
 SUPPORTED_FORMATS = {"json": pd.read_json, "csv": pd.read_csv}
@@ -18,13 +19,25 @@ def save_data(data, path, file_format="json"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--src_path", type=str, required=True, help="Path to the source data file.")
     parser.add_argument(
-        "--ratio", type=float, nargs=3, default=[0.9, 0.05, 0.05], help="Train/Validation/Test split ratio.",
+        "--src_path", type=str, required=True, help="Path to the source data file."
     )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument(
-        "--format", type=str, choices=SUPPORTED_FORMATS.keys(), default="json", help="Input file format."
+        "--ratio",
+        type=float,
+        nargs=3,
+        default=[0.9, 0.05, 0.05],
+        help="Train/Validation/Test split ratio.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility."
+    )
+    parser.add_argument(
+        "--format",
+        type=str,
+        choices=SUPPORTED_FORMATS.keys(),
+        default="json",
+        help="Input file format.",
     )
 
     args = parser.parse_args()
@@ -43,8 +56,9 @@ if __name__ == "__main__":
     # check data format to ensure at least one required column exists
     required_columns = ["structures", "smiles"]
     if not any(col in data.columns for col in required_columns):
-        raise ValueError(f"Missing required column. At least one of {required_columns} must exist.")
-
+        raise ValueError(
+            f"Missing required column. At least one of {required_columns} must exist."
+        )
 
     # set random seed
     random.seed(args.seed)

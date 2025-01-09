@@ -1,91 +1,104 @@
 import math
+
 import paddle
 import paddle.nn as nn
 from paddle.nn import functional as F
-from ppmat.utils.digressutils import PlaceHolder
-from ppmat.models.digress.layer import Xtoy, Etoy, masked_softmax
+
 from ppmat.models.digress import diffusion_utils
+from ppmat.models.digress.layer import Etoy
+from ppmat.models.digress.layer import Xtoy
+from ppmat.models.digress.layer import masked_softmax
+from ppmat.utils.digressutils import PlaceHolder
+
 
 class GraphTransformer(nn.Layer):
     """
     n_layers : int -- number of layers
     dims : dict -- contains dimensions for each feature type
     """
+
     def __init__(
-        self, 
-        n_layers: int, 
-        input_dims: dict, 
-        hidden_mlp_dims: dict, 
+        self,
+        n_layers: int,
+        input_dims: dict,
+        hidden_mlp_dims: dict,
         hidden_dims: dict,
-        output_dims: dict, 
-        act_fn_in=nn.ReLU(), 
-        act_fn_out=nn.ReLU()
+        output_dims: dict,
+        act_fn_in=nn.ReLU(),
+        act_fn_out=nn.ReLU(),
     ):
         super().__init__()
         self.n_layers = n_layers
-        self.out_dim_X = output_dims['X']
-        self.out_dim_E = output_dims['E']
-        self.out_dim_y = output_dims['y']
+        self.out_dim_X = output_dims["X"]
+        self.out_dim_E = output_dims["E"]
+        self.out_dim_y = output_dims["y"]
 
         self.mlp_in_X = nn.Sequential(
-            nn.Linear(input_dims['X'], hidden_mlp_dims['X']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['X'], hidden_dims['dx']), act_fn_in
+            nn.Linear(input_dims["X"], hidden_mlp_dims["X"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["X"], hidden_dims["dx"]),
+            act_fn_in,
         )
 
         self.mlp_in_E = nn.Sequential(
-            nn.Linear(input_dims['E'], hidden_mlp_dims['E']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['E'], hidden_dims['de']), act_fn_in
+            nn.Linear(input_dims["E"], hidden_mlp_dims["E"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["E"], hidden_dims["de"]),
+            act_fn_in,
         )
 
         self.mlp_in_y = nn.Sequential(
-            nn.Linear(input_dims['y'], hidden_mlp_dims['y']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['y'], hidden_dims['dy']), act_fn_in
+            nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
+            act_fn_in,
         )
 
-        self.tf_layers = nn.LayerList([
-            XEyTransformerLayer(
-                dx=hidden_dims['dx'],
-                de=hidden_dims['de'],
-                dy=hidden_dims['dy'],
-                n_head=hidden_dims['n_head'],
-                dim_ffX=hidden_dims['dim_ffX'],
-                dim_ffE=hidden_dims['dim_ffE']
-            ) for _ in range(n_layers)
-        ])
+        self.tf_layers = nn.LayerList(
+            [
+                XEyTransformerLayer(
+                    dx=hidden_dims["dx"],
+                    de=hidden_dims["de"],
+                    dy=hidden_dims["dy"],
+                    n_head=hidden_dims["n_head"],
+                    dim_ffX=hidden_dims["dim_ffX"],
+                    dim_ffE=hidden_dims["dim_ffE"],
+                )
+                for _ in range(n_layers)
+            ]
+        )
 
         self.mlp_out_X = nn.Sequential(
-            nn.Linear(hidden_dims['dx'], hidden_mlp_dims['X']), 
+            nn.Linear(hidden_dims["dx"], hidden_mlp_dims["X"]),
             act_fn_out,
-            nn.Linear(hidden_mlp_dims['X'], output_dims['X'])
+            nn.Linear(hidden_mlp_dims["X"], output_dims["X"]),
         )
 
         self.mlp_out_E = nn.Sequential(
-            nn.Linear(hidden_dims['de'], hidden_mlp_dims['E']), 
+            nn.Linear(hidden_dims["de"], hidden_mlp_dims["E"]),
             act_fn_out,
-            nn.Linear(hidden_mlp_dims['E'], output_dims['E'])
+            nn.Linear(hidden_mlp_dims["E"], output_dims["E"]),
         )
 
         self.mlp_out_y = nn.Sequential(
-            nn.Linear(hidden_dims['dy'], hidden_mlp_dims['y']), 
+            nn.Linear(hidden_dims["dy"], hidden_mlp_dims["y"]),
             act_fn_out,
-            nn.Linear(hidden_mlp_dims['y'], output_dims['y'])
+            nn.Linear(hidden_mlp_dims["y"], output_dims["y"]),
         )
 
-    def forward(
-        self, 
-        X, 
-        E, 
-        y, 
-        node_mask
-    ):
+    def forward(self, X, E, y, node_mask):
         bs, n = X.shape[0], X.shape[1]
-        diag_mask = paddle.eye(n, dtype='bool')
+        diag_mask = paddle.eye(n, dtype="bool")
         diag_mask = ~diag_mask
-        diag_mask = paddle.unsqueeze(diag_mask, axis=0).unsqueeze(-1).tile(repeat_times=[bs, 1, 1, 1])
+        diag_mask = (
+            paddle.unsqueeze(diag_mask, axis=0)
+            .unsqueeze(-1)
+            .tile(repeat_times=[bs, 1, 1, 1])
+        )
 
-        X_to_out = X[..., :self.out_dim_X]
-        E_to_out = E[..., :self.out_dim_E]
-        y_to_out = y[..., :self.out_dim_y]
+        X_to_out = X[..., : self.out_dim_X]
+        E_to_out = E[..., : self.out_dim_E]
+        y_to_out = y[..., : self.out_dim_y]
 
         # Initial processing for X, E, y
         new_E = self.mlp_in_E(E)
@@ -114,49 +127,69 @@ class GraphTransformer(nn.Layer):
 
         return PlaceHolder(X=X, E=E, y=y).mask(node_mask)
 
+
 class GraphTransformer_C(nn.Layer):
     """
     n_layers : int -- number of layers
     dims : dict -- contains dimensions for each feature type
     """
-    def __init__(self, n_layers: int, input_dims: dict, hidden_mlp_dims: dict, 
-                 hidden_dims: dict, output_dims: dict,
-                 act_fn_in=nn.ReLU(), act_fn_out=nn.ReLU()):
+
+    def __init__(
+        self,
+        n_layers: int,
+        input_dims: dict,
+        hidden_mlp_dims: dict,
+        hidden_dims: dict,
+        output_dims: dict,
+        act_fn_in=nn.ReLU(),
+        act_fn_out=nn.ReLU(),
+    ):
         super().__init__()
         self.n_layers = n_layers
-        self.out_dim_X = output_dims['X']
-        self.out_dim_E = output_dims['E']
-        self.out_dim_y = output_dims['y']
+        self.out_dim_X = output_dims["X"]
+        self.out_dim_E = output_dims["E"]
+        self.out_dim_y = output_dims["y"]
 
         self.mlp_in_X = nn.Sequential(
-            nn.Linear(input_dims['X'], hidden_mlp_dims['X']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['X'], hidden_dims['dx']), act_fn_in
+            nn.Linear(input_dims["X"], hidden_mlp_dims["X"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["X"], hidden_dims["dx"]),
+            act_fn_in,
         )
 
         self.mlp_in_E = nn.Sequential(
-            nn.Linear(input_dims['E'], hidden_mlp_dims['E']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['E'], hidden_dims['de']), act_fn_in
+            nn.Linear(input_dims["E"], hidden_mlp_dims["E"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["E"], hidden_dims["de"]),
+            act_fn_in,
         )
 
         self.mlp_in_y = nn.Sequential(
-            nn.Linear(input_dims['y'], hidden_mlp_dims['y']), act_fn_in,
-            nn.Linear(hidden_mlp_dims['y'], hidden_dims['dy']), act_fn_in
+            nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
+            act_fn_in,
         )
 
         # 用 LayerList 存放多层 Transformer
-        self.tf_layers = nn.LayerList([
-            XEyTransformerLayer(dx=hidden_dims['dx'],
-                                de=hidden_dims['de'],
-                                dy=hidden_dims['dy'],
-                                n_head=hidden_dims['n_head'],
-                                dim_ffX=hidden_dims['dim_ffX'],
-                                dim_ffE=hidden_dims['dim_ffE'])
-            for _ in range(n_layers)
-        ])
+        self.tf_layers = nn.LayerList(
+            [
+                XEyTransformerLayer(
+                    dx=hidden_dims["dx"],
+                    de=hidden_dims["de"],
+                    dy=hidden_dims["dy"],
+                    n_head=hidden_dims["n_head"],
+                    dim_ffX=hidden_dims["dim_ffX"],
+                    dim_ffE=hidden_dims["dim_ffE"],
+                )
+                for _ in range(n_layers)
+            ]
+        )
 
         self.mlp_out_X = nn.Sequential(
-            nn.Linear(hidden_dims['dx'], hidden_mlp_dims['X']), act_fn_out,
-            nn.Linear(hidden_mlp_dims['X'], 512)
+            nn.Linear(hidden_dims["dx"], hidden_mlp_dims["X"]),
+            act_fn_out,
+            nn.Linear(hidden_mlp_dims["X"], 512),
         )
 
         # 其他输出层（如 E, y）在原示例里注释了，可自行添加
@@ -173,14 +206,16 @@ class GraphTransformer_C(nn.Layer):
         bs, n = X.shape[0], X.shape[1]
 
         # 构建对角 mask (如需用)
-        diag_mask = paddle.eye(n, dtype='bool')  # (n, n)
+        diag_mask = paddle.eye(n, dtype="bool")  # (n, n)
         diag_mask = paddle.logical_not(diag_mask)
-        diag_mask = diag_mask.unsqueeze(0).unsqueeze(-1).expand([bs, -1, -1, -1])  # (bs,n,n,1)
+        diag_mask = (
+            diag_mask.unsqueeze(0).unsqueeze(-1).expand([bs, -1, -1, -1])
+        )  # (bs,n,n,1)
 
         # 保存原来的 X/E/y 部分给 skip-connection（如果需要）
-        X_to_out = X[..., :self.out_dim_X]
-        E_to_out = E[..., :self.out_dim_E]
-        y_to_out = y[..., :self.out_dim_y]
+        X_to_out = X[..., : self.out_dim_X]
+        E_to_out = E[..., : self.out_dim_E]
+        y_to_out = y[..., : self.out_dim_y]
 
         # MLP in
         new_E = self.mlp_in_E(E)
@@ -199,35 +234,37 @@ class GraphTransformer_C(nn.Layer):
             X, E, Y = layer(X, E, Y, node_mask)
 
         # Output
-        X = self.mlp_out_X(X)                # (bs, n, 512)
-        X_mean = paddle.mean(X, axis=1)      # (bs, 512)
+        X = self.mlp_out_X(X)  # (bs, n, 512)
+        X_mean = paddle.mean(X, axis=1)  # (bs, 512)
 
         # 如果还需要输出 E,y，可以在此添加 mlp_out_E, mlp_out_y
         # 并做对称化/加 skip connection 等
 
         return X_mean
 
+
 class XEyTransformerLayer(nn.Layer):
-    """ Transformer that updates node, edge and global features
-        d_x: node features
-        d_e: edge features
-        dz : global features
-        n_head: the number of heads in the multi_head_attention
-        dim_feedforward: the dimension of the feedforward network model after self-attention
-        dropout: dropout probablility. 0 to disable
-        layer_norm_eps: eps value in layer normalizations.
+    """Transformer that updates node, edge and global features
+    d_x: node features
+    d_e: edge features
+    dz : global features
+    n_head: the number of heads in the multi_head_attention
+    dim_feedforward: the dimension of the feedforward network model after self-attention
+    dropout: dropout probablility. 0 to disable
+    layer_norm_eps: eps value in layer normalizations.
     """
+
     def __init__(
-        self, 
-        dx: int, 
-        de: int, 
-        dy: int, 
-        n_head: int, 
+        self,
+        dx: int,
+        de: int,
+        dy: int,
+        n_head: int,
         dim_ffX: int = 2048,
-        dim_ffE: int = 128, 
-        dim_ffy: int = 2048, 
+        dim_ffE: int = 128,
+        dim_ffy: int = 2048,
         dropout: float = 0.1,
-        layer_norm_eps: float = 1e-5
+        layer_norm_eps: float = 1e-5,
     ) -> None:
         super().__init__()
 
@@ -260,12 +297,12 @@ class XEyTransformerLayer(nn.Layer):
         self.activation = F.relu
 
     def forward(self, X, E, y, node_mask):
-        """ Pass the input through the encoder layer.
-            X: (bs, n, d)
-            E: (bs, n, n, d)
-            y: (bs, dy)
-            node_mask: (bs, n) Mask for the src keys per batch (optional)
-            Output: newX, newE, new_y with the same shape.
+        """Pass the input through the encoder layer.
+        X: (bs, n, d)
+        E: (bs, n, n, d)
+        y: (bs, dy)
+        node_mask: (bs, n) Mask for the src keys per batch (optional)
+        Output: newX, newE, new_y with the same shape.
         """
         newX, newE, new_y = self.self_attn(X, E, y, node_mask=node_mask)
 
@@ -292,8 +329,10 @@ class XEyTransformerLayer(nn.Layer):
 
         return X, E, y
 
+
 class NodeEdgeBlock(nn.Layer):
-    """ Self attention layer that also updates the representations on the edges. """
+    """Self attention layer that also updates the representations on the edges."""
+
     def __init__(self, dx, de, dy, n_head):
         super().__init__()
         assert dx % n_head == 0, f"dx: {dx} -- n_head: {n_head}"
@@ -339,39 +378,45 @@ class NodeEdgeBlock(nn.Layer):
         :return: newX, newE, new_y with the same shape.
         """
         bs, n, _ = X.shape
-        x_mask = paddle.unsqueeze(node_mask, axis=-1)   # bs, n, 1
-        e_mask1 = paddle.unsqueeze(x_mask, axis=2)      # bs, n, 1, 1
-        e_mask2 = paddle.unsqueeze(x_mask, axis=1)      # bs, 1, n, 1
+        x_mask = paddle.unsqueeze(node_mask, axis=-1)  # bs, n, 1
+        e_mask1 = paddle.unsqueeze(x_mask, axis=2)  # bs, n, 1, 1
+        e_mask2 = paddle.unsqueeze(x_mask, axis=1)  # bs, 1, n, 1
 
         # 1. Map X to keys and queries
         Q = self.q(X) * x_mask
         K = self.k(X) * x_mask
         diffusion_utils.assert_correctly_masked(Q, x_mask)
-        
+
         # 2. Reshape to (bs, n, n_head, df) with dx = n_head * df
         Q = paddle.reshape(Q, (Q.shape[0], Q.shape[1], self.n_head, self.df))
         K = paddle.reshape(K, (K.shape[0], K.shape[1], self.n_head, self.df))
 
-        Q = paddle.unsqueeze(Q, axis=2)     # (bs, 1, n, n_head, df) (bs, n, 1, n_head, df)
-        K = paddle.unsqueeze(K, axis=1)     # (bs, n, 1, n head, df) (bs, 1, n, n_head, df)
+        Q = paddle.unsqueeze(Q, axis=2)  # (bs, 1, n, n_head, df) (bs, n, 1, n_head, df)
+        K = paddle.unsqueeze(K, axis=1)  # (bs, n, 1, n head, df) (bs, 1, n, n_head, df)
 
         # Compute unnormalized attentions. Y is (bs, n, n, n_head, df)
         Y = Q * K
         Y = Y / math.sqrt(Y.shape[-1])
         diffusion_utils.assert_correctly_masked(Y, (e_mask1 * e_mask2).unsqueeze(-1))
-        
-        E1 = self.e_mul(E) * e_mask1 * e_mask2      # bs, n, n, dx
-        E1 = paddle.reshape(E1, (E.shape[0], E.shape[1], E.shape[2], self.n_head, self.df))
 
-        E2 = self.e_add(E) * e_mask1 * e_mask2      # bs, n, n, dx
-        E2 = paddle.reshape(E2, (E.shape[0], E.shape[1], E.shape[2], self.n_head, self.df))
+        E1 = self.e_mul(E) * e_mask1 * e_mask2  # bs, n, n, dx
+        E1 = paddle.reshape(
+            E1, (E.shape[0], E.shape[1], E.shape[2], self.n_head, self.df)
+        )
+
+        E2 = self.e_add(E) * e_mask1 * e_mask2  # bs, n, n, dx
+        E2 = paddle.reshape(
+            E2, (E.shape[0], E.shape[1], E.shape[2], self.n_head, self.df)
+        )
 
         # Incorporate edge features to the self attention scores.
-        Y = Y * (E1 + 1) + E2       # (bs, n, n, n_head, df)
+        Y = Y * (E1 + 1) + E2  # (bs, n, n, n_head, df)
 
         # Incorporate y to E
         newE = paddle.flatten(Y, start_axis=3)  # bs, n, n, dx
-        ye1 = paddle.unsqueeze(paddle.unsqueeze(self.y_e_add(y), axis=1), axis=1)   # bs, 1, 1, de
+        ye1 = paddle.unsqueeze(
+            paddle.unsqueeze(self.y_e_add(y), axis=1), axis=1
+        )  # bs, 1, 1, de
         ye2 = paddle.unsqueeze(paddle.unsqueeze(self.y_e_mul(y), axis=1), axis=1)
         newE = ye1 + (ye2 + 1) * newE
 
@@ -380,19 +425,21 @@ class NodeEdgeBlock(nn.Layer):
         diffusion_utils.assert_correctly_masked(newE, e_mask1 * e_mask2)
 
         # Compute attentions. attn is still (bs, n, n, n_head, df)
-        softmax_mask = paddle.expand(e_mask2, shape=(-1, n, -1, self.n_head))   # bs, 1, n, 1   bs,n,n,n_head
-        attn = masked_softmax(Y, softmax_mask, axis=2)           # bs, n, n, n_head, df
+        softmax_mask = paddle.expand(
+            e_mask2, shape=(-1, n, -1, self.n_head)
+        )  # bs, 1, n, 1   bs,n,n,n_head
+        attn = masked_softmax(Y, softmax_mask, axis=2)  # bs, n, n, n_head, df
 
-        V = self.v(X) * x_mask              # bs, n, dx
+        V = self.v(X) * x_mask  # bs, n, dx
         V = paddle.reshape(V, (V.shape[0], V.shape[1], self.n_head, self.df))
-        V = paddle.unsqueeze(V, axis=1)     # (bs, 1, n, n_head, df)
+        V = paddle.unsqueeze(V, axis=1)  # (bs, 1, n, n_head, df)
 
         # Compute weighted values
         weighted_V = attn * V
         weighted_V = paddle.sum(weighted_V, axis=2)
 
         # Send output to input dim
-        weighted_V = paddle.flatten(weighted_V, start_axis=2)       # bs, n, dx
+        weighted_V = paddle.flatten(weighted_V, start_axis=2)  # bs, n, dx
 
         # Incorporate y to X
         yx1 = paddle.unsqueeze(self.y_x_add(y), axis=1)
@@ -407,6 +454,6 @@ class NodeEdgeBlock(nn.Layer):
         e_y = self.e_y(E, e_mask1, e_mask2)
         x_y = self.x_y(X, x_mask)
         new_y = y + x_y + e_y
-        new_y = self.y_out(new_y)        # bs, dy
+        new_y = self.y_out(new_y)  # bs, dy
 
         return newX, newE, new_y

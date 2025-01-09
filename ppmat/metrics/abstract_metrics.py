@@ -1,17 +1,21 @@
+from typing import Callable
+from typing import Dict
+
 import paddle
-from paddle.metric import Metric
 import paddle.nn.functional as F
-from typing import Callable, Dict
+from paddle.metric import Metric
 
 # =========================
 # Abstract Metrics Classes
 # =========================
+
 
 class TrainAbstractMetricsDiscrete(paddle.nn.Layer):
     """
     Abstract base class for discrete training metrics.
     This class serves as a base for specific metric implementations.
     """
+
     def __init__(self):
         super().__init__()
 
@@ -36,12 +40,19 @@ class TrainAbstractMetricsDiscrete(paddle.nn.Layer):
 
 
 class TrainAbstractMetrics(paddle.nn.Layer):
-
     def __init__(self):
         super().__init__()
 
-    def forward(self, masked_pred_epsX, masked_pred_epsE, pred_y, true_epsX,
-        true_epsE, true_y, log):
+    def forward(
+        self,
+        masked_pred_epsX,
+        masked_pred_epsE,
+        pred_y,
+        true_epsX,
+        true_epsE,
+        true_y,
+        log,
+    ):
         pass
 
     def reset(self):
@@ -50,11 +61,11 @@ class TrainAbstractMetrics(paddle.nn.Layer):
     def log_epoch_metrics(self):
         return None, None
 
+
 # =========================
 # Concrete Metric Classes
 # =========================
 class SumExceptBatchMetric(Metric):
-
     def __init__(self):
         super().__init__()
         self.reset()
@@ -63,8 +74,8 @@ class SumExceptBatchMetric(Metric):
         """
         Reset the internal states.
         """
-        self.total_value = paddle.to_tensor(0.0, dtype='float32')
-        self.total_samples = paddle.to_tensor(0.0, dtype='float32')
+        self.total_value = paddle.to_tensor(0.0, dtype="float32")
+        self.total_samples = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, values: paddle.Tensor) -> None:
         """
@@ -100,8 +111,8 @@ class SumExceptBatchMSE(Metric):
         """
         Reset the internal states.
         """
-        self.sum_squared_error = paddle.to_tensor(0.0, dtype='float32')
-        self.total = paddle.to_tensor(0.0, dtype='float32')
+        self.sum_squared_error = paddle.to_tensor(0.0, dtype="float32")
+        self.total = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, preds: paddle.Tensor, target: paddle.Tensor) -> None:
         """
@@ -147,6 +158,7 @@ class SumExceptBatchKL(Metric):
     Metric that computes the sum of KL divergences over all dimensions except the batch,
     and calculates the average KL divergence.
     """
+
     def __init__(self):
         super().__init__()
         self.reset()
@@ -155,8 +167,8 @@ class SumExceptBatchKL(Metric):
         """
         Reset the internal states.
         """
-        self.total_value = paddle.to_tensor(0.0, dtype='float32')
-        self.total_samples = paddle.to_tensor(0.0, dtype='float32')
+        self.total_value = paddle.to_tensor(0.0, dtype="float32")
+        self.total_samples = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, p: paddle.Tensor, q: paddle.Tensor) -> None:
         """
@@ -166,7 +178,7 @@ class SumExceptBatchKL(Metric):
             p (paddle.Tensor): Target distribution. Shape: (batch_size, ...)
             q (paddle.Tensor): Predicted distribution. Shape: (batch_size, ...)
         """
-        kl = F.kl_div(q, p, reduction='sum')
+        kl = F.kl_div(q, p, reduction="sum")
         self.total_value += kl
         self.total_samples += paddle.shape(p)[0]
 
@@ -181,7 +193,6 @@ class SumExceptBatchKL(Metric):
 
 
 class CrossEntropyMetric(Metric):
-
     def __init__(self):
         super().__init__()
         self.reset()
@@ -190,8 +201,8 @@ class CrossEntropyMetric(Metric):
         """
         Reset the internal states.
         """
-        self.total_ce = paddle.to_tensor(0.0, dtype='float32')
-        self.total_samples = paddle.to_tensor(0.0, dtype='float32')
+        self.total_ce = paddle.to_tensor(0.0, dtype="float32")
+        self.total_samples = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, preds: paddle.Tensor, target: paddle.Tensor) -> None:
         """
@@ -204,7 +215,7 @@ class CrossEntropyMetric(Metric):
         # Convert one-hot to class indices
         target = paddle.argmax(target, axis=-1)
         # Compute cross-entropy with sum reduction
-        ce = F.cross_entropy(preds, target, reduction='sum')
+        ce = F.cross_entropy(preds, target, reduction="sum")
         self.total_ce += ce
         self.total_samples += paddle.shape(preds)[0]
 
@@ -219,7 +230,6 @@ class CrossEntropyMetric(Metric):
 
 
 class ProbabilityMetric(Metric):
-
     def __init__(self):
         super().__init__()
         self.reset()
@@ -228,8 +238,8 @@ class ProbabilityMetric(Metric):
         """
         Reset the internal states.
         """
-        self.prob = paddle.to_tensor(0.0, dtype='float32')
-        self.total = paddle.to_tensor(0.0, dtype='float32')
+        self.prob = paddle.to_tensor(0.0, dtype="float32")
+        self.total = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, preds: paddle.Tensor) -> None:
         """
@@ -255,6 +265,7 @@ class NLL(Metric):
     """
     Metric for Negative Log-Likelihood.
     """
+
     def __init__(self):
         super().__init__()
         self.reset()
@@ -263,8 +274,8 @@ class NLL(Metric):
         """
         Reset the internal states.
         """
-        self.total_nll = paddle.to_tensor(0.0, dtype='float32')
-        self.total_samples = paddle.to_tensor(0.0, dtype='float32')
+        self.total_nll = paddle.to_tensor(0.0, dtype="float32")
+        self.total_samples = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, batch_nll: paddle.Tensor) -> None:
         """

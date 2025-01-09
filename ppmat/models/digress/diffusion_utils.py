@@ -1,7 +1,8 @@
+import math
+
+import numpy as np
 import paddle
 import paddle.nn.functional as F
-import numpy as np
-import math
 
 from ppmat.utils.digressutils import PlaceHolder
 
@@ -16,10 +17,10 @@ def sum_except_batch(x):
 def assert_correctly_masked(variable, node_mask):
     # 原: (variable * (1 - node_mask.long())).abs().max().item()
     # Paddle:
-    mask_int = node_mask.astype('int64')
+    mask_int = node_mask.astype("int64")
     masked = variable * (1 - mask_int)
     if paddle.max(paddle.abs(masked)).item() >= 1e-4:
-        raise ValueError('Variables not masked properly.')
+        raise ValueError("Variables not masked properly.")
 
 
 def sample_gaussian(size):
@@ -39,13 +40,13 @@ def sample_gaussian_with_mask(size, node_mask):
 
 def clip_noise_schedule(alphas2, clip_value=0.001):
     """
-    For a noise schedule given by alpha^2, this clips alpha_t / alpha_t-1. 
+    For a noise schedule given by alpha^2, this clips alpha_t / alpha_t-1.
     This may help improve stability during sampling.
     """
     alphas2 = np.concatenate([np.ones(1), alphas2], axis=0)
-    alphas_step = (alphas2[1:] / alphas2[:-1])
+    alphas_step = alphas2[1:] / alphas2[:-1]
 
-    alphas_step = np.clip(alphas_step, a_min=clip_value, a_max=1.)
+    alphas_step = np.clip(alphas_step, a_min=clip_value, a_max=1.0)
     alphas2 = np.cumprod(alphas_step, axis=0)
 
     return alphas2
@@ -61,7 +62,7 @@ def cosine_beta_schedule(timesteps, s=0.008, raise_to_power: float = 1):
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     betas = np.clip(betas, a_min=0, a_max=0.999)
-    alphas = 1. - betas
+    alphas = 1.0 - betas
     alphas_cumprod = np.cumprod(alphas, axis=0)
 
     if raise_to_power != 1:
@@ -76,7 +77,7 @@ def cosine_beta_schedule_discrete(timesteps, s=0.008):
     x = np.linspace(0, steps, steps)
     alphas_cumprod = np.cos(0.5 * np.pi * ((x / steps) + s) / (1 + s)) ** 2
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    alphas = (alphas_cumprod[1:] / alphas_cumprod[:-1])
+    alphas = alphas_cumprod[1:] / alphas_cumprod[:-1]
     betas = 1 - alphas
     return betas.squeeze()
 
@@ -89,7 +90,7 @@ def custom_beta_schedule_discrete(timesteps, average_num_nodes=50, s=0.008):
     x = np.linspace(0, steps, steps)
     alphas_cumprod = np.cos(0.5 * np.pi * ((x / steps) + s) / (1 + s)) ** 2
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    alphas = (alphas_cumprod[1:] / alphas_cumprod[:-1])
+    alphas = alphas_cumprod[1:] / alphas_cumprod[:-1]
     betas = 1 - alphas
 
     assert timesteps >= 100
@@ -116,7 +117,7 @@ def gaussian_KL(q_mu, q_sigma):
 
 def cdf_std_gaussian(x):
     # 原: 0.5 * (1. + torch.erf(x / math.sqrt(2)))
-    return 0.5 * (1. + paddle.erf(x / math.sqrt(2)))
+    return 0.5 * (1.0 + paddle.erf(x / math.sqrt(2)))
 
 
 def SNR(gamma):
@@ -127,7 +128,7 @@ def SNR(gamma):
 
 def inflate_batch_array(array, target_shape):
     """
-    Inflates the batch array (array) with only a single axis (batch_size, ...) 
+    Inflates the batch array (array) with only a single axis (batch_size, ...)
     to match the target shape.
     """
     # 原: target_shape = (array.size(0),) + (1,)*(len(target_shape)-1)
@@ -165,7 +166,9 @@ def check_tensor_same_size(*args):
             raise ValueError("Tensors have different shapes.")
 
 
-def sigma_and_alpha_t_given_s(gamma_t: paddle.Tensor, gamma_s: paddle.Tensor, target_size: paddle.shape):
+def sigma_and_alpha_t_given_s(
+    gamma_t: paddle.Tensor, gamma_s: paddle.Tensor, target_size: paddle.shape
+):
     """
     Computes sigma_t_given_s and alpha_t_given_s for sampling.
     """
@@ -189,7 +192,7 @@ def sigma_and_alpha_t_given_s(gamma_t: paddle.Tensor, gamma_s: paddle.Tensor, ta
 
 def reverse_tensor(x):
     # 原: x[torch.arange(x.size(0) - 1, -1, -1)]
-    idx = paddle.arange(x.shape[0] - 1, -1, -1, dtype='int64')
+    idx = paddle.arange(x.shape[0] - 1, -1, -1, dtype="int64")
     return paddle.index_select(x, index=idx, axis=0)
 
 
@@ -201,7 +204,7 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
     epsE = sample_gaussian(E_size)
     epsy = sample_gaussian(y_size)
 
-    float_mask = node_mask.astype('float32')
+    float_mask = node_mask.astype("float32")
     epsX = epsX.astype(float_mask.dtype)
     epsE = epsE.astype(float_mask.dtype)
     epsy = epsy.astype(float_mask.dtype)
@@ -212,8 +215,8 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
     #   row_idx, col_idx = paddle.triu_indices(epsE.shape[1], epsE.shape[2], offset=1)
     # 否则可自己构造：
     row_idx, col_idx = np.triu_indices(n=epsE.shape[1], k=1)
-    row_idx_t = paddle.to_tensor(row_idx, dtype='int64')
-    col_idx_t = paddle.to_tensor(col_idx, dtype='int64')
+    row_idx_t = paddle.to_tensor(row_idx, dtype="int64")
+    col_idx_t = paddle.to_tensor(col_idx, dtype="int64")
 
     # 对 batch 维度做展开
     for b in range(epsE.shape[0]):
@@ -249,13 +252,15 @@ def check_issues_norm_values(gamma_func, norm_val1, norm_val2, num_stdevs=8):
     """
     Check if 1 / norm_value is still larger than 10 * standard deviation.
     """
-    zeros = paddle.zeros([1, 1], dtype='float32')
+    zeros = paddle.zeros([1, 1], dtype="float32")
     gamma_0 = gamma_func(zeros)
     # sigma_0:
     sig0 = sigma(gamma_0, zeros.shape).item()
     max_norm_value = max(norm_val1, norm_val2)
-    if sig0 * num_stdevs > 1. / max_norm_value:
-        raise ValueError(f"Value for normalization {max_norm_value} too large with sigma_0={sig0:.5f}.")
+    if sig0 * num_stdevs > 1.0 / max_norm_value:
+        raise ValueError(
+            f"Value for normalization {max_norm_value} too large with sigma_0={sig0:.5f}."
+        )
 
 
 def sample_discrete_features(probX, probE, node_mask):
@@ -268,13 +273,13 @@ def sample_discrete_features(probX, probE, node_mask):
 
     # The masked rows should define a uniform distribution
     # => probX[~node_mask] = 1 / dx_out
-    mask_bool = node_mask.astype('bool')
+    mask_bool = node_mask.astype("bool")
     # ~mask => paddle.logical_not
     mask_not = paddle.logical_not(mask_bool)
-    probX[mask_not] = 1. / dx_out
+    probX[mask_not] = 1.0 / dx_out
 
     # Flatten to (bs*n, dx_out)
-    probX_flat = paddle.reshape(probX, [bs*n, dx_out])
+    probX_flat = paddle.reshape(probX, [bs * n, dx_out])
 
     # paddle.multinomial: shape (bs*n, 1)
     X_t_ = paddle.multinomial(probX_flat, num_samples=1)
@@ -285,15 +290,15 @@ def sample_discrete_features(probX, probE, node_mask):
     mask_2d = paddle.unsqueeze(mask_bool, axis=1) * paddle.unsqueeze(mask_bool, axis=2)
     inv_edge_mask = paddle.logical_not(mask_2d)
     # diag
-    diag_mask = paddle.eye(n, dtype='bool')
+    diag_mask = paddle.eye(n, dtype="bool")
     diag_mask_bs = paddle.unsqueeze(diag_mask, axis=0).expand([bs, n, n])
     # => probE[~(mask_2d) + diag_mask] = 1 / probE.shape[-1]
     # Paddle 不支持多重逻辑直接索引，需要先构造:
     de_out = probE.shape[-1]
-    probE[paddle.logical_not(mask_2d)] = 1. / de_out
-    probE[diag_mask_bs] = 1. / de_out
+    probE[paddle.logical_not(mask_2d)] = 1.0 / de_out
+    probE[diag_mask_bs] = 1.0 / de_out
 
-    probE_flat = paddle.reshape(probE, [bs*n*n, de_out])
+    probE_flat = paddle.reshape(probE, [bs * n * n, de_out])
     E_t_ = paddle.multinomial(probE_flat, num_samples=1)
     E_t_ = paddle.reshape(E_t_, [bs, n, n])
 
@@ -301,8 +306,8 @@ def sample_discrete_features(probX, probE, node_mask):
     # upper
     # 只能手动构造 indices
     row_idx, col_idx = np.triu_indices(n=n, k=1)
-    row_idx_t = paddle.to_tensor(row_idx, dtype='int64')
-    col_idx_t = paddle.to_tensor(col_idx, dtype='int64')
+    row_idx_t = paddle.to_tensor(row_idx, dtype="int64")
+    col_idx_t = paddle.to_tensor(col_idx, dtype="int64")
     E_upper = paddle.zeros_like(E_t_)
     for b in range(bs):
         E_upper[b, row_idx_t, col_idx_t] = E_t_[b, row_idx_t, col_idx_t]
@@ -322,21 +327,21 @@ def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
     """
     # Flatten
     bs = M.shape[0]
-    M_flat = paddle.reshape(M, [bs, -1, M.shape[-1]])   # e.g. (bs, N, d)
+    M_flat = paddle.reshape(M, [bs, -1, M.shape[-1]])  # e.g. (bs, N, d)
     M_t_flat = paddle.reshape(M_t, [bs, -1, M_t.shape[-1]])
 
-    Qt_M_T = paddle.transpose(Qt_M, perm=[0, 2, 1])     # (bs, d, d)
+    Qt_M_T = paddle.transpose(Qt_M, perm=[0, 2, 1])  # (bs, d, d)
 
-    left_term = paddle.matmul(M_t_flat, Qt_M_T)         # (bs, N, d)
-    right_term = paddle.matmul(M_flat, Qsb_M)           # (bs, N, d)
-    product = left_term * right_term                    # (bs, N, d)
+    left_term = paddle.matmul(M_t_flat, Qt_M_T)  # (bs, N, d)
+    right_term = paddle.matmul(M_flat, Qsb_M)  # (bs, N, d)
+    product = left_term * right_term  # (bs, N, d)
 
-    denom = paddle.matmul(M_flat, Qtb_M)                # (bs, N, d)
-    denom = paddle.sum(denom * M_t_flat, axis=-1)       # (bs, N)
+    denom = paddle.matmul(M_flat, Qtb_M)  # (bs, N, d)
+    denom = paddle.sum(denom * M_t_flat, axis=-1)  # (bs, N)
 
-    denom_ = paddle.unsqueeze(denom, axis=-1)           # (bs, N, 1)
+    denom_ = paddle.unsqueeze(denom, axis=-1)  # (bs, N, 1)
     # avoid zero div
-    zero_mask = (denom_ == 0.)
+    zero_mask = denom_ == 0.0
     denom_ = paddle.where(zero_mask, paddle.ones_like(denom_), denom_)
 
     prob = product / denom_
@@ -347,20 +352,22 @@ def compute_batched_over0_posterior_distribution_(X_t, Qt, Qsb, Qtb):
     """
     Compute xt @ Qt.T * x0 @ Qsb / x0 @ Qtb @ xt.T for each possible value of x0
     """
-    X_t = X_t.astype('float32')
-    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1]).astype('float32')
+    X_t = X_t.astype("float32")
+    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1]).astype("float32")
 
-    left_term = paddle.matmul(X_t, Qt_T)        # (bs, N, d_t-1)
-    left_term = paddle.unsqueeze(left_term, axis=2)   # (bs, N, 1, d_t-1)
+    left_term = paddle.matmul(X_t, Qt_T)  # (bs, N, d_t-1)
+    left_term = paddle.unsqueeze(left_term, axis=2)  # (bs, N, 1, d_t-1)
 
-    right_term = paddle.unsqueeze(Qsb, axis=1)        # (bs, 1, d0, d_t-1)
-    numerator = left_term * right_term                # (bs, N, d0, d_t-1)
+    right_term = paddle.unsqueeze(Qsb, axis=1)  # (bs, 1, d0, d_t-1)
+    numerator = left_term * right_term  # (bs, N, d0, d_t-1)
 
-    denominator = paddle.matmul(Qtb, paddle.transpose(X_t, perm=[0, 2, 1]))  # (bs, d0, N)
-    denominator = paddle.transpose(denominator, perm=[0, 2, 1])             # (bs, N, d0)
-    denominator = paddle.unsqueeze(denominator, axis=-1)                    # (bs, N, d0, 1)
+    denominator = paddle.matmul(
+        Qtb, paddle.transpose(X_t, perm=[0, 2, 1])
+    )  # (bs, d0, N)
+    denominator = paddle.transpose(denominator, perm=[0, 2, 1])  # (bs, N, d0)
+    denominator = paddle.unsqueeze(denominator, axis=-1)  # (bs, N, d0, 1)
 
-    zero_mask = (denominator == 0.)
+    zero_mask = denominator == 0.0
     denominator = paddle.where(zero_mask, paddle.ones_like(denominator), denominator)
 
     return numerator / denominator
@@ -372,21 +379,23 @@ def compute_batched_over0_posterior_distribution(X_t, Qt, Qsb, Qtb):
     Then compute the posterior distribution. (Same logic as the '_' version)
     """
     # Flatten
-    X_t_f = X_t.flatten(start_axis=1, stop_axis=-2).astype('float32')  # (bs, N, dt)
-    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1])                        # (bs, dt, d_t-1)
+    X_t_f = X_t.flatten(start_axis=1, stop_axis=-2).astype("float32")  # (bs, N, dt)
+    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1])  # (bs, dt, d_t-1)
 
-    left_term = paddle.matmul(X_t_f, Qt_T)                             # (bs, N, d_t-1)
-    left_term = paddle.unsqueeze(left_term, axis=2)                    # (bs, N, 1, d_t-1)
-    right_term = paddle.unsqueeze(Qsb, axis=1)                         # (bs, 1, d0, d_t-1)
-    numerator = left_term * right_term                                 # (bs, N, d0, d_t-1)
+    left_term = paddle.matmul(X_t_f, Qt_T)  # (bs, N, d_t-1)
+    left_term = paddle.unsqueeze(left_term, axis=2)  # (bs, N, 1, d_t-1)
+    right_term = paddle.unsqueeze(Qsb, axis=1)  # (bs, 1, d0, d_t-1)
+    numerator = left_term * right_term  # (bs, N, d0, d_t-1)
 
-    X_t_transposed = paddle.transpose(X_t_f, perm=[0, 2, 1])           # (bs, dt, N)
-    prod = paddle.matmul(Qtb, X_t_transposed)                           # (bs, d0, N)
-    prod = paddle.transpose(prod, perm=[0, 2, 1])                       # (bs, N, d0)
+    X_t_transposed = paddle.transpose(X_t_f, perm=[0, 2, 1])  # (bs, dt, N)
+    prod = paddle.matmul(Qtb, X_t_transposed)  # (bs, d0, N)
+    prod = paddle.transpose(prod, perm=[0, 2, 1])  # (bs, N, d0)
 
-    denominator = paddle.unsqueeze(prod, axis=-1)                       # (bs, N, d0, 1)
-    zero_mask = (denominator == 0)
-    denominator = paddle.where(zero_mask, paddle.full_like(denominator, 1e-6), denominator)
+    denominator = paddle.unsqueeze(prod, axis=-1)  # (bs, N, d0, 1)
+    zero_mask = denominator == 0
+    denominator = paddle.where(
+        zero_mask, paddle.full_like(denominator, 1e-6), denominator
+    )
 
     return numerator / denominator
 
@@ -400,16 +409,16 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     dtype_ = true_X.dtype
 
     row_X = paddle.zeros([true_X.shape[-1]], dtype=dtype_)
-    row_X[0] = 1.
+    row_X[0] = 1.0
     row_E = paddle.zeros([true_E.shape[-1]], dtype=dtype_)
-    row_E[0] = 1.
+    row_E[0] = 1.0
 
     n_ = node_mask.shape[1]
-    diag_mask = paddle.eye(n_, dtype='bool')
+    diag_mask = paddle.eye(n_, dtype="bool")
     diag_mask_bs = diag_mask.unsqueeze(0).expand([node_mask.shape[0], n_, n_])
 
     # ~node_mask => paddle.logical_not
-    mask_bool = node_mask.astype('bool')
+    mask_bool = node_mask.astype("bool")
     mask_not = paddle.logical_not(mask_bool)
 
     # true_X[~node_mask] = row_X
@@ -418,7 +427,9 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     #   if mask_not => row_X, else => true_X
     # 先把 row_X broadcast
     row_X_bc = row_X.unsqueeze(0).unsqueeze(0)  # shape (1,1,dx)
-    row_X_bc = paddle.expand(row_X_bc, [mask_not.shape[0], mask_not.shape[1], row_X.shape[0]])
+    row_X_bc = paddle.expand(
+        row_X_bc, [mask_not.shape[0], mask_not.shape[1], row_X.shape[0]]
+    )
 
     true_X = paddle.where(paddle.unsqueeze(mask_not, axis=-1), row_X_bc, true_X)
     pred_X = paddle.where(paddle.unsqueeze(mask_not, axis=-1), row_X_bc, pred_X)
@@ -430,7 +441,10 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     comb_mask = paddle.logical_or(inv_mask_2d, diag_mask_bs)
 
     row_E_bc = row_E.unsqueeze(0).unsqueeze(0).unsqueeze(0)  # shape (1,1,1,de)
-    row_E_bc = paddle.expand(row_E_bc, [comb_mask.shape[0], comb_mask.shape[1], comb_mask.shape[2], row_E.shape[0]])
+    row_E_bc = paddle.expand(
+        row_E_bc,
+        [comb_mask.shape[0], comb_mask.shape[1], comb_mask.shape[2], row_E.shape[0]],
+    )
 
     true_E = paddle.where(paddle.unsqueeze(comb_mask, axis=-1), row_E_bc, true_E)
     pred_E = paddle.where(paddle.unsqueeze(comb_mask, axis=-1), row_E_bc, pred_E)
@@ -460,8 +474,12 @@ def posterior_distributions(X, E, y, X_t, E_t, y_t, Qt, Qsb, Qtb):
     """
     Compute posterior distribution for X, E.
     """
-    prob_X = compute_posterior_distribution(M=X, M_t=X_t, Qt_M=Qt.X, Qsb_M=Qsb.X, Qtb_M=Qtb.X)   # (bs, n, dx)
-    prob_E = compute_posterior_distribution(M=E, M_t=E_t, Qt_M=Qt.E, Qsb_M=Qsb.E, Qtb_M=Qtb.E)   # (bs, n*n, de)
+    prob_X = compute_posterior_distribution(
+        M=X, M_t=X_t, Qt_M=Qt.X, Qsb_M=Qsb.X, Qtb_M=Qtb.X
+    )  # (bs, n, dx)
+    prob_E = compute_posterior_distribution(
+        M=E, M_t=E_t, Qt_M=Qt.E, Qsb_M=Qsb.E, Qtb_M=Qtb.E
+    )  # (bs, n*n, de)
     return PlaceHolder(X=prob_X, E=prob_E, y=y_t)
 
 
@@ -472,16 +490,18 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
     """
     bs, n_max = node_mask.shape
     # x_limit => shape (bs, n_max, dx)
-    x_limit = paddle.unsqueeze(limit_dist.X, axis=0)    # (1, dx)
-    x_limit = paddle.unsqueeze(x_limit, axis=0)         # (1,1,dx)
+    x_limit = paddle.unsqueeze(limit_dist.X, axis=0)  # (1, dx)
+    x_limit = paddle.unsqueeze(x_limit, axis=0)  # (1,1,dx)
     x_limit = paddle.expand(x_limit, [bs, n_max, x_limit.shape[-1]])  # (bs, n_max, dx)
 
-    e_limit = paddle.unsqueeze(limit_dist.E, axis=0)    # (1, de)
-    e_limit = paddle.unsqueeze(e_limit, axis=0)         # (1,1,de)
-    e_limit = paddle.unsqueeze(e_limit, axis=0)         # (1,1,1,de)
-    e_limit = paddle.expand(e_limit, [bs, n_max, n_max, e_limit.shape[-1]])  # (bs, n_max, n_max, de)
+    e_limit = paddle.unsqueeze(limit_dist.E, axis=0)  # (1, de)
+    e_limit = paddle.unsqueeze(e_limit, axis=0)  # (1,1,de)
+    e_limit = paddle.unsqueeze(e_limit, axis=0)  # (1,1,1,de)
+    e_limit = paddle.expand(
+        e_limit, [bs, n_max, n_max, e_limit.shape[-1]]
+    )  # (bs, n_max, n_max, de)
 
-    y_limit = paddle.unsqueeze(limit_dist.y, axis=0)    # (1, dy)
+    y_limit = paddle.unsqueeze(limit_dist.y, axis=0)  # (1, dy)
     y_limit = paddle.expand(y_limit, [bs, y_limit.shape[-1]])  # (bs, dy)
 
     # multinomial for X
@@ -498,13 +518,13 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
     U_y = paddle.zeros([bs, 0], dtype=X_idx.dtype)
 
     # one_hot
-    X_onehot = F.one_hot(X_idx, num_classes=x_limit.shape[-1]).astype('float32')
-    E_onehot = F.one_hot(E_idx, num_classes=e_limit.shape[-1]).astype('float32')
+    X_onehot = F.one_hot(X_idx, num_classes=x_limit.shape[-1]).astype("float32")
+    E_onehot = F.one_hot(E_idx, num_classes=e_limit.shape[-1]).astype("float32")
 
     # Get upper triangular part for E
     row_idx, col_idx = np.triu_indices(n=n_max, k=1)
-    row_idx_t = paddle.to_tensor(row_idx, dtype='int64')
-    col_idx_t = paddle.to_tensor(col_idx, dtype='int64')
+    row_idx_t = paddle.to_tensor(row_idx, dtype="int64")
+    col_idx_t = paddle.to_tensor(col_idx, dtype="int64")
 
     E_upper = paddle.zeros_like(E_onehot)
     for b in range(bs):

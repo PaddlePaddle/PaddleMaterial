@@ -2,11 +2,12 @@ import numpy as np
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
+from rdkit import Chem
+from rdkit import RDLogger
+from rdkit.Chem.rdchem import Mol
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
-from rdkit import Chem, RDLogger
-from rdkit.Chem.rdchem import Mol
 
 def build_structure_from_str(crystal_str, niggli=True, primitive=False, num_cpus=None):
     """Build crystal structure of pymatgen object from cif string."""
@@ -173,15 +174,16 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     vector_c = [0.0, 0.0, float(c)]
     return np.array([vector_a, vector_b, vector_c])
 
+
 def build_molecules_from_smiles(smiles_str, remove_h=None, num_cpus=None):
     """Build molecules of rdkit object from smiles."""
-    
-    RDLogger.DisableLog('rdApp.*')
-    
+
+    RDLogger.DisableLog("rdApp.*")
+
     def build_one(smiles_str):
         mol = Chem.MolFromSmiles(smiles_str)
         return mol
-    
+
     if isinstance(smiles_str, str):
         return build_one(crystal_str)
     elif isinstance(smiles_str, list):
@@ -189,6 +191,7 @@ def build_molecules_from_smiles(smiles_str, remove_h=None, num_cpus=None):
         return mols
     else:
         raise TypeError("crystal_str must be str or list.")
+
 
 def numericalize_text(text, vocab_to_id, dim):
     """

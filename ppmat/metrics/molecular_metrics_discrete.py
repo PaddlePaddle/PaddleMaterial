@@ -6,11 +6,13 @@ import paddle.nn.functional as F
 # 1. 自定义 MetricCollection 类
 # ================================
 
+
 class PaddleMetricCollection:
     """
     用于收集多个自定义 Metric，并统一调用 update / compute / reset。
     功能类似 TorchMetrics 中的 MetricCollection。
     """
+
     def __init__(self, metrics_list):
         """
         metrics_list: 一个列表，其中每个元素都是 Paddle Metric 对象
@@ -44,10 +46,12 @@ class PaddleMetricCollection:
 # 2. 自定义 CEPerClass (Paddle Metric)
 # ================================
 
+
 class CEPerClass(paddle.metric.Metric):
     """
     Paddle 中自定义的交叉熵度量示例，用于对特定类(class_id)的预测进行二进制交叉熵计算。
     """
+
     def __init__(self, class_id):
         super().__init__()
         self._class_id = class_id
@@ -58,7 +62,7 @@ class CEPerClass(paddle.metric.Metric):
         # softmax 用于多分类变成相应类别的概率
         self.softmax = nn.Softmax(axis=-1)
         # BCELoss 在 Paddle 中通过 paddle.nn.BCELoss(reduction='sum') 或 F.binary_cross_entropy
-        self.bce_loss = nn.BCELoss(reduction='sum')
+        self.bce_loss = nn.BCELoss(reduction="sum")
 
     def name(self):
         """
@@ -80,7 +84,7 @@ class CEPerClass(paddle.metric.Metric):
         target = paddle.reshape(target, [-1, last_dim])
 
         # 创建 mask，排除全0行： (target != 0).any(axis=-1)
-        mask = paddle.any(target != 0., axis=-1)  # bool张量
+        mask = paddle.any(target != 0.0, axis=-1)  # bool张量
 
         # 取特定类别的概率
         prob_full = self.softmax(preds)  # preds => softmax => [batch, ..., d]
@@ -123,74 +127,92 @@ class CEPerClass(paddle.metric.Metric):
 # 3. 定义子类：各元素/键类型的 CE
 # ================================
 
+
 class HydrogenCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class CarbonCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class NitroCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class OxyCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class FluorCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class BoronCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class BrCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class ClCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class IodineCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class PhosphorusCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class SulfurCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class SeCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class SiCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 # Bond 类型
 class NoBondCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class SingleCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class DoubleCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
 
+
 class TripleCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
+
 
 class AromaticCE(CEPerClass):
     def __init__(self, i):
@@ -202,10 +224,12 @@ class AromaticCE(CEPerClass):
 #    在 Paddle 中使用自定义的 PaddleMetricCollection
 # ================================
 
+
 class AtomMetricsCE(PaddleMetricCollection):
     """
     用于管理与原子相关的多个 CEPerClass 子类。
     """
+
     def __init__(self, dataset_infos):
         """
         dataset_infos: 假设里边包含 'atom_decoder'，
@@ -213,9 +237,19 @@ class AtomMetricsCE(PaddleMetricCollection):
         """
         atom_decoder = dataset_infos.atom_decoder  # 假设是个列表，比如 ['H','C','N',...]
         class_dict = {
-            'H': HydrogenCE, 'C': CarbonCE, 'N': NitroCE, 'O': OxyCE, 'F': FluorCE, 'B': BoronCE,
-            'Br': BrCE, 'Cl': ClCE, 'I': IodineCE, 'P': PhosphorusCE, 'S': SulfurCE, 'Se': SeCE,
-            'Si': SiCE
+            "H": HydrogenCE,
+            "C": CarbonCE,
+            "N": NitroCE,
+            "O": OxyCE,
+            "F": FluorCE,
+            "B": BoronCE,
+            "Br": BrCE,
+            "Cl": ClCE,
+            "I": IodineCE,
+            "P": PhosphorusCE,
+            "S": SulfurCE,
+            "Se": SeCE,
+            "Si": SiCE,
         }
 
         metrics_list = []
@@ -230,6 +264,7 @@ class BondMetricsCE(PaddleMetricCollection):
     """
     用于管理与键类型相关的多个 CEPerClass 子类。
     """
+
     def __init__(self):
         # 假设顺序：NoBond=0, Single=1, Double=2, Triple=3, Aromatic=4
         ce_no_bond = NoBondCE(0)
@@ -247,10 +282,12 @@ class BondMetricsCE(PaddleMetricCollection):
 #    在 Paddle 中使用 paddle.nn.Layer
 # ================================
 
+
 class TrainMolecularMetricsDiscrete(nn.Layer):
     """
     用于在训练/验证循环中调用 update / log / reset 等方法。
     """
+
     def __init__(self, dataset_infos):
         super().__init__()
         # 替代 PyTorch 里的 AtomMetricsCE / BondMetricsCE
@@ -309,7 +346,7 @@ if __name__ == "__main__":
     # 模拟 dataset_infos
     class DatasetInfosMock:
         def __init__(self):
-            self.atom_decoder = ['H', 'C', 'N', 'O', 'F']  # 仅作示例
+            self.atom_decoder = ["H", "C", "N", "O", "F"]  # 仅作示例
 
     dataset_infos = DatasetInfosMock()
 
@@ -319,17 +356,27 @@ if __name__ == "__main__":
     # 假设训练循环里
     for epoch in range(3):
         metrics_layer.reset()
-        
+
         for step in range(5):
             # 模拟网络输出 preds / true
-            batch_pred_X = paddle.rand([2, 10, len(dataset_infos.atom_decoder)])  # (bs=2, n=10, d=5)
-            batch_true_X = paddle.rand([2, 10, len(dataset_infos.atom_decoder)])  # 同样 shape
+            batch_pred_X = paddle.rand(
+                [2, 10, len(dataset_infos.atom_decoder)]
+            )  # (bs=2, n=10, d=5)
+            batch_true_X = paddle.rand(
+                [2, 10, len(dataset_infos.atom_decoder)]
+            )  # 同样 shape
 
             batch_pred_E = paddle.rand([2, 10, 5])  # 例如 (bs=2, n=10, d=5)
             batch_true_E = paddle.rand([2, 10, 5])  # 同样 shape
 
             # 调用 forward 更新指标
-            metrics_layer(batch_pred_X, batch_pred_E, batch_true_X, batch_true_E, log_flag=(step % 2 == 0))
+            metrics_layer(
+                batch_pred_X,
+                batch_pred_E,
+                batch_true_X,
+                batch_true_E,
+                log_flag=(step % 2 == 0),
+            )
 
         # epoch 结束后，打印或 log 一次 epoch 级别指标
         epoch_atom_metrics, epoch_bond_metrics = metrics_layer.log_epoch_metrics()

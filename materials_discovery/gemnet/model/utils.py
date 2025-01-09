@@ -1,7 +1,8 @@
 import json
-import paddle 
-
 from typing import Optional
+
+import paddle
+
 
 def read_json(path):
     """ """
@@ -50,9 +51,13 @@ def _broadcast(src: paddle.Tensor, other: paddle.Tensor, dim: int):
     return src
 
 
-def _scatter_sum(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
-                out: Optional[paddle.Tensor] = None,
-                dim_size: Optional[int] = None) -> paddle.Tensor:
+def _scatter_sum(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
     index = _broadcast(index, src, dim)
     if out is None:
         size = list(src.shape)
@@ -63,18 +68,28 @@ def _scatter_sum(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
         else:
             size[dim] = int(index.max()) + 1
         out = paddle.zeros(size, dtype=src.dtype)
-    return paddle.put_along_axis(arr=out, indices=index, values=src, axis=dim, reduce='add')
- 
+    return paddle.put_along_axis(
+        arr=out, indices=index, values=src, axis=dim, reduce="add"
+    )
 
-def _scatter_add(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
-                out: Optional[paddle.Tensor] = None,
-                dim_size: Optional[int] = None) -> paddle.Tensor:
+
+def _scatter_add(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
     return _scatter_sum(src, index, dim, out, dim_size)
 
 
-def _scatter_mean(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
-                 out: Optional[paddle.Tensor] = None,
-                 dim_size: Optional[int] = None) -> paddle.Tensor:
+def _scatter_mean(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
     out = _scatter_sum(src, index, dim, out, dim_size)
     dim_size = out.shape[dim]
 
@@ -97,15 +112,20 @@ def _scatter_mean(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
     return out
 
 
-def scatter(src: paddle.Tensor, index: paddle.Tensor, dim: int = -1,
-            out: Optional[paddle.Tensor] = None, dim_size: Optional[int] = None,
-            reduce: str = "sum") -> paddle.Tensor:
+def scatter(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+    reduce: str = "sum",
+) -> paddle.Tensor:
     """
     Implement paddle version API like torch_scatter.scatter
     """
-    if reduce == 'sum' or reduce == 'add':
+    if reduce == "sum" or reduce == "add":
         return _scatter_sum(src, index, dim, out, dim_size)
-    elif reduce == 'mean':
+    elif reduce == "mean":
         return _scatter_mean(src, index, dim, out, dim_size)
     else:
-        raise ValueError('Only support add or mean')
+        raise ValueError("Only support add or mean")

@@ -527,4 +527,4 @@ def run_at_rank0(func: Callable) -> Callable:
         if dist.get_rank() == 0:
             return func(*args, **kwargs)
 
-    return wrapped_func   
+    return wrapped_func

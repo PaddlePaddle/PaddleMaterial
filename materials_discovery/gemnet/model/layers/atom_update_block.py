@@ -1,10 +1,10 @@
 import paddle
 
 from ..initializers import he_orthogonal_init
+from ..utils import scatter
 from .base_layers import Dense
 from .base_layers import ResidualLayer
 from .scaling import ScalingFactor
-from ..utils import scatter
 
 
 class AtomUpdateBlock(paddle.nn.Layer):
@@ -61,7 +61,7 @@ class AtomUpdateBlock(paddle.nn.Layer):
         nAtoms = tuple(h.shape)[0]
         mlp_rbf = self.dense_rbf(rbf)
         x = m * mlp_rbf
-        x2 = scatter(x, id_j, dim=0, dim_size=nAtoms, reduce='add')
+        x2 = scatter(x, id_j, dim=0, dim_size=nAtoms, reduce="add")
         x = self.scale_sum(m, x2)
         for i, layer in enumerate(self.layers):
             x = layer(x)
@@ -158,7 +158,7 @@ class OutputBlock(AtomUpdateBlock):
         nAtoms = tuple(h.shape)[0]
         rbf_mlp = self.dense_rbf(rbf)
         x = m * rbf_mlp
-        x_E = scatter(x, id_j, dim=0, dim_size=nAtoms, reduce='add')
+        x_E = scatter(x, id_j, dim=0, dim_size=nAtoms, reduce="add")
         x_E = self.scale_sum(m, x_E)
         for i, layer in enumerate(self.seq_energy):
             x_E = layer(x_E)

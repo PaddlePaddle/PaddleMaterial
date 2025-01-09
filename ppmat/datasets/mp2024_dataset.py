@@ -18,6 +18,7 @@ from ppmat.datasets.utils import build_structure_from_dict
 from ppmat.utils import DEFAULT_ELEMENTS
 from ppmat.utils import logger
 
+
 class MP2024Dataset(Dataset):
     """mp.2024.11.1 dataset."""
 

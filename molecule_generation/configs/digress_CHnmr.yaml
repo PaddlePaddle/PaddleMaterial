@@ -16,7 +16,20 @@ Metric:
   gt_file_path: "./data/mp_20/test.csv"
 
 Model:
-  __name__: Digress
+  __name__: MolecularGraphTransformer
+  encoder_cfg:
+    hidden_dim: 512
+    latent_dim: 256
+    max_atoms: 100
+    num_layers: 6
+    act_fn: silu
+    dis_emb: sin
+    num_freqs: 128
+    edge_style: fc
+    max_neighbors: 20
+    cutoff: 7
+    ln: true
+    ip: true
   decoder_cfg:
     hidden_dim: 512
     latent_dim: 256
@@ -30,6 +43,21 @@ Model:
     cutoff: 7
     ln: true
     ip: true
+  model_setting:
+    type: 'discrete_condition'
+    transition: 'marginal' # uniform or marginal
+    model: 'graph_tf'
+    diffusion_steps: 120
+    diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
+    n_layers: 5
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    # Do not set hidden_mlp_E, dim_ffE too high, computing large tensors on the edges is costly
+    # At the moment (03/08), y contains quite little information
+    hidden_mlp_dims: {'X': 256, 'E': 128, 'y': 256}
+    # The dimensions should satisfy dx % n_head == 0
+    hidden_dims : {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
+    lambda_train: [5, 0]
+    conditdim: 512  
   beta_scheduler_cfg:
     timesteps: 1000
     scheduler_mode: cosine

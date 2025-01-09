@@ -4,8 +4,6 @@ import os
 
 import paddle
 import yaml
-from tqdm import trange
-
 from gemnet.model.gemnet import GemNet
 from gemnet.model.layers.scaling import AutomaticFit
 from gemnet.model.utils import write_json
@@ -13,6 +11,7 @@ from gemnet.training.data_container import DataContainer
 from gemnet.training.data_provider import DataProvider
 from gemnet.training.metrics import Metrics
 from gemnet.training.trainer import Trainer
+from tqdm import trange
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 os.environ["AUTOGRAPH_VERBOSITY"] = "1"

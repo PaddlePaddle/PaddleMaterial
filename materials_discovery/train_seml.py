@@ -9,14 +9,13 @@ import numpy as np
 import paddle
 import seml
 import torch
-from sacred import Experiment
-
 from gemnet.model.gemnet import GemNet
 from gemnet.training.data_container import DataContainer
 from gemnet.training.data_provider import DataProvider
 from gemnet.training.metrics import BestMetrics
 from gemnet.training.metrics import Metrics
 from gemnet.training.trainer import Trainer
+from sacred import Experiment
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 os.environ["AUTOGRAPH_VERBOSITY"] = "1"

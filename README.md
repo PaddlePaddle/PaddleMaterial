@@ -393,7 +393,7 @@ Please refer to the installation [document](install.md) for environment configur
 # Data Preparation
 
 Please refer to the following command to split the dataset into train/val/test sets:
-    
+
     python ppmat/datasets/dataset_split.py --format csv --src_path data/your/dataset/location
 
 # Acknowledgements

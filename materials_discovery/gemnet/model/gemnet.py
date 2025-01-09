@@ -533,11 +533,9 @@ class GemNet(paddle.nn.Layer):
             E_a += E
         nMolecules = paddle.max(x=batch_seg) + 1
         if self.extensive:
-            E_a = scatter(E_a, batch_seg, dim=0, dim_size=nMolecules,
-                reduce='add')
+            E_a = scatter(E_a, batch_seg, dim=0, dim_size=nMolecules, reduce="add")
         else:
-            E_a = scatter(E_a, batch_seg, dim=0, dim_size=nMolecules,
-                reduce='mean')
+            E_a = scatter(E_a, batch_seg, dim=0, dim_size=nMolecules, reduce="mean")
         if self.direct_forces:
             nAtoms = tuple(Z.shape)[0]
             if self.forces_coupled:

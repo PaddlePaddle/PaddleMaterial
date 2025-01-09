@@ -8,7 +8,6 @@ from datetime import datetime
 import numpy as np
 import paddle
 import yaml
-
 from gemnet.model.gemnet import GemNet
 from gemnet.training.data_container import DataContainer
 from gemnet.training.data_provider import DataProvider
@@ -29,8 +28,8 @@ logger.addHandler(ch)
 logger.setLevel("INFO")
 
 
-os.chdir(os.getcwd() + '/materials_discovery')
-with open('config.yaml', "r") as c:
+os.chdir(os.getcwd() + "/materials_discovery")
+with open("config.yaml", "r") as c:
     config = yaml.safe_load(c)
 for key, val in config.items():
     if type(val) is str:
@@ -263,7 +262,7 @@ for step in range(step_init + 1, num_steps + 1):
     #     lr = trainer.schedulers[0].get_last_lr()[0]
     loss = trainer.train_on_batch(train["dataset_iter"], train["metrics"])
     if step % evaluation_interval == 0:
-        print('The step {} loss {}'.format(step, loss))
+        print("The step {} loss {}".format(step, loss))
     # if step % save_interval == 0:
     #     paddle.save(obj={"model": model.state_dict()}, path=log_path_model)
     #     paddle.save(

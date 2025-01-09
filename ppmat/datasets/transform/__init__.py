@@ -22,10 +22,10 @@ from paddle import vision
 from ppmat.datasets.transform.post_process import Denormalize
 from ppmat.datasets.transform.preprocess import ClipData
 from ppmat.datasets.transform.preprocess import Normalize
-from ppmat.datasets.transform.preprocess import SelecTargetTransform
 from ppmat.datasets.transform.preprocess import RemoveYTransform
-from ppmat.datasets.transform.preprocess import SelectMuTransform
+from ppmat.datasets.transform.preprocess import SelecTargetTransform
 from ppmat.datasets.transform.preprocess import SelectHOMOTransform
+from ppmat.datasets.transform.preprocess import SelectMuTransform
 
 __all__ = [
     "Normalize",

@@ -1,9 +1,9 @@
-import paddle
 import math
+
+import paddle
 
 
 class SinusoidalPosEmb(paddle.nn.Layer):
-
     def __init__(self, dim):
         super().__init__()
         self.dim = dim

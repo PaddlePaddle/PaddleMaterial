@@ -11,7 +11,6 @@ from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.velocitydistribution import Stationary
 from ase.md.verlet import VelocityVerlet
-
 from gemnet.training.data_container import DataContainer
 
 
