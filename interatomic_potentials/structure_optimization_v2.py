@@ -20,8 +20,6 @@ from ppmat.models.chgnet_v2.model import StructOptimizer
 from ppmat.utils import logger
 from ppmat.utils import misc
 
-eager_comp_setting.setting_eager_mode(enable=True)
-
 # To suppress warnings for clearer output
 warnings.simplefilter("ignore")
 
@@ -78,12 +76,23 @@ if __name__ == "__main__":
         default="./data/2d_1k/1000/relax.csv",
         help="Path to label path",
     )
+    parser.add_argument(
+        "--use_cpu",
+        action="store_true",
+        help="Use CPU",
+    )
 
     args, dynamic_args = parser.parse_known_args()
 
     config = OmegaConf.load(args.config)
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
+
+    if args.use_cpu:
+        paddle.device.set_device("cpu")
+        eager_comp_setting.setting_eager_mode(enable=True, custom_list="v1")
+    else:
+        eager_comp_setting.setting_eager_mode(enable=True)
 
     if dist.get_rank() == 0:
         os.makedirs(config["Global"]["output_dir"], exist_ok=True)
