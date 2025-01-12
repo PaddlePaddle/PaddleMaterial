@@ -395,6 +395,9 @@ Please refer to the following command to split the dataset into train/val/test s
 
     PYTHONPATH=$PWD python interatomic_potentials/structure_optimization_v2.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_v2.yaml  Global.pretrained_model_path="your model path(.pdparams)" --cif_dir="your cif directory path" --label_path="your label file path"
 
+    # use cpu
+    PYTHONPATH=$PWD python interatomic_potentials/structure_optimization_v2.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_v2.yaml  Global.pretrained_model_path="your model path(.pdparams)" --cif_dir="your cif directory path" --label_path="your label file path" --use_cpu
+
 
 ## 4. Molecule Generation
 
