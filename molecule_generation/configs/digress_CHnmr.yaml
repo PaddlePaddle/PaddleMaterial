@@ -127,8 +127,6 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./molecule_generation/data/CHnmr/train.csv"
-      data: "./data/CHnmr/train.csv"
-      stage: "./data/CHnmr/train.csv"
       vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
       cache: True
       remove_h: True
