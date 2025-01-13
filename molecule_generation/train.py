@@ -63,10 +63,6 @@ if __name__ == "__main__":
     logger.info(f"Set random seed to {seed}")
 
     # load dataloader from config
-    
-    datamodule = CHnmr_dataset(config)
-    
-    
     train_data_cfg = config["Dataset"]["train"]
     train_loader = build_dataloader(train_data_cfg)
     val_data_cfg = config["Dataset"]["val"]
