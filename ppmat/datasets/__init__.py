@@ -86,9 +86,12 @@ def build_dataloader(cfg):
     cls_name = sampler_cfg.pop("__name__")
     batch_sampler = eval(cls_name)(dataset, **sampler_cfg)
 
-    collate_obj = getattr(
-        collate_fn, loader_config.get("collate_fn", "DefaultCollator")
-    )()
+    try:
+        collate_obj = getattr(dataset, "collate_fn")
+    except Exception:
+        collate_obj = getattr(
+            collate_fn, loader_config.get("collate_fn", "DefaultCollator")
+        )()
 
     data_loader = DataLoader(
         dataset=dataset,
