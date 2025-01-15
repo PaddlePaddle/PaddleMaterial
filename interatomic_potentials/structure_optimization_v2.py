@@ -12,6 +12,7 @@ import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
 import pandas as pd
 from omegaconf import OmegaConf
+from pymatgen.core import Lattice
 from pymatgen.core import Structure
 
 import interatomic_potentials.eager_comp_setting as eager_comp_setting
@@ -143,8 +144,6 @@ if __name__ == "__main__":
     for idx, cif_file in enumerate(cif_files):
 
         cif_name = os.path.basename(cif_file)
-
-        cif_name = os.path.basename(cif_file)
         if label_dict is not None and cif_name not in label_dict:
             continue
         structure = Structure.from_file(cif_file)
@@ -164,6 +163,22 @@ if __name__ == "__main__":
         optimized_cif_file_path = os.path.join(cif_dir, cif_name)
         relaxed_structure.to(fmt="cif", filename=optimized_cif_file_path)
         logger.info(f"Relaxed structure saved to {optimized_cif_file_path}")
+
+        traj_dir = os.path.join(cif_dir, os.path.splitext(cif_name)[0])
+        os.makedirs(traj_dir, exist_ok=True)
+        trajectory = result["trajectory"]
+        trajectory.save(os.path.join(traj_dir, "traj.pkl"))
+        for i in range(len(trajectory.energies)):
+            structure_traj = Structure(
+                lattice=Lattice(trajectory.cells[i]),
+                species=relaxed_structure.species,
+                coords=trajectory.atom_positions[i],
+                coords_are_cartesian=True,
+            )
+            structure_traj.to(
+                fmt="cif", filename=os.path.join(traj_dir, f"traj_{i:05}.cif")
+            )
+        logger.info(f"Trajectory saved to {traj_dir}")
 
         preds["cif_name"].append(cif_name)
         preds["pred_energy_per_atom"].append(final_energy_per_atom)

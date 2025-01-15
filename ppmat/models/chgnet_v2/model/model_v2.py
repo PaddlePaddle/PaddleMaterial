@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Literal
 
+import numpy as np
 import paddle
 
 from ppmat.datasets.structure_converter import Structure2Graph
@@ -299,7 +300,7 @@ class CHGNet_v2(paddle.nn.Layer):
             self.angle_embedding,
             self.bond_basis_expansion,
             self.angle_basis_expansion,
-            self.atom_conv_layers[:-1],
+            self.atom_conv_layers[:3],
             self.bond_conv_layers,
             self.angle_layers,
         ]:
@@ -572,6 +573,7 @@ class CHGNet_v2(paddle.nn.Layer):
                 s (Tensor) : stress of structure [3 * batch_size, 3]
                 m (Tensor) : magnetic moments of sites [num_batch_atoms, 3]
         """
+
         prediction = {}
         atoms_per_graph = paddle.bincount(x=g.atom_owners)
         prediction["atoms_per_graph"] = atoms_per_graph
@@ -712,7 +714,6 @@ class CHGNet_v2(paddle.nn.Layer):
         """
 
         self.eval()
-        print("in model predict")
         if not graph.is_tensor():
             graph.tensor()
         # predictions: list[dict[str, paddle.Tensor]] = [{} for _ in range(len(graph))]
@@ -733,6 +734,8 @@ class CHGNet_v2(paddle.nn.Layer):
             if key == "s" and len(prediction["s"].shape) == 3:
                 prediction[key] = prediction[key][0]
             if key == "m" and isinstance(prediction[key], list):
+                prediction[key] = prediction[key][0]
+            if key == "e" and isinstance(prediction[key], np.ndarray):
                 prediction[key] = prediction[key][0]
         return prediction
 
