@@ -1,6 +1,6 @@
 import paddle
 
-from ppmat.utils.digressutils import PlaceHolder
+from .utils import digressutils as utils
 
 
 class ExtraMolecularFeatures:
@@ -26,7 +26,7 @@ class ExtraMolecularFeatures:
          - 原子电荷 (charge)
          - 原子实际价 (valency)
          - 分子重量 (weight)
-        返回 (X, E, y) 格式的 PlaceHolder
+        返回 (X, E, y) 格式的 utils.PlaceHolder
         """
         # charge / valency => (bs, n, 1)
         charge = paddle.unsqueeze(self.charge(noisy_data), axis=-1)
@@ -41,7 +41,7 @@ class ExtraMolecularFeatures:
         # 将电荷与价拼接到原子特征 X 的最后一维: (bs, n, 2)
         x_cat = paddle.concat([charge, valency], axis=-1)
 
-        return PlaceHolder(X=x_cat, E=extra_edge_attr, y=weight)
+        return utils.PlaceHolder(X=x_cat, E=extra_edge_attr, y=weight)
 
 
 class ChargeFeature:

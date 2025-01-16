@@ -1,6 +1,3 @@
-from typing import Callable
-from typing import Dict
-
 import paddle
 import paddle.nn.functional as F
 from paddle.metric import Metric
@@ -70,6 +67,9 @@ class SumExceptBatchMetric(Metric):
         super().__init__()
         self.reset()
 
+    def name(self):
+        self.name = self.__class__.__name__
+
     def reset(self):
         """
         Reset the internal states.
@@ -82,7 +82,8 @@ class SumExceptBatchMetric(Metric):
         Update the metric with new values.
 
         Args:
-            values (paddle.Tensor): Tensor containing the values to sum. Shape: (batch_size, ...)
+            values (paddle.Tensor): Tensor containing the values to sum.
+                Shape: (batch_size, ...)
         """
         self.total_value += paddle.sum(values)
         self.total_samples += paddle.shape(values)[0]
@@ -106,6 +107,9 @@ class SumExceptBatchMSE(Metric):
     def __init__(self):
         super().__init__()
         self.reset()
+
+    def name(self):
+        self.name = self.__class__.__name__
 
     def reset(self):
         """
@@ -163,6 +167,9 @@ class SumExceptBatchKL(Metric):
         super().__init__()
         self.reset()
 
+    def name(self):
+        self.name = self.__class__.__name__
+
     def reset(self):
         """
         Reset the internal states.
@@ -197,6 +204,9 @@ class CrossEntropyMetric(Metric):
         super().__init__()
         self.reset()
 
+    def name(self):
+        self.name = self.__class__.__name__
+
     def reset(self):
         """
         Reset the internal states.
@@ -209,8 +219,10 @@ class CrossEntropyMetric(Metric):
         Update the metric with new predictions and targets.
 
         Args:
-            preds (paddle.Tensor): Predictions from the model (logits). Shape: (batch_size, num_classes) or (batch_size, num_classes, ...)
-            target (paddle.Tensor): Ground truth one-hot encoded labels. Shape: (batch_size, num_classes) or (batch_size, num_classes, ...)
+            preds (paddle.Tensor): Predictions from the model (logits).
+                Shape: (batch_size, num_classes) or (batch_size, num_classes, ...)
+            target (paddle.Tensor): Ground truth one-hot encoded labels.
+                Shape: (batch_size, num_classes) or (batch_size, num_classes, ...)
         """
         # Convert one-hot to class indices
         target = paddle.argmax(target, axis=-1)
@@ -233,6 +245,9 @@ class ProbabilityMetric(Metric):
     def __init__(self):
         super().__init__()
         self.reset()
+
+    def name(self):
+        self.name = self.__class__.__name__
 
     def reset(self):
         """
@@ -270,6 +285,9 @@ class NLL(Metric):
         super().__init__()
         self.reset()
 
+    def name(self):
+        self.name = self.__class__.__name__
+
     def reset(self):
         """
         Reset the internal states.
@@ -282,7 +300,8 @@ class NLL(Metric):
         Update the NLL metric with new batch NLL values.
 
         Args:
-            batch_nll (paddle.Tensor): NLL values for the current batch. Shape: (batch_size, ...)
+            batch_nll (paddle.Tensor): NLL values for the current batch.
+                Shape: (batch_size, ...)
         """
         self.total_nll += paddle.sum(batch_nll)
         self.total_samples += paddle.numel(batch_nll)

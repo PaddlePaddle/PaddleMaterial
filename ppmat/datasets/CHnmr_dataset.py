@@ -18,14 +18,13 @@ from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
-from utils import subgraph
-from utils import to_dense
 
 from ppmat.datasets.ext_rdkit import build_molecule_with_partial_charges
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.datasets.ext_rdkit import mol2smiles
 from ppmat.datasets.utils import numericalize_text
 from ppmat.models.digress.distributions import DistributionNodes
+from ppmat.models.digress.utils import digressutils as utils
 
 # import pathlib
 
@@ -143,7 +142,7 @@ class CHnmrData:
         data_list = []
         # for idx, row in tqdm(target_df.iterrows(), total=target_df.shape[0]):
         # for idx in tqdm(range(target_df.shape[0] // 10000)):
-        for idx in tqdm(range(1)):
+        for idx in tqdm(range(2)):
             row = target_df.iloc[idx]
             smiles = row["smiles"]
             tokenized_input = row["tokenized_input"]
@@ -183,7 +182,7 @@ class CHnmrData:
             if self.remove_h:
                 type_idx = paddle.to_tensor(type_idx, dtype=paddle.int64)
                 to_keep = type_idx > 0
-                edge_index, edge_attr = subgraph(
+                edge_index, edge_attr = utils.subgraph(
                     to_keep,
                     edge_index,
                     edge_attr,
@@ -302,7 +301,10 @@ class CHnmrDataset(Dataset):
 class CHnmrinfos:
     def __init__(self, dataloaders, cfg, recompute_statistics=False):
         self.remove_h = cfg["Dataset"]["train"]["dataset"]["remove_h"]
-        self.name = "CHnmr"
+        self.need_to_strip = (
+            False  # to indicate whether we need to ignore one output from the model
+        )
+
         self.atom_encoder = (
             {"H": 0, "C": 1, "N": 2, "O": 3, "F": 4}
             if not self.remove_h
@@ -427,7 +429,25 @@ class CHnmrinfos:
                 ]
             )
         )
+
+        self.complete_infos(n_nodes=self.n_nodes, node_types=self.node_types)
         self.valency_distribution = paddle.zeros(3 * self.max_n_nodes - 2)
+        if not self.remove_h:
+            self.valency_distribution[0:6] = paddle.to_tensor(
+                [0, 0.5136, 0.0840, 0.0554, 0.3456, 0.0012]
+            )
+        else:
+            self.valency_distribution[0:7] = paddle.to_tensor(
+                [
+                    0.000000000000000000e00,
+                    1.856458932161331177e-01,
+                    2.707855999469757080e-01,
+                    3.008204102516174316e-01,
+                    2.362315803766250610e-01,
+                    3.544347826391458511e-03,
+                    2.972166286781430244e-03,
+                ]
+            )
         recompute_statistics = True
         if recompute_statistics:
             self.n_nodes = dataloaders.node_counts()
@@ -446,7 +466,7 @@ class CHnmrinfos:
         self, dataloader, extra_features, domain_features, conditionDim=0
     ):
         example_batch, other_data = next(iter(dataloader()))
-        ex_dense, node_mask = to_dense(
+        ex_dense, node_mask = utils.to_dense(
             example_batch.node_feat["feat"],
             example_batch.edges.T,
             example_batch.edge_feat["feat"],
@@ -504,7 +524,7 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
     if evaluate_dataset:
         all_molecules = []
         for i, data in enumerate(dataloader):
-            dense_data, node_mask = to_dense(
+            dense_data, node_mask = utils.to_dense(
                 data.x, data.edge_index, data.edge_attr, data.graph_node_id
             )
             dense_data = dense_data.mask(node_mask, collapse=True)
@@ -535,7 +555,7 @@ def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
     disconnected = 0
     for i, (data, _) in enumerate(dataloader()):
         print("compute_CHnmr_smiles i:", i)
-        dense_data, node_mask = to_dense(
+        dense_data, node_mask = utils.to_dense(
             data.node_feat["feat"],
             data.edges.T,
             data.edge_feat["feat"],

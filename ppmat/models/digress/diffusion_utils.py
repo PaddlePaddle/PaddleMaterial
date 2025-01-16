@@ -4,7 +4,7 @@ import numpy as np
 import paddle
 import paddle.nn.functional as F
 
-from ppmat.utils.digressutils import PlaceHolder
+from .utils import digressutils as utils
 
 
 def sum_except_batch(x):
@@ -108,7 +108,8 @@ def custom_beta_schedule_discrete(timesteps, average_num_nodes=50, s=0.008):
 
 def gaussian_KL(q_mu, q_sigma):
     """
-    KL divergence between a normal distribution (q) and the standard normal distribution.
+    KL divergence between a normal distribution (q) and
+    the standard normal distribution.
     """
     # 原: sum_except_batch((torch.log(1 / q_sigma) + 0.5*(q_sigma**2 + q_mu**2) - 0.5))
     inside = paddle.log(1.0 / q_sigma) + 0.5 * (q_sigma**2 + q_mu**2) - 0.5
@@ -232,7 +233,7 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
     if not eq_.item():
         raise ValueError("epsE is not symmetric!")
 
-    return PlaceHolder(X=epsX, E=epsE, y=epsy).mask(node_mask)
+    return utils.PlaceHolder(X=epsX, E=epsE, y=epsy).mask(node_mask)
 
 
 def sample_normal(mu_X, mu_E, mu_y, sigma_, node_mask):
@@ -245,7 +246,7 @@ def sample_normal(mu_X, mu_E, mu_y, sigma_, node_mask):
     X = mu_X + sigma_ * eps.X
     E = mu_E + paddle.unsqueeze(sigma_, 1) * eps.E
     y = mu_y + paddle.squeeze(sigma_, axis=1) * eps.y
-    return PlaceHolder(X=X, E=E, y=y)
+    return utils.PlaceHolder(X=X, E=E, y=y)
 
 
 def check_issues_norm_values(gamma_func, norm_val1, norm_val2, num_stdevs=8):
@@ -259,13 +260,15 @@ def check_issues_norm_values(gamma_func, norm_val1, norm_val2, num_stdevs=8):
     max_norm_value = max(norm_val1, norm_val2)
     if sig0 * num_stdevs > 1.0 / max_norm_value:
         raise ValueError(
-            f"Value for normalization {max_norm_value} too large with sigma_0={sig0:.5f}."
+            f"Value for normalization {max_norm_value} too large "
+            f"with sigma_0={sig0:.5f}."
         )
 
 
 def sample_discrete_features(probX, probE, node_mask):
     """
-    Sample features from multinomial distribution with given probabilities (probX, probE).
+    Sample features from multinomial distribution with
+        given probabilities (probX, probE).
     :param probX: (bs, n, dx_out) node features
     :param probE: (bs, n, n, de_out) edge features
     """
@@ -288,9 +291,9 @@ def sample_discrete_features(probX, probE, node_mask):
     # Edge
     # Inverse edge mask
     mask_2d = paddle.unsqueeze(mask_bool, axis=1) * paddle.unsqueeze(mask_bool, axis=2)
-    inv_edge_mask = paddle.logical_not(mask_2d)
+    # inv_edge_mask = paddle.logical_not(mask_2d)
     # diag
-    diag_mask = paddle.eye(n, dtype="bool")
+    diag_mask = paddle.eye(n, dtype="int64")
     diag_mask_bs = paddle.unsqueeze(diag_mask, axis=0).expand([bs, n, n])
     # => probE[~(mask_2d) + diag_mask] = 1 / probE.shape[-1]
     # Paddle 不支持多重逻辑直接索引，需要先构造:
@@ -317,7 +320,7 @@ def sample_discrete_features(probX, probE, node_mask):
     # y = zeros
     Y_ = paddle.zeros([bs, 0], dtype=X_t_.dtype)
 
-    return PlaceHolder(X=X_t_, E=E_t_, y=Y_)
+    return utils.PlaceHolder(X=X_t_, E=E_t_, y=Y_)
 
 
 def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
@@ -405,7 +408,7 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     Set masked rows to arbitrary distributions, so they don't contribute to loss.
     Then renormalize.
     """
-    device_ = true_X.device
+    # device_ = true_X.device
     dtype_ = true_X.dtype
 
     row_X = paddle.zeros([true_X.shape[-1]], dtype=dtype_)
@@ -480,7 +483,7 @@ def posterior_distributions(X, E, y, X_t, E_t, y_t, Qt, Qsb, Qtb):
     prob_E = compute_posterior_distribution(
         M=E, M_t=E_t, Qt_M=Qt.E, Qsb_M=Qsb.E, Qtb_M=Qtb.E
     )  # (bs, n*n, de)
-    return PlaceHolder(X=prob_X, E=prob_E, y=y_t)
+    return utils.PlaceHolder(X=prob_X, E=prob_E, y=y_t)
 
 
 def sample_discrete_feature_noise(limit_dist, node_mask):
@@ -536,5 +539,5 @@ def sample_discrete_feature_noise(limit_dist, node_mask):
     if not eq_.item():
         raise ValueError("Discrete feature noise E is not symmetric!")
 
-    ph = PlaceHolder(X=X_onehot, E=E_sym, y=U_y)
+    ph = utils.PlaceHolder(X=X_onehot, E=E_sym, y=U_y)
     return ph.mask(node_mask)

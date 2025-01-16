@@ -104,7 +104,7 @@ if __name__ == "__main__":
     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
     sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
     visualization_tools = MolecularVisualization(
-        config.Dataset.train.remove_h, dataset_infos=dataset_infos
+        config["Dataset"]["train"]["dataset"]["remove_h"], dataset_infos=dataset_infos
     )
 
     model_kwargs = {
@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     # initialize trainer
     if args.step == 1:
-        model = MolecularGraphTransformer(config["Model"], **model_kwargs)
+        model = MolecularGraphTransformer(config, **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
         )
 
     elif args.mode == 2:
-        model = ContrastGraphTransformer(config["Model"], **model_kwargs)
+        model = ContrastGraphTransformer(config, **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
@@ -152,7 +152,7 @@ if __name__ == "__main__":
         )
 
     elif args.mode == 3:
-        model = ConditionGraphTransformer(config["Model"], **model_kwargs)
+        model = ConditionGraphTransformer(config, **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)

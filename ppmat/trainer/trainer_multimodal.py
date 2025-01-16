@@ -19,7 +19,7 @@ from collections import defaultdict
 from typing import Callable
 from typing import Optional
 
-import numpy as np
+# import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
@@ -36,12 +36,14 @@ from ppmat.metrics.train_metrics import TrainLossDiscrete
 from ppmat.models.digress import diffusion_utils
 from ppmat.models.digress.base_model import ConditionGraphTransformer
 from ppmat.models.digress.base_model import ContrastGraphTransformer
-from ppmat.models.digress.base_model import MolecularGraphTransformer
+
+# from ppmat.models.digress.base_model import MolecularGraphTransformer
 from ppmat.models.digress.noise_schedule import DiscreteUniformTransition
 from ppmat.models.digress.noise_schedule import MarginalUniformTransition
 from ppmat.models.digress.noise_schedule import PredefinedNoiseScheduleDiscrete
-from ppmat.trainer.trainer_diffusion import TrainerDiffusion
-from ppmat.utils import digressutils as utils
+from ppmat.models.digress.utils import digressutils as utils
+
+# from ppmat.trainer.trainer_diffusion import TrainerDiffusion
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
@@ -235,8 +237,9 @@ class TrainerGraph:
 
             loss = loss_dict["loss"]
             loss.backward()
-            if self.scale_grad:
-                scale_shared_grads(self.model)
+            # if self.scale_grad:
+            #     # TODO: no scale_shared_grads defined here!!!
+            #     scale_shared_grads(self.model)
 
             self.optimizer.step()
             self.optimizer.clear_grad()
@@ -534,7 +537,8 @@ class TrainerCLIP:
             edge_types = self.dataset_info.edge_types.astype("float32")
             e_marginals = edge_types / paddle.sum(edge_types)
             print(
-                f"Marginal distribution of the classes: {x_marginals} for nodes, {e_marginals} for edges"
+                f"Marginal distribution of the classes: {x_marginals} for nodes, "
+                f"{e_marginals} for edges"
             )
 
             self.transition_model = MarginalUniformTransition(
@@ -880,7 +884,8 @@ class TrainerMultiModal:
             edge_types = paddle.to_tensor(self.dataset_info.edge_types, dtype="float32")
             e_marginals = edge_types / paddle.sum(edge_types)
             print(
-                f"Marginal distribution of the classes: {x_marginals} for nodes, {e_marginals} for edges"
+                f"Marginal distribution of the classes: {x_marginals} for nodes, "
+                f"{e_marginals} for edges"
             )
             self.transition_model = MarginalUniformTransition(
                 x_marginals=x_marginals,
@@ -1352,8 +1357,10 @@ class TrainerMultiModal:
     def on_train_epoch_end(self):
         to_log = self.train_loss.log_epoch_metrics()
         print(
-            f"Epoch XX: X_CE: {to_log['train_epoch/x_CE'] :.3f}, E_CE: {to_log['train_epoch/E_CE'] :.3f}, "
-            f"y_CE: {to_log['train_epoch/y_CE'] :.3f}, Time: {time.time() - self.start_epoch_time:.1f}s"
+            f"Epoch XX: X_CE: {to_log['train_epoch/x_CE'] :.3f}, "
+            f"E_CE: {to_log['train_epoch/E_CE'] :.3f}, "
+            f"y_CE: {to_log['train_epoch/y_CE'] :.3f}, "
+            f"Time: {time.time() - self.start_epoch_time:.1f}s"
         )
         epoch_at_metrics, epoch_bond_metrics = self.train_metrics.log_epoch_metrics()
         print(f"Train epoch end: {epoch_at_metrics} -- {epoch_bond_metrics}")
@@ -1379,7 +1386,8 @@ class TrainerMultiModal:
             self.val_E_logp.compute(),
         ]
         print(
-            f"Val NLL {metrics[0]:.2f} | Val Atom KL {metrics[1]:.2f} | Val Edge KL {metrics[2]:.2f}"
+            f"Val NLL {metrics[0]:.2f} | Val Atom KL {metrics[1]:.2f} | "
+            f"Val Edge KL {metrics[2]:.2f}"
         )
 
     def on_test_epoch_start(self):
