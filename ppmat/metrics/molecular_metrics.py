@@ -1,8 +1,49 @@
+from typing import List
+from typing import Union
+
 import paddle
 import wandb
-from rdkit import Chem
+
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
-from paddle.metric import Metric
+
+# from rdkit import Chem
+
+
+class Metric(paddle.metric.Metric):
+    def __init__(self):
+        super().__init__()
+        self._initial_states = {}
+        self._accumulate_states = {}
+        self.name = self.__class__.__name__
+        self.reset()
+
+    def add_state(
+        self,
+        name: str,
+        default: Union[List, paddle.Tensor],
+        dist_reduce_fx: str = None,
+        persistent: bool = False,
+    ) -> None:
+        self._name = name
+        self._reduce = dist_reduce_fx
+        self._initial_states[name] = default
+        setattr(self, name, default)
+
+    def name(self):
+        return self._name
+
+    def register_state(self, key, value):
+        self._initial_states[key] = value
+        setattr(self, key, value)
+
+    def reset(self):
+        for key, value in self._initial_states.items():
+            setattr(self, key, value)
+
+    def accumulate(self):
+        for key, value in self._initial_states.items():
+            self._accumulate_states[key] = paddle.sum(self._initial_states[key])
+
 
 ###### custom base metrics ######
 # Mean Absolute Error (MAE)
@@ -21,10 +62,13 @@ class MeanAbsoluteError(paddle.metric.Metric):
         self.total_samples += target.shape[0]
 
     def accumulate(self):
-        return self.sum_abs_error / self.total_samples if self.total_samples > 0 else 0.0
+        return (
+            self.sum_abs_error / self.total_samples if self.total_samples > 0 else 0.0
+        )
 
     def name(self):
         return "mean_absolute_error"
+
 
 # Mean Squared Error (MSE)
 class MeanSquaredError(paddle.metric.Metric):
@@ -42,10 +86,15 @@ class MeanSquaredError(paddle.metric.Metric):
         self.total_samples += target.shape[0]
 
     def accumulate(self):
-        return self.sum_squared_error / self.total_samples if self.total_samples > 0 else 0.0
+        return (
+            self.sum_squared_error / self.total_samples
+            if self.total_samples > 0
+            else 0.0
+        )
 
     def name(self):
         return "mean_squared_error"
+
 
 # Metric Collection
 class MetricCollection:
@@ -66,11 +115,8 @@ class MetricCollection:
         for metric in self.metrics.values():
             metric.reset()
 
+
 ##############################################################
-
-
-
-
 
 
 class TrainMolecularMetrics(paddle.nn.Layer):
@@ -129,24 +175,34 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         self.generated_node_dist = GeneratedNodesDistribution(di.output_dims["X"])
         self.generated_edge_dist = GeneratedEdgesDistribution(di.output_dims["E"])
         self.generated_valency_dist = ValencyDistribution(di.max_n_nodes)
-        n_target_dist = di.n_nodes.type_as(self.generated_n_dist.n_dist)
+
+        n_target_dist = di.n_nodes.astype(self.generated_n_dist.n_dist.dtype)
         n_target_dist = n_target_dist / paddle.sum(x=n_target_dist)
         self.register_buffer(name="n_target_dist", tensor=n_target_dist)
-        node_target_dist = di.node_types.type_as(self.generated_node_dist.node_dist)
+
+        node_target_dist = di.node_types.astype(
+            self.generated_node_dist.node_dist.dtype
+        )
         node_target_dist = node_target_dist / paddle.sum(x=node_target_dist)
         self.register_buffer(name="node_target_dist", tensor=node_target_dist)
-        edge_target_dist = di.edge_types.type_as(self.generated_edge_dist.edge_dist)
+
+        edge_target_dist = di.edge_types.astype(
+            self.generated_edge_dist.edge_dist.dtype
+        )
         edge_target_dist = edge_target_dist / paddle.sum(x=edge_target_dist)
         self.register_buffer(name="edge_target_dist", tensor=edge_target_dist)
-        valency_target_dist = di.valency_distribution.type_as(
-            self.generated_valency_dist.edgepernode_dist
+
+        valency_target_dist = di.valency_distribution.astype(
+            self.generated_valency_dist.edgepernode_dist.dtype
         )
         valency_target_dist = valency_target_dist / paddle.sum(x=valency_target_dist)
         self.register_buffer(name="valency_target_dist", tensor=valency_target_dist)
+
         self.n_dist_mae = HistogramsMAE(n_target_dist)
         self.node_dist_mae = HistogramsMAE(node_target_dist)
         self.edge_dist_mae = HistogramsMAE(edge_target_dist)
         self.valency_dist_mae = HistogramsMAE(valency_target_dist)
+
         self.train_smiles = train_smiles
         self.dataset_info = di
 
@@ -272,9 +328,11 @@ class GeneratedNodesDistribution(Metric):
         for molecule in molecules:
             atom_types, _ = molecule
             for atom_type in atom_types:
-                assert (
-                    int(atom_type) != -1
-                ), "Mask error, the molecules should already be masked at the right shape"
+                error_message = (
+                    "Mask error, the molecules should already "
+                    "be masked at the right shape"
+                )
+                assert int(atom_type) != -1, error_message
                 self.node_dist[int(atom_type)] += 1
 
     def compute(self):
@@ -478,24 +536,24 @@ class AromaticMSE(MSEPerClass):
 
 class AtomMetrics(MetricCollection):
     def __init__(self, dataset_infos):
-        remove_h = dataset_infos.remove_h
+        # remove_h = dataset_infos.remove_h
         self.atom_decoder = dataset_infos.atom_decoder
-        num_atom_types = len(self.atom_decoder)
-        types = {
-            "H": 0,
-            "C": 1,
-            "N": 2,
-            "O": 3,
-            "F": 4,
-            "B": 5,
-            "Br": 6,
-            "Cl": 7,
-            "I": 8,
-            "P": 9,
-            "S": 10,
-            "Se": 11,
-            "Si": 12,
-        }
+        # num_atom_types = len(self.atom_decoder)
+        # types = {
+        #     "H": 0,
+        #     "C": 1,
+        #     "N": 2,
+        #     "O": 3,
+        #     "F": 4,
+        #     "B": 5,
+        #     "Br": 6,
+        #     "Cl": 7,
+        #     "I": 8,
+        #     "P": 9,
+        #     "S": 10,
+        #     "Se": 11,
+        #     "Si": 12,
+        # }
         class_dict = {
             "H": HydroMSE,
             "C": CarbonMSE,
@@ -539,4 +597,3 @@ if __name__ == "__main__":
     metric_collection.update(preds, targets)
     results = metric_collection.compute()
     print("Results:", results)
-

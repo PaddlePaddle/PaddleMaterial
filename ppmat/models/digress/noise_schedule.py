@@ -2,12 +2,14 @@ import numpy as np
 import paddle
 
 from ppmat.models.digress import diffusion_utils
-from ppmat.utils import digressutils as utils
+
+from .utils import digressutils as utils
 
 
 class PredefinedNoiseSchedule(paddle.nn.Layer):
     """
-    Predefined noise schedule. Essentially creates a lookup array for predefined (non-learned) noise schedules.
+    Predefined noise schedule. Essentially creates a lookup array for
+        predefined (non-learned) noise schedules.
     """
 
     def __init__(self, noise_schedule, timesteps):
@@ -37,7 +39,8 @@ class PredefinedNoiseSchedule(paddle.nn.Layer):
 
 class PredefinedNoiseScheduleDiscrete(paddle.nn.Layer):
     """
-    Predefined noise schedule. Essentially creates a lookup array for predefined (non-learned) noise schedules.
+    Predefined noise schedule. Essentially creates a lookup array for
+        predefined (non-learned) noise schedules.
     """
 
     def __init__(self, noise_schedule, timesteps):
@@ -112,7 +115,7 @@ class DiscreteUniformTransition:
         """Returns t-step transition matrices for X and E, from step 0 to step t.
         Qt = prod(1 - beta_t) * I + (1 - prod(1 - beta_t)) / K
 
-        alpha_bar_t: (bs)         Product of the (1 - beta_t) for each time step from 0 to t.
+        alpha_bar_t: (bs) Product of the (1 - beta_t) for each time step from 0 to t.
         returns: qx (bs, dx, dx), qe (bs, de, de), qy (bs, dy, dy).
         """
         alpha_bar_t = alpha_bar_t.unsqueeze(axis=1)
@@ -182,7 +185,7 @@ class MarginalUniformTransition:
         """Returns t-step transition matrices for X and E, from step 0 to step t.
         Qt = prod(1 - beta_t) * I + (1 - prod(1 - beta_t)) * K
 
-        alpha_bar_t: (bs)         Product of the (1 - beta_t) for each time step from 0 to t.
+        alpha_bar_t: (bs) Product of the (1 - beta_t) for each time step from 0 to t.
         returns: qx (bs, dx, dx), qe (bs, de, de), qy (bs, dy, dy).
         """
         alpha_bar_t = alpha_bar_t.unsqueeze(axis=1)
@@ -191,16 +194,28 @@ class MarginalUniformTransition:
         self.u_e = self.u_e.to(device)
         self.u_y = self.u_y.to(device)
         q_x = (
-            alpha_bar_t * paddle.eye(num_rows=self.X_classes).unsqueeze(axis=0)
-            + (1 - alpha_bar_t) * self.u_x
+            (
+                alpha_bar_t * paddle.eye(num_rows=self.X_classes).unsqueeze(axis=0)
+                + (1 - alpha_bar_t) * self.u_x
+            )
+            if self.X_classes != 0
+            else utils.return_empty
         )
         q_e = (
-            alpha_bar_t * paddle.eye(num_rows=self.E_classes).unsqueeze(axis=0)
-            + (1 - alpha_bar_t) * self.u_e
+            (
+                alpha_bar_t * paddle.eye(num_rows=self.E_classes).unsqueeze(axis=0)
+                + (1 - alpha_bar_t) * self.u_e
+            )
+            if self.E_classes != 0
+            else utils.return_empty
         )
         q_y = (
-            alpha_bar_t * paddle.eye(num_rows=self.y_classes).unsqueeze(axis=0)
-            + (1 - alpha_bar_t) * self.u_y
+            (
+                alpha_bar_t * paddle.eye(num_rows=self.y_classes).unsqueeze(axis=0)
+                + (1 - alpha_bar_t) * self.u_y
+            )
+            if self.y_classes != 0
+            else utils.return_empty
         )
         return utils.PlaceHolder(X=q_x, E=q_e, y=q_y)
 

@@ -1,6 +1,6 @@
 import paddle
 
-from ppmat.models.digress.placeholder import PlaceHolder
+from .utils import digressutils as utils
 
 
 class DummyExtraFeatures:
@@ -17,7 +17,7 @@ class DummyExtraFeatures:
         empty_e = paddle.zeros(shape=E.shape[:-1] + [0], dtype=E.dtype)
         empty_y = paddle.zeros(shape=[y.shape[0], 0], dtype=y.dtype)
 
-        return PlaceHolder(X=empty_x, E=empty_e, y=empty_y)
+        return utils.PlaceHolder(X=empty_x, E=empty_e, y=empty_y)
 
 
 class ExtraFeatures:
@@ -45,7 +45,7 @@ class ExtraFeatures:
             # => result shape (bs, 1+k)
             y_stacked = paddle.concat([n, y_cycles], axis=1)
 
-            return PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
+            return utils.PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
 
         elif self.features_type == "eigenvalues":
             eigenfeatures = self.eigenfeatures(noisy_data)
@@ -59,7 +59,7 @@ class ExtraFeatures:
                 [n, y_cycles, n_components.astype(n.dtype), batched_eigenvalues], axis=1
             )
 
-            return PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
+            return utils.PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
 
         elif self.features_type == "all":
             eigenfeatures = self.eigenfeatures(noisy_data)
@@ -82,7 +82,7 @@ class ExtraFeatures:
                 [n, y_cycles, n_components.astype(n.dtype), batched_eigenvalues], axis=1
             )
 
-            return PlaceHolder(X=X_cat, E=extra_edge_attr, y=y_stacked)
+            return utils.PlaceHolder(X=X_cat, E=extra_edge_attr, y=y_stacked)
 
         else:
             raise ValueError(f"Features type {self.features_type} not implemented")

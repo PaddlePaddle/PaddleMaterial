@@ -23,7 +23,7 @@ Global:
   samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
-  log_every_steps: 500
+  # log_every_steps: 500
   number_chain_steps: 1        # Number of frames in each gif
 
   final_model_samples_to_generate: 512
@@ -44,7 +44,7 @@ Model:
       'E': 128,
       'y': 256
     }
-    hidden_dim: {
+    hidden_dims: {
       'dx': 256,
       'de': 64,
       'dy': 256,
@@ -70,7 +70,7 @@ Model:
       'E': 128,
       'y': 256
     }
-    hidden_dim: {
+    hidden_dims: {
       'dx': 256,
       'de': 64,
       'dy': 256,
