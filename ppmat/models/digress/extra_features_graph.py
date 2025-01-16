@@ -1,5 +1,7 @@
 import paddle
-from ppmat.utils import digressutils as utils
+
+from ppmat.models.digress.placeholder import PlaceHolder
+
 
 class DummyExtraFeatures:
     def __init__(self):
@@ -15,11 +17,12 @@ class DummyExtraFeatures:
         empty_e = paddle.zeros(shape=E.shape[:-1] + [0], dtype=E.dtype)
         empty_y = paddle.zeros(shape=[y.shape[0], 0], dtype=y.dtype)
 
-        return utils.PlaceHolder(X=empty_x, E=empty_e, y=empty_y)
+        return PlaceHolder(X=empty_x, E=empty_e, y=empty_y)
+
 
 class ExtraFeatures:
-    def __init__(self, extra_features_type, dataset_info):
-        self.max_n_nodes = dataset_info.max_n_nodes
+    def __init__(self, extra_features_type, dataset_infos):
+        self.max_n_nodes = dataset_infos.max_n_nodes
         self.ncycles = NodeCycleFeatures()
         self.features_type = extra_features_type
         if extra_features_type in ["eigenvalues", "all"]:
@@ -42,7 +45,7 @@ class ExtraFeatures:
             # => result shape (bs, 1+k)
             y_stacked = paddle.concat([n, y_cycles], axis=1)
 
-            return utils.PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
+            return PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
 
         elif self.features_type == "eigenvalues":
             eigenfeatures = self.eigenfeatures(noisy_data)
@@ -53,10 +56,10 @@ class ExtraFeatures:
 
             # hstack => concat along axis=1
             y_stacked = paddle.concat(
-                [n, y_cycles, n_components, batched_eigenvalues], axis=1
+                [n, y_cycles, n_components.astype(n.dtype), batched_eigenvalues], axis=1
             )
 
-            return utils.PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
+            return PlaceHolder(X=x_cycles, E=extra_edge_attr, y=y_stacked)
 
         elif self.features_type == "all":
             eigenfeatures = self.eigenfeatures(noisy_data)
@@ -76,13 +79,14 @@ class ExtraFeatures:
 
             # y = hstack => concat along axis=1
             y_stacked = paddle.concat(
-                [n, y_cycles, n_components, batched_eigenvalues], axis=1
+                [n, y_cycles, n_components.astype(n.dtype), batched_eigenvalues], axis=1
             )
 
-            return utils.PlaceHolder(X=X_cat, E=extra_edge_attr, y=y_stacked)
+            return PlaceHolder(X=X_cat, E=extra_edge_attr, y=y_stacked)
 
         else:
             raise ValueError(f"Features type {self.features_type} not implemented")
+
 
 class NodeCycleFeatures:
     def __init__(self):
@@ -99,7 +103,9 @@ class NodeCycleFeatures:
 
         # x_cycles 与 node_mask 对应位置相乘
         node_mask = paddle.unsqueeze(noisy_data["node_mask"], axis=-1)  # (bs, n, 1)
-        x_cycles = x_cycles.astype(adj_matrix.dtype) * node_mask
+        x_cycles = x_cycles.astype(adj_matrix.dtype) * node_mask.astype(
+            adj_matrix.dtype
+        )
 
         # Avoid large values when the graph is dense
         x_cycles = x_cycles / 10
@@ -126,7 +132,7 @@ class EigenFeatures:
 
     def __call__(self, noisy_data):
         E_t = noisy_data["E_t"]
-        mask = noisy_data["node_mask"]
+        mask = noisy_data["node_mask"].astype("float32")
         A = paddle.sum(E_t[..., 1:], axis=-1).astype("float32")  # (bs, n, n)
         A = A * paddle.unsqueeze(mask, axis=1) * paddle.unsqueeze(mask, axis=2)
 
@@ -143,11 +149,11 @@ class EigenFeatures:
         mask_diag = paddle.eye(n_, dtype=L.dtype) * (2 * n_)
         mask_diag = paddle.unsqueeze(mask_diag, axis=0)  # (1, n, n)
         # (~mask) => paddle.logical_not
-        mask_bool = mask.astype("bool")
+        # mask_bool = mask.astype("bool")
         mask_diag = (
             mask_diag
-            * paddle.logical_not(paddle.unsqueeze(mask_bool, 1))
-            * paddle.logical_not(paddle.unsqueeze(mask_bool, 2))
+            * paddle.logical_not(paddle.unsqueeze(mask, 1)).astype(mask_diag.dtype)
+            * paddle.logical_not(paddle.unsqueeze(mask, 2)).astype(mask_diag.dtype)
         )
 
         L = (
@@ -199,6 +205,7 @@ class EigenFeatures:
         else:
             raise NotImplementedError(f"Mode {self.mode} is not implemented")
 
+
 def compute_laplacian(adjacency, normalize: bool):
     """
     adjacency : batched adjacency matrix (bs, n, n)
@@ -230,6 +237,7 @@ def compute_laplacian(adjacency, normalize: bool):
     L = paddle.where(zero_mask_2d > 0, paddle.zeros_like(L), L)
     return (L + paddle.transpose(L, perm=[0, 2, 1])) / 2
 
+
 def get_eigenvalues_features(eigenvalues, k=5):
     """
     eigenvalues: (bs, n)
@@ -243,7 +251,7 @@ def get_eigenvalues_features(eigenvalues, k=5):
     # 断言: 这里可能需要自己处理报错 or 做一个检查
     # assert (n_connected_components > 0).all(), "some assert..."
 
-    to_extend = int(paddle.max(n_connected_components).numpy()[0]) + k - n
+    to_extend = max(n_connected_components.numpy()) + k - n
     if to_extend > 0:
         # 相当于 torch.hstack([...]) => paddle.concat([...], axis=1)
         fill_val = paddle.full(shape=[bs, to_extend], fill_value=2.0, dtype=ev.dtype)
@@ -285,6 +293,7 @@ def batch_gather_2d(data, index):
     gathered = paddle.reshape(gathered, [bs, k])
     return gathered
 
+
 def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     """
     vectors: (bs, n, n) => eigenvectors (in columns)
@@ -322,7 +331,7 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     not_lcc_indicator = paddle.unsqueeze(combined_mask.astype("float32"), axis=-1)
 
     # 拿到前 k 个非零特征向量
-    to_extend = int(paddle.max(n_connected).numpy()[0]) + k - n
+    to_extend = max(n_connected.numpy()) + k - n
     if to_extend > 0:
         extension = paddle.zeros(shape=[bs, n, to_extend], dtype=vectors.dtype)
         vectors = paddle.concat([vectors, extension], axis=2)  # (bs, n, n+to_extend)
@@ -517,9 +526,6 @@ class KNodeCycles:
         return kcyclesx, kcyclesy
 
 
-
-
-
 # ==============
 # 一些辅助函数
 # ==============
@@ -555,4 +561,3 @@ def paddle_mode(tensor, axis=1):
 def round_to_decimals(tensor, decimals=3):
     factor = 10**decimals
     return paddle.round(tensor * factor) / factor
-
