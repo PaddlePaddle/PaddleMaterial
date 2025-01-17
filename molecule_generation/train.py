@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     # initialize trainer
     if args.step == 1:
-        model = MolecularGraphTransformer(config, **model_kwargs)
+        model = MolecularGraphTransformer(config["Model"], **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)

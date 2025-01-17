@@ -81,6 +81,7 @@ Model:
     # At the moment (03/08), y contains quite little information
     lambda_train: [5, 0]
     conditdim: 512
+    number_chain_steps: 1
   model_dtype: 'float32'
 
 Optimizer:
