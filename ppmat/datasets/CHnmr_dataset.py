@@ -141,8 +141,8 @@ class CHnmrData:
 
         data_list = []
         # for idx, row in tqdm(target_df.iterrows(), total=target_df.shape[0]):
-        # for idx in tqdm(range(target_df.shape[0] // 10000)):
-        for idx in tqdm(range(2)):
+        # for idx in tqdm(range(target_df.shape[0] // 100)):
+        for idx in tqdm(range(200)):
             row = target_df.iloc[idx]
             smiles = row["smiles"]
             tokenized_input = row["tokenized_input"]

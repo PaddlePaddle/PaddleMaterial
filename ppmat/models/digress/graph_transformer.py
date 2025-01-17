@@ -76,7 +76,7 @@ class GraphTransformer(nn.Layer):
                 nn.Linear(hidden_mlp_dims["X"], output_dims["X"]),
             )
             if output_dims["X"] != 0
-            else utils.return_empty
+            else self.mlp_with_empty
         )
 
         self.mlp_out_E = (
@@ -86,7 +86,7 @@ class GraphTransformer(nn.Layer):
                 nn.Linear(hidden_mlp_dims["E"], output_dims["E"]),
             )
             if output_dims["E"] != 0
-            else utils.return_empty
+            else self.mlp_with_empty
         )
 
         self.mlp_out_y = (
@@ -96,12 +96,17 @@ class GraphTransformer(nn.Layer):
                 nn.Linear(hidden_mlp_dims["y"], output_dims["y"]),
             )
             if output_dims["y"] != 0
-            else utils.return_empty
+            else self.mlp_with_empty
         )
+
+    def mlp_with_empty(self, x):
+        new_shape = x.shape[:-1] + [0]
+        res = utils.return_empty(x, shape=new_shape)
+        return res
 
     def forward(self, X, E, y, node_mask):
         bs, n = X.shape[0], X.shape[1]
-        diag_mask = paddle.eye(n, dtype="bool")
+        diag_mask = paddle.eye(n, dtype="int64")
         diag_mask = ~diag_mask
         diag_mask = (
             paddle.unsqueeze(diag_mask, axis=0)
@@ -132,7 +137,7 @@ class GraphTransformer(nn.Layer):
         y = self.mlp_out_y(y)
 
         X = X + X_to_out
-        E = (E + E_to_out) * diag_mask
+        E = (E + E_to_out) * diag_mask.astype(E.dtype)
         y = y + y_to_out
 
         # Symmetrize E
@@ -177,12 +182,12 @@ class GraphTransformer_C(nn.Layer):
             act_fn_in,
         )
 
-        # self.mlp_in_y = nn.Sequential(
-        #    nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
-        #    act_fn_in,
-        #    nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
-        #    act_fn_in,
-        # )
+        self.mlp_in_y = nn.Sequential(
+            nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
+            act_fn_in,
+            nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
+            act_fn_in,
+        )
 
         # 用 LayerList 存放多层 Transformer
         self.tf_layers = nn.LayerList(
@@ -236,7 +241,6 @@ class GraphTransformer_C(nn.Layer):
         E_t = paddle.transpose(new_E, perm=[0, 2, 1, 3])
         new_E = (new_E + E_t) / 2.0
 
-        print(X)
         X = self.mlp_in_X(X)
         Y = self.mlp_in_y(y)
 
@@ -392,7 +396,7 @@ class NodeEdgeBlock(nn.Layer):
         :return: newX, newE, new_y with the same shape.
         """
         bs, n, _ = X.shape
-        x_mask = paddle.unsqueeze(node_mask, axis=-1)  # bs, n, 1
+        x_mask = paddle.unsqueeze(node_mask, axis=-1).astype(X.dtype)  # bs, n, 1
         e_mask1 = paddle.unsqueeze(x_mask, axis=2)  # bs, n, 1, 1
         e_mask2 = paddle.unsqueeze(x_mask, axis=1)  # bs, 1, n, 1
 

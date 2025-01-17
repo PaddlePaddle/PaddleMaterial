@@ -1,17 +1,8 @@
-import time
-
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 import wandb
-from paddle import Tensor
-from paddle.metric import Metric
 
-from ppmat.metrics.abstract_metrics import NLL
 from ppmat.metrics.abstract_metrics import CrossEntropyMetric
-from ppmat.metrics.abstract_metrics import ProbabilityMetric
-from ppmat.metrics.abstract_metrics import SumExceptBatchKL
-from ppmat.metrics.abstract_metrics import SumExceptBatchMetric
 from ppmat.metrics.abstract_metrics import SumExceptBatchMSE
 
 
@@ -118,7 +109,14 @@ class TrainLossDiscrete(nn.Layer):
         self.lambda_train = lambda_train
 
     def forward(
-        self, masked_pred_X, masked_pred_E, pred_y, true_X, true_E, true_y, log: bool
+        self,
+        masked_pred_X,
+        masked_pred_E,
+        pred_y,
+        true_X,
+        true_E,
+        true_y,
+        log: bool = False,
     ):
         """
         Compute train metrics
@@ -153,31 +151,29 @@ class TrainLossDiscrete(nn.Layer):
         # 计算交叉熵损失
         loss_X = (
             self.node_loss(flat_pred_X, flat_true_X)
-            if paddle.sum(true_X).item() > 0
+            if true_X.numel() > 0
             else paddle.to_tensor(0.0)
         )
         loss_E = (
             self.edge_loss(flat_pred_E, flat_true_E)
-            if paddle.sum(true_E).item() > 0
+            if true_E.numel() > 0
             else paddle.to_tensor(0.0)
         )
         loss_y = (
-            self.y_loss(pred_y, true_y)
-            if paddle.sum(true_y).item() > 0
-            else paddle.to_tensor(0.0)
+            self.y_loss(pred_y, true_y) if true_y.numel() > 0 else paddle.to_tensor(0.0)
         )
 
         if log:
             to_log = {
                 "train_loss/batch_CE": (loss_X + loss_E + loss_y).detach(),
                 "train_loss/X_CE": self.node_loss.accumulate().item()
-                if paddle.sum(true_X).item() > 0
+                if true_X.numel() > 0
                 else -1,
                 "train_loss/E_CE": self.edge_loss.accumulate().item()
-                if paddle.sum(true_E).item() > 0
+                if true_E.numel() > 0
                 else -1,
                 "train_loss/y_CE": self.y_loss.accumulate().item()
-                if paddle.sum(true_y).item() > 0
+                if true_y.numel() > 0
                 else -1,
             }
             if wandb.run:

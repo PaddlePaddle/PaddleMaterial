@@ -1,3 +1,4 @@
+import copy
 import os
 
 import paddle
@@ -113,17 +114,18 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         #############################################################
         # configure model
         #############################################################
-        self.con_input_dim = dataset_infos.input_dims
+        input_dims = dataset_infos.input_dims
+        self.con_input_dim = copy.deepcopy(input_dims)
         self.con_input_dim["X"] = input_dims["X"] - 8
         self.con_input_dim["y"] = 1024
         self.con_output_dim = dataset_infos.output_dims
 
         self.encoder = GraphTransformer_C(
             n_layers=cfg["encoder"]["num_layers"],
-            input_dims=input_dims,
+            input_dims=self.con_input_dim,
             hidden_mlp_dims=cfg["encoder"]["hidden_mlp_dims"],
             hidden_dims=cfg["encoder"]["hidden_dims"],
-            output_dims=output_dims,
+            output_dims=self.con_output_dim,
             act_fn_in=nn.ReLU(),
             act_fn_out=nn.ReLU(),
         )
@@ -216,10 +218,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         self.test_data_X = []
         self.test_data_E = []
 
-        self.log_count = 0
-
     def forward(self, batch):
-        self.log_count += 1
         batch_graph, other_data = batch
 
         # transfer to dense graph from sparse graph
@@ -263,6 +262,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         pred = self.decoder(input_X, input_E, input_y, node_mask)
 
         # compute loss
+        # TODO: move loss out!
         loss = self.train_loss(
             masked_pred_X=pred.X,
             masked_pred_E=pred.E,
@@ -270,20 +270,20 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             true_X=X,
             true_E=E,
             true_y=other_data["y"],
-            log=(self.log_count % self.log_every_steps == 0),
+            log=False,
         )
 
         # log metrics to do move to another location
-        if self.log_count % 80 == 0:
-            print(f"train_loss: {loss}")
+        # if self.log_count % 80 == 0:
+        #     print(f"train_loss: {loss}")
         self.train_metrics(
             masked_pred_X=pred.X,
             masked_pred_E=pred.E,
             true_X=X,
             true_E=E,
-            log=(self.log_count % self.log_every_steps == 0),
+            log=False,
         )
-        return loss
+        return {"loss": loss}
 
     def apply_noise(self, X, E, y, node_mask):
         """
