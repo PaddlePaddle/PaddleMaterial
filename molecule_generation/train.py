@@ -77,15 +77,15 @@ if __name__ == "__main__":
     # build datasetinfo
     dataset_infos = CHnmrinfos(dataloaders=dataloaders, cfg=config)
     train_smiles = get_train_smiles(
-        cfg=config,
+        cfg=config["Dataset"]["train"],
         dataloader=train_loader,
         dataset_infos=dataset_infos,
         evaluate_dataset=False,
     )
     # extra features
-    if config["Model"]["model_setting"]["extra_features"] is not None:
+    if config["Model"]["diffusion_model"]["extra_features"] is not None:
         extra_features = ExtraFeatures(
-            config["Model"]["model_setting"]["extra_features"],
+            config["Model"]["diffusion_model"]["extra_features"],
             dataset_infos=dataset_infos,
         )
         domain_features = ExtraMolecularFeatures(
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         dataloader=train_loader,
         extra_features=extra_features,
         domain_features=domain_features,
-        conditionDim=config["Model"]["model_setting"]["conditdim"],
+        conditionDim=config["Model"]["diffusion_model"]["conditdim"],
     )
 
     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)

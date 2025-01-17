@@ -37,6 +37,36 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         super().__init__()
 
         #############################################################
+        # # for testing
+
+        input_dims = {"X": 17, "E": 5, "y": 525}  # dataset_infos.input_dims
+        output_dims = {"X": 9, "E": 5, "y": 0}  # dataset_infos.output_dims
+        self.encoder = GraphTransformer_C(
+            n_layers=cfg["encoder"]["num_layers"],
+            input_dims=input_dims,
+            hidden_mlp_dims=cfg["encoder"]["hidden_mlp_dims"],
+            hidden_dims=cfg["encoder"]["hidden_dims"],
+            output_dims=output_dims,
+            act_fn_in=nn.ReLU(),
+            act_fn_out=nn.ReLU(),
+        )
+
+        con_input_dim = input_dims
+        con_input_dim["X"] = input_dims["X"] - 8
+        con_input_dim["y"] = 1024
+        con_output_dim = output_dims
+        self.decoder = GraphTransformer(
+            n_layers=cfg["decoder"]["num_layers"],
+            input_dims=con_input_dim,
+            hidden_mlp_dims=cfg["decoder"]["hidden_mlp_dims"],
+            hidden_dims=cfg["decoder"]["hidden_dims"],
+            output_dims=con_output_dim,
+            act_fn_in=nn.ReLU(),
+            act_fn_out=nn.ReLU(),
+        )
+        #############################################################
+
+        #############################################################
         # configure general variables settings
         #############################################################
         self.cfg = cfg
@@ -48,12 +78,11 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         #############################################################
         # configure datasets inter-varibles
         #############################################################
-        input_dims = dataset_infos.input_dims
-        output_dims = dataset_infos.output_dims
-        self.nodes_dist = dataset_infos.nodes_dist
-        self.dataset_info = dataset_infos
-        self.extra_features = extra_features
-        self.domain_features = domain_features
+        # input_dims = dataset_infos.input_dims
+        # output_dims = dataset_infos.output_dims
+        # self.dataset_info = dataset_infos
+        # self.extra_features = extra_features
+        # self.domain_features = domain_features
 
         #############################################################
         # configure generated datas for visualization after forward
@@ -1026,3 +1055,22 @@ class ConditionGraphTransformer(nn.Layer):
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
 
         return self.GT(X, E, y, node_mask)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    from omegaconf import OmegaConf
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default="./molecule_generation/configs/digress_CHnmr.yaml",
+        help="Path to config file",
+    )
+    args, dynamic_args = parser.parse_known_args()
+    config = OmegaConf.load(args.config)
+
+    model = MolecularGraphTransformer(config["Model"])
