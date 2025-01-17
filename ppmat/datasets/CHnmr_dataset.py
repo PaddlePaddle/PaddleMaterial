@@ -1,4 +1,6 @@
 import os
+
+# import pathlib
 from collections import defaultdict
 
 # import random
@@ -25,8 +27,6 @@ from ppmat.datasets.ext_rdkit import mol2smiles
 from ppmat.datasets.utils import numericalize_text
 from ppmat.models.digress.distributions import DistributionNodes
 from ppmat.models.digress.utils import digressutils as utils
-
-# import pathlib
 
 
 class RemoveYTransform:
@@ -508,8 +508,8 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
         assert (
             dataset_infos is not None
         ), "If wanting to evaluate dataset, need to pass dataset_infos"
-    datadir = os.path.dirname(cfg["Dataset"]["train"]["dataset"]["path"])
-    remove_h = cfg["Dataset"]["train"]["dataset"]["remove_h"]
+    datadir = os.path.dirname(cfg["dataset"]["path"])
+    remove_h = cfg["dataset"]["remove_h"]
     atom_decoder = dataset_infos.atom_decoder
     # root_dir = pathlib.Path(os.path.realpath(__file__)).parents[2]
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"

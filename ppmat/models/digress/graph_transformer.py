@@ -177,12 +177,12 @@ class GraphTransformer_C(nn.Layer):
             act_fn_in,
         )
 
-        self.mlp_in_y = nn.Sequential(
-            nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
-            act_fn_in,
-            nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
-            act_fn_in,
-        )
+        # self.mlp_in_y = nn.Sequential(
+        #    nn.Linear(input_dims["y"], hidden_mlp_dims["y"]),
+        #    act_fn_in,
+        #    nn.Linear(hidden_mlp_dims["y"], hidden_dims["dy"]),
+        #    act_fn_in,
+        # )
 
         # 用 LayerList 存放多层 Transformer
         self.tf_layers = nn.LayerList(
