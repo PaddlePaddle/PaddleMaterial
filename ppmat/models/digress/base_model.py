@@ -4,9 +4,6 @@ import os
 import paddle
 import paddle.nn as nn
 import rdkit
-
-# from paddle.nn import TransformerEncoderLayer
-from paddle.nn import TransformerEncoder as Encoder
 from paddle.nn import functional as F
 from rdkit import Chem
 
@@ -14,6 +11,7 @@ from ppmat.metrics.abstract_metrics import NLL
 from ppmat.metrics.abstract_metrics import SumExceptBatchKL
 from ppmat.metrics.abstract_metrics import SumExceptBatchMetric
 from ppmat.metrics.train_metrics import TrainLossDiscrete
+from ppmat.models.digress.encoder import Encoder
 
 from . import diffusion_utils
 from .graph_transformer import GraphTransformer
@@ -22,6 +20,9 @@ from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
 from .utils import digressutils as utils
+
+# from paddle.nn import TransformerEncoderLayer
+# from paddle.nn import TransformerEncoder as Encoder
 
 
 class MolecularGraphTransformer(paddle.nn.Layer):
@@ -883,16 +884,15 @@ class ContrastGraphTransformer(paddle.nn.Layer):
         hidden_mlp_dims: dict,
         hidden_dims: dict,
         output_dims: dict,
-        act_fn_in: paddle.nn.ReLU(),
-        act_fn_out: paddle.nn.ReLU(),
-        enc_voc_size,
-        max_len,
-        d_model,
-        ffn_hidden,
-        n_head,
-        n_layers_TE,
-        drop_prob,
-        device,
+        act_fn_in=paddle.nn.ReLU(),
+        act_fn_out=paddle.nn.ReLU(),
+        enc_voc_size=5450,
+        max_len=256,
+        d_model=256,
+        ffn_hidden=1024,
+        n_head=8,
+        n_layers_TE=3,
+        drop_prob=0.0,
     ):
         super().__init__()
         self.transEn = Encoder(
@@ -903,7 +903,6 @@ class ContrastGraphTransformer(paddle.nn.Layer):
             n_head=n_head,
             n_layers=n_layers_TE,
             drop_prob=drop_prob,
-            device=device,
         )
         self.linear_layer = paddle.nn.Linear(
             in_features=max_len * d_model, out_features=512
@@ -921,18 +920,17 @@ class ContrastGraphTransformer(paddle.nn.Layer):
             act_fn_in=act_fn_in,
             act_fn_out=act_fn_out,
         )
-        self.device = device
-        checkpoint = paddle.load(
-            path=str("/home/liuxuwei01/molecular2molecular/src/epoch-438.ckpt")
-        )
-        state_dict = checkpoint["state_dict"]
-        print(state_dict.keys())
-        conditionEn_state_dict = {
-            k[len("model.conditionEn.") :]: v
-            for k, v in state_dict.items()
-            if k.startswith("model.conditionEn.")
-        }
-        self.conditionEn.set_state_dict(state_dict=conditionEn_state_dict)
+        # checkpoint = paddle.load(
+        #     path=str("/home/liuxuwei01/molecular2molecular/src/epoch-438.ckpt")
+        # )
+        # state_dict = checkpoint["state_dict"]
+        # print(state_dict.keys())
+        # conditionEn_state_dict = {
+        #     k[len("model.conditionEn.") :]: v
+        #     for k, v in state_dict.items()
+        #     if k.startswith("model.conditionEn.")
+        # }
+        # self.conditionEn.set_state_dict(state_dict=conditionEn_state_dict)
         print("conditionEn parameters loaded successfully.")
         for param in self.conditionEn.parameters():
             param.stop_gradient = not False
@@ -946,7 +944,7 @@ class ContrastGraphTransformer(paddle.nn.Layer):
         assert isinstance(
             conditionVec, paddle.Tensor
         ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
-        srcMask = self.make_src_mask(conditionVec).to(self.device)
+        srcMask = self.make_src_mask(conditionVec)  # .to(self.device)
         conditionVecNmr = self.transEn(conditionVec, srcMask)
         conditionVecNmr = conditionVecNmr.view(conditionVecNmr.shape[0], -1)
         conditionVecNmr = self.linear_layer(conditionVecNmr)
