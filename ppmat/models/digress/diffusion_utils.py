@@ -18,7 +18,7 @@ def assert_correctly_masked(variable, node_mask):
     # 原: (variable * (1 - node_mask.long())).abs().max().item()
     # Paddle:
     mask_int = node_mask.astype("int64")
-    masked = variable * (1 - mask_int)
+    masked = variable * (1 - mask_int).astype(variable.dtype)
     if paddle.max(paddle.abs(masked)).item() >= 1e-4:
         raise ValueError("Variables not masked properly.")
 
@@ -301,7 +301,9 @@ def sample_discrete_features(probX, probE, node_mask):
     probE[paddle.logical_not(mask_2d)] = 1.0 / de_out
     probE[diag_mask_bs] = 1.0 / de_out
 
-    probE_flat = paddle.reshape(probE, [bs * n * n, de_out])
+    # TODO: Weird point: the values ​​in 'probE_flat' are not all 0,
+    # but an error occured without adding '1e-8'.
+    probE_flat = paddle.reshape(probE, [bs * n * n, de_out]) + 1e-8
     E_t_ = paddle.multinomial(probE_flat, num_samples=1)
     E_t_ = paddle.reshape(E_t_, [bs, n, n])
 

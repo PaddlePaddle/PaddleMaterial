@@ -211,7 +211,7 @@ class CrossEntropyMetric(Metric):
         """
         Reset the internal states.
         """
-        self.total_ce = paddle.to_tensor(0.0, dtype="float32")
+        self.total_ce = []
         self.total_samples = paddle.to_tensor(0.0, dtype="float32")
 
     def update(self, preds: paddle.Tensor, target: paddle.Tensor) -> None:
@@ -228,8 +228,12 @@ class CrossEntropyMetric(Metric):
         target = paddle.argmax(target, axis=-1)
         # Compute cross-entropy with sum reduction
         ce = F.cross_entropy(preds, target, reduction="sum")
-        self.total_ce += ce
+        self.total_ce.append(ce)
         self.total_samples += paddle.shape(preds)[0]
+
+    def __call__(self, preds: paddle.Tensor, target: paddle.Tensor):
+        self.update(preds, target)
+        return self.total_ce[-1]
 
     def accumulate(self) -> paddle.Tensor:
         """
@@ -238,7 +242,7 @@ class CrossEntropyMetric(Metric):
         Returns:
             paddle.Tensor: The average cross-entropy loss.
         """
-        return self.total_ce / self.total_samples
+        return paddle.sum(self.total_ce) / self.total_samples
 
 
 class ProbabilityMetric(Metric):

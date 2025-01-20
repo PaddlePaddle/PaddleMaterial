@@ -1,6 +1,5 @@
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 
 # ================================
 # 1. 自定义 MetricCollection 类
@@ -9,7 +8,7 @@ import paddle.nn.functional as F
 
 class PaddleMetricCollection:
     """
-    用于收集多个自定义 Metric，并统一调用 update / compute / reset。
+    用于收集多个自定义 Metric, 并统一调用 update / compute / reset。
     功能类似 TorchMetrics 中的 MetricCollection。
     """
 
@@ -61,7 +60,8 @@ class CEPerClass(paddle.metric.Metric):
 
         # softmax 用于多分类变成相应类别的概率
         self.softmax = nn.Softmax(axis=-1)
-        # BCELoss 在 Paddle 中通过 paddle.nn.BCELoss(reduction='sum') 或 F.binary_cross_entropy
+        # BCELoss 在 Paddle 中通过 paddle.nn.BCELoss(reduction='sum')
+        # 或 F.binary_cross_entropy
         self.bce_loss = nn.BCELoss(reduction="sum")
 
     def name(self):
@@ -102,7 +102,7 @@ class CEPerClass(paddle.metric.Metric):
         loss = self.bce_loss(prob, t)
 
         # 累加结果
-        self._total_ce += float(loss.numpy()[0])  # .item() 在 Paddle 中通常是 .numpy()[0]
+        self._total_ce += float(loss.numpy())  # .item() 在 Paddle 中通常是 .numpy()[0]
         self._total_samples += prob.shape[0]
 
     def accumulate(self):
@@ -235,7 +235,7 @@ class AtomMetricsCE(PaddleMetricCollection):
         dataset_infos: 假设里边包含 'atom_decoder'，
                        类似于原先 PyTorch 里 AtomDecoder 用来对应 i->原子类型。
         """
-        atom_decoder = dataset_infos.atom_decoder  # 假设是个列表，比如 ['H','C','N',...]
+        atom_decoder = dataset_infos.atom_decoder  # ['H','C','N',...]
         class_dict = {
             "H": HydrogenCE,
             "C": CarbonCE,
@@ -294,7 +294,7 @@ class TrainMolecularMetricsDiscrete(nn.Layer):
         self.train_atom_metrics = AtomMetricsCE(dataset_infos=dataset_infos)
         self.train_bond_metrics = BondMetricsCE()
 
-    def forward(self, masked_pred_X, masked_pred_E, true_X, true_E):
+    def forward(self, masked_pred_X, masked_pred_E, true_X, true_E, log: bool = False):
         """
         与 PyTorch 里的 forward 类似。
         - masked_pred_X, masked_pred_E: 模型输出
@@ -304,7 +304,7 @@ class TrainMolecularMetricsDiscrete(nn.Layer):
         self.train_atom_metrics.update(masked_pred_X, true_X)
         self.train_bond_metrics.update(masked_pred_E, true_E)
 
-        if log_flag:
+        if log:
             to_log = {}
             # compute() = accumulate()，得到每个指标的当前值
             atom_results = self.train_atom_metrics.compute()
@@ -375,7 +375,7 @@ if __name__ == "__main__":
                 batch_pred_E,
                 batch_true_X,
                 batch_true_E,
-                log_flag=(step % 2 == 0),
+                log=(step % 2 == 0),
             )
 
         # epoch 结束后，打印或 log 一次 epoch 级别指标
