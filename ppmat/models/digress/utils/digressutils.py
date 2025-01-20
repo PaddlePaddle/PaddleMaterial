@@ -373,8 +373,10 @@ def encode_no_edge(E):
     return E
 
 
-def return_empty(x):
-    return paddle.to_tensor([], dtype="float32").reshape(x.shape)
+def return_empty(x, shape=None):
+    if shape is not None:
+        return paddle.empty(shape, dtype="float32")
+    return paddle.empty(x.shape, dtype="float32")
 
 
 # ===========================

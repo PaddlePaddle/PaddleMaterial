@@ -61,5 +61,21 @@ def masked_softmax(x, mask, axis=-1):
     Returns:
         Tensor with masked softmax applied.
     """
-    masked_x = paddle.where(mask, x, paddle.full_like(x, -float("inf")))
-    return F.softmax(masked_x, axis=axis)
+    if paddle.sum(mask) == 0:
+        return x
+
+    # TODO: ndim check: only support adding dimensions backwards now
+    x_dims = x.ndim
+    mask_dims = mask.ndim
+    if mask_dims < x_dims:
+        diff = x_dims - mask_dims
+        mask = paddle.unsqueeze(mask, axis=[-1] * diff)
+        repeat_times = [1] * mask_dims + [x.shape[i] for i in range(mask_dims, x_dims)]
+        mask = paddle.tile(mask, repeat_times=repeat_times)
+
+    x_masked = x.clone()
+    x_masked = paddle.where(
+        mask == 0, paddle.to_tensor(-float("inf"), dtype=x.dtype), x_masked
+    )
+
+    return paddle.nn.functional.softmax(x_masked, axis=axis)
