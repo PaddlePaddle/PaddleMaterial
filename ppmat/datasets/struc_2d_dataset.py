@@ -46,6 +46,7 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         transforms: Optional[Callable] = None,
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
         select_energy_range: Optional[tuple] = None,
+        perproty_names: Optional[list] = None,
         cache: bool = False,
     ):
         super().__init__()
@@ -53,6 +54,11 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         self.converter_cfg = converter_cfg
         self.transforms = transforms
         self.select_energy_range = select_energy_range
+        self.property_names = (
+            perproty_names
+            if perproty_names is not None
+            else ["formation_energy_per_atom", "band_gap", "e", "f", "s", "m", "id"]
+        )
         self.cache = cache
 
         if cache:
@@ -217,29 +223,41 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
             structure = self.structures[idx]
             data["structure_array"] = self.get_structure_array(structure)
 
-        if "formation_energy_per_atom" in self.jsonl_data[idx]:
+        if (
+            "formation_energy_per_atom" in self.property_names
+            and "formation_energy_per_atom" in self.jsonl_data[idx]
+        ):
             data["formation_energy_per_atom"] = np.array(
                 [self.jsonl_data[idx]["formation_energy_per_atom"]]
             ).astype("float32")
-        if "band_gap" in self.jsonl_data[idx]:
+        if "band_gap" in self.property_names and "band_gap" in self.jsonl_data[idx]:
             data["band_gap"] = np.array([self.jsonl_data[idx]["band_gap"]]).astype(
                 "float32"
             )
-        if "energy" in self.jsonl_data[idx]:
+        if "e" in self.property_names and "energy" in self.jsonl_data[idx]:
             data["e"] = np.array(self.jsonl_data[idx]["energy"]).astype("float32")
 
-        if self.jsonl_data[idx].get("forces", None) is not None:
+        if (
+            "f" in self.property_names
+            and self.jsonl_data[idx].get("forces", None) is not None
+        ):
             data["f"] = ConcatData(
                 np.array(self.jsonl_data[idx]["forces"]).astype("float32")
             )
-        if self.jsonl_data[idx].get("stresses", None) is not None:
+        if (
+            "s" in self.property_names
+            and self.jsonl_data[idx].get("stresses", None) is not None
+        ):
             data["s"] = np.array(self.jsonl_data[idx]["stresses"]).astype("float32")
-        if self.jsonl_data[idx].get("magmom", None) is not None:
+        if (
+            "m" in self.property_names
+            and self.jsonl_data[idx].get("magmom", None) is not None
+        ):
             data["m"] = ConcatData(
                 np.array(self.jsonl_data[idx]["magmom"]).astype("float32")
             )
 
-        if "material_id" in self.jsonl_data[idx]:
+        if "id" in self.property_names and "material_id" in self.jsonl_data[idx]:
             data["id"] = self.jsonl_data[idx]["material_id"]
 
         data = self.transforms(data) if self.transforms is not None else data
