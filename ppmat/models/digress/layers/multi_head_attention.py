@@ -37,9 +37,9 @@ class MultiHeadAttention(paddle.nn.Layer):
         """
         batch_size, length, d_model = tuple(tensor.shape)
         d_tensor = d_model // self.n_head
-        tensor = tensor.view(batch_size, length, self.n_head, d_tensor).transpose(
+        tensor = tensor.reshape([batch_size, length, self.n_head, d_tensor]).transpose(
             perm=dim2perm(
-                tensor.view(batch_size, length, self.n_head, d_tensor).ndim, 1, 2
+                tensor.reshape([batch_size, length, self.n_head, d_tensor]).ndim, 1, 2
             )
         )
         return tensor
@@ -56,6 +56,6 @@ class MultiHeadAttention(paddle.nn.Layer):
         tensor = (
             tensor.transpose(perm=dim2perm(tensor.ndim, 1, 2))
             .contiguous()
-            .view(batch_size, length, d_model)
+            .reshape([batch_size, length, d_model])
         )
         return tensor
