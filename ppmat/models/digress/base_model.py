@@ -893,6 +893,7 @@ class ContrastGraphTransformer(paddle.nn.Layer):
         n_head=8,
         n_layers_TE=3,
         drop_prob=0.0,
+        **kwargs,
     ):
         super().__init__()
         self.transEn = Encoder(
@@ -920,33 +921,23 @@ class ContrastGraphTransformer(paddle.nn.Layer):
             act_fn_in=act_fn_in,
             act_fn_out=act_fn_out,
         )
-        # checkpoint = paddle.load(
-        #     path=str("/home/liuxuwei01/molecular2molecular/src/epoch-438.ckpt")
-        # )
-        # state_dict = checkpoint["state_dict"]
-        # print(state_dict.keys())
-        # conditionEn_state_dict = {
-        #     k[len("model.conditionEn.") :]: v
-        #     for k, v in state_dict.items()
-        #     if k.startswith("model.conditionEn.")
-        # }
-        # self.conditionEn.set_state_dict(state_dict=conditionEn_state_dict)
-        print("conditionEn parameters loaded successfully.")
         for param in self.conditionEn.parameters():
-            param.stop_gradient = not False
+            param.stop_gradient = True
         self.conditionEn.eval()
+        self.vocabDim = 256
+        self.tem = 2
 
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(axis=1).unsqueeze(axis=2)
         return src_mask
 
-    def forward(self, X, E, y, node_mask, X_condition, E_condtion, conditionVec):
+    def forward_(self, node_mask, X_condition, E_condtion, conditionVec):
         assert isinstance(
             conditionVec, paddle.Tensor
         ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
         srcMask = self.make_src_mask(conditionVec)  # .to(self.device)
         conditionVecNmr = self.transEn(conditionVec, srcMask)
-        conditionVecNmr = conditionVecNmr.view(conditionVecNmr.shape[0], -1)
+        conditionVecNmr = conditionVecNmr.reshape([conditionVecNmr.shape[0], -1])
         conditionVecNmr = self.linear_layer(conditionVecNmr)
         y_condition = paddle.zeros(shape=[X_condition.shape[0], 1024]).cuda(
             blocking=True
@@ -955,6 +946,42 @@ class ContrastGraphTransformer(paddle.nn.Layer):
             X_condition, E_condtion, y_condition, node_mask
         )
         return conditionVecM, conditionVecNmr
+
+    def forward(self, batch):
+        batch_graph, other_data = batch
+        batch_length = batch_graph.num_graph
+        # transfer to dense graph from sparse graph
+        if batch_graph.edges.T.numel() == 0:
+            print("Found a batch with no edges. Skipping.")
+            return None
+        dense_data, node_mask = utils.to_dense(
+            batch_graph.node_feat["feat"],
+            batch_graph.edges.T.contiguous(),
+            batch_graph.edge_feat["feat"],
+            batch_graph.graph_node_id,
+        )
+        dense_data = dense_data.mask(node_mask)
+        X, E = dense_data.X, dense_data.E
+        conditionAll = other_data["conditionVec"]
+        conditionAll = conditionAll.reshape([batch_length, self.vocabDim])
+        conditionVecM, conditionVecNmr = self.forward_(node_mask, X, E, conditionAll)
+
+        V1_f = conditionVecM  # 假设 V1 是从图像（或者其他模态）得到的特征
+        V2_f = conditionVecNmr  # 假设 V2 是从文本（或者其他模态）得到的特征
+
+        V1_e = paddle.nn.functional.normalize(x=V1_f, p=2, axis=1)
+        V2_e = paddle.nn.functional.normalize(x=V2_f, p=2, axis=1)
+        logits = paddle.matmul(x=V1_e, y=V2_e.T) * paddle.exp(
+            x=paddle.to_tensor(data=self.tem, place=V1_e.place)
+        )
+        n = V1_f.shape[0]
+        labels = paddle.arange(end=n)
+        loss_fn = paddle.nn.CrossEntropyLoss()
+        loss_v1 = loss_fn(logits, labels)
+        loss_v2 = loss_fn(logits.T, labels)
+        loss = (loss_v1 + loss_v2) / 2
+
+        return {"loss": loss}
 
 
 class ConditionGraphTransformer(nn.Layer):
