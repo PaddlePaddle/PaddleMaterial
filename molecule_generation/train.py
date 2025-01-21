@@ -134,7 +134,7 @@ if __name__ == "__main__":
             metric_class=train_metrics,
         )
 
-    elif args.mode == 2:
+    elif args.step == 2:
         model = ContrastGraphTransformer(config, **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
@@ -151,7 +151,7 @@ if __name__ == "__main__":
             metric_class=train_metrics,
         )
 
-    elif args.mode == 3:
+    elif args.step == 3:
         model = ConditionGraphTransformer(config, **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(

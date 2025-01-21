@@ -266,63 +266,53 @@ def check_issues_norm_values(gamma_func, norm_val1, norm_val2, num_stdevs=8):
 
 
 def sample_discrete_features(probX, probE, node_mask):
+    """Sample features from multinomial distribution with given probabilities
+        (probX, probE).
+
+    Args:
+        probX: node features with shape (bs, n, dx_out)
+        probE: edge features with shape (bs, n, n, de_out)
+        node_mask: node mask
     """
-    Sample features from multinomial distribution with
-        given probabilities (probX, probE).
-    :param probX: (bs, n, dx_out) node features
-    :param probE: (bs, n, n, de_out) edge features
-    """
-    bs, n, dx_out = probX.shape
+    bs, n, _ = probX.shape
 
-    # The masked rows should define a uniform distribution
-    # => probX[~node_mask] = 1 / dx_out
-    mask_bool = node_mask.astype("bool")
-    # ~mask => paddle.logical_not
-    mask_not = paddle.logical_not(mask_bool)
-    probX[mask_not] = 1.0 / dx_out
+    # Noise X
+    # The masked rows should define probability distributions as well
+    probX = paddle.where(
+        node_mask.unsqueeze(-1), probX, paddle.full_like(probX, 1 / probX.shape[-1])
+    )
 
-    # Flatten to (bs*n, dx_out)
-    probX_flat = paddle.reshape(probX, [bs * n, dx_out])
+    # Flatten the probability tensor to sample with multinomial
+    probX = probX.reshape([bs * n, -1])  # (bs * n, dx_out)
 
-    # paddle.multinomial: shape (bs*n, 1)
-    X_t_ = paddle.multinomial(probX_flat, num_samples=1)
-    X_t_ = paddle.reshape(X_t_, [bs, n])  # (bs, n)
+    # Sample X
+    X_t = paddle.multinomial(probX, num_samples=1).reshape([bs, n])  # (bs, n)
 
-    # Edge
-    # Inverse edge mask
-    mask_2d = paddle.unsqueeze(mask_bool, axis=1) * paddle.unsqueeze(mask_bool, axis=2)
-    # inv_edge_mask = paddle.logical_not(mask_2d)
-    # diag
-    diag_mask = paddle.eye(n, dtype="int64")
-    diag_mask_bs = paddle.unsqueeze(diag_mask, axis=0).expand([bs, n, n])
-    # => probE[~(mask_2d) + diag_mask] = 1 / probE.shape[-1]
-    # Paddle 不支持多重逻辑直接索引，需要先构造:
-    de_out = probE.shape[-1]
-    probE[paddle.logical_not(mask_2d)] = 1.0 / de_out
-    probE[diag_mask_bs] = 1.0 / de_out
+    # Noise E
+    # The masked rows should define probability distributions as well
+    inverse_edge_mask = ~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2)).unsqueeze(-1)
+    diag_mask = paddle.eye(n).unsqueeze(0).expand([bs, -1, -1]).unsqueeze(-1)
 
-    # TODO: Weird point: the values ​​in 'probE_flat' are not all 0,
-    # but an error occured without adding '1e-8'.
-    probE_flat = paddle.reshape(probE, [bs * n * n, de_out]) + 1e-8
-    E_t_ = paddle.multinomial(probE_flat, num_samples=1)
-    E_t_ = paddle.reshape(E_t_, [bs, n, n])
+    probE = paddle.where(
+        inverse_edge_mask, paddle.full_like(probE, 1 / probE.shape[-1]), probE
+    )
+    probE = paddle.where(
+        diag_mask.astype(paddle.bool),
+        paddle.full_like(probE, 1 / probE.shape[-1]),
+        probE,
+    )
 
-    # 只保留上三角并对称化
-    # upper
-    # 只能手动构造 indices
-    row_idx, col_idx = np.triu_indices(n=n, k=1)
-    row_idx_t = paddle.to_tensor(row_idx, dtype="int64")
-    col_idx_t = paddle.to_tensor(col_idx, dtype="int64")
-    E_upper = paddle.zeros_like(E_t_)
-    for b in range(bs):
-        E_upper[b, row_idx_t, col_idx_t] = E_t_[b, row_idx_t, col_idx_t]
+    probE = probE.reshape([bs * n * n, -1])  # (bs * n * n, de_out)
 
-    E_t_ = E_upper + paddle.transpose(E_upper, perm=[0, 2, 1])
+    # Sample E
+    E_t = paddle.multinomial(probE, num_samples=1).reshape([bs, n, n])  # (bs, n, n)
+    E_t = paddle.triu(E_t, diagonal=1)
+    E_t = E_t + paddle.transpose(E_t, [0, 2, 1])
 
-    # y = zeros
-    Y_ = paddle.zeros([bs, 0], dtype=X_t_.dtype)
+    # Create a placeholder for y, since it's not used in this function
+    y = paddle.zeros([bs, 0], dtype=X_t.dtype)
 
-    return utils.PlaceHolder(X=X_t_, E=E_t_, y=Y_)
+    return utils.PlaceHolder(X=X_t, E=E_t, y=y)
 
 
 def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
