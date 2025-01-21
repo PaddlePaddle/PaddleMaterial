@@ -448,7 +448,6 @@ class CHnmrinfos:
                     2.972166286781430244e-03,
                 ]
             )
-        recompute_statistics = True
         if recompute_statistics:
             self.n_nodes = dataloaders.node_counts()
             self.node_types = dataloaders.node_types()
