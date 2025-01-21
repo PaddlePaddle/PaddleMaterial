@@ -102,42 +102,22 @@ class ValencyFeature:
 
 class WeightFeature:
     def __init__(self, max_weight, atom_weights):
-        """
-        max_weight: 用于将分子总质量做归一化
-        atom_weights: dict, 每种原子的原子量，如 {'H':1, 'C':12, 'O':16, ...}
+        """Set weights for each type of atom based on their atomic weight.
+
+        Args:
+            max_weight (Int): Max weight of atom
+                to normalize the total molecular mass.
+            atom_weights (Dict): Atomic weight of each atom.
         """
         self.max_weight = max_weight
-        # 将 atom_weights 的 values 做成 paddle.Tensor
         self.atom_weight_list = paddle.to_tensor(
             list(atom_weights.values()), dtype="float32"
         )
 
     def __call__(self, noisy_data):
-        """
-        计算分子的总原子量 (bs, 1)，并除以 self.max_weight 进行归一化。
-        """
-        X_t = noisy_data["X_t"]  # (bs, n, dx) => one-hot
-        # 取原子类型索引 => (bs, n)
-        atom_type_idx = paddle.argmax(X_t, axis=-1)
-
-        # 根据 atom_type_idx 取出对应原子量 => (bs, n)
-        # 需先把 self.atom_weight_list broadcast 到和 atom_type_idx 兼容
-        # 更简单方法：paddle.gather(self.atom_weight_list, atom_type_idx, axis=0) 也可行
-        # 但 paddle.gather 需要自己写 batch 版，这里可使用直接索引:
-        # 注意: 直接索引可能需先把 atom_type_idx 转 numpy，再转回来, 这里做个简单处理:
-
-        # (bs, n) flatten => (bs*n,)
-        shape_bsn = atom_type_idx.shape
-        flattened_idx = paddle.reshape(atom_type_idx, [-1])  # (bs*n,)
-        # gather => (bs*n,)
-        gathered_weights = paddle.gather(self.atom_weight_list, flattened_idx, axis=0)
-        # reshape => (bs, n)
-        X_weights = paddle.reshape(gathered_weights, shape_bsn)
-
-        # 分子总质量 => (bs,)
-        mw = paddle.sum(X_weights, axis=-1)
-        # => (bs,1)
-        mw = paddle.unsqueeze(mw, axis=-1)
-
-        # 归一化 + 与 X_t 保持相同 dtype
-        return mw.astype(X_t.dtype) / self.max_weight
+        X = paddle.argmax(noisy_data["X_t"], axis=-1)  # (bs, n)
+        X_weights = self.atom_weight_list[X]  # (bs, n)
+        return (
+            X_weights.sum(axis=-1).unsqueeze(-1).astype(noisy_data["X_t"].dtype)
+            / self.max_weight
+        )  # (bs, 1)
