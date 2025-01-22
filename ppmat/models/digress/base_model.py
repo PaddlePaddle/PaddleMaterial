@@ -87,7 +87,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         #############################################################
         input_dims = dataset_infos.input_dims
         self.con_input_dim = copy.deepcopy(input_dims)
-        self.con_input_dim["X"] = input_dims["X"] - 8
+        self.con_input_dim["X"] -= 8
         self.con_input_dim["y"] = 1024
         self.con_output_dim = dataset_infos.output_dims
 
@@ -114,7 +114,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         #############################################################
         # configure noise scheduler
         #############################################################
-        self.noise_scheduler = PredefinedNoiseScheduleDiscrete(
+        self.noise_schedule = PredefinedNoiseScheduleDiscrete(
             cfg["diffusion_model"]["diffusion_noise_schedule"],
             timesteps=self.T,
         )
@@ -212,20 +212,22 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         extra_data = self.compute_extra_data(noisy_data)
 
         # input_X
-        input_X = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype(
-            "float32"
-        )
+        input_X = paddle.concat(
+            [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+        ).astype(dtype="float32")
 
         # input_E
-        input_E = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype(
-            "float32"
-        )
+        input_E = paddle.concat(
+            [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+        ).astype(dtype="float32")
 
         # input_y with encoder output as condition vector of input of decoder
-        input_y = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype(
-            "float32"
-        )
-        y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
+        input_y = paddle.hstack(
+            [noisy_data["y_t"].astype("float"), extra_data.y]
+        ).astype(dtype="float32")
+
+        y_condition = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)
+
         conditionVec = self.encoder(X, E, y_condition, node_mask)
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
@@ -268,9 +270,9 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         t_float = t_int / self.T
         s_float = s_int / self.T
 
-        beta_t = self.noise_scheduler(t_normalized=t_float)
-        alpha_s_bar = self.noise_scheduler.get_alpha_bar(t_normalized=s_float)
-        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_normalized=t_float)
+        beta_t = self.noise_schedule(t_normalized=t_float)
+        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s_float)
+        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=None)
 
@@ -282,8 +284,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             probX=probX, probE=probE, node_mask=node_mask
         )
 
-        X_t = F.one_hot(sampled_t.X, num_classes=self.Xdim_output)
-        E_t = F.one_hot(sampled_t.E, num_classes=self.Edim_output)
+        X_t = F.one_hot(sampled_t.X, num_classes=self.Xdim_output).astype("int64")
+        E_t = F.one_hot(sampled_t.E, num_classes=self.Edim_output).astype("int64")
 
         z_t = utils.PlaceHolder(X=X_t, E=E_t, y=y).type_as(X_t).mask(node_mask)
 
@@ -322,7 +324,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
     def concat_without_empty(self, tensor_lst, axis=-1):
-        new_lst = [t for t in tensor_lst if 0 not in t.shape]
+        new_lst = [t.astype("float") for t in tensor_lst if 0 not in t.shape]
         if new_lst == []:
             return utils.return_empty(tensor_lst[0])
         return paddle.concat(new_lst, axis=axis)
@@ -445,7 +447,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         bs = X.shape[0]
         ones = paddle.ones([bs, 1], dtype="float32")
         Ts = self.T * ones
-        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_int=Ts)  # (bs,1)
+        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_int=Ts)  # (bs,1)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, None)
         probX = paddle.matmul(X, Qtb.X)  # (bs,n,dx_out)
@@ -547,7 +549,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         这里随机从 X0, E0 采样, 再前向
         """
         t_zeros = paddle.zeros_like(t)
-        beta_0 = self.noise_scheduler(t_zeros)
+        beta_0 = self.noise_schedule(t_zeros)
         Q0 = self.transition_model.get_Qt(beta_t=beta_0, device=None)
 
         probX0 = paddle.matmul(X, Q0.X)
@@ -555,8 +557,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         probE0 = paddle.matmul(E, Q0.E.unsqueeze(1))
 
         sampled0 = diffusion_utils.sample_discrete_features(probX0, probE0, node_mask)
-        X0 = F.one_hot(sampled0.X, num_classes=self.Xdim_output).astype("float32")
-        E0 = F.one_hot(sampled0.E, num_classes=self.Edim_output).astype("float32")
+        X0 = F.one_hot(sampled0.X, num_classes=self.Xdim_output)
+        E0 = F.one_hot(sampled0.E, num_classes=self.Edim_output)
         y0 = sampled0.y  # 这里是空?
 
         # noisy_data
@@ -735,8 +737,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         从 p(z_s | z_t) 采样: 反向扩散一步
         """
         beta_t = self.r(t_normalized=t)
-        alpha_s_bar = self.noise_scheduler.get_alpha_bar(t_normalized=s)
-        alpha_t_bar = self.noise_scheduler.get_alpha_bar(t_normalized=t)
+        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s)
+        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, None)
         Qsb = self.transition_model.get_Qt_bar(alpha_s_bar, None)
@@ -794,8 +796,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
 
         # 采样
         sampled_s = diffusion_utils.sample_discrete_features(prob_X, prob_E, node_mask)
-        X_s = F.one_hot(sampled_s.X, num_classes=self.Xdim_output).astype("float32")
-        E_s = F.one_hot(sampled_s.E, num_classes=self.Edim_output).astype("float32")
+        X_s = F.one_hot(sampled_s.X, num_classes=self.Xdim_output)
+        E_s = F.one_hot(sampled_s.E, num_classes=self.Edim_output)
 
         out_one_hot = utils.PlaceHolder(X=X_s, E=E_s, y=paddle.zeros([y_t.shape[0], 0]))
         out_discrete = utils.PlaceHolder(

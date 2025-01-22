@@ -106,13 +106,9 @@ class GraphTransformer(nn.Layer):
 
     def forward(self, X, E, y, node_mask):
         bs, n = X.shape[0], X.shape[1]
-        diag_mask = paddle.eye(n, dtype="int64")
-        diag_mask = ~diag_mask
-        diag_mask = (
-            paddle.unsqueeze(diag_mask, axis=0)
-            .unsqueeze(-1)
-            .tile(repeat_times=[bs, 1, 1, 1])
-        )
+        diag_mask = paddle.eye(n)
+        diag_mask = ~diag_mask.astype(E.dtype).astype("bool")
+        diag_mask = diag_mask.unsqueeze(0).unsqueeze(-1).expand([bs, -1, -1, -1])
 
         X_to_out = X[..., : self.out_dim_X]
         E_to_out = E[..., : self.out_dim_E]
