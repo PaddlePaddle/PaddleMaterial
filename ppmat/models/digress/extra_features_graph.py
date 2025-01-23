@@ -457,13 +457,8 @@ class KNodeCycles:
         triangles = batch_diagonal(self.k3_matrix) / 2.0  # (bs,n)
 
         joint_cycles = self.k2_matrix * self.adj_matrix  # (bs,n,n)
-        prod = paddle.squeeze(
-            paddle.matmul(joint_cycles, paddle.unsqueeze(self.d, axis=-1)), axis=-1
-        )
-        prod2 = paddle.squeeze(
-            paddle.matmul(self.adj_matrix, paddle.unsqueeze(triangles, axis=-1)),
-            axis=-1,
-        )
+        prod = 2 * paddle.matmul(joint_cycles, self.d.unsqueeze(-1)).squeeze(-1)
+        prod2 = 2 * paddle.matmul(self.adj_matrix, triangles.unsqueeze(-1)).squeeze(-1)
 
         c5 = diag_a5 - prod - 4.0 * self.d * triangles - prod2 + 10.0 * triangles
         x5 = (c5 / 2.0).unsqueeze(-1).astype("float32")
