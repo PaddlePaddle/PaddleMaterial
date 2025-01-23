@@ -20,6 +20,7 @@ from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
 from .utils import digressutils as utils
+from .utils import model_utils as m_utils
 
 # from paddle.nn import TransformerEncoderLayer
 # from paddle.nn import TransformerEncoder as Encoder
@@ -989,85 +990,225 @@ class ContrastGraphTransformer(paddle.nn.Layer):
 class ConditionGraphTransformer(nn.Layer):
     def __init__(
         self,
-        n_layers_GT: int,
-        input_dims: dict,
-        hidden_mlp_dims: dict,
-        hidden_dims: dict,
-        output_dims: dict,
-        act_fn_in: paddle.nn.ReLU(),
-        act_fn_out: paddle.nn.ReLU(),
-        enc_voc_size,
-        max_len,
-        d_model,
-        ffn_hidden,
-        n_head,
-        n_layers_TE,
-        drop_prob,
-        device,
-    ):
+        cfg,
+        dataset_infos,
+        train_metrics,
+        sampling_metrics,
+        visualization_tools,
+        extra_features,
+        domain_features,
+    ) -> None:
         super().__init__()
+        input_dims = dataset_infos.input_dims
+        output_dims = dataset_infos.output_dims
+        nodes_dist = dataset_infos.nodes_dist
+
+        #############################################################
+        # configure general variables settings
+        #############################################################
+        self.name = cfg["__name__"]
+        self.model_dtype = paddle.get_default_dtype()
+        self.T = cfg["diffusion_model"]["diffusion_steps"]
+        self.visualization_tools = visualization_tools
+
+        #############################################################
+        # configure datasets inter-varibles
+        #############################################################
+        self.dataset_info = dataset_infos
+        self.extra_features = extra_features
+        self.domain_features = domain_features
+
+        #############################################################
+        # configure noise scheduler
+        #############################################################
+        self.noise_schedule = PredefinedNoiseScheduleDiscrete(
+            cfg["diffusion_model"]["diffusion_noise_schedule"],
+            timesteps=self.T,
+        )
+
+        #############################################################
+        # configure model
+        #############################################################
+        # TODO: move it to input variables
+        self.add_condition = True
+        self.vocabDim = 256
+
+        self.enc_voc_size = 5450
+        self.max_len = 256
+        self.d_model = 256
+        self.ffn_hidden = 1024
+        self.n_head = 8
+        self.n_layers_TE = 3
+        self.drop_prob = 0.0
+        # self.guide_scale = 4
+
+        # set model
         self.GT = GraphTransformer(
-            n_layers=n_layers_GT,
+            n_layers=cfg["decoder"]["num_layers"],
             input_dims=input_dims,
-            hidden_mlp_dims=hidden_mlp_dims,
-            hidden_dims=hidden_dims,
+            hidden_mlp_dims=cfg["decoder"]["hidden_mlp_dims"],
+            hidden_dims=cfg["decoder"]["hidden_dims"],
             output_dims=output_dims,
-            act_fn_in=act_fn_in,
-            act_fn_out=act_fn_out,
+            act_fn_in=nn.ReLU(),
+            act_fn_out=nn.ReLU(),
         )
         self.transEn = Encoder(
-            enc_voc_size=enc_voc_size,
-            max_len=max_len,
-            d_model=d_model,
-            ffn_hidden=ffn_hidden,
-            n_head=n_head,
-            n_layers=n_layers_TE,
-            drop_prob=drop_prob,
-            device=device,
+            enc_voc_size=self.enc_voc_size,
+            max_len=self.max_len,
+            d_model=self.d_model,
+            ffn_hidden=self.ffn_hidden,
+            n_head=self.n_head,
+            n_layers=self.n_layers_TE,
+            drop_prob=self.drop_prob,
         )
         self.linear_layer = paddle.nn.Linear(
-            in_features=max_len * d_model, out_features=512
+            in_features=self.max_len * self.d_model, out_features=512
         )
-        self.device = device
 
-        checkpoint = paddle.load(
-            "/home/liuxuwei01/molecular2molecular/src/epoch-438.ckpt"
+        # TODO: move loading ckpt out
+        state_dict = paddle.load(
+            "/home/lijialin03/Material/scripts_debug/epoch=438.pdparams"
         )
-        state_dict = checkpoint["state_dict"]
         GT_state_dict = {
-            k[len("model.GT.") :]: v
-            for k, v in state_dict.items()
-            if k.startswith("model.GT.")
+            k[len("GT.") :]: v for k, v in state_dict.items() if k.startswith("GT.")
         }
         self.GT.set_state_dict(GT_state_dict)
 
-        checkpoint = paddle.load(
-            "/home/liuxuwei01/molecular2molecular/src/epoch-35.ckpt"
+        state_dict = paddle.load(
+            "/home/lijialin03/Material/scripts_debug/epoch=35.pdparams"
         )
-        state_dict = checkpoint["state_dict"]
         linear_layer_state_dict = {
-            k[len("model.linear_layer.") :]: v
+            k[len("linear_layer.") :]: v
             for k, v in state_dict.items()
-            if k.startswith("model.linear_layer.")
+            if k.startswith("linear_layer.")
         }
         self.linear_layer.set_state_dict(linear_layer_state_dict)
 
-        checkpoint = paddle.load(
-            "/home/liuxuwei01/molecular2molecular/src/epoch-35.ckpt"
+        state_dict = paddle.load(
+            "/home/lijialin03/Material/scripts_debug/epoch=35.pdparams"
         )
-        state_dict = checkpoint["state_dict"]
         transEn_state_dict = {
-            k[len("model.transEn.") :]: v
+            k[len("transEn.") :]: v
             for k, v in state_dict.items()
-            if k.startswith("model.transEn.")
+            if k.startswith("transEn.")
         }
         self.transEn.set_state_dict(transEn_state_dict)
+
+        #############################################################
+        # configure loss calculation with initialization of transition model
+        #############################################################
+        self.Xdim = input_dims["X"]
+        self.Edim = input_dims["E"]
+        self.ydim = input_dims["y"]
+        self.Xdim_output = output_dims["X"]
+        self.Edim_output = output_dims["E"]
+        self.ydim_output = output_dims["y"]
+        self.node_dist = nodes_dist
+
+        # Transition Model
+        if cfg["diffusion_model"]["transition"] == "uniform":
+            self.transition_model = DiscreteUniformTransition(
+                x_classes=self.Xdim_output,
+                e_classes=self.Edim_output,
+                y_classes=self.ydim_output,
+            )
+            x_limit = paddle.ones([self.Xdim_output]) / self.Xdim_output
+            e_limit = paddle.ones([self.Edim_output]) / self.Edim_output
+            y_limit = paddle.ones([self.ydim_output]) / self.ydim_output
+            self.limit_dist = utils.PlaceHolder(X=x_limit, E=e_limit, y=y_limit)
+
+        elif cfg["diffusion_model"]["transition"] == "marginal":
+            node_types = self.dataset_info.node_types.astype(self.model_dtype)
+            x_marginals = node_types / paddle.sum(node_types)
+
+            edge_types = self.dataset_info.edge_types.astype(self.model_dtype)
+            e_marginals = edge_types / paddle.sum(edge_types)
+            print(
+                f"Marginal distribution of classes: {x_marginals} for nodes, "
+                f"{e_marginals} for edges"
+            )
+
+            self.transition_model = MarginalUniformTransition(
+                x_marginals=x_marginals,
+                e_marginals=e_marginals,
+                y_classes=self.ydim_output,
+            )
+            self.limit_dist = utils.PlaceHolder(
+                X=x_marginals,
+                E=e_marginals,
+                y=paddle.ones([self.ydim_output]) / self.ydim_output,
+            )
+
+        self.train_loss = TrainLossDiscrete(cfg["diffusion_model"]["lambda_train"])
+
+        #############################################################
+        # configure for visualization and test
+        #############################################################
+        self.val_nll = NLL()
+        self.val_X_kl = SumExceptBatchKL()
+        self.val_E_kl = SumExceptBatchKL()
+        self.val_X_logp = SumExceptBatchMetric()
+        self.val_E_logp = SumExceptBatchMetric()
+        self.val_y_collection = []
+        self.val_atomCount = []
+        self.val_data_X = []
+        self.val_data_E = []
+
+        self.test_nll = NLL()
+        self.test_X_kl = SumExceptBatchKL()
+        self.test_E_kl = SumExceptBatchKL()
+        self.test_X_logp = SumExceptBatchMetric()
+        self.test_E_logp = SumExceptBatchMetric()
+        self.test_y_collection = []
+        self.test_atomCount = []
+        self.test_x = []
+        self.test_e = []
+
+        self.train_metrics = train_metrics
+        self.sampling_metrics = sampling_metrics
+
+        #############################################################
+        # configure training setting and other properties
+        #############################################################
+        self.start_epoch_time = None
+        self.best_val_nll = 1e8
+        self.val_counter = 0
+        self.number_chain_steps = cfg["diffusion_model"]["number_chain_steps"]
+        # self.log_every_steps = cfg["Global"]["log_every_steps"]
+
+    def preprocess_data(self, batch_graph, other_data):
+        dense_data, node_mask = utils.to_dense(
+            batch_graph.node_feat["feat"],
+            batch_graph.edges.T,
+            batch_graph.edge_feat["feat"],
+            batch_graph.graph_node_id,
+        )
+        dense_data = dense_data.mask(node_mask)
+
+        # add noise to the inputs (X, E)
+        noisy_data = m_utils.apply_noise(
+            self, dense_data.X, dense_data.E, other_data["y"], node_mask
+        )
+        extra_data = m_utils.compute_extra_data(self, noisy_data)
+
+        # concate data
+        input_X = paddle.concat(
+            [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+        ).astype(dtype="float32")
+        input_E = paddle.concat(
+            [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+        ).astype(dtype="float32")
+        input_y = paddle.hstack(
+            [noisy_data["y_t"].astype("float"), extra_data.y]
+        ).astype(dtype="float32")
+
+        return dense_data, noisy_data, node_mask, extra_data, input_X, input_E, input_y
 
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
         return src_mask
 
-    def forward(self, X, E, y, node_mask, conditionVec):
+    def forward_conitionGT(self, X, E, y, node_mask, conditionVec):
         assert isinstance(
             conditionVec, paddle.Tensor
         ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
@@ -1078,8 +1219,62 @@ class ConditionGraphTransformer(nn.Layer):
         conditionVec = self.linear_layer(conditionVec)
 
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
+        output = self.GT(X, E, y, node_mask)
+        return output
 
-        return self.GT(X, E, y, node_mask)
+    def forward(self, batch):
+        batch_graph, other_data = batch
+
+        # transfer to dense graph from sparse graph
+        if batch_graph.edges.T.numel() == 0:
+            print("Found a batch with no edges. Skipping.")
+            return None
+
+        # process data
+        (
+            dense_data,
+            noisy_data,
+            node_mask,
+            extra_data,
+            input_X,
+            input_E,
+            input_y,
+        ) = self.preprocess_data(batch_graph, other_data)
+        X, E = dense_data.X, dense_data.E
+
+        # set condition
+        if self.add_condition:
+            batch_length = X.shape[0]
+            conditionVec = other_data["conditionVec"]
+            y_condition = conditionVec.reshape(batch_length, self.vocabDim)
+        else:
+            y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
+
+        # forward of the model
+        pred = self.forward_conitionGT(
+            input_X, input_E, input_y, node_mask, y_condition
+        )
+
+        # compute loss
+        # TODO: move loss out!
+        loss = self.train_loss(
+            masked_pred_X=pred.X,
+            masked_pred_E=pred.E,
+            pred_y=pred.y,
+            true_X=X,
+            true_E=E,
+            true_y=other_data["y"],
+            log=False,
+        )
+        # log metrics to do move to another location
+        self.train_metrics(
+            masked_pred_X=pred.X,
+            masked_pred_E=pred.E,
+            true_X=X,
+            true_E=E,
+            log=False,
+        )
+        return {"loss": loss}
 
 
 if __name__ == "__main__":
