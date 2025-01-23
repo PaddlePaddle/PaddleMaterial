@@ -22,7 +22,7 @@ from ppmat.models.digress.extra_features_molecular_graph import ExtraMolecularFe
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.trainer_multimodal import TrainerCLIP
 from ppmat.trainer.trainer_multimodal import TrainerGraph
-from ppmat.trainer.trainer_multimodal import TrainerMultiModal
+from ppmat.trainer.trainer_multimodal import TrainerMultiModel
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.visualization import MolecularVisualization
@@ -152,12 +152,13 @@ if __name__ == "__main__":
         )
 
     elif args.step == 3:
-        model = ConditionGraphTransformer(config, **model_kwargs)
+        model = ConditionGraphTransformer(config["Model"], **model_kwargs)
+
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
         )
-        trainer = TrainerMultiModal(
+        trainer = TrainerMultiModel(
             config,
             model,
             train_dataloader=train_loader,
