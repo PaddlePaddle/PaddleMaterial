@@ -1,0 +1,107 @@
+Global:
+  epochs: 500
+  output_dir: ./output/digress_clip
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 1 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  is_save_traj: False
+  clip_grad: null
+  ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
+  pretrained_model_path: ./molecule_generation/contrastGT.pdparams # set your pretrained model path here
+
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+  # General settings
+  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
+  gpus: 1                     # Multi-gpu is not implemented on this branch
+     # Use absolute path
+  test_only: null
+  check_val_every_n_epochs: 1
+  sample_every_val: 1
+
+  val_check_interval: null
+  samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
+  samples_to_save: 1
+  chains_to_save: 1
+  # log_every_steps: 500
+  number_chain_steps: 1        # Number of frames in each gif
+
+  final_model_samples_to_generate: 512
+  final_model_samples_to_save: 512
+  final_model_chains_to_save: 512
+
+  evaluate_all_checkpoints: False
+
+Metric:
+  __name__: CSPMetric
+  gt_file_path: "./data/mp_20/test.csv"
+
+Model:
+  __name__: ContrastGraphTransformer
+  n_layers_GT: 5
+  input_dims:
+    X: 17
+    E: 5
+    y: 525
+  hidden_mlp_dims:
+    X: 256
+    E: 128
+    y: 256
+  hidden_dims: {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
+  output_dims: {'X': 9, 'E': 5, 'y': 0}
+  diffusion_model:
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    conditdim: 512
+
+Optimizer:
+  __name__: AdamW
+  beta1: 0.9
+  beta2: 0.999
+  lr: 0.0002
+
+
+Dataset:
+  train:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/train.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      datadir: "./molecule_generation/data/CHnmr"
+      cache: True
+      remove_h: True
+      stage: "train"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 512
+  val:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/val.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "val"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/test.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "test"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
