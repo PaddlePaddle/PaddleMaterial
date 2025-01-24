@@ -29,13 +29,12 @@ from paddle import optimizer as optim
 from paddle.distributed import fleet
 
 from ppmat.models.digress import diffusion_utils
-from ppmat.models.digress.base_model import ContrastGraphTransformer
 
 # from ppmat.models.digress.base_model import ConditionGraphTransformer
 # from ppmat.models.digress.base_model import MolecularGraphTransformer
-from ppmat.models.digress.noise_schedule import DiscreteUniformTransition
-from ppmat.models.digress.noise_schedule import MarginalUniformTransition
-from ppmat.models.digress.noise_schedule import PredefinedNoiseScheduleDiscrete
+# from ppmat.models.digress.noise_schedule import DiscreteUniformTransition
+# from ppmat.models.digress.noise_schedule import MarginalUniformTransition
+# from ppmat.models.digress.noise_schedule import PredefinedNoiseScheduleDiscrete
 from ppmat.models.digress.utils import digressutils as utils
 
 # from ppmat.trainer.trainer_diffusion import TrainerDiffusion
@@ -43,6 +42,8 @@ from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
+
+# from ppmat.models.digress.base_model import ContrastGraphTransformer
 
 
 class TrainerGraph:
