@@ -135,7 +135,7 @@ if __name__ == "__main__":
         )
 
     elif args.step == 2:
-        model = ContrastGraphTransformer(config, **model_kwargs)
+        model = ContrastGraphTransformer(**config["Model"])
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"], model, config["Global"]["epochs"], len(train_loader)
