@@ -5,6 +5,7 @@ from ppmat.models.chgnet_v2.model.model_v2 import CHGNet_v2
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.diffcsp.diffcsp import CSPDiffusion
 from ppmat.models.diffcsp.diffcsp_d3pm import CSPDiffusionWithD3PM
+from ppmat.models.diffcsp.diffcsp_with_guidance import CSPDiffusionWithGuidance
 from ppmat.models.diffcsp.diffcsp_with_type import CSPDiffusionWithType
 from ppmat.models.dimenet.dimenet import DimeNetPlusPlusWrap
 from ppmat.models.gemnet.gemnet import GemNetT
@@ -25,6 +26,7 @@ __all__ = [
     "CSPDiffusion",
     "CSPDiffusionWithType",
     "CSPDiffusionWithD3PM",
+    "CSPDiffusionWithGuidance",
     "MatterGen",
     "iComformer",
     # "MolecularGraphTransformer",
