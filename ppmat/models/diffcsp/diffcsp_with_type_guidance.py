@@ -14,15 +14,16 @@ from ppmat.models.diffcsp.cspnet import CSPNet
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
-class CSPDiffusionWithGuidance(paddle.nn.Layer):
+class CSPDiffusionWithTypeGuidance(paddle.nn.Layer):
     def __init__(
         self,
-        decoder_cfg: dict,
-        beta_scheduler_cfg: dict,
-        sigma_scheduler_cfg: dict,
-        time_dim: int,
+        decoder_cfg,
+        beta_scheduler_cfg,
+        sigma_scheduler_cfg,
+        time_dim,
         lattice_loss_weight: float = 1.0,
         coord_loss_weight: float = 1.0,
+        type_loss_weight: float = 20.0,
         num_classes: int = 100,
         prop_names: Optional[list[str]] = None,
         property_input_dim: int = 1,
@@ -31,7 +32,6 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         **kwargs,
     ) -> None:
         super().__init__()
-
         self.decoder = CSPNet(**decoder_cfg)
 
         self.beta_scheduler = BetaScheduler(**beta_scheduler_cfg)
@@ -40,12 +40,12 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         self.time_dim = time_dim
         self.lattice_loss_weight = lattice_loss_weight
         self.coord_loss_weight = coord_loss_weight
+        self.type_loss_weight = type_loss_weight
         self.num_classes = num_classes
 
-        self.time_embedding = SinusoidalTimeEmbeddings(time_dim)
+        self.time_embedding = SinusoidalTimeEmbeddings(self.time_dim)
         self.keep_lattice = self.lattice_loss_weight < 1e-05
         self.keep_coords = self.coord_loss_weight < 1e-05
-
         if prop_names is not None:
             self.prop_names = (
                 prop_names if isinstance(prop_names, list) else [prop_names]
@@ -54,7 +54,6 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
 
             self.property_embedding = paddle.nn.Linear(len(prop_names), property_dim)
             self.drop_prob = drop_prob
-
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -74,6 +73,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
 
         times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
+
         if self.prop_names is not None:
             prop_data = [batch[prop_name] for prop_name in self.prop_names]
             prop_data = paddle.concat(prop_data, axis=1)
@@ -91,7 +91,6 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         c1 = paddle.sqrt(x=1.0 - alphas_cumprod)
         sigmas = self.sigma_scheduler.sigmas[times]
         sigmas_norm = self.sigma_scheduler.sigmas_norm[times]
-
         if hasattr(structure_array, "lattice"):
             lattices = structure_array.lattice
         else:
@@ -111,13 +110,24 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             repeats=structure_array.num_atoms
         )[:, None]
         input_frac_coords = (frac_coords + sigmas_per_atom * rand_x) % 1.0
+        gt_atom_types_onehot = paddle.nn.functional.one_hot(
+            num_classes=self.num_classes, x=structure_array.atom_types - 1
+        )
+        rand_t = paddle.randn(
+            shape=gt_atom_types_onehot.shape, dtype=gt_atom_types_onehot.dtype
+        )
+        atom_type_probs = (
+            c0.repeat_interleave(repeats=structure_array.num_atoms)[:, None]
+            * gt_atom_types_onehot
+            + c1.repeat_interleave(repeats=structure_array.num_atoms)[:, None] * rand_t
+        )
         if self.keep_coords:
             input_frac_coords = frac_coords
         if self.keep_lattice:
             input_lattice = lattices
-        pred_l, pred_x = self.decoder(
+        pred_l, pred_x, pred_t = self.decoder(
             time_emb,
-            structure_array.atom_types - 1,
+            atom_type_probs,
             input_frac_coords,
             input_lattice,
             structure_array.num_atoms,
@@ -125,17 +135,23 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             property_emb=property_emb,
             property_mask=property_mask,
         )
-
         tar_x = d_log_p_wrapped_normal(
             sigmas_per_atom * rand_x, sigmas_per_atom
         ) / paddle.sqrt(x=sigmas_norm_per_atom)
         loss_lattice = paddle.nn.functional.mse_loss(input=pred_l, label=rand_l)
         loss_coord = paddle.nn.functional.mse_loss(input=pred_x, label=tar_x)
+        loss_type = paddle.nn.functional.mse_loss(input=pred_t, label=rand_t)
         loss = (
             self.lattice_loss_weight * loss_lattice
             + self.coord_loss_weight * loss_coord
+            + self.type_loss_weight * loss_type
         )
-        return {"loss": loss, "loss_lattice": loss_lattice, "loss_coord": loss_coord}
+        return {
+            "loss": loss,
+            "loss_lattice": loss_lattice,
+            "loss_coord": loss_coord,
+            "loss_type": loss_type,
+        }
 
     @paddle.no_grad()
     def sample(self, batch, step_lr=1e-05, is_save_traj=False, guide_w=0.5):
@@ -150,6 +166,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]), paddle.rand(
             shape=[structure_array.num_atoms.sum(), 3]
         )
+        a_T = paddle.randn(shape=[structure_array.num_atoms.sum(), self.num_classes])
         if self.keep_coords:
             x_T = structure_array.frac_coords
         if self.keep_lattice:
@@ -159,12 +176,10 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 l_T = lattice_params_to_matrix_paddle(
                     structure_array.lengths, structure_array.angles
                 )
-
-        time_start = self.beta_scheduler.timesteps
         traj = {
-            time_start: {
+            self.beta_scheduler.timesteps: {
                 "num_atoms": structure_array.num_atoms,
-                "atom_types": structure_array.atom_types,
+                "atom_types": a_T,
                 "frac_coords": x_T % 1.0,
                 "lattices": l_T,
             }
@@ -180,7 +195,9 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         batch_double = paddle.concat([batch_idx, batch_idx + batch_size])
         property_emb_double = paddle.concat([property_emb, property_emb], axis=0)
 
-        for t in tqdm(range(time_start, 0, -1), leave=False, desc="Sampling..."):
+        for t in tqdm(
+            range(self.beta_scheduler.timesteps, 0, -1), leave=False, desc="Sampling..."
+        ):
             times = paddle.full(shape=(batch_size,), fill_value=t, dtype="int64")
             time_emb = self.time_embedding(times)
             alphas = self.beta_scheduler.alphas[t]
@@ -192,6 +209,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             c1 = (1 - alphas) / paddle.sqrt(x=1 - alphas_cumprod)
             x_t = traj[t]["frac_coords"]
             l_t = traj[t]["lattices"]
+            a_t = traj[t]["atom_types"]
             if self.keep_coords:
                 x_t = x_T
             if self.keep_lattice:
@@ -201,6 +219,11 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 if t > 1
                 else paddle.zeros_like(x=l_T)
             )
+            rand_t = (
+                paddle.randn(shape=a_T.shape, dtype=a_T.dtype)
+                if t > 1
+                else paddle.zeros_like(x=a_T)
+            )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
                 if t > 1
@@ -209,15 +232,14 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             step_size = step_lr * (sigma_x / self.sigma_scheduler.sigma_begin) ** 2
             std_x = paddle.sqrt(x=2 * step_size)
 
-            # double concat it
             time_emb_double = paddle.concat([time_emb, time_emb], axis=0)
-            atom_types = structure_array.atom_types - 1
-            atom_types_double = paddle.concat([atom_types, atom_types], axis=0)
+            a_t_double = paddle.concat([a_t, a_t], axis=0)
             x_t_double = paddle.concat([x_t, x_t], axis=0)
             l_t_double = paddle.concat([l_t, l_t], axis=0)
-            pred_l, pred_x = self.decoder(
+
+            pred_l, pred_x, pred_t = self.decoder(
                 time_emb_double,
-                atom_types_double,
+                a_t_double,
                 x_t_double,
                 l_t_double,
                 num_atoms_double,
@@ -227,6 +249,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             )
             pred_l = (1 + guide_w) * pred_l[:batch_size] - guide_w * pred_l[batch_size:]
             pred_x = (1 + guide_w) * pred_x[:num_nodes] - guide_w * pred_x[num_nodes:]
+            pred_t = (1 + guide_w) * pred_t[:num_nodes] - guide_w * pred_t[num_nodes:]
 
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_05 = (
@@ -234,11 +257,17 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 if not self.keep_coords
                 else x_t
             )
-            l_t_minus_05 = l_t if not self.keep_lattice else l_t
+            l_t_minus_05 = l_t
+            a_t_minus_05 = a_t
             rand_l = (
                 paddle.randn(shape=l_T.shape, dtype=l_T.dtype)
                 if t > 1
                 else paddle.zeros_like(x=l_T)
+            )
+            rand_t = (
+                paddle.randn(shape=a_T.shape, dtype=a_T.dtype)
+                if t > 1
+                else paddle.zeros_like(x=a_T)
             )
             rand_x = (
                 paddle.randn(shape=x_T.shape, dtype=x_T.dtype)
@@ -253,12 +282,12 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 / sigma_x**2
             )
 
-            # double concat it
+            a_t_minus_05_double = paddle.concat([a_t_minus_05, a_t_minus_05], axis=0)
             x_t_minus_05_double = paddle.concat([x_t_minus_05, x_t_minus_05], axis=0)
             l_t_minus_05_double = paddle.concat([l_t_minus_05, l_t_minus_05], axis=0)
-            pred_l, pred_x = self.decoder(
+            pred_l, pred_x, pred_t = self.decoder(
                 time_emb_double,
-                atom_types_double,
+                a_t_minus_05_double,
                 x_t_minus_05_double,
                 l_t_minus_05_double,
                 num_atoms_double,
@@ -268,6 +297,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             )
             pred_l = (1 + guide_w) * pred_l[:batch_size] - guide_w * pred_l[batch_size:]
             pred_x = (1 + guide_w) * pred_x[:num_nodes] - guide_w * pred_x[num_nodes:]
+            pred_t = (1 + guide_w) * pred_t[:num_nodes] - guide_w * pred_t[num_nodes:]
 
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_1 = (
@@ -280,31 +310,13 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 if not self.keep_lattice
                 else l_t
             )
+            a_t_minus_1 = c0 * (a_t_minus_05 - c1 * pred_t) + sigmas * rand_t
             traj[t - 1] = {
                 "num_atoms": structure_array.num_atoms,
-                "atom_types": structure_array.atom_types,
+                "atom_types": a_t_minus_1,
                 "frac_coords": x_t_minus_1 % 1.0,
                 "lattices": l_t_minus_1,
             }
-
-        # after all the trajectories are generated, we need to convert them to a
-        # list of structures:
-        # {
-        #     "time_step":[
-        #         {
-        #             "num_atoms": [...],
-        #             "atom_types": [...],
-        #             "frac_coords": [...],
-        #             "lattices": [...]
-        #         }, # sample1 generated by the model
-        #         {
-        #             "num_atoms": [...],
-        #             "atom_types": [...],
-        #             "frac_coords": [...],
-        #             "lattices": [...]
-        #         }, # sample2 generated by the model
-        #     ]
-        # }
         if is_save_traj:
             for key in traj:
                 start_idx = 0
@@ -313,19 +325,17 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                     end_idx = start_idx + traj[key]["num_atoms"][i]
                     traj_single.append(
                         {
-                            "num_atoms": traj[key]["num_atoms"][i]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            "atom_types": traj[key]["atom_types"][start_idx:end_idx]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            "frac_coords": traj[key]["frac_coords"][start_idx:end_idx]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            "lattices": traj[key]["lattices"][i].cpu().numpy().tolist(),
+                            "num_atoms": traj[key]["num_atoms"][i].tolist(),
+                            "atom_types": (
+                                traj[key]["atom_types"][start_idx:end_idx].argmax(
+                                    axis=-1
+                                )
+                                + 1
+                            ).tolist(),
+                            "frac_coords": traj[key]["frac_coords"][
+                                start_idx:end_idx
+                            ].tolist(),
+                            "lattices": traj[key]["lattices"][i].tolist(),
                         }
                     )
                     start_idx += traj[key]["num_atoms"][i]
@@ -339,16 +349,14 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 end_idx = start_idx + traj[0]["num_atoms"][i]
                 result.append(
                     {
-                        "num_atoms": traj[0]["num_atoms"][i].cpu().numpy().tolist(),
-                        "atom_types": traj[0]["atom_types"][start_idx:end_idx]
-                        .cpu()
-                        .numpy()
-                        .tolist(),
-                        "frac_coords": traj[0]["frac_coords"][start_idx:end_idx]
-                        .cpu()
-                        .numpy()
-                        .tolist(),
-                        "lattices": traj[0]["lattices"][i].cpu().numpy().tolist(),
+                        "num_atoms": traj[0]["num_atoms"][i].tolist(),
+                        "atom_types": (
+                            traj[0]["atom_types"][start_idx:end_idx].argmax(axis=-1) + 1
+                        ).tolist(),
+                        "frac_coords": traj[0]["frac_coords"][
+                            start_idx:end_idx
+                        ].tolist(),
+                        "lattices": traj[0]["lattices"][i].tolist(),
                     }
                 )
                 start_idx += traj[0]["num_atoms"][i]

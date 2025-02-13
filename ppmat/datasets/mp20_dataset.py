@@ -25,6 +25,7 @@ class MP20Dataset(paddle.io.Dataset):
         converter_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
+        prop_names: Optional[list[str]] = None,
         cache: bool = False,
     ):
         super().__init__()
@@ -33,6 +34,11 @@ class MP20Dataset(paddle.io.Dataset):
         self.primitive = primitive
         self.converter_cfg = converter_cfg
         self.transforms = transforms
+        self.prop_names = (
+            prop_names
+            if prop_names is not None
+            else ["formation_energy_per_atom", "band_gap"]
+        )
         self.cache = cache
 
         if cache:
@@ -135,15 +141,21 @@ class MP20Dataset(paddle.io.Dataset):
             structure = self.structures[idx]
             data["structure_array"] = self.get_structure_array(structure)
 
-        if "formation_energy_per_atom" in self.csv_data:
-            data["formation_energy_per_atom"] = np.array(
-                [self.csv_data["formation_energy_per_atom"][idx]]
-            ).astype("float32")
-        if "band_gap" in self.csv_data:
-            data["band_gap"] = np.array([self.csv_data["band_gap"][idx]]).astype(
-                "float32"
-            )
+        for prop_name in self.prop_names:
+            if prop_name in self.csv_data:
+                data[prop_name] = np.array([self.csv_data[prop_name][idx]]).astype(
+                    "float32"
+                )
+        # if "formation_energy_per_atom" in self.csv_data:
+        #     data["formation_energy_per_atom"] = np.array(
+        #         [self.csv_data["formation_energy_per_atom"][idx]]
+        #     ).astype("float32")
+        # if "band_gap" in self.csv_data:
+        #     data["band_gap"] = np.array([self.csv_data["band_gap"][idx]]).astype(
+        #         "float32"
+        #     )
         data["id"] = self.csv_data["material_id"][idx]
+        data["meta_data"] = np.asarray([idx])
 
         data = self.transforms(data) if self.transforms is not None else data
         return data

@@ -1,21 +1,22 @@
 Global:
   epochs: 1000
-  output_dir: ./output/diffcsp_mp20_guidance_bandgap
+  output_dir: ./output/diffcsp_mp20_d3pm_absorbing_guidance
   save_freq: 100 # set 0 to disable saving during training
   log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
   is_save_traj: False
-  step_lr: 0.00001
-  pretrained_model_path: null # set your pretrained model path here
+  step_lr: 0.000005
+  pretrained_model_path: null
 
 Metric:
-  __name__: CSPMetric
+  __name__: GenMetric
   gt_file_path: "./data/mp_20/test.csv"
 
+
 Model:
-  __name__: CSPDiffusionWithGuidance
+  __name__: CSPDiffusionWithD3PM
   decoder_cfg:
     hidden_dim: 512
     latent_dim: 256
@@ -29,6 +30,8 @@ Model:
     cutoff: 7
     ln: true
     ip: true
+    pred_type: true
+    smooth: false
   beta_scheduler_cfg:
     timesteps: 1000
     scheduler_mode: cosine
@@ -36,15 +39,22 @@ Model:
     timesteps: 1000
     sigma_begin: 0.005
     sigma_end: 0.5
+  discrete_scheduler_cfg:
+    timesteps: 1000
+    num_classes: 100
+    forward_type: absorbing
   time_dim: 256
   lattice_loss_weight: 1
   coord_loss_weight: 1
+  type_loss_weight: 20
+  type_ce_loss_weight: 0.01
   prop_names: ['band_gap', 'formation_energy_per_atom']
 
 Optimizer:
   __name__: Adam
   beta1: 0.9
   beta2: 0.999
+  clip_value: 0.5
   lr:
     __name__: ReduceOnPlateau
     learning_rate: 0.001
@@ -80,23 +90,22 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 256
   test:
     dataset:
-      __name__: MP20Dataset
-      path: "./data/mp_20/test.csv"
-      cache: True
+      __name__: GenDataset
+      total_num: 10000
       prop_names: ['band_gap', 'formation_energy_per_atom']
+      prop_values: [0.1, 0.5]
     sampler:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 256
   predict:
     dataset:
       __name__: GenDataset
-      total_num: 20
-      formula: MoSi2
+      total_num: 10
       prop_names: ['band_gap', 'formation_energy_per_atom']
       prop_values: [0.1, 0.5]
     sampler:

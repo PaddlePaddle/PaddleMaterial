@@ -9,7 +9,14 @@ from ppmat.utils import paddle_aux  # noqa
 
 
 class GenDataset(paddle.io.Dataset):
-    def __init__(self, total_num, formula=None, dist_name="mp_20", property_value=None):
+    def __init__(
+        self,
+        total_num,
+        formula=None,
+        dist_name="mp_20",
+        prop_names=None,
+        prop_values=None,
+    ):
         super().__init__()
 
         self.total_num = total_num
@@ -25,7 +32,13 @@ class GenDataset(paddle.io.Dataset):
             self.num_atoms = np.random.choice(
                 len(self.distribution), total_num, p=self.distribution
             )
-        self.property_value = property_value
+        self.prop_names = prop_names
+        self.prop_values = prop_values
+        if prop_names is not None and prop_values is not None:
+            assert len(prop_names) == len(prop_values)
+            self.prop_flag = True
+        else:
+            self.prop_flag = False
 
     def get_structure(self, formula):
         composition = chemparse.parse_formula(formula)
@@ -56,7 +69,7 @@ class GenDataset(paddle.io.Dataset):
             )
         data["num_atoms"] = data["structure_array"].num_atoms
 
-        if self.property_value is not None:
-            prop = np.array(self.property_value, dtype=np.float32).reshape(1, -1)
-            data["prop"] = prop
+        if self.prop_flag:
+            for prop_name, prop_value in zip(self.prop_names, self.prop_values):
+                data[prop_name] = np.array([prop_value]).astype("float32")
         return data
