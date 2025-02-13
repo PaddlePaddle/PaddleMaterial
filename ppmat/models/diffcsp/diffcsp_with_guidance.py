@@ -1,3 +1,5 @@
+from typing import Optional
+
 import paddle
 import paddle.nn as nn
 from tqdm import tqdm
@@ -22,7 +24,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         lattice_loss_weight: float = 1.0,
         coord_loss_weight: float = 1.0,
         num_classes: int = 100,
-        prop_name: str = None,
+        prop_names: Optional[list[str]] = None,
         property_input_dim: int = 1,
         property_dim: int = 512,
         drop_prob: float = 0.1,
@@ -44,10 +46,13 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
         self.keep_lattice = self.lattice_loss_weight < 1e-05
         self.keep_coords = self.coord_loss_weight < 1e-05
 
-        if prop_name is not None:
-            self.prop_name = prop_name
+        if prop_names is not None:
+            self.prop_names = (
+                prop_names if isinstance(prop_names, list) else [prop_names]
+            )
             assert property_input_dim == 1, "Property input dimension must be 1"
-            self.property_embedding = paddle.nn.Linear(property_input_dim, property_dim)
+
+            self.property_embedding = paddle.nn.Linear(len(prop_names), property_dim)
             self.drop_prob = drop_prob
 
         self.apply(self._init_weights)
@@ -69,9 +74,10 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
 
         times = uniform_sample_t(batch_size, self.beta_scheduler.timesteps)
         time_emb = self.time_embedding(times)
-
-        if self.prop_name is not None:
-            property_emb = self.property_embedding(batch[self.prop_name])
+        if self.prop_names is not None:
+            prop_data = [batch[prop_name] for prop_name in self.prop_names]
+            prop_data = paddle.concat(prop_data, axis=1)
+            property_emb = self.property_embedding(prop_data)
             property_mask = paddle.bernoulli(
                 paddle.zeros([batch_size, 1]) + self.drop_prob
             )
@@ -135,9 +141,11 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
     def sample(self, batch, step_lr=1e-05, is_save_traj=False, guide_w=0.5):
         structure_array = batch["structure_array"]
         batch_size = structure_array.num_atoms.shape[0]
-        # batch_idx = paddle.repeat_interleave(
-        #     paddle.arange(batch_size), repeats=structure_array.num_atoms
-        # )
+        num_atoms = structure_array.num_atoms
+        batch_idx = paddle.repeat_interleave(
+            paddle.arange(batch_size), repeats=structure_array.num_atoms
+        )
+        num_nodes = structure_array.num_atoms.sum()
 
         l_T, x_T = paddle.randn(shape=[batch_size, 3, 3]), paddle.rand(
             shape=[structure_array.num_atoms.sum(), 3]
@@ -162,12 +170,14 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             }
         }
 
-        property_emb = self.property_embedding(batch[self.prop_name])
+        prop_data = [batch[prop_name] for prop_name in self.prop_names]
+        prop_data = paddle.concat(prop_data, axis=1)
+        property_emb = self.property_embedding(prop_data)
         property_mask = paddle.zeros([batch_size * 2, 1])
         property_mask[:batch_size] = 1
 
-        num_atoms_double = paddle.concat([batch["num_atoms"], batch["num_atoms"]])
-        batch_double = paddle.concat([batch["batch"], batch["batch"] + batch_size])
+        num_atoms_double = paddle.concat([num_atoms, num_atoms])
+        batch_double = paddle.concat([batch_idx, batch_idx + batch_size])
         property_emb_double = paddle.concat([property_emb, property_emb], axis=0)
 
         for t in tqdm(range(time_start, 0, -1), leave=False, desc="Sampling..."):
@@ -205,7 +215,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             atom_types_double = paddle.concat([atom_types, atom_types], axis=0)
             x_t_double = paddle.concat([x_t, x_t], axis=0)
             l_t_double = paddle.concat([l_t, l_t], axis=0)
-            pred_l, pred_x, pred_t = self.decoder(
+            pred_l, pred_x = self.decoder(
                 time_emb_double,
                 atom_types_double,
                 x_t_double,
@@ -216,12 +226,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 property_mask=property_mask,
             )
             pred_l = (1 + guide_w) * pred_l[:batch_size] - guide_w * pred_l[batch_size:]
-            pred_x = (1 + guide_w) * pred_x[: batch["num_nodes"]] - guide_w * pred_x[
-                batch["num_nodes"] :
-            ]
-            pred_t = (1 + guide_w) * pred_t[: batch["num_nodes"]] - guide_w * pred_t[
-                batch["num_nodes"] :
-            ]
+            pred_x = (1 + guide_w) * pred_x[:num_nodes] - guide_w * pred_x[num_nodes:]
 
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_05 = (
@@ -251,7 +256,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
             # double concat it
             x_t_minus_05_double = paddle.concat([x_t_minus_05, x_t_minus_05], axis=0)
             l_t_minus_05_double = paddle.concat([l_t_minus_05, l_t_minus_05], axis=0)
-            pred_l, pred_x, pred_t = self.decoder(
+            pred_l, pred_x = self.decoder(
                 time_emb_double,
                 atom_types_double,
                 x_t_minus_05_double,
@@ -262,12 +267,7 @@ class CSPDiffusionWithGuidance(paddle.nn.Layer):
                 property_mask=property_mask,
             )
             pred_l = (1 + guide_w) * pred_l[:batch_size] - guide_w * pred_l[batch_size:]
-            pred_x = (1 + guide_w) * pred_x[: batch["num_nodes"]] - guide_w * pred_x[
-                batch["num_nodes"] :
-            ]
-            pred_t = (1 + guide_w) * pred_t[: batch["num_nodes"]] - guide_w * pred_t[
-                batch["num_nodes"] :
-            ]
+            pred_x = (1 + guide_w) * pred_x[:num_nodes] - guide_w * pred_x[num_nodes:]
 
             pred_x = pred_x * paddle.sqrt(x=sigma_norm)
             x_t_minus_1 = (

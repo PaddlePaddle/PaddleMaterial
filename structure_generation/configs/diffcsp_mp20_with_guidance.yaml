@@ -39,7 +39,7 @@ Model:
   time_dim: 256
   lattice_loss_weight: 1
   coord_loss_weight: 1
-  prop_name: 'band_gap'
+  prop_names: ['band_gap', 'formation_energy_per_atom']
 
 Optimizer:
   __name__: Adam
@@ -61,6 +61,7 @@ Dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/train.csv"
       cache: True
+      prop_names: ['band_gap', 'formation_energy_per_atom']
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -74,6 +75,7 @@ Dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/val.csv"
       cache: True
+      prop_names: ['band_gap', 'formation_energy_per_atom']
     sampler:
       __name__: BatchSampler
       shuffle: False
@@ -84,6 +86,7 @@ Dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/test.csv"
       cache: True
+      prop_names: ['band_gap', 'formation_energy_per_atom']
     sampler:
       __name__: BatchSampler
       shuffle: False
@@ -94,6 +97,8 @@ Dataset:
       __name__: GenDataset
       total_num: 20
       formula: MoSi2
+      prop_names: ['band_gap', 'formation_energy_per_atom']
+      prop_values: [0.1, 0.5]
     sampler:
       __name__: BatchSampler
       shuffle: False
