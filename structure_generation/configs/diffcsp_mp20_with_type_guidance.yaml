@@ -1,0 +1,110 @@
+Global:
+  epochs: 1000
+  output_dir: ./output/diffcsp_mp20_with_type_guidance
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 10 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  is_save_traj: False
+  step_lr: 0.000005
+  pretrained_model_path: null
+
+Metric:
+  __name__: GenMetric
+  gt_file_path: "./data/mp_20/test.csv"
+
+
+Model:
+  __name__: CSPDiffusionWithTypeGuidance
+  decoder_cfg:
+    hidden_dim: 512
+    latent_dim: 256
+    max_atoms: 100
+    num_layers: 6
+    act_fn: silu
+    dis_emb: sin
+    num_freqs: 128
+    edge_style: fc
+    max_neighbors: 20
+    cutoff: 7
+    ln: true
+    ip: true
+    pred_type: true
+    smooth: true
+  beta_scheduler_cfg:
+    timesteps: 1000
+    scheduler_mode: cosine
+  sigma_scheduler_cfg:
+    timesteps: 1000
+    sigma_begin: 0.005
+    sigma_end: 0.5
+  time_dim: 256
+  lattice_loss_weight: 1
+  coord_loss_weight: 1
+  type_loss_weight: 20
+  prop_names: ['band_gap', 'formation_energy_per_atom']
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  clip_value: 0.5
+  lr:
+    __name__: ReduceOnPlateau
+    learning_rate: 0.001
+    factor: 0.6
+    by_epoch: True
+    patience: 30
+    min_lr: 0.0001
+    indicator: "train_loss"
+
+
+Dataset:
+  train:
+    dataset:
+      __name__: MP20Dataset
+      path: "./data/mp_20/train.csv"
+      cache: True
+      prop_names: ['band_gap', 'formation_energy_per_atom']
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 256
+  val:
+    dataset:
+      __name__: MP20Dataset
+      path: "./data/mp_20/val.csv"
+      cache: True
+      prop_names: ['band_gap', 'formation_energy_per_atom']
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 256
+  test:
+    dataset:
+      __name__: GenDataset
+      total_num: 10000
+      prop_names: ['band_gap', 'formation_energy_per_atom']
+      prop_values: [0.1, 0.5]
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 256
+  predict:
+    dataset:
+      __name__: GenDataset
+      total_num: 10
+      prop_names: ['band_gap', 'formation_energy_per_atom']
+      prop_values: [0.1, 0.5]
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128
