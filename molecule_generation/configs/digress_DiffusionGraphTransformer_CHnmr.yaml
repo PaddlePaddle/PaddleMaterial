@@ -1,41 +1,49 @@
 Global:
+  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
+  gpus: 1                     # Multi-gpu is not implemented on this branch
+Trainer:
   epochs: 500
-  output_dir: ./output/digress_CHnmr
-  save_freq: 100 # set 0 to disable saving during training
-  log_freq: 500 # log frequency [step]
+  seed: 42
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
-  seed: 42
-  is_save_traj: False
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
   pretrained_model_path: null # set your pretrained model path here
-
-  # General settings
-  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
-  gpus: 1                     # Multi-gpu is not implemented on this branch
-     # Use absolute path
   test_only: null
   check_val_every_n_epochs: 1
   sample_every_val: 1
-
   val_check_interval: null
   samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
   # log_every_steps: 500
   number_chain_steps: 1        # Number of frames in each gif
-
   final_model_samples_to_generate: 512
   final_model_samples_to_save: 512
   final_model_chains_to_save: 512
-
   evaluate_all_checkpoints: False
-
+  Optimizer:
+    __name__: AdamW
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __name__: ReduceOnPlateau
+      learning_rate: 0.002
+      factor: 0.6
+      by_epoch: True
+      patience: 30
+      min_lr: 0.0001
+      indicator: "train_loss"
+Tracker:
+  log:
+    log_freq: 500 # log frequency [step]
+  save:
+    output_dir: ./output/digress_CHnmr/DiffGraphTransformer
+    save_freq: 100 # set 0 to disable saving during training
+    is_save_traj: False
 Metric:
   __name__: CSPMetric
   gt_file_path: "./data/mp_20/test.csv"
-
 Model:
   __name__: MolecularGraphTransformer
   encoder:
@@ -83,21 +91,6 @@ Model:
     conditdim: 512
     number_chain_steps: 1
   model_dtype: 'float32'
-
-Optimizer:
-  __name__: AdamW
-  beta1: 0.9
-  beta2: 0.999
-  lr:
-    __name__: ReduceOnPlateau
-    learning_rate: 0.002
-    factor: 0.6
-    by_epoch: True
-    patience: 30
-    min_lr: 0.0001
-    indicator: "train_loss"
-
-
 Dataset:
   train:
     dataset:

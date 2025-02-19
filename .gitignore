@@ -148,3 +148,11 @@ log/*
 output/*
 
 molecule_generation/data/*
+molecule_generation/convertWeightsIntoPaddle.py
+tmp/*
+tmp
+molecule_generation/contrastGT.pdparams
+molecule_generation/contrastGT.pth
+molecule_generation/convertWeightsIntoPaddle_prior.py
+molecule_generation/epoch-438.ckpt
+molecule_generation/epoch-35.ckpt

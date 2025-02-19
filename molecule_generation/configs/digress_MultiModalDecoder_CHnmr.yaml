@@ -1,0 +1,181 @@
+Global:
+  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
+  gpus: 1                     # Multi-gpu is not implemented on this branch
+Trainer:
+  epochs: 500
+  seed: 42
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  clip_grad: null
+  ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
+  pretrained_model_path: null # set your pretrained model path here
+  test_only: null
+  check_val_every_n_epochs: 1
+  sample_every_val: 1
+  val_check_interval: null
+  samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
+  samples_to_save: 1
+  chains_to_save: 1
+  # log_every_steps: 500
+  number_chain_steps: 1        # Number of frames in each gif
+  final_model_samples_to_generate: 512
+  final_model_samples_to_save: 512
+  final_model_chains_to_save: 512
+  evaluate_all_checkpoints: False
+  Optimizer:
+    __name__: AdamW
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __name__: ReduceOnPlateau
+      learning_rate: 0.002
+      factor: 0.6
+      by_epoch: True
+      patience: 30
+      min_lr: 0.0001
+      indicator: "train_loss"
+Tracker:
+  log:
+    log_freq: 500 # log frequency [step]
+  save:
+    output_dir: ./output/digress_CHnmr/MultiModalDecoder
+    save_freq: 100 # set 0 to disable saving during training
+    is_save_traj: False
+Metric:
+  __name__: CSPMetric
+  gt_file_path: "./data/mp_20/test.csv"
+Model:
+  __name__: MultiModalDecoder
+  encoder:
+    __name__: Transformer
+    pretrained_path: "./output/digress_CHnmr/DiffGraphTransformer/checkpoints/epoch=35.pdparams"
+    enc_voc_size: 5450
+    max_len: 256
+    d_model: 256
+    ffn_hidden: 1024
+    n_head: 8
+    n_layers: 3
+    drop_prob: 0.0
+    projector:
+      __name__: Linear
+      pretrained_path: "./output/digress_CHnmr/DiffGraphTransformer/checkpoints/epoch=35.pdparams"
+      outfeatures: 512
+  decoder:
+    __name__: DiffGraphFormer
+    pretrained_path: "./output/digress_CHnmr/CLIP/checkpoints/epoch=438.pdparams"
+    hidden_mlp_dims: {
+      'X': 256,
+      'E': 128,
+      'y': 256
+    }
+    hidden_dims: {
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
+      'dim_ffy': 256
+    }
+    num_layers: 5
+    diffusion_model:
+      type: 'discrete_condition'
+      transition: 'marginal' # uniform or marginal
+      model: 'graph_tf'
+      diffusion_steps: 120
+      diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
+      extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+      # Do not set hidden_mlp_E, dim_ffE too high, computing large tensors on the edges is costly
+      # At the moment (03/08), y contains quite little information
+      lambda_train: [5, 0]
+      conditdim: 512
+      number_chain_steps: 1
+  connector: null
+  # TODO:
+  #  __name__: "DiffPrior"
+  #  network:
+  #    pretrained_path: "./output/digress_CHnmr/prior/checkpoints/latest.pdparams"
+  #    dim: 512
+  #    num_timesteps: 1000
+  #    num_time_embeds: 1
+  #    num_graph_embeds: 1
+  #    num_text_embeds: 1
+  #    max_text_len: 256
+  #    self_cond: False
+  #    depth: 6
+  #    dim_head: 64
+  #    heads: 8
+  #    graph_embed_dim: 512
+  #  timesteps: 1000
+  #  sample_timesteps: 64
+  #  cond_drop_prob: 0.1
+  #  text_cond_drop_prob: 0.05
+  #  graph_cond_drop_prob: 0.05
+  #  loss_type: "l2"
+  #  predict_x_start: true
+  #  predict_v: false
+  #  beta_schedule: "cosine"
+  #  condition_on_text_encodings: false
+  #  sampling_clamp_l2norm: false
+  #  sampling_final_clamp_l2norm: false
+  #  training_clamp_l2norm: false
+  #  init_graph_embed_l2norm: false
+  #  graph_embed_scale: null
+  model_dtype: 'float32'
+  diffusion_model:
+    extra_features: 'all'
+    conditdim: 512
+Dataset:
+  train:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/train.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      datadir: "./molecule_generation/data/CHnmr"
+      cache: True
+      remove_h: True
+      stage: "train"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/val.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "val"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./molecule_generation/data/CHnmr/test.csv"
+      vocab_path: "./molecule_generation/data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "test"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  predict:
+    dataset:
+      __name__: GenDataset
+      total_num: 20
+      formula: MoSi2
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 128

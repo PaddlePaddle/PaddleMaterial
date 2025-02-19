@@ -1,17 +1,26 @@
 import copy
 import os
+import random
 
 import paddle
 import paddle.nn as nn
 import rdkit
+from einops import rearrange
+from einops import repeat
 from paddle.nn import functional as F
 from rdkit import Chem
+from tqdm import tqdm
 
 from ppmat.metrics.abstract_metrics import NLL
 from ppmat.metrics.abstract_metrics import SumExceptBatchKL
 from ppmat.metrics.abstract_metrics import SumExceptBatchMetric
 from ppmat.metrics.train_metrics import TrainLossDiscrete
+from ppmat.models.digress.diffusion_prior import DiffusionPriorNetwork
+from ppmat.models.digress.diffusion_prior import EmptyLayer
+from ppmat.models.digress.diffusion_prior import NoiseScheduler
+from ppmat.models.digress.diffusion_prior import freeze_model_and_make_eval_
 from ppmat.models.digress.encoder import Encoder
+from ppmat.utils import save_load
 
 from . import diffusion_utils
 from .graph_transformer import GraphTransformer
@@ -21,15 +30,18 @@ from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
 from .utils import digressutils as utils
 from .utils import model_utils as m_utils
+from .utils.diffusionprior_utils import default
+from .utils.diffusionprior_utils import exists
+from .utils.diffusionprior_utils import l2norm
 
 # from paddle.nn import TransformerEncoderLayer
 # from paddle.nn import TransformerEncoder as Encoder
 
 
-class MolecularGraphTransformer(paddle.nn.Layer):
+class MolecularGraphTransformer(nn.Layer):
     def __init__(
         self,
-        cfg,
+        config,
         dataset_infos,
         train_metrics,
         sampling_metrics,
@@ -40,42 +52,12 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         super().__init__()
 
         #############################################################
-        # # for testing
-
-        # input_dims = {"X": 17, "E": 5, "y": 525}  # dataset_infos.input_dims
-        # output_dims = {"X": 9, "E": 5, "y": 0}  # dataset_infos.output_dims
-        # self.encoder = GraphTransformer_C(
-        #     n_layers=cfg["encoder"]["num_layers"],
-        #     input_dims=input_dims,
-        #     hidden_mlp_dims=cfg["encoder"]["hidden_mlp_dims"],
-        #     hidden_dims=cfg["encoder"]["hidden_dims"],
-        #     output_dims=output_dims,
-        #     act_fn_in=nn.ReLU(),
-        #     act_fn_out=nn.ReLU(),
-        #  )
-        #
-        # con_input_dim = input_dims
-        # con_input_dim["X"] = input_dims["X"] - 8
-        # con_input_dim["y"] = 1024
-        # con_output_dim = output_dims
-        # self.decoder = GraphTransformer(
-        #     n_layers=cfg["decoder"]["num_layers"],
-        #     input_dims=con_input_dim,
-        #     hidden_mlp_dims=cfg["decoder"]["hidden_mlp_dims"],
-        #     hidden_dims=cfg["decoder"]["hidden_dims"],
-        #     output_dims=con_output_dim,
-        #     act_fn_in=nn.ReLU(),
-        #     act_fn_out=nn.ReLU(),
-        # )
-        #############################################################
-
-        #############################################################
         # configure general variables settings
         #############################################################
-        # self.cfg = cfg
-        self.name = cfg["__name__"]
+        # self.config = config
+        self.name = config["__name__"]
         self.model_dtype = paddle.get_default_dtype()
-        self.T = cfg["diffusion_model"]["diffusion_steps"]
+        self.T = config["diffusion_model"]["diffusion_steps"]
         self.visualization_tools = visualization_tools
 
         #############################################################
@@ -123,20 +105,20 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         self.con_output_dim = dataset_infos.output_dims
 
         self.encoder = GraphTransformer_C(
-            n_layers=cfg["encoder"]["num_layers"],
+            n_layers=config["encoder"]["num_layers"],
             input_dims=self.con_input_dim,
-            hidden_mlp_dims=cfg["encoder"]["hidden_mlp_dims"],
-            hidden_dims=cfg["encoder"]["hidden_dims"],
+            hidden_mlp_dims=config["encoder"]["hidden_mlp_dims"],
+            hidden_dims=config["encoder"]["hidden_dims"],
             output_dims=self.con_output_dim,
             act_fn_in=nn.ReLU(),
             act_fn_out=nn.ReLU(),
         )
 
         self.decoder = GraphTransformer(
-            n_layers=cfg["decoder"]["num_layers"],
+            n_layers=config["decoder"]["num_layers"],
             input_dims=input_dims,
-            hidden_mlp_dims=cfg["decoder"]["hidden_mlp_dims"],
-            hidden_dims=cfg["decoder"]["hidden_dims"],
+            hidden_mlp_dims=config["decoder"]["hidden_mlp_dims"],
+            hidden_dims=config["decoder"]["hidden_dims"],
             output_dims=output_dims,
             act_fn_in=nn.ReLU(),
             act_fn_out=nn.ReLU(),
@@ -146,7 +128,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         # configure noise scheduler
         #############################################################
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(
-            cfg["diffusion_model"]["diffusion_noise_schedule"],
+            config["diffusion_model"]["diffusion_noise_schedule"],
             timesteps=self.T,
         )
 
@@ -162,7 +144,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         self.node_dist = dataset_infos.nodes_dist
 
         # Transition Model
-        if cfg["diffusion_model"]["transition"] == "uniform":
+        if config["diffusion_model"]["transition"] == "uniform":
             self.transition_model = DiscreteUniformTransition(
                 x_classes=self.Xdim_output,
                 e_classes=self.Edim_output,
@@ -173,7 +155,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             y_limit = paddle.ones([self.ydim_output]) / self.ydim_output
             self.limit_dist = utils.PlaceHolder(X=x_limit, E=e_limit, y=y_limit)
 
-        elif cfg["diffusion_model"]["transition"] == "marginal":
+        elif config["diffusion_model"]["transition"] == "marginal":
             node_types = self.dataset_info.node_types.astype(self.model_dtype)
             x_marginals = node_types / paddle.sum(node_types)
 
@@ -196,7 +178,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             )
 
         # configure loss
-        self.train_loss = TrainLossDiscrete(cfg["diffusion_model"]["lambda_train"])
+        self.train_loss = TrainLossDiscrete(config["diffusion_model"]["lambda_train"])
 
         #############################################################
         # configure training setting and other properties
@@ -205,8 +187,8 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         self.best_val_nll = 1e8
         self.val_counter = 0
         self.vocabDim = 256
-        self.number_chain_steps = cfg["diffusion_model"]["number_chain_steps"]
-        # self.log_every_steps = self.cfg["Global"]["log_every_steps"]
+        self.number_chain_steps = config["diffusion_model"]["number_chain_steps"]
+        # self.log_every_steps = self.config["Global"]["log_every_steps"]
 
         #############################################################
         # configure key data container
@@ -719,7 +701,7 @@ class MolecularGraphTransformer(paddle.nn.Layer):
             for i in range(num_molecules):
                 result_path = os.path.join(
                     current_path,
-                    f"chains/{self.cfg.general.name}",
+                    f"chains/{self.config.general.name}",
                     f"epochXX/chains/molecule_{batch_id + i}",
                 )
                 os.makedirs(result_path, exist_ok=True)
@@ -879,56 +861,64 @@ class MolecularGraphTransformer(paddle.nn.Layer):
         return mol
 
 
-class ContrastGraphTransformer(paddle.nn.Layer):
+class ContrastiveModel(nn.Layer):
     def __init__(
         self,
-        n_layers_GT: int,
-        input_dims: dict,
-        hidden_mlp_dims: dict,
-        hidden_dims: dict,
-        output_dims: dict,
-        act_fn_in=paddle.nn.ReLU(),
-        act_fn_out=paddle.nn.ReLU(),
-        enc_voc_size=5450,
-        max_len=256,
-        d_model=256,
-        ffn_hidden=1024,
-        n_head=8,
-        n_layers_TE=3,
-        drop_prob=0.0,
+        graph_encoder: dict,
+        nmr_encoder: dict,
         **kwargs,
     ):
         super().__init__()
-        self.transEn = Encoder(
-            enc_voc_size=enc_voc_size,
-            max_len=max_len,
-            d_model=d_model,
-            ffn_hidden=ffn_hidden,
-            n_head=n_head,
-            n_layers=n_layers_TE,
-            drop_prob=drop_prob,
+        self.name = kwargs.get("__name__")
+        self.text_encoder = Encoder(
+            enc_voc_size=nmr_encoder["enc_voc_size"],
+            max_len=nmr_encoder["max_len"],
+            d_model=nmr_encoder["d_model"],
+            ffn_hidden=nmr_encoder["ffn_hidden"],
+            n_head=nmr_encoder["n_head"],
+            n_layers=nmr_encoder["n_layers"],
+            drop_prob=nmr_encoder["drop_prob"],
         )
-        self.linear_layer = paddle.nn.Linear(
-            in_features=max_len * d_model, out_features=512
-        )
-        self.con_input_dim = input_dims
-        self.con_input_dim["X"] = input_dims["X"] - 8
-        self.con_input_dim["y"] = 1024
-        self.con_output_dim = output_dims
-        self.conditionEn = GraphTransformer_C(
-            n_layers=n_layers_GT,
+
+        if nmr_encoder["projector"]["__name__"] == "Linear":
+            self.text_encoder_projector = paddle.nn.Linear(
+                in_features=nmr_encoder["max_len"] * nmr_encoder["d_model"],
+                out_features=nmr_encoder["projector"]["outfeatures"],
+            )
+
+        self.con_input_dim = graph_encoder["input_dims"]
+        self.con_input_dim["X"] = graph_encoder["input_dims"]["X"] - 8
+        self.con_input_dim["y"] = 1024  # to be write in yaml
+        self.con_output_dim = graph_encoder["output_dims"]
+        self.graph_encoder = GraphTransformer_C(
+            n_layers=graph_encoder["n_layers_GT"],
             input_dims=self.con_input_dim,
-            hidden_mlp_dims=hidden_mlp_dims,
-            hidden_dims=hidden_dims,
+            hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
+            hidden_dims=graph_encoder["hidden_dims"],
             output_dims=self.con_output_dim,
-            act_fn_in=act_fn_in,
-            act_fn_out=act_fn_out,
+            act_fn_in=paddle.nn.ReLU(),
+            act_fn_out=paddle.nn.ReLU(),
         )
-        for param in self.conditionEn.parameters():
+        for param in self.graph_encoder.parameters():
             param.stop_gradient = True
-        self.conditionEn.eval()
+        self.graph_encoder.eval()
         self.vocabDim = 256
         self.tem = 2
+
+        # TODO: need to revise pretrained parameters for model
+        # for Constrastive Learning & Prior Training
+        if graph_encoder["pretrained_model_path"] is not None:
+            save_load.load_pretrain(
+                self.graph_encoder, graph_encoder["pretrained_model_path"]
+            )
+        # for Prior Training
+        if (
+            "pretrained_model_path" in nmr_encoder
+            and nmr_encoder["pretrained_model_path"] is not None
+        ):
+            save_load.load_pretrain(
+                self.text_encoder, nmr_encoder["pretrained_model_path"]
+            )
 
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(axis=1).unsqueeze(axis=2)
@@ -939,13 +929,13 @@ class ContrastGraphTransformer(paddle.nn.Layer):
             conditionVec, paddle.Tensor
         ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
         srcMask = self.make_src_mask(conditionVec)  # .to(self.device)
-        conditionVecNmr = self.transEn(conditionVec, srcMask)
+        conditionVecNmr = self.text_encoder(conditionVec, srcMask)
         conditionVecNmr = conditionVecNmr.reshape([conditionVecNmr.shape[0], -1])
-        conditionVecNmr = self.linear_layer(conditionVecNmr)
+        conditionVecNmr = self.text_encoder_projector(conditionVecNmr)
         y_condition = paddle.zeros(shape=[X_condition.shape[0], 1024]).cuda(
             blocking=True
         )
-        conditionVecM = self.conditionEn(
+        conditionVecM = self.graph_encoder(
             X_condition, E_condtion, y_condition, node_mask
         )
         return conditionVecM, conditionVecNmr
@@ -987,10 +977,441 @@ class ContrastGraphTransformer(paddle.nn.Layer):
         return {"loss": loss}
 
 
-class ConditionGraphTransformer(nn.Layer):
+class DiffusionPriorModel(nn.Layer):
     def __init__(
         self,
-        cfg,
+        config,
+        model: nn.Layer,
+        clip: nn.Layer,
+        graph_embed_scale=None,
+        timesteps: int = 1000,
+        cond_drop_prob: float = 0.0,
+        condition_on_text_encodings: bool = True,
+    ):
+        super().__init__()
+
+        # 初始化TrainerDiffusionPrior类的实例变量
+        self.config = config
+        self.model = model
+        self.clip = clip
+
+        self.sample_timesteps = config["sample_timesteps"]
+        self.noise_scheduler = NoiseScheduler(
+            beta_schedule=config["beta_schedule"],
+            timesteps=config["timesteps"],
+            loss_type=config["loss_type"],
+        )
+        if exists(clip):
+            freeze_model_and_make_eval_(clip)
+            self.clip = clip
+        else:
+            self.clip = None
+        self.net = model
+        self.graph_embed_dim = default(
+            config["graph_embed_dim"], lambda: clip.dim_latent
+        )
+
+        assert (
+            model.dim == self.graph_embed_dim
+        ), f"your diffusion prior network has a dimension of {model.dim}, \
+            but you set your image embedding dimension (keyword graph_embed_dim) \
+            on DiffusionPrior to {self.graph_embed_dim}"
+        assert (
+            not exists(clip)
+            or clip.text_encoder_projector.weight.shape[1] == self.graph_embed_dim
+        ), f"you passed in a CLIP to the diffusion prior with latent dimensions of \
+            {clip.dim_latent}, but your image embedding dimension \
+            (keyword graph_embed_dim) for the DiffusionPrior was set \
+            to {self.graph_embed_dim}"
+
+        self.text_cond_drop_prob = default(
+            config["text_cond_drop_prob"], config["cond_drop_prob"]
+        )
+        self.graph_cond_drop_prob = default(
+            config["graph_cond_drop_prob"], config["cond_drop_prob"]
+        )
+
+        self.can_classifier_guidance = (
+            self.text_cond_drop_prob > 0.0 and self.graph_cond_drop_prob > 0.0
+        )
+        self.condition_on_text_encodings = config["condition_on_text_encodings"]
+
+        # in paper, they do not predict the noise, but predict x0 directly for image
+        # embedding, claiming empirically better results. I'll just offer both.
+        self.predict_x_start = config["predict_x_start"]
+        self.predict_v = config["predict_v"]
+
+        # @crowsonkb 's suggestion - https://github.com/lucidrains/DALLE2-pytorch/issues/60#issue-1226116132
+
+        self.graph_embed_scale = default(
+            graph_embed_scale, config["graph_embed_dim"] ** 0.5
+        )
+
+        # whether to force an l2norm, similar to clipping denoised, when sampling
+
+        self.sampling_clamp_l2norm = config["sampling_clamp_l2norm"]
+        self.sampling_final_clamp_l2norm = config["sampling_final_clamp_l2norm"]
+
+        self.training_clamp_l2norm = config["training_clamp_l2norm"]
+        self.init_graph_embed_l2norm = config["init_graph_embed_l2norm"]
+
+        # device tracker, todo: maybe could be deleted
+        self.register_buffer(
+            name="_dummy", tensor=paddle.to_tensor(data=[True]), persistable=False
+        )
+
+    def forward(
+        self,
+        text=None,
+        moleculargraph=None,
+        text_embed=None,
+        moleculargraph_embed=None,
+        text_encodings=None,
+        *args,
+        **kwargs,
+    ):
+        assert exists(text) ^ exists(
+            text_embed
+        ), "either text or text embedding must be supplied"
+        assert exists(moleculargraph) ^ exists(
+            moleculargraph_embed
+        ), "either moleculegraph or moleculegraph embedding must be supplied"
+        assert not (
+            self.condition_on_text_encodings
+            and (not exists(text_encodings) and not exists(text))
+        ), "cannot use both conditions at once"
+
+        if exists(moleculargraph):
+            moleculargraph_embed, _ = self.clip.graph_encoder(moleculargraph)
+
+        # calculate text conditionings, based on what is passed in
+        if exists(text):
+            text_embed, text_encodings = self.clip.text_encoder(text)
+
+        text_cond = dict(text_embed=text_embed)
+
+        if self.condition_on_text_encodings:
+            assert exists(
+                text_encodings
+            ), "text encodings must be present for diffusion prior if specified"
+            text_cond = {**text_cond, "text_encodings": text_encodings}
+
+        # timestep conditioning from ddpm
+        batch = tuple(moleculargraph_embed.shape)[0]
+        times = self.noise_scheduler.sample_random_times(batch)
+
+        # scale image embed (Katherine)
+        moleculargraph_embed *= self.graph_embed_scale
+
+        # calculate forward loss
+        return self.p_losses(
+            moleculargraph_embed, times, text_cond=text_cond, *args, **kwargs
+        )
+
+    def generate_embed_vector(self, batch):
+        batch_graph, other_data = batch
+        batch_length = batch_graph.num_graph
+        # transfer to dense graph from sparse graph
+        if batch_graph.edges.T.numel() == 0:
+            print("Found a batch with no edges. Skipping.")
+            return None
+        dense_data, node_mask = utils.to_dense(
+            batch_graph.node_feat["feat"],
+            batch_graph.edges.T.contiguous(),
+            batch_graph.edge_feat["feat"],
+            batch_graph.graph_node_id,
+        )
+        dense_data = dense_data.mask(node_mask)
+        graph_X, graph_E = (
+            dense_data.X,
+            dense_data.E,
+        )
+        graph_y = paddle.zeros(shape=[graph_X.shape[0], 1024]).cuda(blocking=True)
+
+        clip_graph_embeds = self.clip.graph_encoder(
+            graph_X, graph_E, graph_y, node_mask
+        )
+
+        text_conditionVec = other_data["conditionVec"]
+        text_conditionVec = text_conditionVec.reshape(
+            [batch_length, self.config["CLIP"]["nmr_encoder"]["max_len"]]
+        )
+
+        assert isinstance(
+            text_conditionVec, paddle.Tensor
+        ), "nmr_text_conditionVec should be a tensor, but got type {}".format(
+            type(text_conditionVec)
+        )
+        text_srcMask = self.clip.make_src_mask(text_conditionVec)
+
+        clip_text_embeds = self.clip.text_encoder(text_conditionVec, text_srcMask)
+        clip_text_embeds = clip_text_embeds.reshape([clip_text_embeds.shape[0], -1])
+        clip_text_embeds = self.clip.text_encoder_projector(clip_text_embeds)
+
+        return clip_graph_embeds, clip_text_embeds
+
+    def p_losses(self, moleculargraph_embed, times, text_cond, noise=None):
+        noise = default(
+            noise,
+            lambda: paddle.randn(
+                shape=moleculargraph_embed.shape, dtype=moleculargraph_embed.dtype
+            ),
+        )
+
+        moleculargraph_embed_noisy = self.noise_scheduler.q_sample(
+            x_start=moleculargraph_embed, t=times, noise=noise
+        )
+
+        self_cond = None
+        if self.net.self_cond and random.random() < 0.5:
+            with paddle.no_grad():
+                self_cond = self.net(
+                    moleculargraph_embed_noisy, times, **text_cond
+                ).detach()
+
+        pred = self.net(
+            moleculargraph_embed_noisy,
+            times,
+            self_cond=self_cond,
+            text_cond_drop_prob=self.text_cond_drop_prob,
+            graph_cond_drop_prob=self.graph_cond_drop_prob,
+            **text_cond,
+        )
+
+        if self.predict_x_start and self.training_clamp_l2norm:
+            pred = self.l2norm_clamp_embed(pred)
+
+        if self.predict_v:
+            target = self.noise_scheduler.calculate_v(
+                moleculargraph_embed, times, noise
+            )
+        elif self.predict_x_start:
+            target = moleculargraph_embed
+        else:
+            target = noise
+
+        loss = self.noise_scheduler.loss_fn(pred, target)
+
+        return {"loss": loss}
+
+    def l2norm_clamp_embed(self, graph):
+        return l2norm(graph) * self.graph_embed_scale
+
+    @paddle.no_grad()
+    def sample(
+        self, text, mask, num_samples_per_batch=2, cond_scale=1.0, timesteps=None
+    ):
+        timesteps = default(timesteps, self.sample_timesteps)
+
+        # in the paper, what they did was
+        # sample 2 image embeddings, choose the top 1 similarity, as judged by CLIP
+        text = repeat(text, "b ... -> (b r) ...", r=num_samples_per_batch)
+        mask = repeat(mask, "b ... -> (b r) ...", r=num_samples_per_batch)
+
+        batch_size = tuple(text.shape)[0]
+        graph_embed_dim = self.graph_embed_dim
+
+        text_embeds = self.clip.text_encoder(text, mask)
+        text_embeds = text_embeds.reshape([text_embeds.shape[0], -1])
+        text_embeds = self.clip.linear_layer(text_embeds)
+
+        text_cond = dict(text_embed=text_embeds)
+
+        if self.condition_on_text_encodings:
+            text_encodings = None  # TODO: revise this
+            text_cond = {**text_cond, "text_encodings": text_encodings}
+
+        graph_embeds = self.p_sample_loop(
+            (batch_size, graph_embed_dim),
+            text_cond=text_cond,
+            cond_scale=cond_scale,
+            timesteps=timesteps,
+        )
+
+        # retrieve original unscaled image embed
+
+        text_embeds = text_cond["text_embed"]
+
+        text_embeds = rearrange(
+            text_embeds, "(b r) d -> b r d", r=num_samples_per_batch
+        )
+        graph_embeds = rearrange(
+            graph_embeds, "(b r) d -> b r d", r=num_samples_per_batch
+        )
+
+        text_image_sims = paddle.einsum(
+            "b r d, b r d -> b r", l2norm(text_embeds), l2norm(graph_embeds)
+        )
+        top_sim_indices = text_image_sims.topk(k=1)[1]
+
+        top_sim_indices = repeat(top_sim_indices, "b 1 -> b 1 d", d=graph_embed_dim)
+
+        top_graph_embeds = graph_embeds.take_along_axis(
+            axis=1, indices=top_sim_indices, broadcast=False
+        )
+        return rearrange(top_graph_embeds, "b 1 d -> b d")
+
+    @paddle.no_grad()
+    def p_sample_loop(self, *args, timesteps=None, **kwargs):
+        timesteps = default(timesteps, self.noise_scheduler.num_timesteps)
+        assert timesteps <= self.noise_scheduler.num_timesteps
+        is_ddim = timesteps < self.noise_scheduler.num_timesteps
+        if not is_ddim:
+            normalized_graph_embed = self.p_sample_loop_ddpm(*args, **kwargs)
+        else:
+            normalized_graph_embed = self.p_sample_loop_ddim(
+                *args, **kwargs, timesteps=timesteps
+            )
+        graph_embed = normalized_graph_embed / self.graph_embed_scale
+        return graph_embed
+
+    @paddle.no_grad()
+    def p_sample_loop_ddpm(self, shape, text_cond, cond_scale=1.0):
+        batch = shape[0]
+        graph_embed = paddle.randn(shape=shape)
+        x_start = None
+        if self.init_graph_embed_l2norm:
+            graph_embed = l2norm(graph_embed) * self.graph_embed_scale
+        for i in tqdm(
+            reversed(range(0, self.noise_scheduler.num_timesteps)),
+            desc="sampling loop time step",
+            total=self.noise_scheduler.num_timesteps,
+        ):
+            times = paddle.full(shape=(batch,), fill_value=i, dtype="int64")
+            self_cond = x_start if self.net.self_cond else None
+            graph_embed, x_start = self.p_sample(
+                graph_embed,
+                times,
+                text_cond=text_cond,
+                self_cond=self_cond,
+                cond_scale=cond_scale,
+            )
+        if self.sampling_final_clamp_l2norm and self.predict_x_start:
+            graph_embed = self.l2norm_clamp_embed(graph_embed)
+        return graph_embed
+
+    @paddle.no_grad()
+    def p_sample_loop_ddim(
+        self, shape, text_cond, *, timesteps, eta=1.0, cond_scale=1.0
+    ):
+        batch, alphas, total_timesteps = (
+            shape[0],
+            self.noise_scheduler.alphas_cumprod_prev,
+            self.noise_scheduler.num_timesteps,
+        )
+        times = paddle.linspace(start=-1.0, stop=total_timesteps, num=timesteps + 1)[
+            :-1
+        ]
+        times = list(reversed(times.astype(dtype="int32").tolist()))
+        time_pairs = list(zip(times[:-1], times[1:]))
+        graph_embed = paddle.randn(shape=shape)
+        x_start = None
+        if self.init_graph_embed_l2norm:
+            graph_embed = l2norm(graph_embed) * self.graph_embed_scale
+        for time, time_next in tqdm(time_pairs, desc="sampling loop time step"):
+            alpha = alphas[time]
+            alpha_next = alphas[time_next]
+            time_cond = paddle.full(shape=(batch,), fill_value=time, dtype="int64")
+            self_cond = x_start if self.net.self_cond else None
+            pred = self.net.forward_with_cond_scale(
+                graph_embed,
+                time_cond,
+                self_cond=self_cond,
+                cond_scale=cond_scale,
+                **text_cond,
+            )
+            if self.predict_v:
+                x_start = self.noise_scheduler.predict_start_from_v(
+                    graph_embed, t=time_cond, v=pred
+                )
+            elif self.predict_x_start:
+                x_start = pred
+            else:
+                x_start = self.noise_scheduler.predict_start_from_noise(
+                    graph_embed, t=time_cond, noise=pred
+                )
+            if not self.predict_x_start:
+                x_start.clip_(min=-1.0, max=1.0)
+            if self.predict_x_start and self.sampling_clamp_l2norm:
+                x_start = self.l2norm_clamp_embed(x_start)
+            pred_noise = self.noise_scheduler.predict_noise_from_start(
+                graph_embed, t=time_cond, x0=x_start
+            )
+            if time_next < 0:
+                graph_embed = x_start
+                continue
+            c1 = (
+                eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
+            )
+            c2 = (1 - alpha_next - paddle.square(x=c1)).sqrt()
+            noise = (
+                paddle.randn(shape=graph_embed.shape, dtype=graph_embed.dtype)
+                if time_next > 0
+                else 0.0
+            )
+            graph_embed = x_start * alpha_next.sqrt() + c1 * noise + c2 * pred_noise
+        if self.predict_x_start and self.sampling_final_clamp_l2norm:
+            graph_embed = self.l2norm_clamp_embed(graph_embed)
+        return graph_embed
+
+    @paddle.no_grad()
+    def p_sample(
+        self, x, t, text_cond=None, self_cond=None, clip_denoised=True, cond_scale=1.0
+    ):
+        (
+            b,
+            *_,
+        ) = x.shape
+        model_mean, _, model_log_variance, x_start = self.p_mean_variance(
+            x=x,
+            t=t,
+            text_cond=text_cond,
+            self_cond=self_cond,
+            clip_denoised=clip_denoised,
+            cond_scale=cond_scale,
+        )
+        noise = paddle.randn(shape=x.shape, dtype=x.dtype)
+        nonzero_mask = (1 - (t == 0).astype(dtype="float32")).reshape(
+            b, *((1,) * (len(tuple(x.shape)) - 1))
+        )
+        pred = model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
+        return pred, x_start
+
+    def l2norm_clamp_embed(self, graph_embed):
+        return l2norm(graph_embed) * self.graph_embed_scale
+
+    def p_mean_variance(
+        self, x, t, text_cond, self_cond=None, clip_denoised=False, cond_scale=1.0
+    ):
+        assert not (
+            cond_scale != 1.0 and not self.can_classifier_guidance
+        ), "the model was not trained with conditional dropout, and thus one cannot \
+            use classifier free guidance (cond_scale anything other than 1)"
+        pred = self.net.forward_with_cond_scale(
+            x, t, cond_scale=cond_scale, self_cond=self_cond, **text_cond
+        )
+        if self.predict_v:
+            x_start = self.noise_scheduler.predict_start_from_v(x, t=t, v=pred)
+        elif self.predict_x_start:
+            x_start = pred
+        else:
+            x_start = self.noise_scheduler.predict_start_from_noise(x, t=t, noise=pred)
+        if clip_denoised and not self.predict_x_start:
+            x_start.clip_(min=-1.0, max=1.0)
+        if self.predict_x_start and self.sampling_clamp_l2norm:
+            x_start = l2norm(x_start) * self.graph_embed_scale
+        (
+            model_mean,
+            posterior_variance,
+            posterior_log_variance,
+        ) = self.noise_scheduler.q_posterior(x_start=x_start, x_t=x, t=t)
+        return model_mean, posterior_variance, posterior_log_variance, x_start
+
+
+class MultiModalDecoder(nn.Layer):
+    def __init__(
+        self,
+        config,
         dataset_infos,
         train_metrics,
         sampling_metrics,
@@ -1006,9 +1427,9 @@ class ConditionGraphTransformer(nn.Layer):
         #############################################################
         # configure general variables settings
         #############################################################
-        self.name = cfg["__name__"]
+        self.name = config["__name__"]
         self.model_dtype = paddle.get_default_dtype()
-        self.T = cfg["diffusion_model"]["diffusion_steps"]
+        self.T = config["decoder"]["diffusion_model"]["diffusion_steps"]
         self.visualization_tools = visualization_tools
 
         #############################################################
@@ -1022,7 +1443,7 @@ class ConditionGraphTransformer(nn.Layer):
         # configure noise scheduler
         #############################################################
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(
-            cfg["diffusion_model"]["diffusion_noise_schedule"],
+            config["decoder"]["diffusion_model"]["diffusion_noise_schedule"],
             timesteps=self.T,
         )
 
@@ -1042,17 +1463,8 @@ class ConditionGraphTransformer(nn.Layer):
         self.drop_prob = 0.0
         # self.guide_scale = 4
 
-        # set model
-        self.GT = GraphTransformer(
-            n_layers=cfg["decoder"]["num_layers"],
-            input_dims=input_dims,
-            hidden_mlp_dims=cfg["decoder"]["hidden_mlp_dims"],
-            hidden_dims=cfg["decoder"]["hidden_dims"],
-            output_dims=output_dims,
-            act_fn_in=nn.ReLU(),
-            act_fn_out=nn.ReLU(),
-        )
-        self.transEn = Encoder(
+        # set encoder model
+        self.encoder = Encoder(
             enc_voc_size=self.enc_voc_size,
             max_len=self.max_len,
             d_model=self.d_model,
@@ -1061,38 +1473,77 @@ class ConditionGraphTransformer(nn.Layer):
             n_layers=self.n_layers_TE,
             drop_prob=self.drop_prob,
         )
-        self.linear_layer = paddle.nn.Linear(
-            in_features=self.max_len * self.d_model, out_features=512
-        )
-
-        # TODO: move loading ckpt out
-        state_dict = paddle.load(
-            "/home/lijialin03/Material/scripts_debug/epoch=438.pdparams"
-        )
-        GT_state_dict = {
-            k[len("GT.") :]: v for k, v in state_dict.items() if k.startswith("GT.")
-        }
-        self.GT.set_state_dict(GT_state_dict)
-
-        state_dict = paddle.load(
-            "/home/lijialin03/Material/scripts_debug/epoch=35.pdparams"
-        )
-        linear_layer_state_dict = {
-            k[len("linear_layer.") :]: v
+        state_dict = paddle.load(config["encoder"]["pretrained_path"])
+        encoder_state_dict = {
+            k[len("encoder.") :]: v
             for k, v in state_dict.items()
-            if k.startswith("linear_layer.")
+            if k.startswith("encoder.")
         }
-        self.linear_layer.set_state_dict(linear_layer_state_dict)
+        self.encoder.set_state_dict(encoder_state_dict)
 
-        state_dict = paddle.load(
-            "/home/lijialin03/Material/scripts_debug/epoch=35.pdparams"
+        # set encoder projector head model
+        state_dict = paddle.load(config["encoder"]["pretrained_path"])
+        if config["encoder"]["projector"]["__name__"] == "Linear":
+            self.encoder_projector = paddle.nn.Linear(
+                in_features=self.max_len * self.d_model,
+                out_features=config["encoder"]["projector"]["outfeatures"],
+            )
+            encoder_projector_state_dict = {
+                k[len("linear_layer.") :]: v
+                for k, v in state_dict.items()
+                if k.startswith("linear_layer.")
+            }
+            self.encoder_projector.set_state_dict(encoder_projector_state_dict)
+        # TODO: add support for LSTM
+        # elif config["encoder"]["__name__"] == "LSTM":
+        #    encoder_projector_state_dict = {
+        #        k[len("LSTM.") :]: v
+        #        for k, v in state_dict.items()
+        #        if k.startswith("lstm.")
+        #    }
+        #    self.encoder_projector.set_state_dict(encoder_projector_state_dict)
+
+        # set decoder model
+        self.decoder = GraphTransformer(
+            n_layers=config["decoder"]["num_layers"],
+            input_dims=input_dims,
+            hidden_mlp_dims=config["decoder"]["hidden_mlp_dims"],
+            hidden_dims=config["decoder"]["hidden_dims"],
+            output_dims=output_dims,
+            act_fn_in=nn.ReLU(),
+            act_fn_out=nn.ReLU(),
         )
-        transEn_state_dict = {
-            k[len("transEn.") :]: v
+        state_dict = paddle.load(config["decoder"]["pretrained_path"])
+        decoder_state_dict = {
+            k[len("decoder.") :]: v
             for k, v in state_dict.items()
-            if k.startswith("transEn.")
+            if k.startswith("decoder.")
         }
-        self.transEn.set_state_dict(transEn_state_dict)
+        self.decoder.set_state_dict(decoder_state_dict)
+
+        # set connector model
+        if config.get("connector") and config["connector"]["__name__"] == "DiffPrior":
+            self.connector = DiffusionPriorNetwork(
+                dim=config["connector"]["dim"],
+                num_timesteps=config["connector"]["num_timesteps"],
+                num_time_embeds=config["connector"]["num_time_embeds"],
+                num_graph_embeds=config["connector"]["num_graph_embeds"],
+                num_text_embeds=config["connector"]["num_text_embeds"],
+                max_text_len=config["connector"]["max_text_len"],
+                self_cond=config["connector"]["self_cond"],
+                depth=config["connector"]["depth"],
+                dim_head=config["connector"]["dim_head"],
+                heads=config["connector"]["heads"],
+            )
+            state_dict = paddle.load(config["connector"]["pretrained_path"])
+            connector_state_dict = {
+                k[len("connector.") :]: v
+                for k, v in state_dict.items()
+                if k.startswith("connector.")
+            }
+            self.connector.set_state_dict(connector_state_dict)
+        else:
+            self.connector = EmptyLayer()
 
         #############################################################
         # configure loss calculation with initialization of transition model
@@ -1106,7 +1557,7 @@ class ConditionGraphTransformer(nn.Layer):
         self.node_dist = nodes_dist
 
         # Transition Model
-        if cfg["diffusion_model"]["transition"] == "uniform":
+        if config["decoder"]["diffusion_model"]["transition"] == "uniform":
             self.transition_model = DiscreteUniformTransition(
                 x_classes=self.Xdim_output,
                 e_classes=self.Edim_output,
@@ -1117,7 +1568,7 @@ class ConditionGraphTransformer(nn.Layer):
             y_limit = paddle.ones([self.ydim_output]) / self.ydim_output
             self.limit_dist = utils.PlaceHolder(X=x_limit, E=e_limit, y=y_limit)
 
-        elif cfg["diffusion_model"]["transition"] == "marginal":
+        elif config["decoder"]["diffusion_model"]["transition"] == "marginal":
             node_types = self.dataset_info.node_types.astype(self.model_dtype)
             x_marginals = node_types / paddle.sum(node_types)
 
@@ -1139,7 +1590,9 @@ class ConditionGraphTransformer(nn.Layer):
                 y=paddle.ones([self.ydim_output]) / self.ydim_output,
             )
 
-        self.train_loss = TrainLossDiscrete(cfg["diffusion_model"]["lambda_train"])
+        self.train_loss = TrainLossDiscrete(
+            config["decoder"]["diffusion_model"]["lambda_train"]
+        )
 
         #############################################################
         # configure for visualization and test
@@ -1173,8 +1626,10 @@ class ConditionGraphTransformer(nn.Layer):
         self.start_epoch_time = None
         self.best_val_nll = 1e8
         self.val_counter = 0
-        self.number_chain_steps = cfg["diffusion_model"]["number_chain_steps"]
-        # self.log_every_steps = cfg["Global"]["log_every_steps"]
+        self.number_chain_steps = config["decoder"]["diffusion_model"][
+            "number_chain_steps"
+        ]
+        # self.log_every_steps = config["Global"]["log_every_steps"]
 
     def preprocess_data(self, batch_graph, other_data):
         dense_data, node_mask = utils.to_dense(
@@ -1208,18 +1663,18 @@ class ConditionGraphTransformer(nn.Layer):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
         return src_mask
 
-    def forward_conitionGT(self, X, E, y, node_mask, conditionVec):
+    def forward_MultiModalModel(self, X, E, y, node_mask, conditionVec):
         assert isinstance(
             conditionVec, paddle.Tensor
         ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
 
         srcMask = self.make_src_mask(conditionVec).astype("float32")
-        conditionVec = self.transEn(conditionVec, srcMask)
+        conditionVec = self.encoder(conditionVec, srcMask)
         conditionVec = conditionVec.reshape([conditionVec.shape[0], -1])
-        conditionVec = self.linear_layer(conditionVec)
+        conditionVec = self.encoder_projector(conditionVec)
 
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
-        output = self.GT(X, E, y, node_mask)
+        output = self.decoder(X, E, y, node_mask)
         return output
 
     def forward(self, batch):
@@ -1251,7 +1706,7 @@ class ConditionGraphTransformer(nn.Layer):
             y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
 
         # forward of the model
-        pred = self.forward_conitionGT(
+        pred = self.forward_MultiModalModel(
             input_X, input_E, input_y, node_mask, y_condition
         )
 
@@ -1278,19 +1733,115 @@ class ConditionGraphTransformer(nn.Layer):
 
 
 if __name__ == "__main__":
-    import argparse
 
+    paddle.set_device("gpu")
+
+    # setup CLIP, which contains a transformer and a vision encoder
+
+    clip = ContrastiveModel(
+        n_layers_GT=5,
+        input_dims={"X": 17, "E": 5, "y": 512},
+        hidden_mlp_dims={"X": 256, "E": 128, "y": 256},
+        hidden_dims={
+            "dx": 256,
+            "de": 64,
+            "dy": 256,
+            "n_head": 8,
+            "dim_ffX": 256,
+            "dim_ffE": 128,
+            "dim_ffy": 256,
+        },
+        output_dims={"X": 9, "E": 5, "y": 0},
+        act_fn_in=paddle.nn.ReLU(),
+        act_fn_out=paddle.nn.ReLU(),
+        enc_voc_size=5450,
+        max_len=256,
+        d_model=256,
+        ffn_hidden=1024,
+        n_head=8,
+        n_layers_TE=3,
+        drop_prob=0.0,
+    )
+    for param in clip.graph_encoder.parameters():
+        param.stop_gradient = True
+    clip.graph_encoder.eval()
+    for param in clip.text_encoder.parameters():
+        param.stop_gradient = True
+    clip.text_encoder.eval()
+
+    prior_network = DiffusionPriorNetwork(
+        dim=512,
+        num_timesteps=None,
+        num_time_embeds=1,
+        num_graph_embeds=1,
+        num_text_embeds=1,
+        max_text_len=256,
+        self_cond=False,
+        depth=6,
+        dim_head=64,
+        heads=8,
+    )
+    ################# for precision aligement #########################
+    prior_network.set_state_dict(
+        paddle.load(
+            "/home/liuxuwei01/PaddleScience-Material/tmp/priorNetwork_paddle.pdparams"
+        )
+    )
+    ###################################################################
+
+    # diffusion prior network, which contains the CLIP and network (with transformer)
+    # above
     from omegaconf import OmegaConf
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default="./molecule_generation/configs/digress_CHnmr.yaml",
-        help="Path to config file",
+    config_path = "./molecule_generation/configs/diffusionPrior_CHnmr.yaml"
+    config = OmegaConf.load(config_path)
+    config["Model"]["condition_on_text_encodings"] = False
+    config["Model"]["timesteps"] = 100
+    config["Model"]["cond_drop_prob"] = 0.2
+    diffusion_prior = DiffusionPriorModel(
+        config=config["Model"],
+        model=prior_network,
+        clip=clip,
     )
-    args, dynamic_args = parser.parse_known_args()
-    config = OmegaConf.load(args.config)
 
-    model = MolecularGraphTransformer(config["Model"])
+    # mock data
+
+    nmr_conditionVec = paddle.randint(0, 2, shape=[4, 256])
+    nmr_srcMask = paddle.randint(0, 100000, shape=[4, 1, 1, 256], dtype="int32").astype(
+        "bool"
+    )
+    graph_X = paddle.randn([4, 15, 9])
+    graph_E = paddle.randn([4, 15, 15, 5])
+    graph_y = paddle.randn([4, 1024])
+    graph_node_mask = paddle.randint(0, 2, shape=[4, 15], dtype="int32").astype("bool")
+
+    clip_text_embeds = diffusion_prior.clip.text_encoder(nmr_conditionVec, nmr_srcMask)
+    clip_text_embeds = clip_text_embeds.reshape([clip_text_embeds.shape[0], -1])
+    clip_text_embeds = clip.linear_layer(clip_text_embeds)
+    clip_graph_embeds = diffusion_prior.clip.graph_encoder(
+        graph_X, graph_E, graph_y, graph_node_mask
+    )
+
+    # feed text and images into diffusion prior network
+    ################# for precision aligement #########################
+    import numpy as np
+
+    clip_text_embeds = paddle.to_tensor(
+        np.load("/home/liuxuwei01/PaddleScience-Material/tmp/clip_text_embeds.npy")
+    )
+    clip_graph_embeds = paddle.to_tensor(
+        np.load("/home/liuxuwei01/PaddleScience-Material/tmp/clip_graph_embeds.npy")
+    )
+    ###################################################################
+
+    loss = diffusion_prior(
+        text_embed=clip_text_embeds, moleculargraph_embed=clip_graph_embeds
+    )
+
+    print(clip_graph_embeds)
+    print(clip_text_embeds)
+    print(loss)
+    loss.backward()
+
+    result_sample = diffusion_prior.sample(nmr_conditionVec, nmr_srcMask)
+    print(result_sample)
