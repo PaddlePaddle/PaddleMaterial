@@ -59,7 +59,7 @@ __all__ = [
 
 
 def init_logger(
-    name: str = "ppsci",
+    name: str = "ppmat",
     log_file: Optional[str] = None,
     log_level: int = logging.INFO,
 ) -> None:
