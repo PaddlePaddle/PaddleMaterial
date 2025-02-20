@@ -1,23 +1,20 @@
 import os
-from rdkit import Chem
-from rdkit.Chem import Draw, AllChem
-from rdkit.Geometry import Point3D
-from rdkit import RDLogger
+
 import imageio
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import rdkit.Chem
-import matplotlib.pyplot as plt
 from rdkit import Chem
+from rdkit import RDLogger
 from rdkit.Chem import AllChem
 from rdkit.Chem import DataStructs
-from rdkit import Chem
-from rdkit.Chem import DataStructs
+from rdkit.Chem import Draw
 from rdkit.Chem import RDKFingerprint
+from rdkit.Geometry import Point3D
 
 
 class MolecularVisualization:
-
     def __init__(self, remove_h, dataset_infos):
         self.remove_h = remove_h
         self.dataset_infos = dataset_infos
@@ -59,56 +56,63 @@ class MolecularVisualization:
             mol = None
         return mol
 
-    def visualize(self, path: str, molecules: list,
-        num_molecules_to_visualize: int, log='graph'):
+    def visualize(
+        self, path: str, molecules: list, num_molecules_to_visualize: int, log="graph"
+    ):
         if not os.path.exists(path):
             os.makedirs(path)
-        print(f'Visualizing {num_molecules_to_visualize} of {len(molecules)}')
+        print(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            print(f'Shortening to {len(molecules)}')
+            print(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
-            file_path = os.path.join(path, 'molecule_{}.png'.format(i))
-            mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i
-                ][1].numpy())
+            file_path = os.path.join(path, "molecule_{}.png".format(i))
+            mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
             try:
                 Draw.MolToFile(mol, file_path)
             except rdkit.Chem.KekulizeException:
                 print("Can't kekulize molecule")
 
-    def visualizeNmr(self, path: str, path_true, molecules: list,
-        molecules_true, num_molecules_to_visualize: int, log='graph'):
+    def visualizeNmr(
+        self,
+        path: str,
+        path_true,
+        molecules: list,
+        molecules_true,
+        num_molecules_to_visualize: int,
+        log="graph",
+    ):
         if not os.path.exists(path):
             os.makedirs(path)
         if not os.path.exists(path_true):
             os.makedirs(path_true)
-        print(f'Visualizing {num_molecules_to_visualize} of {len(molecules)}')
+        print(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            print(f'Shortening to {len(molecules)}')
+            print(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
-            file_path = os.path.join(path, 'molecule_{}.png'.format(i))
-            file_path_true = os.path.join(path_true, 'molecule_{}.png'.
-                format(i))
-            mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i
-                ][1].numpy())
-            mol_true = self.mol_from_graphs(molecules_true[i][0].numpy(),
-                molecules_true[i][1].numpy())
+            file_path = os.path.join(path, "molecule_{}.png".format(i))
+            file_path_true = os.path.join(path_true, "molecule_{}.png".format(i))
+            mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
+            mol_true = self.mol_from_graphs(
+                molecules_true[i][0].numpy(), molecules_true[i][1].numpy()
+            )
             try:
                 Draw.MolToFile(mol, file_path)
                 Draw.MolToFile(mol_true, file_path_true)
                 fp1 = RDKFingerprint(mol)
                 fp2 = RDKFingerprint(mol_true)
                 similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                print(f'Tanimoto相似度: {similarity}')
+                print(f"Tanimoto相似度: {similarity}")
             except rdkit.Chem.KekulizeException:
                 print("Can't kekulize molecule")
 
-    def visualize_chain(self, path, nodes_list, adjacency_matrix, trainer=None
-        ):
-        RDLogger.DisableLog('rdApp.*')
-        mols = [self.mol_from_graphs(nodes_list[i], adjacency_matrix[i]) for
-            i in range(nodes_list.shape[0])]
+    def visualize_chain(self, path, nodes_list, adjacency_matrix, trainer=None):
+        RDLogger.DisableLog("rdApp.*")
+        mols = [
+            self.mol_from_graphs(nodes_list[i], adjacency_matrix[i])
+            for i in range(nodes_list.shape[0])
+        ]
         final_molecule = mols[-1]
         AllChem.Compute2DCoords(final_molecule)
         coords = []
@@ -124,27 +128,28 @@ class MolecularVisualization:
         save_paths = []
         num_frams = nodes_list.shape[0]
         for frame in range(num_frams):
-            file_name = os.path.join(path, 'fram_{}.png'.format(frame))
-            Draw.MolToFile(mols[frame], file_name, size=(300, 300), legend=
-                f'Frame {frame}')
+            file_name = os.path.join(path, "fram_{}.png".format(frame))
+            Draw.MolToFile(
+                mols[frame], file_name, size=(300, 300), legend=f"Frame {frame}"
+            )
             save_paths.append(file_name)
         imgs = [imageio.imread(fn) for fn in save_paths]
-        gif_path = os.path.join(os.path.dirname(path), '{}.gif'.format(path
-            .split('/')[-1]))
+        gif_path = os.path.join(
+            os.path.dirname(path), "{}.gif".format(path.split("/")[-1])
+        )
         imgs.extend([imgs[-1]] * 10)
         imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)
         try:
-            img = Draw.MolsToGridImage(mols, molsPerRow=10, subImgSize=(200,
-                200))
-            img.save(os.path.join(path, '{}_grid_image.png'.format(path.
-                split('/')[-1])))
+            img = Draw.MolsToGridImage(mols, molsPerRow=10, subImgSize=(200, 200))
+            img.save(
+                os.path.join(path, "{}_grid_image.png".format(path.split("/")[-1]))
+            )
         except Chem.rdchem.KekulizeException:
             print("Can't kekulize molecule")
         return mols
 
 
 class NonMolecularVisualization:
-
     def to_networkx(self, node_list, adjacency_matrix):
         """
         Convert graphs to networkx graphs
@@ -155,18 +160,19 @@ class NonMolecularVisualization:
         for i in range(len(node_list)):
             if node_list[i] == -1:
                 continue
-            graph.add_node(i, number=i, symbol=node_list[i], color_val=
-                node_list[i])
+            graph.add_node(i, number=i, symbol=node_list[i], color_val=node_list[i])
         rows, cols = np.where(adjacency_matrix >= 1)
         edges = zip(rows.tolist(), cols.tolist())
         for edge in edges:
             edge_type = adjacency_matrix[edge[0]][edge[1]]
-            graph.add_edge(edge[0], edge[1], color=float(edge_type), weight
-                =3 * edge_type)
+            graph.add_edge(
+                edge[0], edge[1], color=float(edge_type), weight=3 * edge_type
+            )
         return graph
 
-    def visualize_non_molecule(self, graph, pos, path, iterations=100,
-        node_size=100, largest_component=False):
+    def visualize_non_molecule(
+        self, graph, pos, path, iterations=100, node_size=100, largest_component=False
+    ):
         if largest_component:
             CGs = [graph.subgraph(c) for c in nx.connected_components(graph)]
             CGs = sorted(CGs, key=lambda x: x.number_of_nodes(), reverse=True)
@@ -178,38 +184,51 @@ class NonMolecularVisualization:
         m = max(np.abs(vmin), vmax)
         vmin, vmax = -m, m
         plt.figure()
-        nx.draw(graph, pos, font_size=5, node_size=node_size, with_labels=
-            False, node_color=U[:, 1], cmap=plt.cm.coolwarm, vmin=vmin,
-            vmax=vmax, edge_color='grey')
+        nx.draw(
+            graph,
+            pos,
+            font_size=5,
+            node_size=node_size,
+            with_labels=False,
+            node_color=U[:, 1],
+            cmap=plt.cm.coolwarm,
+            vmin=vmin,
+            vmax=vmax,
+            edge_color="grey",
+        )
         plt.tight_layout()
         plt.savefig(path)
-        plt.close('all')
+        plt.close("all")
 
-    def visualize(self, path: str, graphs: list, num_graphs_to_visualize:
-        int, log='graph'):
+    def visualize(
+        self, path: str, graphs: list, num_graphs_to_visualize: int, log="graph"
+    ):
         if not os.path.exists(path):
             os.makedirs(path)
         for i in range(num_graphs_to_visualize):
-            file_path = os.path.join(path, 'graph_{}.png'.format(i))
-            graph = self.to_networkx(graphs[i][0].numpy(), graphs[i][1].numpy()
-                )
+            file_path = os.path.join(path, "graph_{}.png".format(i))
+            graph = self.to_networkx(graphs[i][0].numpy(), graphs[i][1].numpy())
             self.visualize_non_molecule(graph=graph, pos=None, path=file_path)
-            im = plt.imread(file_path)
+            im = plt.imread(file_path)  # noqa
 
     def visualize_chain(self, path, nodes_list, adjacency_matrix):
-        graphs = [self.to_networkx(nodes_list[i], adjacency_matrix[i]) for
-            i in range(nodes_list.shape[0])]
+        graphs = [
+            self.to_networkx(nodes_list[i], adjacency_matrix[i])
+            for i in range(nodes_list.shape[0])
+        ]
         final_graph = graphs[-1]
         final_pos = nx.spring_layout(final_graph, seed=0)
         save_paths = []
         num_frams = nodes_list.shape[0]
         for frame in range(num_frams):
-            file_name = os.path.join(path, 'fram_{}.png'.format(frame))
-            self.visualize_non_molecule(graph=graphs[frame], pos=final_pos,
-                path=file_name)
+            file_name = os.path.join(path, "fram_{}.png".format(frame))
+            self.visualize_non_molecule(
+                graph=graphs[frame], pos=final_pos, path=file_name
+            )
             save_paths.append(file_name)
         imgs = [imageio.imread(fn) for fn in save_paths]
-        gif_path = os.path.join(os.path.dirname(path), '{}.gif'.format(path
-            .split('/')[-1]))
+        gif_path = os.path.join(
+            os.path.dirname(path), "{}.gif".format(path.split("/")[-1])
+        )
         imgs.extend([imgs[-1]] * 10)
         imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)

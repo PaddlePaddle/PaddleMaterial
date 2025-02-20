@@ -29,23 +29,20 @@ from paddle import optimizer as optim
 from paddle.distributed import fleet
 
 from ppmat.models.digress import diffusion_utils
-from ppmat.models.digress.base_model import ContrastiveModel
-from ppmat.models.digress.base_model import DiffusionPriorModel
-from ppmat.models.digress.diffusion_prior import NoiseScheduler
 
 # from ppmat.models.digress.noise_schedule import DiscreteUniformTransition
 # from ppmat.models.digress.noise_schedule import MarginalUniformTransition
 # from ppmat.models.digress.noise_schedule import PredefinedNoiseScheduleDiscrete
 from ppmat.models.digress.utils import digressutils as utils
-from ppmat.models.digress.utils.diffusionprior_utils import default
-from ppmat.models.digress.utils.diffusionprior_utils import exists
-# from ppmat.models.digress.utils.diffusionprior_utils import l2norm
 
 # from ppmat.trainer.trainer_diffusion import TrainerDiffusion
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
+
+# from ppmat.models.digress.utils.diffusionprior_utils import l2norm
+
 
 # from ppmat.models.digress.utils.diffusionprior_utils import l2norm
 
