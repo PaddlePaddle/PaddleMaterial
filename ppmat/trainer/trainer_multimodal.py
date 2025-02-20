@@ -47,6 +47,9 @@ from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
 
+# from ppmat.models.digress.utils.diffusionprior_utils import l2norm
+
+
 # from ppmat.models.digress.base_model import ContrastGraphTransformer
 
 
