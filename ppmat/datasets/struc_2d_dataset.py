@@ -2,6 +2,7 @@ import json
 import os
 import os.path as osp
 import pickle
+import random
 from typing import Callable
 from typing import Dict
 from typing import Literal
@@ -9,9 +10,11 @@ from typing import Optional
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 from p_tqdm import p_map
 from pymatgen.core.structure import Structure
 
+from ppmat.datasets.collate_fn import ConcatData
 from ppmat.datasets.collate_fn import Data
 from ppmat.datasets.structure_converter import Structure2Graph
 from ppmat.utils import DEFAULT_ELEMENTS
@@ -42,12 +45,20 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         converter_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         element_types: Literal["DEFAULT_ELEMENTS"] = "DEFAULT_ELEMENTS",
+        select_energy_range: Optional[tuple] = None,
+        perproty_names: Optional[list] = None,
         cache: bool = False,
     ):
         super().__init__()
         self.path = path
         self.converter_cfg = converter_cfg
         self.transforms = transforms
+        self.select_energy_range = select_energy_range
+        self.property_names = (
+            perproty_names
+            if perproty_names is not None
+            else ["formation_energy_per_atom", "band_gap", "e", "f", "s", "m", "id"]
+        )
         self.cache = cache
 
         if cache:
@@ -59,6 +70,7 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
 
         self.jsonl_data = self.read_jsonl(path)
         self.num_samples = len(self.jsonl_data)
+
         if element_types.upper() == "DEFAULT_ELEMENTS":
             self.element_types = DEFAULT_ELEMENTS
         elif element_types.upper() == "ELEMENTS_94":
@@ -66,55 +78,101 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
         else:
             raise ValueError("element_types must be 'DEFAULT_ELEMENTS'.")
         # when cache is True, load cached structures from cache file
-        cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs_dev.pkl")
-        if self.cache and osp.exists(cache_path):
-            with open(cache_path, "rb") as f:
-                self.structures = pickle.load(f)
-            logger.info(
-                f"Load {len(self.structures)} cached structures from {cache_path}"
-            )
+        cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs_v2_2.pkl")
+        if self.cache:
+            if osp.exists(cache_path):
+                with open(cache_path, "rb") as f:
+                    self.structures = pickle.load(f)
+                logger.info(
+                    f"Load {len(self.structures)} cached structures from {cache_path}"
+                )
+            else:
+                if dist.get_rank() == 0:
+                    # build structures from cif
+                    structure_dicts = [data["structure"] for data in self.jsonl_data]
+                    self.structures = build_structure_from_dict(structure_dicts)
+                    logger.info(f"Build {len(self.structures)} structures")
+                    with open(cache_path, "wb") as f:
+                        pickle.dump(self.structures, f)
+                    logger.info(
+                        f"Save {len(self.structures)} built structures to {cache_path}"
+                    )
+                # sync all processes
+                if dist.is_initialized():
+                    dist.barrier()
+                # load cached structures from cache file
+                with open(cache_path, "rb") as f:
+                    self.structures = pickle.load(f)
+                logger.info(
+                    f"Load {len(self.structures)} cached structures from {cache_path}"
+                )
         else:
             # build structures from cif
             structure_dicts = [data["structure"] for data in self.jsonl_data]
             self.structures = build_structure_from_dict(structure_dicts)
             logger.info(f"Build {len(self.structures)} structures")
-            if self.cache:
-                with open(cache_path, "wb") as f:
-                    pickle.dump(self.structures, f)
-                logger.info(
-                    f"Save {len(self.structures)} built structures to {cache_path}"
-                )
+
         # build graphs from structures
         if converter_cfg is not None:
             # load cached graphs from cache file
             graph_method = converter_cfg["method"]
             cache_path = osp.join(path.rsplit(".", 1)[0] + f"_{graph_method}_graphs")
-            if osp.exists(cache_path):
-                self.graphs = [
-                    osp.join(cache_path, f"{i}.pkl")
-                    for i in range(len(self.structures))
-                ]
-                logger.info(f"Load {len(self.graphs)} cached graphs from {cache_path}")
-                assert len(self.graphs) == len(self.structures)
+
+            if self.cache:
+                if osp.exists(cache_path):
+                    self.graphs = [
+                        osp.join(cache_path, f"{i}.pkl")
+                        for i in range(len(self.structures))
+                    ]
+                    logger.info(
+                        f"Load {len(self.graphs)} cached graphs from {cache_path}"
+                    )
+                    assert len(self.graphs) == len(self.structures)
+                else:
+                    if dist.get_rank() == 0:
+                        # build graphs from structures
+                        self.converter = Structure2Graph(**self.converter_cfg)
+                        self.graphs = self.converter(self.structures)
+                        os.makedirs(cache_path, exist_ok=True)
+                        for i, graph in enumerate(self.graphs):
+                            with open(os.path.join(cache_path, f"{i}.pkl"), "wb") as f:
+                                pickle.dump(graph, f)
+                    if dist.is_initialized():
+                        dist.barrier()
+                    self.graphs = [
+                        osp.join(cache_path, f"{i}.pkl")
+                        for i in range(len(self.structures))
+                    ]
+                    logger.info(
+                        f"Load {len(self.graphs)} cached graphs from {cache_path}"
+                    )
+                    assert len(self.graphs) == len(self.structures)
             else:
-                # build graphs from structures
                 self.converter = Structure2Graph(**self.converter_cfg)
                 self.graphs = self.converter(self.structures)
-                os.makedirs(cache_path, exist_ok=True)
-                for i, graph in enumerate(self.graphs):
-                    with open(os.path.join(cache_path, f"{i}.pkl"), "wb") as f:
-                        pickle.dump(graph, f)
-
-                self.graphs = [
-                    osp.join(cache_path, f"{i}.pkl")
-                    for i in range(len(self.structures))
-                ]
-
-                logger.info(f"Load {len(self.graphs)} cached graphs from {cache_path}")
-                assert len(self.graphs) == len(self.structures)
-
         else:
             self.graphs = None
+
+        if select_energy_range is not None:
+            energy_min, energy_max = select_energy_range
+            index = list(range(self.num_samples))
+            select_idx = [
+                idx
+                for idx in index
+                if energy_min <= self.jsonl_data[idx].get("energy") < energy_max
+            ]
+
+            logger.info(
+                f"Select {len(select_idx)} samples within energy range "
+                f"{energy_min:.2f}-{energy_max:.2f}"
+                f"({len(index)-len(select_idx)} removed)"
+            )
+
+            self.jsonl_data = [self.jsonl_data[idx] for idx in select_idx]
+            self.num_samples = len(self.jsonl_data)
+            self.structures = [self.structures[idx] for idx in select_idx]
+            if self.graphs is not None:
+                self.graphs = [self.graphs[idx] for idx in select_idx]
 
     def read_jsonl(self, file_path):
 
@@ -158,39 +216,48 @@ class SturctureDataFromJsonl(paddle.io.Dataset):
                     data["graph"] = pickle.load(f)
             else:
                 data["graph"] = self.graphs[idx]
+            flag = data["graph"].node_feat.get("isolation_flag", np.array([0]))
+            if flag[0] == 1:
+                return self.__getitem__(random.randint(0, len(self) - 1))
         else:
             structure = self.structures[idx]
             data["structure_array"] = self.get_structure_array(structure)
 
-        if "formation_energy_per_atom" in self.jsonl_data[idx]:
+        if (
+            "formation_energy_per_atom" in self.property_names
+            and "formation_energy_per_atom" in self.jsonl_data[idx]
+        ):
             data["formation_energy_per_atom"] = np.array(
                 [self.jsonl_data[idx]["formation_energy_per_atom"]]
             ).astype("float32")
-        if "band_gap" in self.jsonl_data[idx]:
+        if "band_gap" in self.property_names and "band_gap" in self.jsonl_data[idx]:
             data["band_gap"] = np.array([self.jsonl_data[idx]["band_gap"]]).astype(
                 "float32"
             )
-        if "energy" in self.jsonl_data[idx]:
+        if "e" in self.property_names and "energy" in self.jsonl_data[idx]:
             data["e"] = np.array(self.jsonl_data[idx]["energy"]).astype("float32")
 
-        interatomic_properties = {}
-        if self.jsonl_data[idx].get("forces", None) is not None:
-            interatomic_properties["f"] = np.array(
-                self.jsonl_data[idx]["forces"]
-            ).astype("float32")
-        if self.jsonl_data[idx].get("stress", None) is not None:
-            interatomic_properties["stress"] = np.array(
-                self.jsonl_data[idx]["stress"]
-            ).astype("float32")
-        if self.jsonl_data[idx].get("magmom", None) is not None:
-            interatomic_properties["magmom"] = np.array(
-                self.jsonl_data[idx]["magmom"]
-            ).astype("float32")
+        if (
+            "f" in self.property_names
+            and self.jsonl_data[idx].get("forces", None) is not None
+        ):
+            data["f"] = ConcatData(
+                np.array(self.jsonl_data[idx]["forces"]).astype("float32")
+            )
+        if (
+            "s" in self.property_names
+            and self.jsonl_data[idx].get("stresses", None) is not None
+        ):
+            data["s"] = np.array(self.jsonl_data[idx]["stresses"]).astype("float32")
+        if (
+            "m" in self.property_names
+            and self.jsonl_data[idx].get("magmom", None) is not None
+        ):
+            data["m"] = ConcatData(
+                np.array(self.jsonl_data[idx]["magmom"]).astype("float32")
+            )
 
-        if interatomic_properties:
-            data["interatomic_properties"] = Data(interatomic_properties)
-
-        if "material_id" in self.jsonl_data[idx]:
+        if "id" in self.property_names and "material_id" in self.jsonl_data[idx]:
             data["id"] = self.jsonl_data[idx]["material_id"]
 
         data = self.transforms(data) if self.transforms is not None else data

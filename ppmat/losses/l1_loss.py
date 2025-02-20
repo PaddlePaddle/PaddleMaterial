@@ -38,3 +38,25 @@ class L1Loss(nn.Layer):
 
         loss = F.l1_loss(pred, label, self.reduction)
         return loss
+
+
+class SmoothL1Loss(nn.Layer):
+    r"""Class for mean squared error loss."""
+
+    def __init__(
+        self,
+        reduction: Literal["mean", "sum"] = "mean",
+        delta: float = 1.0,
+    ):
+        super().__init__()
+        if reduction not in ["mean", "sum"]:
+            raise ValueError(
+                f"reduction should be 'mean' or 'sum', but got {reduction}"
+            )
+        self.reduction = reduction
+        self.delta = delta
+
+    def forward(self, pred, label) -> paddle.Tensor:
+
+        loss = F.smooth_l1_loss(pred, label, self.reduction, delta=self.delta)
+        return loss

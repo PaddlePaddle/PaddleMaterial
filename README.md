@@ -378,23 +378,40 @@ The term "samples" refers to the valid samples of generated structures utilized 
 
 This feature requires the installation of the [PaddlePaddle develop](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/develop/install/pip/linux-pip.html) version
 
-##### Structure Optimization:
 
-    # You need to first set the path of CIF(cif_dir and label) in the structure_optimization.py file
-    PYTHONPATH=$PWD python interatomic_potentials/structure_optimization.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_st.yaml  Global.pretrained_model_path="your model path(.pdparams)"
+### Data Preparation:
+
+Please refer to the following command to split the dataset into train/val/test sets:
+
+    # the default split ratio is 0.9:0.05:0.05
+    python ppmat/datasets/split_jsonl.py --src_path="your jsonl file path"
+
+### Training:
+    PYTHONPATH=$PWD python interatomic_potentials/train_chgnet_v2.py -c "your config file path"
+    # for example:
+    #PYTHONPATH=$PWD python interatomic_potentials/train_chgnet_v2.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_v2.yaml
+
+### Structure Optimization:
+
+    PYTHONPATH=$PWD python interatomic_potentials/structure_optimization_v2.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_v2.yaml  Global.pretrained_model_path="your model path(.pdparams)" --cif_dir="your cif directory path" --label_path="your label file path"
+
+    # use cpu
+    PYTHONPATH=$PWD python interatomic_potentials/structure_optimization_v2.py -c interatomic_potentials/configs/chgnet_2d_lessatom20_v2.yaml  Global.pretrained_model_path="your model path(.pdparams)" --cif_dir="your cif directory path" --label_path="your label file path" --use_cpu
 
 
+## 4. Molecule Generation
+
+### Data Preparation
+
+Please refer to the following command to split the dataset into train/val/test sets:
+
+    python ppmat/datasets/dataset_split.py --format csv --src_path data/your/dataset/location
 
 
 # Install
 
 Please refer to the installation [document](install.md) for environment configuration.
 
-# Data Preparation
-
-Please refer to the following command to split the dataset into train/val/test sets:
-
-    python ppmat/datasets/dataset_split.py --format csv --src_path data/your/dataset/location
 
 # Acknowledgements
 
