@@ -1,7 +1,0 @@
-[2024/06/24 07:37:47] ppsci INFO: test_loss: 0.060355, test_mae: 0.142522
-[2024/07/03 10:41:01] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522
-[2024/07/03 11:29:23] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522
-[2024/07/03 11:49:38] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522, test_ids_loss: 155034816.000000, test_ids_mae: 10759.299805
-[2024/07/03 11:51:23] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522, test_ids_loss: 155034816.000000, test_ids_mae: 10759.299805
-[2024/07/03 11:52:38] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522
-[2024/07/03 11:53:32] ppsci INFO: epoch: 0, test_ehull_loss: 0.062233, test_ehull_mae: 0.142522
