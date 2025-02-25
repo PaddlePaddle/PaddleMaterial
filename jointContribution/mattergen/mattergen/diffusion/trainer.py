@@ -37,7 +37,7 @@ def scale_shared_grads(model):
 
 
 class TrainerDiffusion:
-    """Class for Trainer."""
+    """Class used to handle training a diffusion model"""
 
     def __init__(
         self,

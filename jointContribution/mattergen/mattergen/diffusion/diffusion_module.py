@@ -47,7 +47,7 @@ class DiffusionModule(paddle.nn.Layer):
 
     def _register_corruption_modules(self):
         """
-        Register corruptions that are instances of `torch.nn.Module`s for proper device,
+        Register corruptions that are instances of `paddle.nn.Layer`s for proper device,
         parameter, etc handling.
         """
         assert isinstance(self.corruption, MultiCorruption)

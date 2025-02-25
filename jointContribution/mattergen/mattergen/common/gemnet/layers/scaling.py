@@ -90,7 +90,7 @@ class AutoScaleFit(AutomaticFit):
 
     Parameters
     ----------
-        variable: torch.Tensor
+        variable: paddle.Tensor
             Variable to fit.
         scale_file: str
             Path to the json file where to store/load from the scaling factors.

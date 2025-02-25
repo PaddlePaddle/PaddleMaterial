@@ -67,8 +67,8 @@ def lattice_params_to_matrix_torch(
 ) -> paddle.Tensor:
     """Batched torch version to compute lattice matrix from params.
 
-    lengths: torch.Tensor of shape (N, 3), unit A
-    angles: torch.Tensor of shape (N, 3), unit degree
+    lengths: paddle.Tensor of shape (N, 3), unit A
+    angles: paddle.Tensor of shape (N, 3), unit degree
     """
     coses = paddle.clip(x=paddle.cos(x=paddle.deg2rad(x=angles)), min=-1.0, max=1.0)
     sins = (1 - coses**2).sqrt()
@@ -108,10 +108,10 @@ def lattice_matrix_to_params_torch(
     lengths and angles.
 
     Args:
-        matrix (torch.Tensor, [B, 3, 3]): The batch of lattice matrices.
+        matrix (paddle.Tensor, [B, 3, 3]): The batch of lattice matrices.
 
     Returns:
-        tuple[torch.Tensor], ([B, 3], [B, 3]): tuple whose first element is the
+        tuple[paddle.Tensor], ([B, 3], [B, 3]): tuple whose first element is the
         lengths of the unit cell vectors, and the second one gives the angles between
         the vectors.
     """

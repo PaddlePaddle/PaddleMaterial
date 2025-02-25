@@ -43,7 +43,7 @@ def main(config, seed: int | None = None):
     save_config: if True, the config will be saved both as a YAML file and in each 
     checkpoint. This doesn't work if the config contains things that can't be 
     `yaml.dump`-ed, so if you don't care about saving and loading checkpoints and want 
-    to use a config that contains things like `torch.nn.Module`s already instantiated, 
+    to use a config that contains things like `paddle.nn.Layer`s already instantiated, 
     set this to False.
     """
 

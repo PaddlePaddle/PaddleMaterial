@@ -128,9 +128,9 @@ class InteractionBlockTripletsOnly(paddle.nn.Layer):
         """
         Returns
         -------
-            h: torch.Tensor, shape=(nEdges, emb_size_atom)
+            h: paddle.Tensor, shape=(nEdges, emb_size_atom)
                 Atom embeddings.
-            m: torch.Tensor, shape=(nEdges, emb_size_edge)
+            m: paddle.Tensor, shape=(nEdges, emb_size_edge)
                 Edge embeddings (c->a).
         """
         x_ca_skip = self.dense_ca(m)
@@ -211,7 +211,7 @@ class TripletInteraction(paddle.nn.Layer):
         """
         Returns
         -------
-            m: torch.Tensor, shape=(nEdges, emb_size_edge)
+            m: paddle.Tensor, shape=(nEdges, emb_size_edge)
                 Edge embeddings (c->a).
         """
         x_ba = self.dense_ba(m)

@@ -24,10 +24,10 @@ def atomic_numbers_to_mask(
     """Convert atomic numbers to a mask.
 
     Args:
-        atomic_numbers (torch.LongTensor): One-based atomic numbers of shape (batch_size, )
+        atomic_numbers (paddle.LongTensor): One-based atomic numbers of shape (batch_size, )
 
     Returns:
-        torch.Tensor: Mask of shape (batch_size, num_classes)
+        paddle.Tensor: Mask of shape (batch_size, num_classes)
     """
     k_hot_mask = paddle.eye(num_rows=max_atomic_num)[atomic_numbers - 1]
     return k_hot_mask
@@ -37,11 +37,11 @@ def mask_logits(logits: paddle.Tensor, mask: paddle.Tensor) -> paddle.Tensor:
     """Mask logits by setting the logits for masked items to -inf.
 
     Args:
-        logits (torch.Tensor): Logits of shape (batch_size, num_classes)
-        mask (torch.Tensor): Mask of shape (batch_size, num_classes). Values with zero are masked.
+        logits (paddle.Tensor): Logits of shape (batch_size, num_classes)
+        mask (paddle.Tensor): Mask of shape (batch_size, num_classes). Values with zero are masked.
 
     Returns:
-        torch.Tensor: Masked logits
+        paddle.Tensor: Masked logits
     """
     return logits + (1 - mask) * -10000000000.0
 
@@ -57,9 +57,9 @@ def mask_disallowed_elements(
     as well as potentially all elements not in the chemical system we condition on.
 
     Args:
-        logits (torch.Tensor): Logits of shape (batch_size, num_classes)
+        logits (paddle.Tensor): Logits of shape (batch_size, num_classes)
         x (ChemGraph)
-        batch_idx (torch.LongTensor, optional): Batch indices. Defaults to None. Must be provided if condition is not None.
+        batch_idx (paddle.LongTensor, optional): Batch indices. Defaults to None. Must be provided if condition is not None.
         predictions_are_zero_based (bool, optional): Whether the logits are zero-based. Defaults to True. Basically, if we're using D3PM,
             the logits are zero-based (model predicts atomic number index)
     """
@@ -244,7 +244,7 @@ class GemNetTDenoiser(ScoreModel):
     @property
     def cond_fields_model_was_trained_on(self) -> list[PropertySourceId]:
         """
-        We adopt the convention that all property embeddings are stored in torch.nn.ModuleDicts of
+        We adopt the convention that all property embeddings are stored in paddle.nn.ModuleDicts of
         name property_embeddings or property_embeddings_adapt in the case of a fine tuned model.
 
         This function returns the list of all field names that a given score model was trained to

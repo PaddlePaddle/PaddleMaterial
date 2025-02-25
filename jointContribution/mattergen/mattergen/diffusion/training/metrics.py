@@ -30,11 +30,11 @@ class Metric(Protocol):
         Computes a metric to be logged during training. Useful, e.g., for plotting loss over time.
 
         Args:
-            loss_per_sample_per_field: Dict[str, torch.Tensor], where each tensor has shape (batch_size,).
+            loss_per_sample_per_field: Dict[str, paddle.Tensor], where each tensor has shape (batch_size,).
             multi_corruption: MultiCorruption
             score_model_output: the output produced by the model per field.
             t: shape (batch_size,). Time for each element in the loss.
-            batch_idx: Dict[str, torch.LongTensor]: batch indices per field
+            batch_idx: Dict[str, paddle.LongTensor]: batch indices per field
             batch: BatchedData: the clean (un-perturbed) batched data
             noisy_batch: BatchedData: the corrupted batched data
         """

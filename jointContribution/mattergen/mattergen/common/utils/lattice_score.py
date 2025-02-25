@@ -18,17 +18,17 @@ def edge_score_to_lattice_score_frac_symmetric(
     the predicted edge scores
 
     Args:
-        score_d (torch.Tensor, [num_edges,]): A score per edge in the graph.
-        edge_index (torch.Tensor, [2, num_edges]): The edge indices in the graph.
-        edge_vectors (torch.Tensor, [num_edges, 3]): The vectors connecting the source
+        score_d (paddle.Tensor, [num_edges,]): A score per edge in the graph.
+        edge_index (paddle.Tensor, [2, num_edges]): The edge indices in the graph.
+        edge_vectors (paddle.Tensor, [num_edges, 3]): The vectors connecting the source
             of each edge to the target.
-        lattice_matrix (torch.Tensor, [num_nodes, 3, 3]): The lattice matrices for
+        lattice_matrix (paddle.Tensor, [num_nodes, 3, 3]): The lattice matrices for
             each crystal in num_nodes.
-        batch (torch.Tensor, [num_nodes,]): The pointer indicating for each atom which
+        batch (paddle.Tensor, [num_nodes,]): The pointer indicating for each atom which
             molecule in the batch it belongs to.
 
     Returns:
-        torch.Tensor: The predicted lattice score.
+        paddle.Tensor: The predicted lattice score.
     """
     batch_edge = batch[edge_index[0]]
     unit_edge_vectors_cart = edge_vectors / edge_vectors.norm(axis=-1, keepdim=True)

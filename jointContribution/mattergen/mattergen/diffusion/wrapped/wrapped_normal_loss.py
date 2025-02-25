@@ -16,11 +16,11 @@ def get_pbc_offsets(pbc: paddle.Tensor, max_offset_integer: int = 3) -> paddle.T
        the tensor of integer offsets of the pbc vectors, i.e., L_{ijk} = row_stack([i * l_1, j * l_2, k * l_3]).
 
     Args:
-        pbc (torch.Tensor, [batch_size, dim, dim]): The input pbc matrix.
+        pbc (paddle.Tensor, [batch_size, dim, dim]): The input pbc matrix.
         max_offset_integer (int): The maximum integer offset per dimension to consider for the Cartesian product. Defaults to 3.
 
     Returns:
-        torch.Tensor, [batch_size, (2 * max_offset_integer + 1)^dim, dim]: The tensor containing the integer offsets of the pbc vectors.
+        paddle.Tensor, [batch_size, (2 * max_offset_integer + 1)^dim, dim]: The tensor containing the integer offsets of the pbc vectors.
     """
     offset_range = paddle.arange(start=-max_offset_integer, end=max_offset_integer + 1)
     meshgrid = paddle.stack(
@@ -46,15 +46,15 @@ def wrapped_normal_score(
        See docstring of `wrapped_normal_score` for details about the arguments
 
     Args:
-        x (torch.Tensor, [num_atoms, dim])
-        mean (torch.Tensor, [num_atoms, dim])
-        wrapping_boundary (torch.Tensor, [num_molecules, dim, dim])
-        variance_diag (torch.Tensor, [num_atoms,])
-        batch (torch.Tensor, [num_atoms, ])
+        x (paddle.Tensor, [num_atoms, dim])
+        mean (paddle.Tensor, [num_atoms, dim])
+        wrapping_boundary (paddle.Tensor, [num_molecules, dim, dim])
+        variance_diag (paddle.Tensor, [num_atoms,])
+        batch (paddle.Tensor, [num_atoms, ])
         max_offset_integer (int), Defaults to 3.
 
     Returns:
-        torch.Tensor, [num_atoms, dim]: The approximated score of the wrapped normal distribution.
+        paddle.Tensor, [num_atoms, dim]: The approximated score of the wrapped normal distribution.
     """
     offset_add = get_pbc_offsets(wrapping_boundary, max_offset_integer)
     diffs_k = (x - mean)[:, None] + offset_add[batch]

@@ -25,10 +25,10 @@ def make_noise_symmetric_preserve_variance(noise: paddle.Tensor) -> paddle.Tenso
     """Makes the noise matrix symmetric, preserving the variance. Assumes i.i.d. noise for each dimension.
 
     Args:
-        noise (torch.Tensor): Input noise matrix, must be a batched square matrix, i.e., have shape (batch_size, dim, dim).
+        noise (paddle.Tensor): Input noise matrix, must be a batched square matrix, i.e., have shape (batch_size, dim, dim).
 
     Returns:
-        torch.Tensor: The symmetric noise matrix, with the same variance as the input.
+        paddle.Tensor: The symmetric noise matrix, with the same variance as the input.
     """
     assert (
         len(tuple(noise.shape)) == 3 and tuple(noise.shape)[1] == tuple(noise.shape)[2]

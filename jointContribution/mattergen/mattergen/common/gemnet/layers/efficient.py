@@ -47,15 +47,15 @@ class EfficientInteractionDownProjection(paddle.nn.Layer):
 
         Arguments
         ---------
-        rbf: torch.Tensor, shape=(1, nEdges, num_radial)
-        sph: torch.Tensor, shape=(nEdges, Kmax, num_spherical)
+        rbf: paddle.Tensor, shape=(1, nEdges, num_radial)
+        sph: paddle.Tensor, shape=(nEdges, Kmax, num_spherical)
         id_ca
         id_ragged_idx
 
         Returns
         -------
-        rbf_W1: torch.Tensor, shape=(nEdges, emb_size_interm, num_spherical)
-        sph: torch.Tensor, shape=(nEdges, Kmax, num_spherical)
+        rbf_W1: paddle.Tensor, shape=(nEdges, emb_size_interm, num_spherical)
+        sph: paddle.Tensor, shape=(nEdges, Kmax, num_spherical)
             Kmax = maximum number of neighbors of the edges
         """
         num_edges = tuple(rbf.shape)[1]
@@ -111,7 +111,7 @@ class EfficientInteractionBilinear(paddle.nn.Layer):
 
         Returns
         -------
-            m_ca: torch.Tensor, shape=(nEdges, units_out)
+            m_ca: paddle.Tensor, shape=(nEdges, units_out)
                 Edge embeddings.
         """
         rbf_W1, sph = basis

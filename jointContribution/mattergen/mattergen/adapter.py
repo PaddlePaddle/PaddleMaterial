@@ -98,7 +98,7 @@ class GemNetTAdapter(GemNetTDenoiser):
     @property
     def cond_fields_model_was_trained_on(self) -> list[PropertySourceId]:
         """
-        We adopt the convention that all property embeddings are stored in torch.nn.ModuleDicts of
+        We adopt the convention that all property embeddings are stored in paddle.nn.LayerDicts of
         name property_embeddings or property_embeddings_adapt in the case of a fine tuned model.
 
         This function returns the list of all field names that a given score model was trained to

@@ -69,7 +69,7 @@ class AtomUpdateBlock(paddle.nn.Layer):
         """
         Returns
         -------
-            h: torch.Tensor, shape=(nAtoms, emb_size_atom)
+            h: paddle.Tensor, shape=(nAtoms, emb_size_atom)
                 Atom embedding.
         """
         nAtoms = tuple(h.shape)[0]
@@ -164,8 +164,8 @@ class OutputBlock(AtomUpdateBlock):
         Returns
         -------
             (E, F): tuple
-            - E: torch.Tensor, shape=(nAtoms, num_targets)
-            - F: torch.Tensor, shape=(nEdges, num_targets)
+            - E: paddle.Tensor, shape=(nAtoms, num_targets)
+            - F: paddle.Tensor, shape=(nEdges, num_targets)
             Energy and force prediction
         """
         nAtoms = tuple(h.shape)[0]

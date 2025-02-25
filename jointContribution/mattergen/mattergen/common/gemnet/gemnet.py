@@ -131,7 +131,7 @@ class GemNetT(paddle.nn.Layer):
         num_blocks: int
             Number of building blocks to be stacked.
 
-        atom_embedding: torch.nn.Module
+        atom_embedding: paddle.nn.Layer
             a module that embeds atomic numbers into vectors of size emb_dim_atomic_number.
         emb_size_atom: int
             Embedding size of the atoms. This can be different from emb_dim_atomic_number.
@@ -305,11 +305,11 @@ class GemNetT(paddle.nn.Layer):
 
         Returns
         -------
-        id3_ba: torch.Tensor, shape (num_triplets,)
+        id3_ba: paddle.Tensor, shape (num_triplets,)
             Indices of input edge b->a of each triplet b->a<-c
-        id3_ca: torch.Tensor, shape (num_triplets,)
+        id3_ca: paddle.Tensor, shape (num_triplets,)
             Indices of output edge c->a of each triplet b->a<-c
-        id3_ragged_idx: torch.Tensor, shape (num_triplets,)
+        id3_ragged_idx: paddle.Tensor, shape (num_triplets,)
             Indices enumerating the copies of id3_ca for creating a padded matrix
         """
         # import pdb;pdb.set_trace()
@@ -380,7 +380,7 @@ class GemNetT(paddle.nn.Layer):
         edges here, we lose some j->i edges and add others by
         making it symmetric.
         We could fix this by merging edge_index with its counter-edges,
-        including the cell_offsets, and then running torch.unique.
+        including the cell_offsets, and then running paddle.unique.
         But this does not seem worth it.
         """
         mask_sep_atoms = edge_index[0] < edge_index[1]

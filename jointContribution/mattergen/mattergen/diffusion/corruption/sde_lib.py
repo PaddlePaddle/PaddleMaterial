@@ -7,7 +7,7 @@ which is released under Apache licence.
 Abstract SDE classes, Reverse SDE, and VE/VP SDEs.
 
 Key changes:
-- Adapted to work on batched pytorch_geometric style data
+- Adapted to work on batched paddle_geometric style data
 - Added '...given_score' methods so that score for a composite
 state can be calculated in single forward pass of a shared score model,
 and the scores for different fields then forwarded to the different reverse SDEs.

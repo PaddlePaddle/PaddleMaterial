@@ -48,7 +48,7 @@ class AtomEmbedding(paddle.nn.Layer):
         """
         Returns
         -------
-            h: torch.Tensor, shape=(nAtoms, emb_size)
+            h: paddle.Tensor, shape=(nAtoms, emb_size)
                 Atom embeddings.
         """
         h = self.embeddings(Z - 1)
@@ -85,7 +85,7 @@ class EdgeEmbedding(paddle.nn.Layer):
 
         Returns
         -------
-            m_st: torch.Tensor, shape=(nEdges, emb_size)
+            m_st: paddle.Tensor, shape=(nEdges, emb_size)
                 Edge embeddings.
         """
         h_s = h[idx_s]
