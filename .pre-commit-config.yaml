@@ -38,6 +38,7 @@ repos:
         # exclude: "mkdocs.yml"
         exclude: (^jointContribution/ | "mkdocs.yml")
       - id: pretty-format-json
+        exclude: ^jointContribution/
         args: [--autofix]
       - id: requirements-txt-fixer
         exclude: ^jointContribution/
