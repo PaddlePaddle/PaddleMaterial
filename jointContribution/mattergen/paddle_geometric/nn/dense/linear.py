@@ -280,7 +280,7 @@ class HeteroDictLinear(Layer):
         types (List[Any], optional): The keys of the input dictionary.
             (default: :obj:`None`)
         **kwargs (optional): Additional arguments of
-            :class:`torch_geometric.nn.Linear`.
+            :class:`paddle_geometric.nn.Linear`.
     """
     def __init__(
         self,

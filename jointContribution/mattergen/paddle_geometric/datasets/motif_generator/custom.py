@@ -7,10 +7,10 @@ from paddle_geometric.utils import from_networkx
 
 class CustomMotif(MotifGenerator):
     r"""Generates a motif based on a custom structure coming from a
-    :class:`torch_geometric.data.Data` or :class:`networkx.Graph` object.
+    :class:`paddle_geometric.data.Data` or :class:`networkx.Graph` object.
 
     Args:
-        structure (torch_geometric.data.Data or networkx.Graph): The structure
+        structure (paddle_geometric.data.Data or networkx.Graph): The structure
             to use as a motif.
     """
     def __init__(self, structure: Any):
@@ -30,7 +30,7 @@ class CustomMotif(MotifGenerator):
 
         if self.structure is None:
             raise ValueError(f"Expected a motif structure of type "
-                             f"'torch_geometric.data.Data' or 'networkx.Graph'"
+                             f"'paddle_geometric.data.Data' or 'networkx.Graph'"
                              f"(got {type(structure)})")
 
     def __call__(self) -> Data:

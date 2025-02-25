@@ -31,7 +31,7 @@ class SAGEConv(MessagePassing):
             A tuple corresponds to the sizes of source and target dimensionalities.
         out_channels (int): Size of each output sample.
         aggr (str or Aggregation, optional): The aggregation scheme to use.
-            Any aggregation of :obj:torch_geometric.nn.aggr can be used,
+            Any aggregation of :obj:paddle_geometric.nn.aggr can be used,
             *e.g.*, :obj:"mean", :obj:"max", or :obj:"lstm". (default: :obj:"mean")
         normalize (bool, optional): If set to :obj:True, output features will be
             :math:\ell_2-normalized. (default: :obj:False)
@@ -42,7 +42,7 @@ class SAGEConv(MessagePassing):
             (default: :obj:False)
         bias (bool, optional): If set to :obj:False, the layer will not learn
             an additive bias. (default: :obj:True)
-        **kwargs (optional): Additional arguments of :class:torch_geometric.nn.conv.MessagePassing.
+        **kwargs (optional): Additional arguments of :class:paddle_geometric.nn.conv.MessagePassing.
 
     Shapes:
         - **inputs:**

@@ -14,7 +14,7 @@ class GraphGenerator(ABC):
 
     @staticmethod
     def resolve(query: Any, *args: Any, **kwargs: Any) -> 'GraphGenerator':
-        import torch_geometric.datasets.graph_generator as _graph_generators
+        import paddle_geometric.datasets.graph_generator as _graph_generators
         graph_generators = [
             gen for gen in vars(_graph_generators).values()
             if isinstance(gen, type) and issubclass(gen, GraphGenerator)

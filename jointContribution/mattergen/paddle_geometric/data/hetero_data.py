@@ -46,14 +46,14 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
     and/or edge types in disjunct storage objects.
     Storage objects can hold either node-level, link-level or graph-level
     attributes.
-    In general, :class:`~torch_geometric.data.HeteroData` tries to mimic the
+    In general, :class:`~paddle_geometric.data.HeteroData` tries to mimic the
     behavior of a regular **nested** :python:`Python` dictionary.
     In addition, it provides useful functionality for analyzing graph
     structures, and provides basic PyTorch tensor functionalities.
 
     .. code-block::
 
-        from torch_geometric.data import HeteroData
+        from paddle_geometric.data import HeteroData
 
         data = HeteroData()
 
@@ -83,7 +83,7 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
 
       .. code-block:: python
 
-        from torch_geometric.data import HeteroData
+        from paddle_geometric.data import HeteroData
 
         # (1) Assign attributes after initialization,
         data = HeteroData()
@@ -135,7 +135,7 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
 
     @classmethod
     def from_dict(cls, mapping: Dict[str, Any]) -> Self:
-        r"""Creates a :class:`~torch_geometric.data.HeteroData` object from a
+        r"""Creates a :class:`~paddle_geometric.data.HeteroData` object from a
         dictionary.
         """
         out = cls()
@@ -579,10 +579,10 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
                           f"single underscores.")
 
     def get_node_store(self, key: NodeType) -> NodeStorage:
-        r"""Gets the :class:`~torch_geometric.data.storage.NodeStorage` object
+        r"""Gets the :class:`~paddle_geometric.data.storage.NodeStorage` object
         of a particular node type :attr:`key`.
         If the storage is not present yet, will create a new
-        :class:`torch_geometric.data.storage.NodeStorage` object for the given
+        :class:`paddle_geometric.data.storage.NodeStorage` object for the given
         node type.
 
         .. code-block:: python
@@ -598,10 +598,10 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
         return out
 
     def get_edge_store(self, src: str, rel: str, dst: str) -> EdgeStorage:
-        r"""Gets the :class:`~torch_geometric.data.storage.EdgeStorage` object
+        r"""Gets the :class:`~paddle_geometric.data.storage.EdgeStorage` object
         of a particular edge type given by the tuple :obj:`(src, rel, dst)`.
         If the storage is not present yet, will create a new
-        :class:`torch_geometric.data.storage.EdgeStorage` object for the given
+        :class:`paddle_geometric.data.storage.EdgeStorage` object for the given
         edge type.
 
         .. code-block:: python
@@ -796,14 +796,14 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
         add_edge_type: bool = True,
         dummy_values: bool = True,
     ) -> Data:
-        """Converts a :class:`~torch_geometric.data.HeteroData` object to a
-        homogeneous :class:`~torch_geometric.data.Data` object.
+        """Converts a :class:`~paddle_geometric.data.HeteroData` object to a
+        homogeneous :class:`~paddle_geometric.data.Data` object.
         By default, all features with same feature dimensionality across
         different types will be merged into a single representation, unless
         otherwise specified via the :obj:`node_attrs` and :obj:`edge_attrs`
         arguments.
         Furthermore, attributes named :obj:`node_type` and :obj:`edge_type`
-        will be added to the returned :class:`~torch_geometric.data.Data`
+        will be added to the returned :class:`~paddle_geometric.data.Data`
         object, denoting node-level and edge-level vectors holding the
         node and edge type as integers, respectively.
 
@@ -820,11 +820,11 @@ class HeteroData(BaseData, FeatureStore, GraphStore):
                 (default: :obj:`None`)
             add_node_type (bool, optional): If set to :obj:`False`, will not
                 add the node-level vector :obj:`node_type` to the returned
-                :class:`~torch_geometric.data.Data` object.
+                :class:`~paddle_geometric.data.Data` object.
                 (default: :obj:`True`)
             add_edge_type (bool, optional): If set to :obj:`False`, will not
                 add the edge-level vector :obj:`edge_type` to the returned
-                :class:`~torch_geometric.data.Data` object.
+                :class:`~paddle_geometric.data.Data` object.
                 (default: :obj:`True`)
             dummy_values (bool, optional): If set to :obj:`True`, will fill
                 attributes of remaining types with dummy values.

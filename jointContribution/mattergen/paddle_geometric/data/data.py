@@ -438,7 +438,7 @@ class DataEdgeAttr(EdgeAttr):
 class Data(BaseData, FeatureStore, GraphStore):
     r"""A data object describing a homogeneous graph.
     The data object can hold node-level, link-level and graph-level attributes.
-    In general, :class:`~torch_geometric.data.Data` tries to mimic the
+    In general, :class:`~paddle_geometric.data.Data` tries to mimic the
     behavior of a regular :python:`Python` dictionary.
     In addition, it provides useful functionality for analyzing graph
     structures, and provides basic PyTorch tensor functionalities.
@@ -448,7 +448,7 @@ class Data(BaseData, FeatureStore, GraphStore):
 
     .. code-block:: python
 
-        from torch_geometric.data import Data
+        from paddle_geometric.data import Data
 
         data = Data(x=x, edge_index=edge_index, ...)
 
@@ -749,16 +749,16 @@ class Data(BaseData, FeatureStore, GraphStore):
         node_type_names: Optional[List[NodeType]] = None,
         edge_type_names: Optional[List[EdgeType]] = None,
     ):
-        r"""Converts a :class:`~torch_geometric.data.Data` object to a
-        heterogeneous :class:`~torch_geometric.data.HeteroData` object.
+        r"""Converts a :class:`~paddle_geometric.data.Data` object to a
+        heterogeneous :class:`~paddle_geometric.data.HeteroData` object.
         For this, node and edge attributes are splitted according to the
         node-level and edge-level vectors :obj:`node_type` and
         :obj:`edge_type`, respectively.
         :obj:`node_type_names` and :obj:`edge_type_names` can be used to give
         meaningful node and edge type names, respectively.
         That is, the node_type :obj:`0` is given by :obj:`node_type_names[0]`.
-        If the :class:`~torch_geometric.data.Data` object was constructed via
-        :meth:`~torch_geometric.data.HeteroData.to_homogeneous`, the object can
+        If the :class:`~paddle_geometric.data.Data` object was constructed via
+        :meth:`~paddle_geometric.data.HeteroData.to_homogeneous`, the object can
         be reconstructed without any need to pass in additional arguments.
 
         Args:
@@ -771,7 +771,7 @@ class Data(BaseData, FeatureStore, GraphStore):
             edge_type_names (List[Tuple[str, str, str]], optional): The names
                 of edge types. (default: :obj:`None`)
         """
-        from torch_geometric.data import HeteroData
+        from paddle_geometric.data import HeteroData
 
         if node_type is None:
             node_type = self._store.get('node_type', None)
@@ -870,7 +870,7 @@ class Data(BaseData, FeatureStore, GraphStore):
 
     @classmethod
     def from_dict(cls, mapping: Dict[str, Any]) -> Self:
-        r"""Creates a :class:`~torch_geometric.data.Data` object from a
+        r"""Creates a :class:`~paddle_geometric.data.Data` object from a
         dictionary.
         """
         return cls(**mapping)

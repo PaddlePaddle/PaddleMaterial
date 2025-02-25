@@ -35,7 +35,7 @@ class GravNetConv(MessagePassing):
            paper.
         k (int): The number of nearest neighbors.
         **kwargs (optional): Additional arguments of
-            :class:`torch_geometric.nn.conv.MessagePassing`.
+            :class:`paddle_geometric.nn.conv.MessagePassing`.
 
     Shapes:
         - **input:**

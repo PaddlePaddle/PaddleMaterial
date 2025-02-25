@@ -34,7 +34,7 @@ class LightGCN(nn.Layer):
     Graph Convolution Network for Recommendation"
     <https://arxiv.org/abs/2002.02126>`_ paper.
 
-    :class:`~torch_geometric.nn.models.LightGCN` learns embeddings by linearly
+    :class:`~paddle_geometric.nn.models.LightGCN` learns embeddings by linearly
     propagating them on the underlying graph, and uses the weighted sum of the
     embeddings learned at all layers as the final embedding
 
@@ -49,11 +49,11 @@ class LightGCN(nn.Layer):
 
     Two prediction heads and training objectives are provided:
     **link prediction** (via
-    :meth:`~torch_geometric.nn.models.LightGCN.link_pred_loss` and
-    :meth:`~torch_geometric.nn.models.LightGCN.predict_link`) and
+    :meth:`~paddle_geometric.nn.models.LightGCN.link_pred_loss` and
+    :meth:`~paddle_geometric.nn.models.LightGCN.predict_link`) and
     **recommendation** (via
-    :meth:`~torch_geometric.nn.models.LightGCN.recommendation_loss` and
-    :meth:`~torch_geometric.nn.models.LightGCN.recommend`).
+    :meth:`~paddle_geometric.nn.models.LightGCN.recommendation_loss` and
+    :meth:`~paddle_geometric.nn.models.LightGCN.recommend`).
 
     .. note::
 
@@ -65,13 +65,13 @@ class LightGCN(nn.Layer):
         num_nodes (int): The number of nodes in the graph.
         embedding_dim (int): The dimensionality of node embeddings.
         num_layers (int): The number of
-            :class:`~torch_geometric.nn.conv.LGConv` layers.
+            :class:`~paddle_geometric.nn.conv.LGConv` layers.
         alpha (float or paddle.Tensor, optional): The scalar or vector
             specifying the re-weighting coefficients for aggregating the final
             embedding. If set to :obj:`None`, the uniform initialization of
             :obj:`1 / (num_layers + 1)` is used. (default: :obj:`None`)
         **kwargs (optional): Additional arguments of the underlying
-            :class:`~torch_geometric.nn.conv.LGConv` layers.
+            :class:`~paddle_geometric.nn.conv.LGConv` layers.
     """
     def __init__(
         self,

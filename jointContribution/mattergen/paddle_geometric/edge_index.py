@@ -179,7 +179,7 @@ class EdgeIndex(Tensor):
 
     .. code-block:: python
 
-        from torch_geometric import EdgeIndex
+        from paddle_geometric import EdgeIndex
 
         edge_index = EdgeIndex(
             [[0, 1, 1, 2],
@@ -593,7 +593,7 @@ class EdgeIndex(Tensor):
 
     @assert_sorted
     def _sort_by_transpose(self) -> Tuple[Tuple[Tensor, Tensor], Tensor]:
-        from torch_geometric.utils import index_sort
+        from paddle_geometric.utils import index_sort
 
         dim = 1 if self.is_sorted_by_row else 0
 
@@ -727,7 +727,7 @@ class EdgeIndex(Tensor):
                 guarantees that the order of equivalent elements is preserved.
                 (default: :obj:`False`)
         """
-        from torch_geometric.utils import index_sort
+        from paddle_geometric.utils import index_sort
 
         sort_order = SortOrder(sort_order)
 
@@ -779,7 +779,7 @@ class EdgeIndex(Tensor):
             In case of duplicated edges, the behavior is non-deterministic (one
             of the values from :obj:`value` will be picked arbitrarily). For
             deterministic behavior, consider calling
-            :meth:`~torch_geometric.utils.coalesce` beforehand.
+            :meth:`~paddle_geometric.utils.coalesce` beforehand.
 
         Args:
             value (torch.Tensor, optional): The values for non-zero elements.
@@ -1820,7 +1820,7 @@ def _scatter_spmm(
     reduce: ReduceType = 'sum',
     transpose: bool = False,
 ) -> Tensor:
-    from torch_geometric.utils import scatter
+    from paddle_geometric.utils import scatter
 
     if not transpose:
         other_j = other[input._data[1]]

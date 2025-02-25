@@ -5,7 +5,7 @@ from paddle_geometric.utils import erdos_renyi_graph
 
 class ERGraph(GraphGenerator):
     r"""Generates random Erdos-Renyi (ER) graphs.
-    See :meth:`~torch_geometric.utils.erdos_renyi_graph` for more information.
+    See :meth:`~paddle_geometric.utils.erdos_renyi_graph` for more information.
 
     Args:
         num_nodes (int): The number of nodes.

@@ -18,7 +18,7 @@ class debug:
 
     .. code-block:: python
 
-        with torch_geometric.debug():
+        with paddle_geometric.debug():
             out = model(data.x, data.edge_index)
     """
     def __init__(self) -> None:

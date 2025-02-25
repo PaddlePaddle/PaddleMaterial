@@ -26,7 +26,7 @@ class SimpleConv(MessagePassing):
             to use, *e.g.*, :obj:`"add"`, :obj:`"sum"` :obj:`"mean"`,
             :obj:`"min"`, :obj:`"max"` or :obj:`"mul"`.
             In addition, can be any
-            :class:`~torch_geometric.nn.aggr.Aggregation` module (or any string
+            :class:`~paddle_geometric.nn.aggr.Aggregation` module (or any string
             that automatically resolves to it). (default: :obj:`"sum"`)
         combine_root (str, optional): Specifies whether or how to combine the
             central node representation (one of :obj:`"sum"`, :obj:`"cat"`,

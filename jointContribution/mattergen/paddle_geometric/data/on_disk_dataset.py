@@ -17,14 +17,14 @@ class OnDiskDataset(Dataset):
     Args:
         root (str): Root directory where the dataset should be saved.
         transform (callable, optional): A function/transform that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             transformed version.
             The data object will be transformed before every access.
             (default: :obj:`None`)
         pre_filter (callable, optional): A function that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             boolean value, indicating whether the data object should be
             included in the final dataset. (default: :obj:`None`)
         backend (str): The :class:`Database` backend to use
@@ -98,8 +98,8 @@ class OnDiskDataset(Dataset):
             self._db.close()
 
     def serialize(self, data: BaseData) -> Any:
-        r"""Serializes the :class:`~torch_geometric.data.Data` or
-        :class:`~torch_geometric.data.HeteroData` object into the expected DB
+        r"""Serializes the :class:`~paddle_geometric.data.Data` or
+        :class:`~paddle_geometric.data.HeteroData` object into the expected DB
         schema.
         """
         if self.schema == object:
@@ -110,8 +110,8 @@ class OnDiskDataset(Dataset):
 
     def deserialize(self, data: Any) -> BaseData:
         r"""Deserializes the DB entry into a
-        :class:`~torch_geometric.data.Data` or
-        :class:`~torch_geometric.data.HeteroData` object.
+        :class:`~paddle_geometric.data.Data` or
+        :class:`~paddle_geometric.data.HeteroData` object.
         """
         if self.schema == object:
             return data

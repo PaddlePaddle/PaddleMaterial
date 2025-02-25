@@ -40,20 +40,20 @@ class InMemoryDataset(Dataset):
         root (str, optional): Root directory where the dataset should be saved.
             (optional: :obj:`None`)
         transform (callable, optional): A function/transform that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             transformed version.
             The data object will be transformed before every access.
             (default: :obj:`None`)
         pre_transform (callable, optional): A function/transform that takes in
-            a :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            a :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             transformed version.
             The data object will be transformed before being saved to disk.
             (default: :obj:`None`)
         pre_filter (callable, optional): A function that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             boolean value, indicating whether the data object should be
             included in the final dataset. (default: :obj:`None`)
         log (bool, optional): Whether to print any console output while
@@ -145,9 +145,9 @@ class InMemoryDataset(Dataset):
     def collate(
         data_list: Sequence[BaseData],
     ) -> Tuple[BaseData, Optional[Dict[str, Tensor]]]:
-        r"""Collates a list of :class:`~torch_geometric.data.Data` or
-        :class:`~torch_geometric.data.HeteroData` objects to the internal
-        storage format of :class:`~torch_geometric.data.InMemoryDataset`.
+        r"""Collates a list of :class:`~paddle_geometric.data.Data` or
+        :class:`~paddle_geometric.data.HeteroData` objects to the internal
+        storage format of :class:`~paddle_geometric.data.InMemoryDataset`.
         """
         if len(data_list) == 1:
             return data_list[0], None
@@ -184,7 +184,7 @@ class InMemoryDataset(Dataset):
         root: Optional[str] = None,
         backend: str = 'sqlite',
         log: bool = True,
-    ) -> 'torch_geometric.data.OnDiskDataset':
+    ) -> 'paddle_geometric.data.OnDiskDataset':
         r"""Converts the :class:`InMemoryDataset` to a :class:`OnDiskDataset`
         variant. Useful for distributed training and hardware instances with
         limited amount of shared memory.

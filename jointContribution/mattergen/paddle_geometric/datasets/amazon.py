@@ -18,10 +18,10 @@ class Amazon(InMemoryDataset):
         root: Root directory where the dataset should be saved.
         name: The name of the dataset (:obj:`"Computers"`, :obj:`"Photo"`).
         transform: A function/transform that takes in a
-            :class:`torch_geometric.data.Data` object and returns a transformed
+            :class:`paddle_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.
         pre_transform: A function/transform that takes in an
-            :class:`torch_geometric.data.Data` object and returns a
+            :class:`paddle_geometric.data.Data` object and returns a
             transformed version. The data object will be transformed before
             being saved to disk.
         force_reload: Whether to re-process the dataset.

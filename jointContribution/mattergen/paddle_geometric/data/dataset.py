@@ -36,20 +36,20 @@ class Dataset(paddle.io.Dataset):
         root (str, optional): Root directory where the dataset should be saved.
             (optional: :obj:`None`)
         transform (callable, optional): A function/transform that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             transformed version.
             The data object will be transformed before every access.
             (default: :obj:`None`)
         pre_transform (callable, optional): A function/transform that takes in
-            a :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            a :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             transformed version.
             The data object will be transformed before being saved to disk.
             (default: :obj:`None`)
         pre_filter (callable, optional): A function that takes in a
-            :class:`~torch_geometric.data.Data` or
-            :class:`~torch_geometric.data.HeteroData` object and returns a
+            :class:`~paddle_geometric.data.Data` or
+            :class:`~paddle_geometric.data.HeteroData` object and returns a
             boolean value, indicating whether the data object should be
             included in the final dataset. (default: :obj:`None`)
         log (bool, optional): Whether to print any console output while
@@ -367,7 +367,7 @@ class Dataset(paddle.io.Dataset):
 
     def get_summary(self) -> Any:
         r"""Collects summary statistics for the dataset."""
-        from torch_geometric.data.summary import Summary
+        from paddle_geometric.data.summary import Summary
         return Summary.from_dataset(self)
 
     def print_summary(self, fmt: str = "psql") -> None:
@@ -388,7 +388,7 @@ class Dataset(paddle.io.Dataset):
 
         .. code-block:: python
 
-            from torch_geometric.datasets import QM9
+            from paddle_geometric.datasets import QM9
 
             dp = QM9(root='./data/QM9/').to_datapipe()
             dp = dp.batch_graphs(batch_size=2, drop_last=True)
@@ -400,7 +400,7 @@ class Dataset(paddle.io.Dataset):
         <https://pytorch.org/data/main/tutorial.html>`_ for further background
         on DataPipes.
         """
-        from torch_geometric.data.datapipes import DatasetAdapter
+        from paddle_geometric.data.datapipes import DatasetAdapter
 
         return DatasetAdapter(self)
 

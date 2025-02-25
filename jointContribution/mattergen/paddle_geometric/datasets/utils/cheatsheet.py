@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 
 
 def paper_link(cls: str) -> Optional[str]:
-    cls = importlib.import_module('torch_geometric.datasets').__dict__[cls]
+    cls = importlib.import_module('paddle_geometric.datasets').__dict__[cls]
     doc = inspect.getdoc(cls)
     assert doc is not None
     match = re.search('<.+?>', doc, flags=re.DOTALL)
@@ -13,7 +13,7 @@ def paper_link(cls: str) -> Optional[str]:
 
 
 def get_stats_table(cls: str) -> str:
-    cls = importlib.import_module('torch_geometric.datasets').__dict__[cls]
+    cls = importlib.import_module('paddle_geometric.datasets').__dict__[cls]
     doc = inspect.getdoc(cls)
     assert doc is not None
     match = re.search(r'\*\*STATS:\*\*\n.*$', doc, flags=re.DOTALL)

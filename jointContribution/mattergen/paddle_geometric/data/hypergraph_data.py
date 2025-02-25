@@ -16,7 +16,7 @@ class HyperGraphData(Data):
     r"""A data object describing a hypergraph.
 
     The data object can hold node-level, link-level and graph-level attributes.
-    This object differs from a standard :obj:`~torch_geometric.data.Data`
+    This object differs from a standard :obj:`~paddle_geometric.data.Data`
     object by having hyperedges, i.e. edges that connect more
     than two nodes. For example, in the hypergraph scenario
     :math:`\mathcal{G} = (\mathcal{V}, \mathcal{E})` with

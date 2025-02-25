@@ -13,7 +13,7 @@ class MotifGenerator(ABC):
 
     @staticmethod
     def resolve(query: Any, *args: Any, **kwargs: Any) -> 'MotifGenerator':
-        import torch_geometric.datasets.motif_generator as _motif_generators
+        import paddle_geometric.datasets.motif_generator as _motif_generators
         motif_generators = [
             gen for gen in vars(_motif_generators).values()
             if isinstance(gen, type) and issubclass(gen, MotifGenerator)

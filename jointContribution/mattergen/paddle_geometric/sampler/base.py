@@ -45,7 +45,7 @@ class SubgraphType(Enum):
 
 @dataclass(init=False)
 class NodeSamplerInput:
-    r"""The sampling input of :meth:`~torch_geometric.sampler.BaseSampler.sample_from_nodes`.
+    r"""The sampling input of :meth:`~paddle_geometric.sampler.BaseSampler.sample_from_nodes`.
 
     Args:
         input_id (paddle.Tensor, optional): The indices of the data loader input

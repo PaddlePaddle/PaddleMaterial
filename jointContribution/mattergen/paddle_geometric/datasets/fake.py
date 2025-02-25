@@ -12,7 +12,7 @@ from paddle_geometric.utils import coalesce, remove_self_loops, to_undirected
 
 class FakeDataset(InMemoryDataset):
     r"""A fake dataset that returns randomly generated
-    :class:`~torch_geometric.data.Data` objects.
+    :class:`~paddle_geometric.data.Data` objects.
 
     Args:
         num_graphs (int, optional): The number of graphs. (default: :obj:`1`)
@@ -34,7 +34,7 @@ class FakeDataset(InMemoryDataset):
         is_undirected (bool, optional): Whether the graphs to generate are
             undirected. (default: :obj:`True`)
         transform (callable, optional): A function/transform that takes in
-            an :obj:`torch_geometric.data.Data` object and returns a
+            an :obj:`paddle_geometric.data.Data` object and returns a
             transformed version. The data object will be transformed before
             every access. (default: :obj:`None`)
         **kwargs (optional): Additional attributes and their shapes
@@ -110,7 +110,7 @@ class FakeDataset(InMemoryDataset):
 
 class FakeHeteroDataset(InMemoryDataset):
     r"""A fake dataset that returns randomly generated
-    :class:`~torch_geometric.data.HeteroData` objects.
+    :class:`~paddle_geometric.data.HeteroData` objects.
 
     Args:
         num_graphs (int, optional): The number of graphs. (default: :obj:`1`)
@@ -134,7 +134,7 @@ class FakeHeteroDataset(InMemoryDataset):
             :obj:`num_graphs > 1`, and node-level labels other-wise.
             (default: :obj:`"auto"`)
         transform (callable, optional): A function/transform that takes in
-            an :obj:`torch_geometric.data.HeteroData` object and returns a
+            an :obj:`paddle_geometric.data.HeteroData` object and returns a
             transformed version. The data object will be transformed before
             every access. (default: :obj:`None`)
         **kwargs (optional): Additional attributes and their shapes

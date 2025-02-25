@@ -5,7 +5,7 @@ from paddle_geometric.utils import barabasi_albert_graph
 
 class BAGraph(GraphGenerator):
     r"""Generates random Barabasi-Albert (BA) graphs.
-    See :meth:`~torch_geometric.utils.barabasi_albert_graph` for more
+    See :meth:`~paddle_geometric.utils.barabasi_albert_graph` for more
     information.
 
     Args:

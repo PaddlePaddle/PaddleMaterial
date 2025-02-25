@@ -29,7 +29,7 @@ class LabelPropagation(MessagePassing):
 
         For an example of using the :class:`LabelPropagation`, see
         `examples/label_prop.py
-        <https://github.com/pyg-team/pytorch_geometric/blob/master/examples/
+        <https://github.com/pyg-team/pypaddle_geometric/blob/master/examples/
         label_prop.py>`_.
 
     Args:

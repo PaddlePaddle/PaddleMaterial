@@ -14,7 +14,7 @@ class BAMultiShapesDataset(InMemoryDataset):
     <https://arxiv.org/abs/2210.07147>`_ paper.
 
     Given three atomic motifs, namely House (H), Wheel (W), and Grid (G),
-    :class:`~torch_geometric.datasets.BAMultiShapesDataset` contains 1,000
+    :class:`~paddle_geometric.datasets.BAMultiShapesDataset` contains 1,000
     graphs where each graph is obtained by attaching the motifs to a random
     Barabasi-Albert (BA) as follows:
 
@@ -27,14 +27,14 @@ class BAMultiShapesDataset(InMemoryDataset):
     Args:
         root: Root directory where the dataset should be saved.
         transform: A function/transform that takes in a
-            :class:`torch_geometric.data.Data` object and returns a transformed
+            :class:`paddle_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.
         pre_transform: A function/transform that takes in a
-            :class:`torch_geometric.data.Data` object and returns a
+            :class:`paddle_geometric.data.Data` object and returns a
             transformed version. The data object will be transformed before
             being saved to disk.
         pre_filter: A function that takes in a
-            :class:`torch_geometric.data.Data` object and returns a boolean
+            :class:`paddle_geometric.data.Data` object and returns a boolean
             value, indicating whether the data object should be included in the
             final dataset.
         force_reload: Whether to re-process the dataset.

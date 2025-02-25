@@ -4,10 +4,10 @@ from typing import Union
 import torch
 from torch import Tensor
 
-import torch_geometric.typing
-from torch_geometric import is_compiling
-from torch_geometric.utils import is_sparse
-from torch_geometric.typing import Size, SparseTensor
+import paddle_geometric.typing
+from paddle_geometric import is_compiling
+from paddle_geometric.utils import is_sparse
+from paddle_geometric.typing import Size, SparseTensor
 {% for module in modules %}
 from {{module}} import *
 {%- endfor %}

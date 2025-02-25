@@ -246,9 +246,9 @@ class ClusterLoader(paddle.io.DataLoader):
         form mini-batches of clusters.
         For an example of using Cluster-GCN, see
         `examples/cluster_gcn_reddit.py <https://github.com/pyg-team/
-        pytorch_geometric/blob/master/examples/cluster_gcn_reddit.py>`_ or
+        pypaddle_geometric/blob/master/examples/cluster_gcn_reddit.py>`_ or
         `examples/cluster_gcn_ppi.py <https://github.com/pyg-team/
-        pytorch_geometric/blob/master/examples/cluster_gcn_ppi.py>`_.
+        pypaddle_geometric/blob/master/examples/cluster_gcn_ppi.py>`_.
 
     Args:
         cluster_data (paddle_geometric.loader.ClusterData): The already

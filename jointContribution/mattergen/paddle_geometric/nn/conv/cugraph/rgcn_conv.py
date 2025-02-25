@@ -25,7 +25,7 @@ class CuGraphRGCNConv(CuGraphModule):  # pragma: no cover
     <https://arxiv.org/abs/1703.06103>`_ paper.
 
     :class:`CuGraphRGCNConv` is an optimized version of
-    :class:`~torch_geometric.nn.conv.RGCNConv` based on the :obj:`cugraph-ops`
+    :class:`~paddle_geometric.nn.conv.RGCNConv` based on the :obj:`cugraph-ops`
     package that fuses message passing computation for accelerated execution
     and lower memory footprint.
     """

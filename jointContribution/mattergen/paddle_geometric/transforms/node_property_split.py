@@ -46,8 +46,8 @@ class NodePropertySplit(BaseTransform):
 
     .. code-block:: python
 
-        from torch_geometric.transforms import NodePropertySplit
-        from torch_geometric.datasets.graph_generator import ERGraph
+        from paddle_geometric.transforms import NodePropertySplit
+        from paddle_geometric.datasets.graph_generator import ERGraph
 
         data = ERGraph(num_nodes=1000, edge_prob=0.4)()
 

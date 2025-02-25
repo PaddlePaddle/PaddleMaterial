@@ -12,7 +12,7 @@ def unfaithfulness(
     explanation: Explanation,
     top_k: Optional[int] = None,
 ) -> float:
-    r"""Evaluates how faithful an :class:`~torch_geometric.explain.Explanation`
+    r"""Evaluates how faithful an :class:`~paddle_geometric.explain.Explanation`
     is to an underyling GNN predictor, as described in the
     `"Evaluating Explainability for Graph Neural Networks"
     <https://arxiv.org/abs/2208.09339>`_ paper.

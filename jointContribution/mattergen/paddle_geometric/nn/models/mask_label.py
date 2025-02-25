@@ -15,7 +15,7 @@ class MaskLabel(nn.Layer):
 
         For an example of using :class:`MaskLabel`, see
         `examples/unimp_arxiv.py <https://github.com/pyg-team/
-        pytorch_geometric/blob/master/examples/unimp_arxiv.py>`_.
+        pypaddle_geometric/blob/master/examples/unimp_arxiv.py>`_.
 
 
     Args:

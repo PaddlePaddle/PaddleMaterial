@@ -3,7 +3,7 @@ import typing
 import torch
 from torch import Tensor
 
-import torch_geometric.typing
+import paddle_geometric.typing
 {% for module in modules %}
 from {{module}} import *
 {%- endfor %}

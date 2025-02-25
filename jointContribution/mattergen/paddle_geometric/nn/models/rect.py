@@ -16,7 +16,7 @@ class RECT_L(paddle.nn.Layer):
     .. note::
 
         For an example of using RECT, see `examples/rect.py
-        <https://github.com/pyg-team/pytorch_geometric/blob/master/examples/
+        <https://github.com/pyg-team/pypaddle_geometric/blob/master/examples/
         rect.py>`_.
 
     Args:

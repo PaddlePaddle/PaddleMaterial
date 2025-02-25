@@ -568,8 +568,8 @@ class IBMBBatchLoader(IBMBBaseLoader):
     mini-batches are collated on-the-fly.
 
     Args:
-        data (torch_geometric.data.Data): A
-            :class:`~torch_geometric.data.Data` object.
+        data (paddle_geometric.data.Data): A
+            :class:`~paddle_geometric.data.Data` object.
         batch_order (str): A string indicating the batch order type (one of
             :obj:`"order"`, :obj:`"sample"` or :obj:`"rand"`).
             If :obj:`"order"`, calculates the pair-wise KL divergence between
@@ -709,13 +709,13 @@ class IBMBNodeLoader(IBMBBaseLoader):
     auxiliary nodes.
     Afterwards, input nodes are merged according to their pair-wise PPR scores.
 
-    Similar to :class:`~torch_geometric.loader.IBMBBatchLoader`, subgraphs are
+    Similar to :class:`~paddle_geometric.loader.IBMBBatchLoader`, subgraphs are
     cached in memory for :obj:`batch_size = 1`, and collated on-the-fly
     otherwise.
 
     Args:
-        data (torch_geometric.data.Data): A
-            :class:`~torch_geometric.data.Data` object.
+        data (paddle_geometric.data.Data): A
+            :class:`~paddle_geometric.data.Data` object.
         batch_order (str): A string indicating the batch order type (one of
             :obj:`"order"`, :obj:`"sample"` or :obj:`"rand"`).
             If :obj:`"order"`, calculates the pair-wise KL divergence between

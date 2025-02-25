@@ -12,8 +12,8 @@ def fidelity(
     explanation: Explanation,
 ) -> Tuple[float, float]:
     r"""Evaluates the fidelity of an
-    :class:`~torch_geometric.explain.Explainer` given an
-    :class:`~torch_geometric.explain.Explanation`, as described in the
+    :class:`~paddle_geometric.explain.Explainer` given an
+    :class:`~paddle_geometric.explain.Explanation`, as described in the
     `"GraphFramEx: Towards Systematic Evaluation of Explainability Methods for
     Graph Neural Networks" <https://arxiv.org/abs/2206.09677>`_ paper.
 

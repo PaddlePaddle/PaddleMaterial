@@ -82,7 +82,7 @@ class AirfRANS(InMemoryDataset):
           - 5
           - 4
     """
-    url = 'https://data.isir.upmc.fr/extrality/pytorch_geometric/AirfRANS.zip'
+    url = 'https://data.isir.upmc.fr/extrality/pypaddle_geometric/AirfRANS.zip'
     tasks = ['full', 'scarce', 'reynolds', 'aoa']
 
     def __init__(

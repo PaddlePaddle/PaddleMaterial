@@ -39,7 +39,7 @@ def fps(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import fps
+        from paddle_geometric.nn import fps
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch = torch.tensor([0, 0, 0, 0])
@@ -80,7 +80,7 @@ def knn(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import knn
+        from paddle_geometric.nn import knn
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch_x = torch.tensor([0, 0, 0, 0])
@@ -133,7 +133,7 @@ def knn_graph(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import knn_graph
+        from paddle_geometric.nn import knn_graph
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch = torch.tensor([0, 0, 0, 0])
@@ -190,7 +190,7 @@ def radius(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import radius
+        from paddle_geometric.nn import radius
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch_x = torch.tensor([0, 0, 0, 0])
@@ -249,7 +249,7 @@ def radius_graph(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import radius_graph
+        from paddle_geometric.nn import radius_graph
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch = torch.tensor([0, 0, 0, 0])
@@ -308,7 +308,7 @@ def nearest(
     .. code-block:: python
 
         import torch
-        from torch_geometric.nn import nearest
+        from paddle_geometric.nn import nearest
 
         x = torch.tensor([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
         batch_x = torch.tensor([0, 0, 0, 0])

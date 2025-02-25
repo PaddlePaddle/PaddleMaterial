@@ -80,7 +80,7 @@ def to_captum_model(
     .. note::
         For an example of using a :captum:`Captum` attribution method within
         :pyg:`PyG`, see `examples/explain/captum_explainer.py
-        <https://github.com/pyg-team/pytorch_geometric/blob/master/examples/
+        <https://github.com/pyg-team/pypaddle_geometric/blob/master/examples/
         explain/captum_explainer.py>`_.
 
     Args:

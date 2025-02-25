@@ -130,7 +130,7 @@ class GraphSAINTSampler(DataLoader):
 
 class GraphSAINTNodeSampler(GraphSAINTSampler):
     r"""The GraphSAINT node sampler class (see
-    :class:`~torch_geometric.loader.GraphSAINTSampler`).
+    :class:`~paddle_geometric.loader.GraphSAINTSampler`).
     """
     def _sample_nodes(self, batch_size):
         edge_sample = paddle.randint(0, self.E, (batch_size, self.batch_size),
@@ -141,7 +141,7 @@ class GraphSAINTNodeSampler(GraphSAINTSampler):
 
 class GraphSAINTEdgeSampler(GraphSAINTSampler):
     r"""The GraphSAINT edge sampler class (see
-    :class:`~torch_geometric.loader.GraphSAINTSampler`).
+    :class:`~paddle_geometric.loader.GraphSAINTSampler`).
     """
     def _sample_nodes(self, batch_size):
         row, col, _ = self.adj.coo()
@@ -161,7 +161,7 @@ class GraphSAINTEdgeSampler(GraphSAINTSampler):
 
 class GraphSAINTRandomWalkSampler(GraphSAINTSampler):
     r"""The GraphSAINT random walk sampler class (see
-    :class:`~torch_geometric.loader.GraphSAINTSampler`).
+    :class:`~paddle_geometric.loader.GraphSAINTSampler`).
 
     Args:
         walk_length (int): The length of each random walk.

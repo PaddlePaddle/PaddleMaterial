@@ -23,7 +23,7 @@ class CuGraphGATConv(CuGraphModule):  # pragma: no cover
     <https://arxiv.org/abs/1710.10903>`_ paper.
 
     :class:`CuGraphGATConv` is an optimized version of
-    :class:`~torch_geometric.nn.conv.GATConv` based on the :obj:`cugraph-ops`
+    :class:`~paddle_geometric.nn.conv.GATConv` based on the :obj:`cugraph-ops`
     package that fuses message passing computation for accelerated execution
     and lower memory footprint.
     """

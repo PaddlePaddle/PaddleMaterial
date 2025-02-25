@@ -29,11 +29,11 @@ class EllipticBitcoinTemporalDataset(EllipticBitcoinDataset):
         t (int): The Timestep for which nodes should be selected (from :obj:`1`
             to :obj:`49`).
         transform (callable, optional): A function/transform that takes in an
-            :obj:`torch_geometric.data.Data` object and returns a transformed
+            :obj:`paddle_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.
             (default: :obj:`None`)
         pre_transform (callable, optional): A function/transform that takes in
-            an :obj:`torch_geometric.data.Data` object and returns a
+            an :obj:`paddle_geometric.data.Data` object and returns a
             transformed version. The data object will be transformed before
             being saved to disk. (default: :obj:`None`)
         force_reload (bool, optional): Whether to re-process the dataset.

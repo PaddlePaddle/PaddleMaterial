@@ -8,7 +8,7 @@ from paddle_geometric.transforms import BaseTransform
 @functional_transform('to_device')
 class ToDevice(BaseTransform):
     r"""Performs tensor device conversion, either for all attributes of the
-    :obj:`~torch_geometric.data.Data` object or only the ones given by
+    :obj:`~paddle_geometric.data.Data` object or only the ones given by
     :obj:`attrs` (functional name: :obj:`to_device`).
 
     Args:
