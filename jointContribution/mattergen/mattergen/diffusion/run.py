@@ -1,23 +1,15 @@
-
 import os
 import os.path as osp
 import random
-import re
-from glob import glob
-from typing import Any, Mapping, TypeVar
+from typing import  Mapping, TypeVar
 
 import numpy as np
 import paddle
 import paddle.distributed as dist
-import yaml
 from hydra.utils import instantiate
-from mattergen.common.utils.config_utils import get_config
-from mattergen.diffusion.config import Config
-from mattergen.diffusion.exceptions import AmbiguousConfig
-from mattergen.diffusion.trainer import TrainerDiffusion
-# from mattergen.diffusion.lightning_module import DiffusionLightningModule
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
+from mattergen.diffusion.trainer import TrainerDiffusion
 from mattergen.utils import logger
 from mattergen.common.data.utils import set_signal_handlers
 from paddle_utils import *
@@ -29,10 +21,7 @@ if dist.get_world_size() > 1:
 T = TypeVar("T")
 
 
-
-def maybe_instantiate(
-    instance_or_config: (T | Mapping), expected_type=None, **kwargs
-) -> T:
+def maybe_instantiate(instance_or_config: T | Mapping, expected_type=None, **kwargs) -> T:
     """
     If instance_or_config is a mapping with a _target_ field, instantiate it.
     Otherwise, return it as is.
@@ -46,36 +35,32 @@ def maybe_instantiate(
     ), f"Expected {expected_type}, got {type(instance)}"
     return instance
 
-class SimpleParser:
-    def save(self, config, path, **_):
-        with open(path, "w") as f:
-            yaml.dump(config, f)
 
-
-
-def main(config, seed: (int | None) = None):
-
+def main(config, seed: int | None = None):
     """
     Main entry point to train and evaluate a diffusion model.
 
-    save_config: if True, the config will be saved both as a YAML file and in each checkpoint. This doesn't work if the config contains things that can't be `yaml.dump`-ed, so
-    if you don't care about saving and loading checkpoints and want to use a config that contains things like `torch.nn.Module`s already instantiated, set this to False.
+    save_config: if True, the config will be saved both as a YAML file and in each 
+    checkpoint. This doesn't work if the config contains things that can't be 
+    `yaml.dump`-ed, so if you don't care about saving and loading checkpoints and want 
+    to use a config that contains things like `torch.nn.Module`s already instantiated, 
+    set this to False.
     """
 
     if dist.get_rank() == 0:
         os.makedirs(config.trainer.output_dir, exist_ok=True)
-        OmegaConf.save(config, osp.join(config.trainer.output_dir, 'config.yaml'))
+        OmegaConf.save(config, osp.join(config.trainer.output_dir, "config.yaml"))
 
     set_signal_handlers()
     logger.init_logger(
         log_file=osp.join(config.trainer.output_dir, f"{config.trainer.mode}.log")
     )
-    logger.info(f"Seeding everything with {seed}")
     seed = seed or config.trainer.seed
     if seed is not None:
         paddle.seed(seed=seed)
         np.random.seed(seed)
-        random.seed(seed)       
+        random.seed(seed)
+    logger.info(f"Seeding everything with {seed}")
 
     model = maybe_instantiate(config.lightning_module.diffusion_module)
     datamodule = maybe_instantiate(config.data_module)
@@ -84,9 +69,9 @@ def main(config, seed: (int | None) = None):
     optimizer_cfg = OmegaConf.to_container(optimizer_cfg, resolve=True)
     optimizer_cfg.update(
         dict(
-            model_list=model, 
-            epochs=config.trainer.max_epochs, 
-            iters_per_epoch=len(datamodule.train_dataloader())
+            model_list=model,
+            epochs=config.trainer.max_epochs,
+            iters_per_epoch=len(datamodule.train_dataloader()),
         )
     )
 
@@ -94,7 +79,7 @@ def main(config, seed: (int | None) = None):
 
     trainer = TrainerDiffusion(
         config=config,
-        model = model,
+        model=model,
         train_dataloader=datamodule.train_dataloader(),
         val_dataloader=datamodule.val_dataloader(),
         test_dataloader=datamodule.test_dataloader(),
@@ -109,5 +94,3 @@ def main(config, seed: (int | None) = None):
     elif config.trainer.mode == "test":
         if dist.get_rank == 0:
             trainer.test()
-
-
