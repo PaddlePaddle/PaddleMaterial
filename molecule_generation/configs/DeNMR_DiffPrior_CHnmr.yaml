@@ -1,0 +1,149 @@
+Global:
+  name: 'm2m-model'
+  gpus: 1
+Trainer:
+  epochs: 1000
+  seed: 42
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  pretrained_model_path: null # set your pretrained model path here
+  val_check_interval: null
+  evaluate_all_checkpoints: False
+  test_only: null
+  check_val_every_n_epochs: 1
+  sample_every_val: 1
+  number_chain_steps: 1        # Number of frames in each gif
+  final_model_samples_to_generate: 512
+  final_model_samples_to_save: 512
+  final_model_chains_to_save: 512
+  # scale_grad: null
+  Optimizer:
+    __name__: AdamW
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __name__: "Cosine"
+      warmup_epoch: 2
+      learning_rate: 0.0003
+    weight_decay: 0.01
+    epsilon: 1e-06
+    clip_norm: 0.5
+    #group_wd_params: True
+Tracker:
+  log:
+    log_freq: 500 # log frequency [step]
+  save:
+    output_dir: "./output/DeNMR_CHnmr/DiffPrior"
+    save_freq: 100 # set 0 to disable saving during training
+    is_save_traj: False
+Sampler:
+  samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
+  samples_to_save: 1
+  chains_to_save: 1
+Model:
+  __name__: "DiffusionPriorModel"
+  CLIP:
+    nmr_encoder:
+      pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+      enc_voc_size: 5450
+      max_len: 256
+      d_model: 256
+      ffn_hidden: 1024
+      n_head: 8
+      n_layers: 3
+      drop_prob: 0.0
+      projector:
+        __name__: Linear
+        pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+        outfeatures: 512
+    graph_encoder:
+      pretrained_model_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=438.pdparams"
+      n_layers_GT: 5
+      input_dims:
+        X: 17
+        E: 5
+        y: 525
+      hidden_mlp_dims:
+        X: 256
+        E: 128
+        y: 256
+      hidden_dims: {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
+      output_dims: {'X': 9, 'E': 5, 'y': 0}
+    diffusion_model: # to be deleted
+      extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+      conditdim: 512
+  diffusion_model: # to be deleted
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    conditdim: 512
+  prior_network:
+    dim: 512
+    num_timesteps: 1000
+    num_time_embeds: 1
+    num_graph_embeds: 1
+    num_text_embeds: 1
+    max_text_len: 256
+    self_cond: False
+    depth: 6
+    dim_head: 64
+    heads: 8
+  graph_embed_dim: 512
+  timesteps: 1000
+  sample_timesteps: 64
+  cond_drop_prob: 0.1
+  text_cond_drop_prob: 0.05
+  graph_cond_drop_prob: 0.05
+  loss_type: "l2"
+  predict_x_start: true
+  predict_v: false
+  beta_schedule: "cosine"
+  condition_on_text_encodings: false
+  sampling_clamp_l2norm: false
+  sampling_final_clamp_l2norm: false
+  training_clamp_l2norm: false
+  init_graph_embed_l2norm: false
+  graph_embed_scale: null
+  # clip_adapter_overrides: {}
+Dataset:
+  train:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/train.csv"
+      vocab_path: "./data/CHnmr/vocab.src"
+      datadir: "./data/CHnmr"
+      cache: True
+      remove_h: True
+      stage: "train"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 64
+  val:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/val.csv"
+      vocab_path: "./data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "val"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/test.csv"
+      vocab_path: "./data/CHnmr/vocab.src"
+      cache: True
+      remove_h: True
+      stage: "test"
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
