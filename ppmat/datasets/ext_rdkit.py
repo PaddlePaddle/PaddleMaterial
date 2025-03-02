@@ -5,10 +5,12 @@ import re
 import numpy as np
 import paddle
 
+from ppmat.utils import logger
+
 try:
     from rdkit import Chem
 
-    print("Found rdkit, all good")
+    logger.message(print("Found rdkit, all good"))
 except ModuleNotFoundError as e:
     use_rdkit = False
     from warnings import warn
@@ -130,9 +132,9 @@ class BasicMolecularMetrics(object):
                     smiles = mol2smiles(largest_mol)
                     valid.append(smiles)
                 except Chem.rdchem.AtomValenceException:
-                    print("Valence error in GetmolFrags")
+                    logger.info("Valence error in GetmolFrags")
                 except Chem.rdchem.KekulizeException:
-                    print("Can't kekulize molecule")
+                    logger.info("Can't kekulize molecule")
         return valid, len(valid) / len(generated)
 
     def evaluate(self, generated):
@@ -142,12 +144,12 @@ class BasicMolecularMetrics(object):
         nc_mu = num_components.mean() if len(num_components) > 0 else 0
         nc_min = num_components.min() if len(num_components) > 0 else 0
         nc_max = num_components.max() if len(num_components) > 0 else 0
-        print(f"Validity over {len(generated)} molecules: {validity * 100:.2f}%")
-        print(
+        logger.info(f"Validity over {len(generated)} molecules: {validity * 100:.2f}%")
+        logger.info(
             f"Number of connected components of {len(generated)} molecules: min:{nc_min:.2f} mean:{nc_mu:.2f} max:{nc_max:.2f}"
         )
         relaxed_valid, relaxed_validity = self.compute_relaxed_validity(generated)
-        print(
+        logger.info(
             f"Relaxed validity over {len(generated)} molecules: {relaxed_validity * 100:.2f}%"
         )
         if relaxed_validity > 0:

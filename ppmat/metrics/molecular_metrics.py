@@ -1,11 +1,13 @@
-from typing import List
+from typing import Any, List
 from typing import Union
 
 import paddle
 import wandb
 
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
+from ppmat.utils import logger
 
+import os
 # from rdkit import Chem
 
 
@@ -56,6 +58,10 @@ class MeanAbsoluteError(paddle.metric.Metric):
         self.sum_abs_error = 0.0
         self.total_samples = 0
 
+    def __call__(self, preds, target):
+        self.update(preds, target)
+        return self.accumulate()
+    
     def update(self, preds, target):
         abs_error = paddle.abs(preds - target).sum().item()
         self.sum_abs_error += abs_error
@@ -84,6 +90,10 @@ class MeanSquaredError(paddle.metric.Metric):
         squared_error = paddle.square(preds - target).sum().item()
         self.sum_squared_error += squared_error
         self.total_samples += target.shape[0]
+        
+    def __call__(self, preds, target):
+        self.update(preds, target)
+        return self.accumulate()
 
     def accumulate(self):
         return (
@@ -105,7 +115,7 @@ class MetricCollection:
         for metric in self.metrics.values():
             metric.update(preds, target)
 
-    def compute(self):
+    def accumulate(self):
         results = {}
         for name, metric in self.metrics.items():
             results[name] = metric.accumulate()
@@ -139,9 +149,9 @@ class TrainMolecularMetrics(paddle.nn.Layer):
         self.train_bond_metrics(masked_pred_epsE, true_epsE)
         if log:
             to_log = {}
-            for key, val in self.train_atom_metrics.compute().items():
+            for key, val in self.train_atom_metrics.accumulate().items():
                 to_log["train/" + key] = val.item()
-            for key, val in self.train_bond_metrics.compute().items():
+            for key, val in self.train_bond_metrics.accumulate().items():
                 to_log["train/" + key] = val.item()
             if wandb.run:
                 wandb.log(to_log, commit=False)
@@ -151,8 +161,8 @@ class TrainMolecularMetrics(paddle.nn.Layer):
             metric.reset()
 
     def log_epoch_metrics(self):
-        epoch_atom_metrics = self.train_atom_metrics.compute()
-        epoch_bond_metrics = self.train_bond_metrics.compute()
+        epoch_atom_metrics = self.train_atom_metrics.accumulate()
+        epoch_bond_metrics = self.train_bond_metrics.accumulate()
         to_log = {}
         for key, val in epoch_atom_metrics.items():
             to_log["train_epoch/epoch" + key] = val.item()
@@ -207,7 +217,7 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         self.dataset_info = di
 
     def forward(
-        self, molecules: list, name, current_epoch, val_counter, local_rank, test=False
+        self, molecules: list, current_epoch, val_counter, local_rank, output_dir, test=False
     ):
         stability, rdkit_metrics, all_smiles = compute_molecular_metrics(
             molecules, self.train_smiles, self.dataset_info
@@ -216,19 +226,19 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
             with open("final_smiles.txt", "w") as fp:
                 for smiles in all_smiles:
                     fp.write("%s\n" % smiles)
-                print("All smiles saved")
-        print("Starting custom metrics")
+                logger.message("All smiles saved")
+        logger.message("Starting custom metrics")
         self.generated_n_dist(molecules)
-        generated_n_dist = self.generated_n_dist.compute()
+        generated_n_dist = self.generated_n_dist.accumulate()
         self.n_dist_mae(generated_n_dist)
         self.generated_node_dist(molecules)
-        generated_node_dist = self.generated_node_dist.compute()
+        generated_node_dist = self.generated_node_dist.accumulate()
         self.node_dist_mae(generated_node_dist)
         self.generated_edge_dist(molecules)
-        generated_edge_dist = self.generated_edge_dist.compute()
+        generated_edge_dist = self.generated_edge_dist.accumulate()
         self.edge_dist_mae(generated_edge_dist)
         self.generated_valency_dist(molecules)
-        generated_valency_dist = self.generated_valency_dist.compute()
+        generated_valency_dist = self.generated_valency_dist.accumulate()
         self.valency_dist_mae(generated_valency_dist)
         to_log = {}
         for i, atom_type in enumerate(self.dataset_info.atom_decoder):
@@ -251,10 +261,10 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
             to_log[f"molecular_metrics/valency_{valency}_dist"] = (
                 generated_probability - target_probability
             ).item()
-        n_mae = self.n_dist_mae.compute()
-        node_mae = self.node_dist_mae.compute()
-        edge_mae = self.edge_dist_mae.compute()
-        valency_mae = self.valency_dist_mae.compute()
+        n_mae = self.n_dist_mae.accumulate()
+        node_mae = self.node_dist_mae.accumulate()
+        edge_mae = self.edge_dist_mae.accumulate()
+        valency_mae = self.valency_dist_mae.accumulate()
         if wandb.run:
             wandb.log(to_log, commit=False)
             wandb.run.summary["Gen n distribution"] = generated_n_dist
@@ -271,16 +281,7 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
                 commit=False,
             )
         if local_rank == 0:
-            print("Custom metrics computed.")
-        if local_rank == 0:
-            valid_unique_molecules = rdkit_metrics[1]
-            textfile = open(
-                f"graphs/{name}/valid_unique_molecules_e{current_epoch}_b{val_counter}.txt",
-                "w",
-            )
-            textfile.writelines(valid_unique_molecules)
-            textfile.close()
-            print("Stability metrics:", stability, "--", rdkit_metrics[0])
+            logger.message("Custom metrics computed.")
 
     def reset(self):
         for metric in [
@@ -308,8 +309,13 @@ class GeneratedNDistribution(Metric):
             atom_types, _ = molecule
             n = tuple(atom_types.shape)[0]
             self.n_dist[n] += 1
+            
+    def __call__(self, molecules):
+        self.update(molecules)
+        return self.n_dist / paddle.sum(x=self.n_dist)
+                
 
-    def compute(self):
+    def accumulate(self):
         return self.n_dist / paddle.sum(x=self.n_dist)
 
 
@@ -335,8 +341,12 @@ class GeneratedNodesDistribution(Metric):
                 assert int(atom_type) != -1, error_message
                 self.node_dist[int(atom_type)] += 1
 
-    def compute(self):
+    def accumulate(self):
         return self.node_dist / paddle.sum(x=self.node_dist)
+    
+    def __call__(self, molecules):
+        self.update(molecules)
+        return self.accumulate()
 
 
 class GeneratedEdgesDistribution(Metric):
@@ -360,8 +370,12 @@ class GeneratedEdgesDistribution(Metric):
             for type, count in zip(unique_edge_types, counts):
                 self.edge_dist[type] += count
 
-    def compute(self):
+    def accumulate(self):
         return self.edge_dist / paddle.sum(x=self.edge_dist)
+    
+    def __call__(self, molecules):
+        self.update(molecules)
+        return self.accumulate()
 
 
 class MeanNumberEdge(Metric):
@@ -384,7 +398,7 @@ class MeanNumberEdge(Metric):
             self.total_edge += len(bonds)
         self.total_samples += len(molecules)
 
-    def compute(self):
+    def accumulate(self):
         return self.total_edge / self.total_samples
 
 
@@ -408,8 +422,12 @@ class ValencyDistribution(Metric):
             for valency, count in zip(unique, counts):
                 self.edgepernode_dist[valency] += count
 
-    def compute(self):
+    def accumulate(self):
         return self.edgepernode_dist / paddle.sum(x=self.edgepernode_dist)
+    
+    def __call__(self, molecules):
+        self.update(molecules)
+        return self.accumulate()
 
 
 class HistogramsMAE(MeanAbsoluteError):
@@ -423,6 +441,10 @@ class HistogramsMAE(MeanAbsoluteError):
         pred = pred / pred.sum()
         self.target_histogram = self.target_histogram.astype(dtype=pred.dtype)
         super().update(pred, self.target_histogram)
+    
+    def __call__(self, pred):
+        self.update(pred)
+        return self.accumulate()
 
 
 class MSEPerClass(MeanSquaredError):
@@ -595,5 +617,5 @@ if __name__ == "__main__":
     targets = paddle.to_tensor([2.0, 2.0, 6.0])
 
     metric_collection.update(preds, targets)
-    results = metric_collection.compute()
+    results = metric_collection.accumulate()
     print("Results:", results)

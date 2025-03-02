@@ -11,7 +11,7 @@ import paddle
 import pandas as pd
 from pgl.math import segment_sum
 
-from ppmat.models.digress.placeholder import PlaceHolder
+from ppmat.models.denmr.placeholder import PlaceHolder
 
 
 def subgraph(

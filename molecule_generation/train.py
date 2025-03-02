@@ -13,18 +13,18 @@ from ppmat.datasets.CHnmr_dataset import get_train_smiles
 # from ppmat.datasets import set_signal_handlers
 from ppmat.metrics.molecular_metrics import SamplingMolecularMetrics
 from ppmat.metrics.molecular_metrics_discrete import TrainMolecularMetricsDiscrete
-from ppmat.models.digress.base_model import ContrastiveModel
-from ppmat.models.digress.base_model import DiffusionPriorModel
-from ppmat.models.digress.base_model import MolecularGraphTransformer
-from ppmat.models.digress.base_model import MultiModalDecoder
-from ppmat.models.digress.diffusion_prior import DiffusionPriorNetwork
-from ppmat.models.digress.extra_features_graph import DummyExtraFeatures
-from ppmat.models.digress.extra_features_graph import ExtraFeatures
-from ppmat.models.digress.extra_features_molecular_graph import ExtraMolecularFeatures
+from ppmat.models.denmr.base_model import ContrastiveModel
+from ppmat.models.denmr.base_model import DiffusionPriorModel
+from ppmat.models.denmr.base_model import MolecularGraphTransformer
+from ppmat.models.denmr.base_model import MultiModalDecoder
+from ppmat.models.denmr.diffusion_prior import DiffusionPriorNetwork
+from ppmat.models.denmr.extra_features_graph import DummyExtraFeatures
+from ppmat.models.denmr.extra_features_graph import ExtraFeatures
+from ppmat.models.denmr.extra_features_molecular_graph import ExtraMolecularFeatures
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.trainer_multimodal import TrainerCLIP
-from ppmat.trainer.trainer_multimodal import TrainerDiffusionPrior
-from ppmat.trainer.trainer_multimodal import TrainerGraph
+from ppmat.trainer.trainer_multimodal import TrainerDiffPrior
+from ppmat.trainer.trainer_multimodal import TrainerDiffGraphFormer
 from ppmat.trainer.trainer_multimodal import TrainerMMDecoder
 from ppmat.utils import logger
 from ppmat.utils import misc
@@ -117,7 +117,9 @@ if __name__ == "__main__":
     sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
     # visualization tools
     visualization_tools = MolecularVisualization(
-        config["Dataset"]["train"]["dataset"]["remove_h"], dataset_infos=dataset_infos
+        config["Dataset"]["train"]["dataset"]["remove_h"], 
+        dataset_infos=dataset_infos,
+        output_dir=config["Tracker"]["save"]["output_dir"],
     )
     # build model configures
     model_kwargs = {
@@ -141,7 +143,7 @@ if __name__ == "__main__":
             len(train_loader),
         )
         # build trainers
-        trainer = TrainerGraph(
+        trainer = TrainerDiffGraphFormer(
             config,
             model,
             train_dataloader=train_loader,
@@ -199,7 +201,7 @@ if __name__ == "__main__":
             len(train_loader),
         )
         # build trainer
-        trainer = TrainerDiffusionPrior(
+        trainer = TrainerDiffPrior(
             config,
             model,
             train_dataloader=train_loader,

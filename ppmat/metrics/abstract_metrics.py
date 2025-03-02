@@ -1,3 +1,4 @@
+from typing import Any
 import paddle
 import paddle.nn.functional as F
 from paddle.metric import Metric
@@ -87,6 +88,13 @@ class SumExceptBatchMetric(Metric):
         """
         self.total_value += paddle.sum(values)
         self.total_samples += paddle.shape(values)[0]
+    
+    def __call__(self, values: paddle.Tensor):
+        
+        self.update(values)
+        summetric = self.total_value / self.total_samples
+        # self.reset()
+        return summetric
 
     def accumulate(self) -> paddle.Tensor:
         """
@@ -189,6 +197,18 @@ class SumExceptBatchKL(Metric):
         self.total_value += kl
         self.total_samples += paddle.shape(p)[0]
 
+    def __call__(self, preds: paddle.Tensor, target: paddle.Tensor):
+        """
+        Compute the average KL divergences.
+
+        Returns:
+            paddle.Tensor: The average cross-entropy loss.
+        """
+        self.update(preds, target)
+        kl_divergence = self.total_value / self.total_samples
+        #self.reset()
+        return kl_divergence
+
     def accumulate(self) -> paddle.Tensor:
         """
         Compute the average KL divergence.
@@ -203,7 +223,6 @@ class CrossEntropyMetric(Metric):
     def __init__(self):
         super().__init__()
         self.reset()
-        self.accumulate = paddle.to_tensor(0.0, dtype="float32")
 
     def name(self):
         self.name = self.__class__.__name__
@@ -240,10 +259,9 @@ class CrossEntropyMetric(Metric):
             paddle.Tensor: The average cross-entropy loss.
         """
         self.update(preds, target)
-        self.accumulate += self.total_ce
-        loss = self.total_ce / self.total_samples
+        ce = self.total_ce / self.total_samples
         self.reset()
-        return loss
+        return ce
 
     def accumulate(self) -> paddle.Tensor:
         return self.accumulate
@@ -273,6 +291,11 @@ class ProbabilityMetric(Metric):
         """
         self.prob += paddle.sum(preds)
         self.total += paddle.numel(preds)
+    
+    def __call__(self, preds: paddle.Tensor):
+        self.update(preds)
+        nll_ave = self.total_nll / self.total_samples
+        return nll_ave
 
     def accumulate(self) -> paddle.Tensor:
         """
@@ -313,6 +336,11 @@ class NLL(Metric):
         """
         self.total_nll += paddle.sum(batch_nll)
         self.total_samples += paddle.numel(batch_nll)
+        
+    def __call__(self, batch_nll: paddle.Tensor):
+        self.update(batch_nll)
+        nll_ave = self.total_nll / self.total_samples
+        return nll_ave
 
     def accumulate(self) -> paddle.Tensor:
         """

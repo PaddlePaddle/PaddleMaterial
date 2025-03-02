@@ -116,7 +116,6 @@ class TrainLossDiscrete(nn.Layer):
         true_X,
         true_E,
         true_y,
-        log: bool = False,
     ):
         """
         Compute train metrics
@@ -126,7 +125,6 @@ class TrainLossDiscrete(nn.Layer):
         true_X : tensor -- (bs, n, dx)
         true_E : tensor -- (bs, n, n, de)
         true_y : tensor -- (bs, )
-        log : boolean.
         """
         # 重塑张量
         true_X = paddle.reshape(true_X, [-1, true_X.shape[-1]])  # (bs * n, dx)
@@ -163,24 +161,17 @@ class TrainLossDiscrete(nn.Layer):
             self.y_loss(pred_y, true_y) if true_y.numel() > 0 else paddle.to_tensor(0.0)
         )
 
-        if log:
-            to_log = {
-                "train_loss/batch_CE": (loss_X + loss_E + loss_y).detach(),
-                "train_loss/X_CE": self.node_loss.accumulate().item()
-                if true_X.numel() > 0
-                else -1,
-                "train_loss/E_CE": self.edge_loss.accumulate().item()
-                if true_E.numel() > 0
-                else -1,
-                "train_loss/y_CE": self.y_loss.accumulate().item()
-                if true_y.numel() > 0
-                else -1,
-            }
-            if wandb.run:
-                wandb.log(to_log, commit=True)
-
         # 返回加权损失
-        return loss_X + self.lambda_train[0] * loss_E + self.lambda_train[1] * loss_y
+        Sloss = loss_X + loss_E + loss_y
+        Wloss = loss_X + self.lambda_train[0] * loss_E + self.lambda_train[1] * loss_y
+        
+        return {
+            "train_loss":Wloss, 
+            "batch_CE":Sloss, 
+            "X_CE":loss_X, 
+            "E_CE":loss_E, 
+            "Y_CE":loss_y
+        }
 
     def reset(self):
         # 重置所有交叉熵指标

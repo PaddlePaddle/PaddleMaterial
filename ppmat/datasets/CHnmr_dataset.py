@@ -25,8 +25,9 @@ from ppmat.datasets.ext_rdkit import build_molecule_with_partial_charges
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.datasets.ext_rdkit import mol2smiles
 from ppmat.datasets.utils import numericalize_text
-from ppmat.models.digress.distributions import DistributionNodes
-from ppmat.models.digress.utils import digressutils as utils
+from ppmat.models.denmr.distributions import DistributionNodes
+from ppmat.models.denmr.utils import digressutils as utils
+from ppmat.utils import logger
 
 
 class RemoveYTransform:
@@ -514,10 +515,10 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"
     smiles_path = os.path.join(datadir, smiles_file_name)
     if os.path.exists(smiles_path):
-        print("Dataset smiles were found.")
+        logger.info("Dataset smiles were found.")
         train_smiles = np.load(smiles_path)
     else:
-        print("Computing dataset smiles...")
+        logger.message("Computing dataset smiles...")
         train_smiles = compute_CHnmr_smiles(atom_decoder, dataloader, remove_h)
         # np.save(smiles_path, np.array(train_smiles))
     if evaluate_dataset:
@@ -533,7 +534,7 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
                 atom_types = X[k, :n].cpu()
                 edge_types = E[k, :n, :n].cpu()
                 all_molecules.append([atom_types, edge_types])
-        print(
+        logger.message(
             "Evaluating the dataset -- number of molecules to evaluate",
             len(all_molecules),
         )
@@ -542,18 +543,18 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
             train_smiles=train_smiles,
             dataset_info=dataset_infos,
         )
-        print(metrics[0])
+        logger.info(metrics[0])
     return train_smiles
 
 
 def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
-    print(f"\tConverting CHnmr dataset to SMILES for remove_h={remove_h}...")
+    logger.message(f"Converting CHnmr dataset to SMILES for remove_h={remove_h}...")
     mols_smiles = []
     len_train = len(dataloader)
     invalid = 0
     disconnected = 0
     for i, (data, _) in enumerate(dataloader()):
-        print("compute_CHnmr_smiles i:", i)
+        logger.info(f"compute_CHnmr_smiles i: {i:d}")
         dense_data, node_mask = utils.to_dense(
             data.node_feat["feat"],
             data.edges.T,
@@ -580,19 +581,15 @@ def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
                     mol, asMols=True, sanitizeFrags=True
                 )
                 if len(mol_frags) > 1:
-                    print("Disconnected molecule", mol, mol_frags)
+                    logger.info(f"Disconnected molecule {mol}, {mol_frags}")
                     disconnected += 1
             else:
-                print("Invalid molecule obtained.")
+                logger.info(f"Invalid molecule obtained.")
                 invalid += 1
         if i % 1000 == 0:
-            print(
-                "\tConverting CHnmr dataset to SMILES {0:.2%}".format(
-                    float(i) / len_train
-                )
-            )
-    print("Number of invalid molecules", invalid)
-    print("Number of disconnected molecules", disconnected)
+            logger.info(f"Converting CHnmr dataset to SMILES {float(i)/len_train:.2%}")
+    logger.info(f"Number of invalid molecules {invalid}")
+    logger.info(f"Number of disconnected molecules {disconnected}")
     return mols_smiles
 
 

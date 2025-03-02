@@ -13,11 +13,14 @@ from rdkit.Chem import Draw
 from rdkit.Chem import RDKFingerprint
 from rdkit.Geometry import Point3D
 
+from ppmat.utils import logger
+
 
 class MolecularVisualization:
-    def __init__(self, remove_h, dataset_infos):
+    def __init__(self, remove_h, dataset_infos, output_dir):
         self.remove_h = remove_h
         self.dataset_infos = dataset_infos
+        self.result_path = os.path.join(output_dir, f"graph/")
 
     def mol_from_graphs(self, node_list, adjacency_matrix):
         """
@@ -52,7 +55,7 @@ class MolecularVisualization:
         try:
             mol = mol.GetMol()
         except rdkit.Chem.KekulizeException:
-            print("Can't kekulize molecule")
+            logger.info("Can't kekulize molecule")
             mol = None
         return mol
 
@@ -61,9 +64,9 @@ class MolecularVisualization:
     ):
         if not os.path.exists(path):
             os.makedirs(path)
-        print(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
+        logger.message(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            print(f"Shortening to {len(molecules)}")
+            logger.message(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
@@ -71,24 +74,25 @@ class MolecularVisualization:
             try:
                 Draw.MolToFile(mol, file_path)
             except rdkit.Chem.KekulizeException:
-                print("Can't kekulize molecule")
+                logger.info("Can't kekulize molecule")
 
     def visualizeNmr(
         self,
-        path: str,
-        path_true,
+        batch_id,
         molecules: list,
         molecules_true,
         num_molecules_to_visualize: int,
         log="graph",
     ):
+        path = os.path.join(self.result_path, f"batch_{batch_id}_predicted")
+        path_true = os.path.join(self.result_path, f"batch_{batch_id}_true")
         if not os.path.exists(path):
             os.makedirs(path)
         if not os.path.exists(path_true):
             os.makedirs(path_true)
-        print(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
+        logger.message(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            print(f"Shortening to {len(molecules)}")
+            logger.info(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
@@ -103,11 +107,13 @@ class MolecularVisualization:
                 fp1 = RDKFingerprint(mol)
                 fp2 = RDKFingerprint(mol_true)
                 similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                print(f"Tanimoto相似度: {similarity}")
+                logger.info(f"Tanimoto相似度: {similarity}")
             except rdkit.Chem.KekulizeException:
-                print("Can't kekulize molecule")
+                logger.info("Can't kekulize molecule")
 
-    def visualize_chain(self, path, nodes_list, adjacency_matrix, trainer=None):
+    def visualize_chain(self, batch_id, i, nodes_list, adjacency_matrix, trainer=None):
+        path = os.path.join(self.result_path, f"chain/molecule_{batch_id}_{i}")
+        os.makedirs(path, exist_ok=True)
         RDLogger.DisableLog("rdApp.*")
         mols = [
             self.mol_from_graphs(nodes_list[i], adjacency_matrix[i])
@@ -145,7 +151,7 @@ class MolecularVisualization:
                 os.path.join(path, "{}_grid_image.png".format(path.split("/")[-1]))
             )
         except Chem.rdchem.KekulizeException:
-            print("Can't kekulize molecule")
+            logger.info("Can't kekulize molecule")
         return mols
 
 

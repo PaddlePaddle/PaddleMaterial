@@ -28,12 +28,13 @@ from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
 
-from ppmat.models.digress import diffusion_utils
+from ppmat.models.denmr import diffusion_utils
 
-# from ppmat.models.digress.noise_schedule import DiscreteUniformTransition
-# from ppmat.models.digress.noise_schedule import MarginalUniformTransition
-# from ppmat.models.digress.noise_schedule import PredefinedNoiseScheduleDiscrete
-from ppmat.models.digress.utils import digressutils as utils
+# from ppmat.models.denmr.noise_schedule import DiscreteUniformTransition
+# from ppmat.models.denmr.noise_schedule import MarginalUniformTransition
+# from ppmat.models.denmr.noise_schedule import PredefinedNoiseScheduleDiscrete
+from ppmat.models.denmr.utils import digressutils as utils
+from ppmat.models.denmr.utils.model_utils import mol_from_graphs
 
 # from ppmat.trainer.trainer_diffusion import TrainerDiffusion
 from ppmat.utils import logger
@@ -41,16 +42,16 @@ from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
 
-# from ppmat.models.digress.utils.diffusionprior_utils import l2norm
+import rdkit
+from rdkit.Chem import DataStructs
+from rdkit.Chem import RDKFingerprint
+
+# from ppmat.models.denmr.utils.diffusionprior_utils import l2norm
+# from ppmat.models.denmr.utils.diffusionprior_utils import l2norm
+# from ppmat.models.denmr.base_model import ContrastGraphTransformer
 
 
-# from ppmat.models.digress.utils.diffusionprior_utils import l2norm
-
-
-# from ppmat.models.digress.base_model import ContrastGraphTransformer
-
-
-class TrainerGraph:
+class TrainerDiffGraphFormer:
     """Class for Trainer."""
 
     def __init__(
@@ -188,7 +189,7 @@ class TrainerGraph:
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
 
-            loss_dict = self.model(batch_data)
+            loss_dict = self.model.sample(batch_data, iter_id)
 
             for key, value in loss_dict.items():
                 if isinstance(value, paddle.Tensor):
@@ -218,6 +219,122 @@ class TrainerGraph:
 
         return total_loss_avg
 
+    def eval_epoch_end(self, epoch_id):
+        metrics = [self.model.val_nll.accumulate(), self.model.val_X_kl.accumulate() * self.model.T, self.model.val_E_kl.accumulate() * self.model.T,
+                   self.model.val_X_logp.accumulate(), self.model.val_E_logp.accumulate()]
+
+        logger.info(f"Val NLL {metrics[0] :.2f} -- Val Atom type KL {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f}")
+
+        # Log val nll with default Lightning logger, so it can be monitored by checkpoint callback
+        val_nll = metrics[0]
+        logger.info(f"val/epoch_NLL {val_nll :.2f}")
+
+        if val_nll < self.model.best_val_nll:
+            self.model.best_val_nll = val_nll
+        logger.info(f'Val loss: {val_nll :.4f} \t Best val loss: {self.model.best_val_nll :.4f}')
+
+        self.model.val_counter += 1
+        if self.model.val_counter % self.config["Trainer"]["sample_every_val"] == 0:
+            start = time.time()
+            samples_left_to_generate = self.config["Trainer"]['samples_to_generate']
+            samples_left_to_save = self.config["Trainer"]["samples_to_save"]
+            chains_left_to_save = self.config["Trainer"]["chains_to_save"]
+
+            samples, all_ys, ident = [], [], 0
+
+            sample_val_y_collection = paddle.concat(x=self.model.val_y_collection, axis=0)
+            sample_val_atomCount = paddle.concat(x=self.model.val_atomCount, axis=0)
+            sample_val_data_X = paddle.concat(x=self.model.val_data_X, axis=0)
+            #logger.info(f'val_data_X_shape{(sample_val_data_X.shape)}')
+            sample_val_data_E = paddle.concat(x=self.model.val_data_E, axis=0)
+            sample_val_y_collection = sample_val_y_collection.view(-1, self.model.vocabDim)
+            # self.val_atomCount = self.val_atomCount.view(-1,1)
+            num_examples = sample_val_y_collection.shape[0]
+
+
+            start_index = 0
+
+            self.model.val_allnum = len(sample_val_data_X)
+            self.model.val_right = 0
+
+            # 生成指定数量的样本
+            while samples_left_to_generate > 0:
+                bs = 1 * self.config["Dataset"]["val"]["sampler"]["batch_size"]
+                to_generate = min(samples_left_to_generate, bs)
+                to_save = min(samples_left_to_save, bs)
+                chains_save = min(chains_left_to_save, bs)
+                if start_index + to_generate > num_examples:
+                    start_index = 0
+                if to_generate > num_examples:
+                    ratio = to_generate // num_examples
+                    sample_val_y_collection = self.model.val_y_collection.repeat(ratio+1, 1)
+                    sample_val_atomCount = self.model.val_atomCount.repeat(ratio + 1, 1)
+                    sample_val_data_X = self.model.val_data_X.repeat(ratio+1, 1)
+                    sample_val_data_E = self.model.val_data_E.repeat(ratio+1, 1)
+                    num_examples = sample_val_y_collection.size(0)
+                batch_y = sample_val_y_collection[start_index:start_index + to_generate]
+                batch_atomCount = sample_val_atomCount[start_index:start_index + to_generate]
+                batch_X = sample_val_data_X[start_index:start_index + to_generate]
+                batch_E = sample_val_data_E[start_index:start_index + to_generate]
+
+                molecule_list, molecule_list_True = self.model.sample_batch(
+                    batch_id=ident,
+                    batch_size=to_generate,
+                    num_nodes=batch_atomCount,
+                    batch_condition=batch_y,
+                    save_final=to_save,
+                    keep_chain=chains_save,
+                    number_chain_steps=self.model.number_chain_steps,
+                    batch_X=batch_X,
+                    batch_E=batch_E
+                )
+
+                samples.extend(molecule_list)
+
+                for i in range(to_generate):
+                    mol = mol_from_graphs(
+                        self.model.dataset_info.atom_decoder, 
+                        molecule_list[i][0].numpy(), 
+                        molecule_list[i][1].numpy()
+                    )
+                    mol_true = mol_from_graphs(
+                        self.model.dataset_info.atom_decoder,
+                        molecule_list_True[i][0].numpy(), 
+                        molecule_list_True[i][1].numpy()
+                    )
+                    try:
+                        fp1 = RDKFingerprint(mol)
+                        fp2 = RDKFingerprint(mol_true)
+                        # 计算Tanimoto相似度
+                        similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
+                        # 输出相似度
+                        if similarity == 1:
+                            self.model.val_right = self.model.val_right + 1
+                    except rdkit.Chem.KekulizeException:
+                        print("Can't kekulize molecule")
+
+                ident += to_generate
+                start_index += to_generate
+
+                samples_left_to_save -= to_save
+                samples_left_to_generate -= to_generate
+                chains_left_to_save -= chains_save
+            
+            # sampled molecules to compute metrics
+            logger.message("Computing sampling metrics...")
+            logger.info(f'right:{self.model.val_right} | all:{self.model.val_allnum} | accuracy:{self.model.val_right / self.model.val_allnum}')
+            self.model.sampling_metrics.forward(
+                samples, 
+                epoch_id, 
+                val_counter=-1, 
+                test=False,
+                local_rank= self.rank, 
+                output_dir=self.output_dir
+            )
+            logger.info(f'Done. Sampling took {time.time() - start:.2f} seconds')
+            logger.message("Validation epoch end ends...")
+            
+
     def train_epoch(self, dataloader, epoch_id: int):
         """Train program for one epoch.
 
@@ -237,7 +354,7 @@ class TrainerGraph:
 
             loss_dict = self.model(batch_data)
 
-            loss = loss_dict["loss"]
+            loss = loss_dict["train_loss"]
             loss.backward()
             # if self.scale_grad:
             #     # TODO: no scale_shared_grads defined here!!!
@@ -296,7 +413,7 @@ class TrainerGraph:
         total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
 
         return total_loss_avg
-
+    
     def train(self) -> None:
         """Training."""
         self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
@@ -333,7 +450,7 @@ class TrainerGraph:
                 logger.info(msg)
 
                 # update best metric
-                if eval_loss_dict["loss"] <= self.best_metric["loss"]:
+                if eval_loss_dict["train_loss"] <= self.best_metric["loss"]:
                     self.best_metric.update(eval_loss_dict)
                     self.best_metric["epoch"] = epoch_id
 
@@ -344,6 +461,10 @@ class TrainerGraph:
                         output_dir=self.output_dir,
                         prefix="best",
                     )
+                
+                # sampling for compute accuracy and visualization
+                self.eval_epoch_end(epoch_id)
+
             # update learning rate by epoch
             if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
                 if isinstance(self.lr_scheduler, paddle.optimizer.lr.ReduceOnPlateau):
@@ -353,7 +474,7 @@ class TrainerGraph:
                         )
                         == "train_loss"
                     ):
-                        train_loss = train_loss_dict["loss"]
+                        train_loss = train_loss_dict["train_loss"]
                         train_loss = paddle.to_tensor(train_loss)
                         if self.world_size > 1:
                             dist.all_reduce(train_loss)
@@ -924,7 +1045,7 @@ class TrainerCLIP:
         print("Done testing.")
 
 
-class TrainerDiffusionPrior:
+class TrainerDiffPrior:
     def __init__(
         self,
         config,
@@ -937,7 +1058,7 @@ class TrainerDiffusionPrior:
     ):
         super().__init__()
 
-        # 初始化TrainerDiffusionPrior类的实例变量
+        # 初始化TrainerDiffPrior类的实例变量
         self.config = config
         self.model = model
         self.train_dataloader = train_dataloader
@@ -1217,7 +1338,7 @@ class TrainerDiffusionPrior:
         self.global_step += 1
 
 
-class TrainerMMDecoder(TrainerGraph):
+class TrainerMMDecoder(TrainerDiffGraphFormer):
     def __init__(
         self,
         config,
