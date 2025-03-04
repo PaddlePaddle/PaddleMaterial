@@ -18,7 +18,7 @@ from mattergen.common.gemnet.gemnet import GemNetT
 from mattergen.common.gemnet.gemnet import ModelOutput
 from mattergen.common.gemnet.utils import inner_product_normalized
 from mattergen.common.utils.data_utils import frac_to_cart_coords_with_lattice
-from mattergen.common.utils.data_utils import lattice_params_to_matrix_torch
+from mattergen.common.utils.data_utils import lattice_params_to_matrix_paddle
 
 
 class GemNetTCtrl(GemNetT):
@@ -122,7 +122,7 @@ class GemNetTCtrl(GemNetT):
             lattice is None
         ), "Either lattice or lengths and angles must be provided, not both or none."
         if angles is not None and lengths is not None:
-            lattice = lattice_params_to_matrix_torch(lengths, angles)
+            lattice = lattice_params_to_matrix_paddle(lengths, angles)
         assert lattice is not None
         distorted_lattice = lattice
         pos = frac_to_cart_coords_with_lattice(frac_coords, num_atoms, lattice=distorted_lattice)

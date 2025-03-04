@@ -62,10 +62,10 @@ def lattice_params_to_matrix(
     return np.array([vector_a, vector_b, vector_c])
 
 
-def lattice_params_to_matrix_torch(
+def lattice_params_to_matrix_paddle(
     lengths: paddle.Tensor, angles: paddle.Tensor, eps: float = 0.0
 ) -> paddle.Tensor:
-    """Batched torch version to compute lattice matrix from params.
+    """Batched paddle version to compute lattice matrix from params.
 
     lengths: paddle.Tensor of shape (N, 3), unit A
     angles: paddle.Tensor of shape (N, 3), unit degree
@@ -101,7 +101,7 @@ def lattice_params_to_matrix_torch(
     return paddle.stack(x=[vector_a, vector_b, vector_c], axis=1)
 
 
-def lattice_matrix_to_params_torch(
+def lattice_matrix_to_params_paddle(
     matrix: paddle.Tensor, eps: float = 0.0
 ) -> tuple[paddle.Tensor, paddle.Tensor]:
     """Convert a batch of lattice matrices into their corresponding unit cell vector
@@ -149,7 +149,7 @@ def frac_to_cart_coords(
     angles: paddle.Tensor,
     num_atoms: paddle.Tensor,
 ) -> paddle.Tensor:
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     return frac_to_cart_coords_with_lattice(frac_coords, num_atoms, lattice)
 
 
@@ -159,7 +159,7 @@ def cart_to_frac_coords(
     angles: paddle.Tensor,
     num_atoms: paddle.Tensor,
 ) -> paddle.Tensor:
-    lattice = lattice_params_to_matrix_torch(lengths, angles)
+    lattice = lattice_params_to_matrix_paddle(lengths, angles)
     return cart_to_frac_coords_with_lattice(cart_coords, num_atoms, lattice)
 
 
@@ -290,7 +290,7 @@ class StandardScalerTorch(paddle.nn.Layer):
             paddle.nanmean(x=X, axis=0).to(self.device)
         )  # noqa
         stds: paddle.Tensor = paddle.atleast_1d(
-            torch_nanstd(X, dim=0, unbiased=False).to(self.device) + EPSILON
+            paddle_nanstd(X, dim=0, unbiased=False).to(self.device) + EPSILON
         )
         assert tuple(means.shape) == tuple(
             self.means.shape
@@ -327,7 +327,7 @@ class StandardScalerTorch(paddle.nn.Layer):
         return f"{self.__class__.__name__}(means: {self.means.tolist() if self.means is not None else None}, stds: {self.stds.tolist() if self.stds is not None else None})"  # noqa
 
 
-def torch_nanstd(x: paddle.Tensor, dim: int, unbiased: bool) -> paddle.Tensor:
+def paddle_nanstd(x: paddle.Tensor, dim: int, unbiased: bool) -> paddle.Tensor:
     data_is_present = paddle.all(
         x=paddle.reshape(
             x=paddle.logical_not(x=paddle.isnan(x=x)), shape=(tuple(x.shape)[0], -1)

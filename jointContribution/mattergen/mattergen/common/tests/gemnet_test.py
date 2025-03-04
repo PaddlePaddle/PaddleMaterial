@@ -1,26 +1,23 @@
 import sys
+
+
 from copy import deepcopy
-from itertools import chain
-from itertools import permutations
-from typing import List
-from typing import Tuple
+from itertools import chain, permutations
+from typing import List, Tuple
 
 import paddle
-from pymatgen.core.structure import Structure
-from scipy.spatial.transform import Rotation
-
 from mattergen.common.gemnet.gemnet import GemNetT
 from mattergen.common.gemnet.layers.embedding_block import AtomEmbedding
 from mattergen.common.tests.testutils import get_mp_20_debug_batch
-from mattergen.common.utils.data_utils import cart_to_frac_coords_with_lattice
-from mattergen.common.utils.data_utils import frac_to_cart_coords_with_lattice
-from mattergen.common.utils.data_utils import lattice_matrix_to_params_torch
-from mattergen.common.utils.data_utils import lattice_params_to_matrix_torch
+from mattergen.common.utils.data_utils import (
+    cart_to_frac_coords_with_lattice, frac_to_cart_coords_with_lattice,
+    lattice_matrix_to_params_paddle, lattice_params_to_matrix_paddle)
 from mattergen.common.utils.eval_utils import make_structure
 from mattergen.common.utils.globals import MODELS_PROJECT_ROOT
-from paddle_geometric.data import Batch
-from paddle_geometric.data import Data
 from paddle_utils import *
+from pymatgen.core.structure import Structure
+from scipy.spatial.transform import Rotation
+from paddle_geometric.data import Batch, Data
 
 
 def get_model(**kwargs) -> GemNetT:
@@ -46,7 +43,9 @@ def structures_list_to_batch(structures: List[Structure]) -> Batch:
             Data(
                 angles=paddle.to_tensor(data=s.lattice.angles, dtype="float32")[None],
                 lengths=paddle.to_tensor(data=s.lattice.lengths, dtype="float32")[None],
-                frac_coords=paddle.to_tensor(data=s.frac_coords).astype(dtype="float32"),
+                frac_coords=paddle.to_tensor(data=s.frac_coords).astype(
+                    dtype="float32"
+                ),
                 atom_types=paddle.to_tensor(data=s.atomic_numbers),
                 num_atoms=s.num_sites,
                 num_nodes=s.num_sites,
@@ -91,7 +90,9 @@ def get_cubic_data(supercell: Tuple[int, int, int]) -> Tuple[Tuple, Tuple]:
             species=["C", "C"],
         ),
     ]
-    normal_structures = list(chain.from_iterable([deepcopy(normal_structures) for _ in range(32)]))
+    normal_structures = list(
+        chain.from_iterable([deepcopy(normal_structures) for _ in range(32)])
+    )
     supercell_structures = deepcopy(normal_structures)
     for s in supercell_structures:
         s.make_supercell(supercell)
@@ -114,7 +115,9 @@ def test_lattice_score_scale_invariance():
     batch = get_mp_20_debug_batch()
     batch = Batch.from_data_list(batch.to_data_list()[:10])
     supercell_structures = [
-        make_structure(d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords)
+        make_structure(
+            d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords
+        )
         for d in batch.to_data_list()
     ]
     for s in supercell_structures:
@@ -124,7 +127,9 @@ def test_lattice_score_scale_invariance():
             Data(
                 angles=paddle.to_tensor(data=s.lattice.angles, dtype="float32")[None],
                 lengths=paddle.to_tensor(data=s.lattice.lengths, dtype="float32")[None],
-                frac_coords=paddle.to_tensor(data=s.frac_coords).astype(dtype="float32"),
+                frac_coords=paddle.to_tensor(data=s.frac_coords).astype(
+                    dtype="float32"
+                ),
                 atom_types=paddle.to_tensor(data=s.atomic_numbers),
                 num_atoms=s.num_sites,
                 num_nodes=s.num_sites,
@@ -166,7 +171,9 @@ def test_nonconservative_lattice_score_translation_invariance():
     model.eval()
     batch = get_mp_20_debug_batch()
     structures = [
-        make_structure(d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords)
+        make_structure(
+            d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords
+        )
         for d in batch.to_data_list()
     ]
     translated_batch = Batch.from_data_list(
@@ -226,20 +233,27 @@ def test_lattice_parameterization_invariance():
     model.eval()
     batch = get_mp_20_debug_batch()
     structures = [
-        make_structure(d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords)
+        make_structure(
+            d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords
+        )
         for d in batch.to_data_list()
     ]
-    lattice_matrices = lattice_params_to_matrix_torch(batch.lengths, batch.angles)
+    lattice_matrices = lattice_params_to_matrix_paddle(batch.lengths, batch.angles)
     lattice_matrix_changed = lattice_matrices.clone()
     combs = paddle.to_tensor(data=list(permutations(range(3), 2)))
     lattice_vector_combine_ixs = paddle.randint(
         low=0, high=len(combs), shape=(tuple(lattice_matrices.shape)[0],)
     )
     combs_sel = combs[lattice_vector_combine_ixs]
-    change_matrix = paddle.eye(num_rows=3)[None].expand_as(y=lattice_matrices).clone().contiguous()
-    change_matrix[range(tuple(combs_sel.shape)[0]), combs_sel[:, 0], combs_sel[:, 1]] = 3
+    change_matrix = (
+        paddle.eye(num_rows=3)[None].expand_as(y=lattice_matrices).clone().contiguous()
+    )
+    change_matrix[
+        range(tuple(combs_sel.shape)[0]), combs_sel[:, 0], combs_sel[:, 1]
+    ] = 3
     lattice_matrix_changed = (
-        lattice_matrices.transpose(perm=dim2perm(lattice_matrices.ndim, 1, 2)) @ change_matrix
+        lattice_matrices.transpose(perm=dim2perm(lattice_matrices.ndim, 1, 2))
+        @ change_matrix
     ).transpose(
         perm=dim2perm(
             (
@@ -251,17 +265,21 @@ def test_lattice_parameterization_invariance():
         )
     )
     new_frac_coords = cart_to_frac_coords_with_lattice(
-        frac_to_cart_coords_with_lattice(batch.frac_coords, batch.num_atoms, lattice_matrices),
+        frac_to_cart_coords_with_lattice(
+            batch.frac_coords, batch.num_atoms, lattice_matrices
+        ),
         batch.num_atoms,
         lattice_matrix_changed,
     )
     updated_batch = batch.clone()
-    new_lengths, new_angles = lattice_matrix_to_params_torch(lattice_matrix_changed)
+    new_lengths, new_angles = lattice_matrix_to_params_paddle(lattice_matrix_changed)
     updated_batch.frac_coords = new_frac_coords
     updated_batch.lengths = new_lengths
     updated_batch.angles = new_angles
     structures_perm = [
-        make_structure(d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords)
+        make_structure(
+            d.lengths.squeeze(0), d.angles.squeeze(0), d.atom_types, d.frac_coords
+        )
         for d in updated_batch.to_data_list()
     ]
     close = [
@@ -301,7 +319,9 @@ def test_lattice_parameterization_invariance():
 
 
 def test_symmetric_lattice_score():
-    model = get_model(max_neighbors=20, cutoff=7.0, regress_stress=True, max_cell_images_per_dim=20)
+    model = get_model(
+        max_neighbors=20, cutoff=7.0, regress_stress=True, max_cell_images_per_dim=20
+    )
     model.eval()
     batch = get_mp_20_debug_batch()
     with paddle.no_grad():
@@ -325,7 +345,7 @@ def test_rotation_invariance():
         max_neighbors=1000, cutoff=5.0, regress_stress=True, max_cell_images_per_dim=10
     )
     batch = get_mp_20_debug_batch()
-    lattices = lattice_params_to_matrix_torch(batch.lengths, batch.angles)
+    lattices = lattice_params_to_matrix_paddle(batch.lengths, batch.angles)
     with paddle.no_grad():
         model_out = model.forward(
             None,
@@ -335,7 +355,9 @@ def test_rotation_invariance():
             batch.batch,
             lattice=lattices,
         )
-    rotation_matrix = paddle.to_tensor(data=Rotation.random().as_matrix(), dtype="float32")
+    rotation_matrix = paddle.to_tensor(
+        data=Rotation.random().as_matrix(), dtype="float32"
+    )
     rotated_lattices = lattices @ rotation_matrix
     with paddle.no_grad():
         model_out_rotated = model.forward(
@@ -350,7 +372,9 @@ def test_rotation_invariance():
     forces_rotated = model_out_rotated.forces
     stress = model_out.stress
     stress_rotated = model_out_rotated.stress
-    assert paddle.allclose(x=forces @ rotation_matrix, y=forces_rotated, atol=0.001).item()
+    assert paddle.allclose(
+        x=forces @ rotation_matrix, y=forces_rotated, atol=0.001
+    ).item()
     assert paddle.allclose(
         x=rotation_matrix.T @ stress @ rotation_matrix, y=stress_rotated, atol=0.001
     ).item()

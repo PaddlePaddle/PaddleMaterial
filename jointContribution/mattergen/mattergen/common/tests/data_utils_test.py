@@ -34,26 +34,26 @@ def test_lattice_params_matrix2():
     assert np.allclose(matrix, result)
 
 
-def test_lattice_params_to_matrix_torch():
+def test_lattice_params_to_matrix_paddle():
     lengths = np.array([[4.0, 3.0, 2.0], [1, 3, 2]])
     angles = np.array([[120.0, 90.0, 90.0], [57.0, 130.0, 85.0]])
     lengths_and_angles = np.concatenate([lengths, angles], axis=-1)
     matrix0 = data_utils.lattice_params_to_matrix(*lengths_and_angles[0].tolist())
     matrix1 = data_utils.lattice_params_to_matrix(*lengths_and_angles[1].tolist())
     true_matrix = np.stack([matrix0, matrix1], axis=0)
-    torch_matrix = data_utils.lattice_params_to_matrix_torch(
+    torch_matrix = data_utils.lattice_params_to_matrix_paddle(
         paddle.to_tensor(data=lengths), paddle.to_tensor(data=angles)
     )
     assert np.allclose(true_matrix, torch_matrix.numpy(), atol=1e-05)
 
 
-def test_lattice_matrix_to_params_torch():
+def test_lattice_matrix_to_params_paddle():
     lengths = np.array([[4.0, 3.0, 2.0], [1, 3, 2]])
     angles = np.array([[120.0, 90.0, 90.0], [57.0, 130.0, 85.0]])
-    torch_matrix = data_utils.lattice_params_to_matrix_torch(
+    torch_matrix = data_utils.lattice_params_to_matrix_paddle(
         paddle.to_tensor(data=lengths), paddle.to_tensor(data=angles)
     )
-    torch_lengths, torch_angles = data_utils.lattice_matrix_to_params_torch(torch_matrix)
+    torch_lengths, torch_angles = data_utils.lattice_matrix_to_params_paddle(torch_matrix)
     assert np.allclose(lengths, torch_lengths.numpy(), atol=1e-05)
     assert np.allclose(angles, torch_angles.numpy(), atol=1e-05)
 
@@ -79,7 +79,7 @@ def test_get_pbc_distances():
     to_jimages = paddle.to_tensor(data=[[0, 0, 0], [0, 1, 0], [0, 1, 0]], dtype="int64")
     num_nodes = paddle.to_tensor(data=[2, 2], dtype="int64")
     num_edges = paddle.to_tensor(data=[2, 1], dtype="int64")
-    lattice = data_utils.lattice_params_to_matrix_torch(lengths, angles)
+    lattice = data_utils.lattice_params_to_matrix_paddle(lengths, angles)
     out = data_utils.get_pbc_distances(
         frac_coords, edge_index, lattice, to_jimages, num_nodes, num_edges
     )
@@ -99,7 +99,7 @@ def test_get_pbc_distances_cart():
     num_nodes = paddle.to_tensor(data=[2, 2], dtype="int64")
     num_edges = paddle.to_tensor(data=[2, 1], dtype="int64")
     cart_coords = data_utils.frac_to_cart_coords(frac_coords, lengths, angles, num_nodes)
-    lattice = data_utils.lattice_params_to_matrix_torch(lengths, angles)
+    lattice = data_utils.lattice_params_to_matrix_paddle(lengths, angles)
     out = data_utils.get_pbc_distances(
         cart_coords,
         edge_index,
@@ -131,7 +131,7 @@ def test_pbc_graph_translation_invariant(max_radius: float, max_neighbors: int):
     cart_coords_translated = data_utils.frac_to_cart_coords(
         frac_coords_translated, lengths, angles, num_atoms
     )
-    lattice = data_utils.lattice_params_to_matrix_torch(lengths=lengths, angles=angles)
+    lattice = data_utils.lattice_params_to_matrix_paddle(lengths=lengths, angles=angles)
     coords = {"original": cart_coords, "translated": cart_coords_translated}
     output: Dict[str, Dict[str, Dict[int, paddle.Tensor]]] = {
         coord: {
@@ -374,9 +374,9 @@ def test_rdf(natom: int, rcut: float):
 
 def test_polar_decomposition():
     batch = get_mp_20_debug_batch()
-    lattices = data_utils.lattice_params_to_matrix_torch(batch.lengths, batch.angles)
+    lattices = data_utils.lattice_params_to_matrix_paddle(batch.lengths, batch.angles)
     polar_decomposition = data_utils.compute_lattice_polar_decomposition(lattices)
-    symm_lengths, symm_angles = data_utils.lattice_matrix_to_params_torch(polar_decomposition)
+    symm_lengths, symm_angles = data_utils.lattice_matrix_to_params_paddle(polar_decomposition)
     assert paddle.allclose(x=symm_lengths, y=batch.lengths, atol=0.001).item()
     assert paddle.allclose(x=symm_angles, y=batch.angles, atol=0.001).item()
     assert paddle.allclose(
@@ -386,6 +386,6 @@ def test_polar_decomposition():
     ).item()
 
 
-def test_torch_nanstd():
+def test_paddle_nanstd():
     x = paddle.to_tensor(data=[1.0, 2.0, np.nan, 3.0, 4.0, 5.0, np.nan, 6.0])
-    assert data_utils.torch_nanstd(x=x, dim=0, unbiased=False).item() == np.nanstd(x.numpy())
+    assert data_utils.paddle_nanstd(x=x, dim=0, unbiased=False).item() == np.nanstd(x.numpy())

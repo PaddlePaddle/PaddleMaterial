@@ -32,7 +32,7 @@ from mattergen.common.gemnet.utils import ragged_range
 from mattergen.common.gemnet.utils import repeat_blocks
 from mattergen.common.utils.data_utils import frac_to_cart_coords_with_lattice
 from mattergen.common.utils.data_utils import get_pbc_distances
-from mattergen.common.utils.data_utils import lattice_params_to_matrix_torch
+from mattergen.common.utils.data_utils import lattice_params_to_matrix_paddle
 from mattergen.common.utils.data_utils import radius_graph_pbc
 from mattergen.common.utils.globals import MODELS_PROJECT_ROOT
 from mattergen.common.utils.lattice_score import edge_score_to_lattice_score_frac_symmetric
@@ -312,12 +312,10 @@ class GemNetT(paddle.nn.Layer):
         id3_ragged_idx: paddle.Tensor, shape (num_triplets,)
             Indices enumerating the copies of id3_ca for creating a padded matrix
         """
-        # import pdb;pdb.set_trace()
         idx_s, idx_t = edge_index
 
         # import paddle_sparse
         # from paddle_sparse.tensor import SparseTensor
-
         # value = paddle.arange(dtype=idx_s.dtype, end=idx_s.shape[0])
         # adj = SparseTensor(
         #     row=idx_t, col=idx_s, value=value, sparse_sizes=(num_atoms, num_atoms)
@@ -333,19 +331,44 @@ class GemNetT(paddle.nn.Layer):
         # id3_ba = adj_edges.values() - 1
         # id3_ca = adj_edges.indices()[0]
 
-        data_list = []
-        max_data_size = 0
-        for i in range(num_atoms):
-            data = value[idx_t == i]
-            data_list.append(data)
-            if data.shape[0] > max_data_size:
-                max_data_size = data.shape[0]
+        def custom_bincount(x, minlength=0):
+            unique, counts = paddle.unique(x, return_counts=True)
+            max_val = paddle.max(unique).numpy().item() if len(unique) > 0 else -1
+            length = (max_val + 1) if (max_val+1) > minlength else minlength
+            result = paddle.zeros([length], dtype='int64')
+            if len(unique) > 0:
+                result = paddle.scatter_nd(unique.unsqueeze(1), counts, result.shape)
+            return result
 
-        mat = paddle.zeros((num_atoms, max_data_size), dtype="int64")
-        # mat = paddle.zeros((num_atoms, num_atoms), dtype='int64')
-        for i in range(num_atoms):
-            data = data_list[i]
-            mat[i, : data.shape[0]] = data
+        n = idx_t.shape[0]
+        rows = paddle.arange(n).unsqueeze(1)  # [0,1,2,...,n-1]^T
+        cols = paddle.arange(n).unsqueeze(0)  # [0,1,2,...,n-1]
+        mask = (idx_t.unsqueeze(1) == idx_t.unsqueeze(0)) & (cols <= rows)
+        col = mask.sum(axis=1).astype('int64')-1
+        rows = idx_t
+        indices = paddle.stack([rows, col], axis=1)
+
+        shape = [num_atoms.item(), col.max().item()+1]
+        result = paddle.scatter_nd(indices, value, shape)
+        mat = result
+
+        # data_list = []
+        # max_data_size = 0
+        # for i in range(num_atoms):
+        #     data = value[idx_t == i]
+        #     data_list.append(data)
+        #     if data.shape[0] > max_data_size:
+        #         max_data_size = data.shape[0]
+
+        # mat = paddle.zeros((num_atoms, max_data_size), dtype="int64")
+        # # mat = paddle.zeros((num_atoms, num_atoms), dtype='int64')
+        # for i in range(num_atoms):
+        #     data = data_list[i]
+        #     mat[i, : data.shape[0]] = data
+        
+        # if (mat-result).abs().max() > 0:
+        #     import pdb;pdb.set_trace()
+        
         id3_ba = mat[idx_t][mat[idx_t] > 0] - 1
         tmp_r = paddle.nonzero(mat[idx_t], as_tuple=False)
         id3_ca = tmp_r[:, 0]
@@ -353,7 +376,11 @@ class GemNetT(paddle.nn.Layer):
         mask = id3_ba != id3_ca
         id3_ba = id3_ba[mask]
         id3_ca = id3_ca[mask]
-        num_triplets = paddle.bincount(x=id3_ca, minlength=idx_s.shape[0])
+
+        num_triplets = custom_bincount(id3_ca, minlength=idx_s.shape[0])
+        # num_triplets_api = paddle.bincount(x=id3_ca, minlength=idx_s.shape[0])
+        # assert (num_triplets == num_triplets_api).all()
+        
         id3_ragged_idx = ragged_range(num_triplets)
         return id3_ba, id3_ca, id3_ragged_idx
 
@@ -461,11 +488,6 @@ class GemNetT(paddle.nn.Layer):
         paddle.Tensor,
     ]:
         if self.otf_graph:
-            # import numpy as np
-            # cart_coords = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_cart_coords_otf.npy'))
-            # lattice = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_lattice_otf.npy'))
-            # num_atoms = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_num_atoms_otf.npy'))
-
             edge_index, to_jimages, num_bonds = radius_graph_pbc(
                 cart_coords=cart_coords,
                 lattice=lattice,
@@ -475,11 +497,6 @@ class GemNetT(paddle.nn.Layer):
                 max_cell_images_per_dim=self.max_cell_images_per_dim,
             )
         # import pdb;pdb.set_trace()
-
-        # import numpy as np
-        # edge_index = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_edge_index_otf.npy'))
-        # num_bonds = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_num_bonds_otf.npy'))
-        # to_jimages = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_to_jimages_otf.npy'))
 
         out = get_pbc_distances(
             cart_coords,
@@ -509,11 +526,6 @@ class GemNetT(paddle.nn.Layer):
             block_inc=block_sizes[:-1] + block_sizes[1:],
             repeat_inc=-block_sizes,
         )
-
-        # import pdb;pdb.set_trace()
-        # import numpy as np
-        # edge_index = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_edge_index.npy'))
-        # num_atoms = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/debug_num_atoms.npy'))
 
         id3_ba, id3_ca, id3_ragged_idx = self.get_triplets(edge_index, num_atoms=num_atoms.sum())
         return (
@@ -570,7 +582,7 @@ class GemNetT(paddle.nn.Layer):
             lattice is None
         ), "Either lattice or lengths and angles must be provided, not both or none."
         if angles is not None and lengths is not None:
-            lattice = lattice_params_to_matrix_torch(lengths, angles)
+            lattice = lattice_params_to_matrix_paddle(lengths, angles)
         assert lattice is not None
         distorted_lattice = lattice
         pos = frac_to_cart_coords_with_lattice(frac_coords, num_atoms, lattice=distorted_lattice)
@@ -588,17 +600,6 @@ class GemNetT(paddle.nn.Layer):
         ) = self.generate_interaction_graph(
             pos, distorted_lattice, num_atoms, edge_index, to_jimages, num_bonds
         )
-        # import numpy as np
-        # edge_index = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_edge_index.npy'))
-        # neighbors = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_neighbors.npy'))
-        # D_st = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_D_st.npy'))
-        # V_st = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_V_st.npy'))
-        # id_swap = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_id_swap.npy'))
-        # id3_ba = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_id3_ba.npy'))
-        # id3_ca = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_id3_ca.npy'))
-        # id3_ragged_idx = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_id3_ragged_idx.npy'))
-        # to_jimages = paddle.to_tensor(np.load('/root/host/home/zhangzhimin04/workspaces/mattergen/tmp/d_to_jimages.npy'))
-        # import pdb;pdb.set_trace()
 
         idx_s, idx_t = edge_index
         cosφ_cab = inner_product_normalized(V_st[id3_ca], V_st[id3_ba])
