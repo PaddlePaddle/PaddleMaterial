@@ -343,7 +343,7 @@ class ChemicalSystemMultiHotEmbedding(paddle.nn.Layer):
         """
         chemical_system_numbers: paddle.int64 = paddle.to_tensor(
             data=[get_atomic_number(symbol=_element) for _element in x],
-            dtype=int,
+            dtype="int64",
             place=device,
         )
         chemical_system_condition = paddle.zeros(shape=MAX_ATOMIC_NUM + 1)
