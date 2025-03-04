@@ -7,4 +7,4 @@ conditional_embedding_module:
   _target_: mattergen.diffusion.model_utils.NoiseLevelEncoding
   d_model: ${lightning_module.diffusion_module.model.hidden_dim}
 scaler:
-  _target_: mattergen.common.utils.data_utils.StandardScalerTorch
+  _target_: mattergen.common.utils.data_utils.StandardScalerPaddle

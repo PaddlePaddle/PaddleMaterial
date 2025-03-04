@@ -258,7 +258,7 @@ def radius_graph_pbc(
     return edge_index, unit_cell, num_neighbors_image
 
 
-class StandardScalerTorch(paddle.nn.Layer):
+class StandardScalerPaddle(paddle.nn.Layer):
     """Normalizes the targets of a dataset."""
 
     def __init__(
@@ -315,8 +315,8 @@ class StandardScalerTorch(paddle.nn.Layer):
             self.means = self.means.to(X.place)
             self.stds = self.stds.to(X.place)
 
-    def copy(self) -> "StandardScalerTorch":
-        return StandardScalerTorch(
+    def copy(self) -> "StandardScalerPaddle":
+        return StandardScalerPaddle(
             means=self.means.clone().detach(), stds=self.stds.clone().detach()
         )
 
