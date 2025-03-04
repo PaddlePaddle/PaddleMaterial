@@ -7,4 +7,4 @@ conditional_embedding_module:
   _target_: mattergen.property_embeddings.SpaceGroupEmbeddingVector
   hidden_dim: ${lightning_module.diffusion_module.model.hidden_dim}
 scaler:
-  _target_: torch.nn.Identity
+  _target_: paddle.nn.Identity
