@@ -113,7 +113,7 @@ def load_structures(input_path: Path) -> Sequence[Structure]:
         with TemporaryDirectory() as tmpdirname:
             with ZipFile(input_path, "r") as zip_obj:
                 zip_obj.extractall(tmpdirname)
-            return extract_structures_from_folder(tmpdirname)
+            return extract_structures_from_folder(tmpdirname+'/tmp')
     elif input_path.is_dir():
         return extract_structures_from_folder(input_path)
     else:
