@@ -20,7 +20,7 @@ from mattergen.common.data.condition_factory import ConditionLoader
 from mattergen.common.data.num_atoms_distribution import \
     NUM_ATOMS_DISTRIBUTIONS
 from mattergen.common.data.types import TargetProperty
-from mattergen.common.utils.data_utils import lattice_matrix_to_params_torch
+from mattergen.common.utils.data_utils import lattice_matrix_to_params_paddle
 from mattergen.common.utils.eval_utils import (MatterGenCheckpointInfo,
                                                get_crystals_list,
                                             #    load_model_diffusion,
@@ -69,7 +69,7 @@ def draw_samples_from_sampler(
         all_samples_list.extend(mean.to_data_list())
     all_samples = collate(all_samples_list)
     assert isinstance(all_samples, ChemGraph)
-    lengths, angles = lattice_matrix_to_params_torch(all_samples.cell)
+    lengths, angles = lattice_matrix_to_params_paddle(all_samples.cell)
     all_samples = all_samples.replace(lengths=lengths, angles=angles)
     generated_strucs = structure_from_model_output(
         all_samples["pos"].reshape(-1, 3),
@@ -141,7 +141,7 @@ def structures_from_trajectory(traj: list[ChemGraph]) -> list[Structure]:
     all_strucs = []
     for batch in traj:
         cell = batch.cell
-        lengths, angles = lattice_matrix_to_params_torch(cell)
+        lengths, angles = lattice_matrix_to_params_paddle(cell)
         all_strucs.extend(
             structure_from_model_output(
                 frac_coords=batch.pos,
