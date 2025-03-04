@@ -39,7 +39,7 @@ def find_local_files(local_path: str, glob: str = "*", relative: bool = False) -
 @dataclass(frozen=True)
 class MatterGenCheckpointInfo:
     model_path: str
-    load_epoch: int | Literal["best", "last"] | None = "last"
+    load_epoch: int | Literal["best", "latest"] | None = "latest"
     config_overrides: list[str] = field(default_factory=list)
     split: str = "val"
     strict_checkpoint_loading: bool = True
@@ -77,12 +77,12 @@ class MatterGenCheckpointInfo:
         model_path = str(self.model_path)
         ckpts = find_local_files(local_path=model_path, glob="*.pdparams")
         assert len(ckpts) > 0, f"No checkpoints found at {model_path}"
-        if self.load_epoch == "last":
+        if self.load_epoch == "latest":
             assert any(
                 [x.endswith("latest.pdparams") for x in ckpts]
             ), "No latest.pdparams found in checkpoints."
             return [x for x in ckpts if x.endswith("latest.pdparams")][0]
-        if self.load_epoch is "best":
+        if self.load_epoch == "best":
             assert any(
                 [x.endswith("best.pdparams") for x in ckpts]
             ), "No best.pdparams found in checkpoints."

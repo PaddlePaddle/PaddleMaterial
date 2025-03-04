@@ -1,5 +1,5 @@
 model_path: ${oc.env:MAP_INPUT_DIR}
-load_epoch: last
+load_epoch: latest
 full_finetuning: true
 
 adapter:
