@@ -1,21 +1,3 @@
-# _target_: mattergen.diffusion.lightning_module.DiffusionLightningModule
-# optimizer_partial:
-#   lr: 1e-4
-#   _target_: torch.optim.Adam
-#   _partial_: true
-# scheduler_partials:
-#   - scheduler:
-#       _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-#       factor: 0.6
-#       patience: 100
-#       min_lr: 1e-6
-#       verbose: true
-#       _partial_: true
-#     interval: epoch
-#     frequency: 1
-#     monitor: loss_train
-#     strict: true
-
 
 _target_: mattergen.diffusion.lightning_module.DiffusionLightningModule
 optimizer_partial:
