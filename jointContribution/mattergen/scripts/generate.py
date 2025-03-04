@@ -3,6 +3,9 @@ from pathlib import Path
 from typing import Literal
 import fire
 
+import numpy as np
+import random
+
 import paddle
 
 from mattergen.common.data.types import TargetProperty
@@ -61,6 +64,11 @@ def main(
 
     NOTE: When specifying dictionary values via the CLI, make sure there is no whitespace between the key and value, e.g., `--properties_to_condition_on={key1:value1}`.
     """
+    # set seed
+    # seed = 42
+    # paddle.seed(seed=seed)
+    # np.random.seed(seed)
+    # random.seed(seed)
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     sampling_config_overrides = sampling_config_overrides or []
@@ -76,12 +84,19 @@ def main(
         Path(sampling_config_path) if sampling_config_path is not None else None
     )
     model = maybe_instantiate(checkpoint_info.config.lightning_module.diffusion_module)
-    
+
+    # for name, m in model.named_sublayers():
+    #     if isinstance(m, paddle.nn.Linear):
+    #         print(f"'diffusion_module.{name}',")
     state_dict = paddle.load(checkpoint_info.checkpoint_path)
     if 'state_dict' in state_dict:
         state_dict = state_dict['state_dict']
-    msg = model.set_state_dict(state_dict)
-    print(msg)
+    missing_keys, unexpected_keys = model.set_state_dict(state_dict)
+    if len(missing_keys) > 0:
+        raise ValueError(f"Missing keys: {missing_keys}")
+    if len(unexpected_keys) > 0:
+        raise ValueError(f"Unexpected keys: {unexpected_keys}")
+    
     generator = CrystalGenerator(
         checkpoint_info=checkpoint_info,
         properties_to_condition_on=properties_to_condition_on,

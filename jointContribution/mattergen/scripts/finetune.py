@@ -1,22 +1,33 @@
 import json
-import logging
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from typing import Tuple
+
+import os
+import os.path as osp
+import random
+
+import numpy as np
 
 import hydra
 import omegaconf
 import paddle
+
+import paddle.distributed as dist
 from mattergen.common.utils.data_classes import MatterGenCheckpointInfo
 from mattergen.common.utils.globals import MODELS_PROJECT_ROOT
-from mattergen.diffusion.run import (SimpleParser,
-                                     maybe_instantiate)
+from mattergen.diffusion.run import maybe_instantiate
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from mattergen.diffusion.trainer import TrainerDiffusion
 from mattergen.common.data.callback import SetPropertyScalers
 
+from mattergen.utils import logger
+from mattergen.common.data.utils import set_signal_handlers
+from paddle_utils import *
+
+if dist.get_world_size() > 1:
+    dist.fleet.init(is_collective=True)
 
 
 def init_adapter_lightningmodule_from_pretrained(
@@ -62,7 +73,10 @@ def init_adapter_lightningmodule_from_pretrained(
     # lightning_module = hydra.utils.instantiate(lightning_module_cfg)
 
     ckpt: dict = paddle.load(path=str(ckpt_path))
-    pretrained_dict: OrderedDict = ckpt["state_dict"]
+    if 'state_dict' in ckpt:
+        pretrained_dict: OrderedDict = ckpt["state_dict"]
+    else:
+        pretrained_dict: OrderedDict = ckpt
     scratch_dict: OrderedDict = model.state_dict()
     scratch_dict.update(
         (k, pretrained_dict[k]) for k in scratch_dict.keys() & pretrained_dict.keys()
@@ -83,6 +97,19 @@ def init_adapter_lightningmodule_from_pretrained(
     version_base="1.1",
 )
 def mattergen_finetune(cfg: omegaconf.DictConfig):
+
+
+    set_signal_handlers()
+    logger.init_logger(
+        log_file=osp.join(cfg.trainer.output_dir, f"{cfg.trainer.mode}.log")
+    )
+    seed = cfg.trainer.seed
+    if seed is not None:
+        paddle.seed(seed=seed)
+        np.random.seed(seed)
+        random.seed(seed)
+    logger.info(f"Seeding everything with {seed}")
+
     # paddle.set_float32_matmul_precision("high")
     datamodule = maybe_instantiate(cfg.data_module)
 
@@ -93,7 +120,12 @@ def mattergen_finetune(cfg: omegaconf.DictConfig):
         cfg.lightning_module = lightning_module_cfg
     config_as_dict = OmegaConf.to_container(cfg, resolve=True)
     print(json.dumps(config_as_dict, indent=4))
-    
+
+    if dist.get_rank() == 0:
+        os.makedirs(cfg.trainer.output_dir, exist_ok=True)
+        OmegaConf.save(config_as_dict, osp.join(cfg.trainer.output_dir, "config.yaml"))
+
+
     optimizer_cfg = cfg.lightning_module.optimizer_partial
     optimizer_cfg = OmegaConf.to_container(optimizer_cfg, resolve=True)
     optimizer_cfg.update(
