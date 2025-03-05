@@ -42,7 +42,6 @@ The original [MatterGen](https://github.com/microsoft/mattergen) repositoryis li
 - [Data release](#data-release)
   - [Training datasets](#training-datasets)
   - [Reference dataset](#reference-dataset)
-  - [CIFs and experimental measurements](#cifs-and-experimental-measurements)
 - [Citation](#citation)
 - [Responsible AI Transparency Documentation](#responsible-ai-transparency-documentation)
 
@@ -242,8 +241,8 @@ Before we can train MatterGen from scratch, we have to unpack and preprocess the
 
 You can run the following command for `mp_20`:
 ```bash
-unzip data-release/mp-20/mp_20.zip -d datasets
-PYTHONPATH=$PWD python scripts/csv_to_dataset.py --csv-folder datasets/mp_20/ --dataset-name mp_20 --cache-folder datasets/cache
+unzip data-release/mp-20/mp_20_chemical_system.zip -d datasets
+PYTHONPATH=$PWD python scripts/csv_to_dataset.py --csv-folder datasets/mp_20/ --dataset-name mp_20_chemical_system --cache-folder datasets/cache
 ```
 You will get preprocessed data files in `datasets/cache/mp_20`.
 
@@ -331,24 +330,23 @@ You may also fine-tune MatterGen on your own property data. Essentially what you
 5. Follow the [instructions for fine-tuning](#fine-tuning-on-property-data) and reference your own property in the same way as we used the existing properties like `dft_mag_density`.
 
 ## Data release
-We provide datasets to train as well as evaluate MatterGen. For more details and license information see the respective README files under [`data-release`](data-release).
+You can download the datasets for training and evaluating MatterGen from [here](https://pan.baidu.com/s/15yC8UUcMO6tJV6MiJOPYFA?pwd=z9k5) and save them to mattergen/data-release/alex-mp(mp-20) folder.For more details and license information see the respective README files under [`data-release`](data-release).
 ### Training datasets
 * MP-20 ([Jain et al., 2013](https://pubs.aip.org/aip/apm/article/1/1/011002/119685)): contains 45k general inorganic materials, including most experimentally known materials with no more than 20 atoms in unit cell.
 * Alex-MP-20: Training dataset consisting of around 600k structures from MP-20 and Alexandria ([Schmidt et al. 2022](https://archive.materialscloud.org/record/2022.126)) with at most 20 atoms inside the unit cell and below 0.1 eV/atom of the convex hull. See the venn diagram below and the MatterGen paper for more details.
 
 ### Reference dataset
-We further provide the Alex-MP reference dataset which can be used to evaluate novelty and stability of generated samples. 
+Download the Alex-MP reference dataset from [here](https://pan.baidu.com/s/15yC8UUcMO6tJV6MiJOPYFA?pwd=z9k5) and save it to mattergen/data-release/alex-mp/ folder. This dataset can be used to evaluate novelty and stability of generated samples. 
 The reference set contains 845,997 structures with their DFT energies. See the following Venn diagram for more details about the composition of the training and reference datasets.
 > [!NOTE]
-> For license reasons, we cannot share the 4.4k ordered + 117.7k disordered ICSD structures, so results may differ from those in the paper. 
+> We only share the 4.4k ordered + 117.7k disordered ICSD structures as the original repo.
+
 
 ![Dataset Venn diagram](assets/datasets_venn_diagram.png)
 
-### CIFs and experimental measurements
-The [`data-release`](data-release) directory also contains the CIF files to all structures shown in the paper as well as xps, xrd, and nanoindentation measurements of the TaCr2O6 sample presented in the paper.
 
 ## Citation
-If you are using our code, model, data, or evaluation pipeline, please consider citing our work:
+If you are using our code, model, data, or evaluation pipeline, please consider citing the work:
 ```bibtex
 @article{MatterGen2025,
   author  = {Zeni, Claudio and Pinsler, Robert and Z{\"u}gner, Daniel and Fowler, Andrew and Horton, Matthew and Fu, Xiang and Wang, Zilong and Shysheya, Aliaksandra and Crabb{\'e}, Jonathan and Ueda, Shoko and Sordillo, Roberto and Sun, Lixin and Smith, Jake and Nguyen, Bichlien and Schulz, Hannes and Lewis, Sarah and Huang, Chin-Wei and Lu, Ziheng and Zhou, Yichi and Yang, Han and Hao, Hongxia and Li, Jielan and Yang, Chunlei and Li, Wenjie and Tomioka, Ryota and Xie, Tian},
