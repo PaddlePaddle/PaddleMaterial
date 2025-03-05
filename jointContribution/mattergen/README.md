@@ -36,7 +36,6 @@ The original [MatterGen](https://github.com/microsoft/mattergen) repositoryis li
 - [Train MatterGen yourself](#train-mattergen-yourself)
   - [Pre-process a dataset for training](#pre-process-a-dataset-for-training)
   - [Training](#training-1)
-    - [*Train on MP20*](#train-on-mp20)
   - [Fine-tuning on property data](#fine-tuning-on-property-data)
     - [Multi-property fine-tuning](#multi-property-fine-tuning)
     - [Fine-tune on your own property data](#fine-tune-on-your-own-property-data)
@@ -153,7 +152,7 @@ python scripts/evaluate.py \
 
 
 ## Get started with a pre-trained model
-We provide checkpoints of an unconditional base version of MatterGen as well as fine-tuned models for these properties:
+We have converted the model weights provided in the original repository, which you can download from [here](todo).
 * `mattergen_base`: unconditional base model
 * `chemical_system`: fine-tuned model conditioned on chemical system
 * `space_group`: fine-tuned model conditioned on space group
@@ -163,10 +162,6 @@ We provide checkpoints of an unconditional base version of MatterGen as well as 
 * `dft_mag_density_hhi_score`: fine-tuned model jointly conditioned on magnetic density from DFT and HHI score
 * `chemical_system_energy_above_hull`: fine-tuned model jointly conditioned on chemical system and energy above hull from DFT
 
-The checkpoints are located at `checkpoints/<model_name>`. 
-
-> [!NOTE]
-> The checkpoints provided were re-trained using this repository, i.e., are not identical to the ones used in the paper. Hence, results may slightly deviate from those in the publication. 
 
 ## Generating materials
 ### Unconditional generation
@@ -262,7 +257,6 @@ This will take some time (~1h). You will get preprocessed data files in `dataset
 ### Training
 
 
-#### *Train on MP20*
 You can train the MatterGen base model on `mp_20` using the following command.
 
 ```bash 
@@ -276,14 +270,6 @@ Warning: The `total_batch_size` should be 128. It is calculated as `num_gpus * b
 
 The validation loss (`loss_val`) should reach 0.4 after 360 epochs (about 80k steps). The output checkpoints can be found at `outputs/singlerun/${now:%Y-%m-%d}/${now:%H-%M-%S}/output`. We call this folder `$MODEL_PATH` for future reference. 
 
-
-> [!NOTE]  Results on MP20:
-> We train Mattergen from scratch using the `mp_20` dataset.
-> 
-> |                                                                                         | Dataset | train(loss) | val(loss) |
-> | :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
-> |                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.3484    |  0.3794   |
-> | [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |   0.3459    |  0.3735   |
 
 To train the MatterGen base model on alex_mp_20, use the following command:
 ```bash 
@@ -317,15 +303,19 @@ python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=mp_20 +lig
 > You can select any property that is available in the dataset. See [`mattergen/conf/data_module/mp_20.yaml`](mattergen/conf/data_module/mp_20.yaml) or [`mattergen/conf/data_module/alex_mp_20.yaml`](mattergen/conf/data_module/alex_mp_20.yaml) for the list of supported properties. You can also add your own custom property data. See [below](#fine-tune-on-your-own-property-data) for instructions.
 
 #### Multi-property fine-tuning
-*(The following command remains untested at present, with verification scheduled to be completed shortly. ‌)*
 
-You can also fine-tune MatterGen on multiple properties. For instance, to fine-tune it on `dft_mag_density` and `hhi_score`, you can use the following command.
+You can also fine-tune MatterGen on multiple properties. For instance, to fine-tune it on `chemical_system` and `energy_above_hull`, you can use the following command.
 
 ```bash
-export PROPERTY1=dft_mag_density
-export PROPERTY2=hhi_score
+export PROPERTY1=chemical_system
+export PROPERTY2=energy_above_hull 
 export MODEL_PATH=checkpoints/mattergen_base
-python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=mp_20 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY1=$PROPERTY1 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY2=$PROPERTY2 data_module.properties=["$PROPERTY1", "$PROPERTY2"]
+export PYTHONPATH=$PWD
+# single gpu
+python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=alex_mp_20 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY1=$PROPERTY1 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY2=$PROPERTY2 data_module.properties=["$PROPERTY1","$PROPERTY2"]
+# multi gpu
+python -m paddle.distributed.launch --gpus="1,2,3,4" scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=alex_mp_20 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY1=$PROPERTY1 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY2=$PROPERTY2 data_module.properties=["$PROPERTY1","$PROPERTY2"]
+
 ```
 > [!TIP]
 > Add more properties analogously by adding these overrides:
