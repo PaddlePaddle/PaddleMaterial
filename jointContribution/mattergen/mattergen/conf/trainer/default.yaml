@@ -38,7 +38,7 @@
 #   - _target_: mattergen.common.data.callback.SetPropertyScalers
 
 output_dir: 'output'
-save_freq: 1
+save_freq: 10
 log_freq: 10
 start_eval_epoch: 1
 eval_freq: 1
