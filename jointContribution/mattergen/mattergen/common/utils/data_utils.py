@@ -272,13 +272,13 @@ class StandardScalerPaddle(paddle.nn.Layer):
             name="means",
             tensor=paddle.atleast_1d(means)
             if means is not None
-            else paddle.empty(shape=stats_dim),  # noqa
+            else paddle.zeros(shape=stats_dim),  # noqa
         )
         self.register_buffer(
             name="stds",
             tensor=paddle.atleast_1d(stds)
             if stds is not None
-            else paddle.empty(shape=stats_dim),  # noqa
+            else paddle.ones(shape=stats_dim),  # noqa
         )
 
     @property
