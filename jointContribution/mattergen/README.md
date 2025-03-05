@@ -151,7 +151,7 @@ python scripts/evaluate.py \
 
 
 ## Get started with a pre-trained model
-We have converted the model weights provided in the original repository, which you can download from [here](todo).
+We have converted the model weights provided in the original repository, which you can download from [here](https://pan.baidu.com/s/1YO1ZKUNvdU6xxP9GuI9p1g?pwd=u4t6).
 * `mattergen_base`: unconditional base model
 * `chemical_system`: fine-tuned model conditioned on chemical system
 * `space_group`: fine-tuned model conditioned on space group
@@ -160,6 +160,7 @@ We have converted the model weights provided in the original repository, which y
 * `ml_bulk_modulus`: fine-tuned model conditioned on bulk modulus from ML predictor
 * `dft_mag_density_hhi_score`: fine-tuned model jointly conditioned on magnetic density from DFT and HHI score
 * `chemical_system_energy_above_hull`: fine-tuned model jointly conditioned on chemical system and energy above hull from DFT
+* `**_mp20`: pretrained or fine-tuned model on the `mp_20` dataset.
 
 
 ## Generating materials
