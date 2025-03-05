@@ -4,44 +4,60 @@ repos:
     hooks:
       - id: isort
         args: ["--multi-line=7", "--sl", "--profile", "black", "--filter-files"]
+        exclude: ^jointContribution/
 
   - repo: https://github.com/psf/black
     rev: 22.3.0
     hooks:
       - id: black
+        exclude: ^jointContribution/
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: "v0.0.272"
     hooks:
       - id: ruff
+        exclude: ^jointContribution/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: a11d9314b22d8f8c7556443875b731ef05965464
     hooks:
       - id: check-merge-conflict
+        exclude: ^jointContribution/
       - id: check-symlinks
+        exclude: ^jointContribution/
       - id: detect-private-key
+        exclude: ^jointContribution/
         files: (?!.*paddle)^.*$
       - id: end-of-file-fixer
+        exclude: ^jointContribution/
       - id: trailing-whitespace
+        exclude: ^jointContribution/
       - id: check-case-conflict
+        exclude: ^jointContribution/
       - id: check-yaml
-        exclude: "mkdocs.yml"
+        # exclude: "mkdocs.yml"
+        exclude: (^jointContribution/ | "mkdocs.yml")
       - id: pretty-format-json
+        exclude: ^jointContribution/
         args: [--autofix]
       - id: requirements-txt-fixer
+        exclude: ^jointContribution/
 
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.0.1
     hooks:
       - id: forbid-crlf
         files: \.md$
+        exclude: ^jointContribution/
       - id: remove-crlf
         files: \.md$
+        exclude: ^jointContribution/
       - id: forbid-tabs
         files: \.md$
+        exclude: ^jointContribution/
       - id: remove-tabs
         files: \.md$
+        exclude: ^jointContribution/
 
   - repo: local
     hooks:
@@ -51,6 +67,7 @@ repos:
         entry: bash .clang_format.hook -i
         language: system
         files: \.(c|cc|cxx|cpp|cu|h|hpp|hxx|cuh|proto)$
+        exclude: ^jointContribution/
 
 exclude: |
   ^jointContribution/
