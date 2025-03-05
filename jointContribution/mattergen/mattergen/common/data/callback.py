@@ -2,6 +2,8 @@ from collections import defaultdict
 from typing import TypeVar
 
 import paddle
+import paddle.distributed as dist
+
 from tqdm.auto import tqdm
 
 TensorOrStringType = TypeVar("TensorOrStringType", paddle.Tensor, list[str])
@@ -37,8 +39,16 @@ class SetPropertyScalers:
             for property_name in property_names:
                 property_values[property_name].append(batch[property_name])
         for property_name in property_names:
+            values = maybe_to_tensor(values=property_values[property_name])
+            if dist.is_initialized():
+                if isinstance(values, paddle.Tensor):
+                    values_list = []
+                    dist.all_gather(values_list, values)
+                    values = paddle.concat(x=values_list)
+                else:
+                    print(f"Property {property_name} cannot be gathered")
             property_embeddings[property_name].fit_scaler(
-                all_data=maybe_to_tensor(values=property_values[property_name])
+                all_data=values
             )
 
     def on_fit_start(self, train_dataloader, model):
