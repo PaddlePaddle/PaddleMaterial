@@ -28,7 +28,7 @@ def apply_noise(model, X, E, y, node_mask):
     alpha_s_bar = model.noise_schedule.get_alpha_bar(t_normalized=s_float)
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_normalized=t_float)
 
-    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar, device=None)
+    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
 
     # probX = X @ Qtb.X => paddle.matmul(X, Qtb.X)
     probX = paddle.matmul(X, Qtb.X)  # (bs, n, dx_out)
@@ -86,40 +86,6 @@ def concat_without_empty(tensor_lst, axis=-1):
     return paddle.concat(new_lst, axis=axis)
 
 
-def compute_val_loss(
-    model, pred, noisy_data, X, E, y, node_mask, condition, test=False
-):
-    """
-    计算 validation/test 阶段的 NLL (variational lower bound 估计)
-    """
-    t = noisy_data["t"]
-
-    # 1. log p(N) = number of nodes 先验
-    N = paddle.sum(node_mask, axis=1).astype("int64")
-    log_pN = model.node_dist.log_prob(N)
-
-    # 2. KL(q(z_T|x), p(z_T)) => uniform prior
-    kl_prior = model.kl_prior(X, E, node_mask)
-
-    # 3. 逐步扩散损失
-    loss_all_t = model.compute_Lt(X, E, y, pred, noisy_data, node_mask, test)
-
-    # 4. 重构损失
-    prob0 = model.reconstruction_logp(t, X, E, node_mask, condition)
-    loss_term_0_x = X * paddle.log(prob0.X + 1e-10)  # avoid log(0)
-    loss_term_0_e = E * paddle.log(prob0.E + 1e-10)
-
-    # 这里 val_X_logp / val_E_logp 进行加和
-    loss_term_0 = model.val_X_logp(loss_term_0_x) + model.val_E_logp(loss_term_0_e)
-
-    # combine
-    nlls = -log_pN + kl_prior + loss_all_t - loss_term_0
-    # shape: (bs, ), 对batch做均值
-    nll = (model.test_nll if test else model.val_nll)(nlls)
-
-    return nll
-
-
 # -------------------------
 # KL prior
 # -------------------------
@@ -132,7 +98,7 @@ def kl_prior(model, X, E, node_mask):
     Ts = model.T * ones
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_int=Ts)  # (bs,1)
 
-    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar, None)
+    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
     probX = paddle.matmul(X, Qtb.X)  # (bs,n,dx_out)
     probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs,n,n,de_out)
 
@@ -153,14 +119,48 @@ def kl_prior(model, X, E, node_mask):
     )
 
     kl_distance_X = F.kl_div(
-        x=paddle.log(probX + 1e-10), target=limit_dist_X, reduction="none"
+        input=paddle.log(probX + 1e-10), label=limit_dist_X, reduction="none"
     )
     kl_distance_E = F.kl_div(
-        x=paddle.log(probE + 1e-10), target=limit_dist_E, reduction="none"
+        input=paddle.log(probE + 1e-10), label=limit_dist_E, reduction="none"
     )
     klX_sum = diffusion_utils.sum_except_batch(kl_distance_X)
     klE_sum = diffusion_utils.sum_except_batch(kl_distance_E)
     return klX_sum + klE_sum
+
+
+def compute_val_loss(
+    model, pred, noisy_data, X, E, y, node_mask, condition, test=False
+):
+    """
+    计算 validation/test 阶段的 NLL (variational lower bound 估计)
+    """
+    t = noisy_data["t"]
+
+    # 1. log p(N) = number of nodes 先验
+    N = paddle.sum(node_mask, axis=1).astype("int64")
+    log_pN = model.node_dist.log_prob(N)
+
+    # 2. KL(q(z_T|x), p(z_T)) => uniform prior
+    kl_prior_ = kl_prior(model, X, E, node_mask)
+
+    # 3. 逐步扩散损失
+    loss_all_t = compute_Lt(model, X, E, y, pred, noisy_data, node_mask, test)
+
+    # 4. 重构损失
+    prob0 = reconstruction_logp(model, t, X, E, node_mask, condition)
+    loss_term_0_x = X * paddle.log(prob0.X + 1e-10)  # avoid log(0)
+    loss_term_0_e = E * paddle.log(prob0.E + 1e-10)
+
+    # 这里 val_X_logp / val_E_logp 进行加和
+    loss_term_0 = model.val_X_logp(loss_term_0_x) + model.val_E_logp(loss_term_0_e)
+
+    # combine
+    nlls = -log_pN + kl_prior_ + loss_all_t - loss_term_0
+    # shape: (bs, ), 对batch做均值
+    nll = (model.test_nll if test else model.val_nll)(nlls)
+
+    return nll
 
 
 def compute_Lt(model, X, E, y, pred, noisy_data, node_mask, test):
@@ -171,9 +171,9 @@ def compute_Lt(model, X, E, y, pred, noisy_data, node_mask, test):
     pred_probs_E = F.softmax(pred.E, axis=-1)
     pred_probs_y = F.softmax(pred.y, axis=-1)
 
-    Qtb = model.transition_model.get_Qt_bar(noisy_data["alpha_t_bar"], None)
-    Qsb = model.transition_model.get_Qt_bar(noisy_data["alpha_s_bar"], None)
-    Qt = model.transition_model.get_Qt(noisy_data["beta_t"], None)
+    Qtb = model.transition_model.get_Qt_bar(noisy_data["alpha_t_bar"])
+    Qsb = model.transition_model.get_Qt_bar(noisy_data["alpha_s_bar"])
+    Qt = model.transition_model.get_Qt(noisy_data["beta_t"])
 
     bs, n, _ = X.shape
     # 计算真实后验分布
@@ -235,7 +235,7 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
     """
     t_zeros = paddle.zeros_like(t)
     beta_0 = model.noise_schedule(t_zeros)
-    Q0 = model.transition_model.get_Qt(beta_t=beta_0, device=None)
+    Q0 = model.transition_model.get_Qt(beta_t=beta_0)
 
     probX0 = paddle.matmul(X, Q0.X)
     # E => broadcast
@@ -244,23 +244,54 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
     sampled0 = diffusion_utils.sample_discrete_features(probX0, probE0, node_mask)
     X0 = F.one_hot(sampled0.X, num_classes=model.Xdim_output)
     E0 = F.one_hot(sampled0.E, num_classes=model.Edim_output)
-    y0 = sampled0.y  # 这里是空?
+    y0 = sampled0.y
     assert (X.shape == X0.shape) and (E.shape == E0.shape)
 
     # noisy_data
-    sampled_0 = utils.PlaceHolder(X=X0, E=E0, y=y0).mask(node_mask)
-    zeros_t = paddle.zeros([X0.shape[0], 1], dtype="float32")
     noisy_data = {
-        "X_t": sampled_0.X,
-        "E_t": sampled_0.E,
-        "y_t": sampled_0.y,
+        "X_t": X0,
+        "E_t": E0,
+        "y_t": y0,
         "node_mask": node_mask,
-        "t": zeros_t,
+        "t": paddle.zeros([X0.shape[0], 1]).astype("float32"),
     }
-    extra_data = compute_extra_data(noisy_data)
-    pred0 = model.forward(noisy_data, extra_data, node_mask, X, E)
-    # TODO: it is condition in the
-    # pred0 = self.forward(noisy_data, extra_data, node_mask, condition)
+    extra_data = compute_extra_data(model, noisy_data)
+    
+    # input_X
+    input_X = paddle.concat(
+        [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+    ).astype(dtype="float32")
+
+    # input_E
+    input_E = paddle.concat(
+        [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+    ).astype(dtype="float32")
+
+    # input_y with encoder output as condition vector of input of decoder
+    input_y = paddle.hstack(
+        [noisy_data["y_t"].astype("float"), extra_data.y]
+    ).astype(dtype="float32")
+
+    y0 = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)
+    
+    ###########################################################
+    from ppmat.models.denmr.base_model import MultiModalDecoder
+    if model.__class__ == MultiModalDecoder:
+        if model.add_condition:
+            batch_length = input_X.shape[0]
+            conditionVec = condition
+            y_condition = conditionVec.reshape(batch_length, model.vocabDim)
+        else:
+            y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
+        pred0 = model.forward_MultiModalModel(
+            input_X, input_E, input_y, node_mask, y_condition
+        )
+    else:
+        conditionVec = model.encoder(X0, E0, y0, node_mask)
+        input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
+        # forward of decoder with encoder output as condition vector of input of decoder
+        pred0 = model.decoder(input_X, input_E, input_y, node_mask)
+    ############################################################
 
     probX0 = F.softmax(pred0.X, axis=-1)
     probE0 = F.softmax(pred0.E, axis=-1)
@@ -273,7 +304,7 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
     expand_mask = node_mask.unsqueeze(1) * node_mask.unsqueeze(2)
     probE0[~expand_mask] = 1.0 / probE0.shape[-1]
 
-    diag_mask = paddle.eye(probE0.shape[1], dtype="bool")
+    diag_mask = paddle.eye(probE0.shape[1]).astype("bool")
     diag_mask = diag_mask.unsqueeze(0).expand([probE0.shape[0], -1, -1])
     probE0[diag_mask] = 1.0 / probE0.shape[-1]
 
@@ -413,30 +444,19 @@ def sample_batch(
 
 
 @paddle.no_grad()
-def forward_sample(model, noisy_data, extra_data, node_mask, batch_X, batch_E):
-    """
-    用于 sampling 时的推断：同上，但不记录梯度
-    """
-    X = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype("float32")
-    E = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype("float32")
-    y = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype("float32")
-    return model.model(X, E, y, node_mask, batch_X, batch_E)
-
-
-@paddle.no_grad()
 def sample_p_zs_given_zt(
     model, s, t, X_t, E_t, y_t, node_mask, conditionVec, batch_X, batch_E
 ):
     """
     从 p(z_s | z_t) 采样: 反向扩散一步
     """
-    beta_t = model.r(t_normalized=t)
+    beta_t = model.noise_schedule(t_normalized=t)
     alpha_s_bar = model.noise_schedule.get_alpha_bar(t_normalized=s)
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_normalized=t)
 
-    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar, None)
-    Qsb = model.transition_model.get_Qt_bar(alpha_s_bar, None)
-    Qt = model.transition_model.get_Qt(beta_t, None)
+    Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
+    Qsb = model.transition_model.get_Qt_bar(alpha_s_bar)
+    Qt = model.transition_model.get_Qt(beta_t)
 
     # forward
     noisy_data = {
@@ -446,8 +466,35 @@ def sample_p_zs_given_zt(
         "t": t,
         "node_mask": node_mask,
     }
-    extra_data = compute_extra_data(noisy_data)
-    pred = forward_sample(noisy_data, extra_data, node_mask, batch_X, batch_E)
+    extra_data = compute_extra_data(model, noisy_data)
+    
+     # input_X
+    input_X = paddle.concat(
+        [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+    ).astype(dtype="float32")
+
+    # input_E
+    input_E = paddle.concat(
+        [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+    ).astype(dtype="float32")
+
+    # input_y
+    input_y = paddle.hstack(
+        [noisy_data["y_t"].astype("float"), extra_data.y]
+    ).astype(dtype="float32")
+    
+    from ppmat.models.denmr.base_model import MultiModalDecoder
+    if model.__class__ == MultiModalDecoder: 
+        pred = model.forward_MultiModalModel(
+            input_X, input_E, input_y, node_mask, conditionVec
+        )
+    else:
+        y_condition = paddle.zeros(shape=[input_X.shape[0], 0]).cuda(blocking=True)# y_condition for step 1 old version
+        
+        conditionVec = model.encoder(batch_X, batch_E, y_condition, node_mask)
+        input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
+        # forward of decoder with encoder output as condition vector of input of decoder
+        pred = model.decoder(input_X, input_E, input_y, node_mask)
 
     pred_X = F.softmax(pred.X, axis=-1)
     pred_E = F.softmax(pred.E, axis=-1).reshape([X_t.shape[0], -1, pred.E.shape[-1]])

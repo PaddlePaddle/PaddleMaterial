@@ -78,6 +78,7 @@ Model:
       'dim_ffy': 256
     }
     num_layers: 5
+  vocab_dim: 256
   diffusion_model:
     type: 'discrete_condition'
     transition: 'marginal' # uniform or marginal

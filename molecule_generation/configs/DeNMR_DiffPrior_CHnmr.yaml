@@ -6,7 +6,7 @@ Trainer:
   seed: 42
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
-  pretrained_model_path: null # set your pretrained model path here
+  checkpoint_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/latest" # set your pretrained model path here
   val_check_interval: null
   evaluate_all_checkpoints: False
   test_only: null
@@ -44,7 +44,7 @@ Model:
   __name__: "DiffusionPriorModel"
   CLIP:
     nmr_encoder:
-      pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+      pretrained_model_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
       enc_voc_size: 5450
       max_len: 256
       d_model: 256
@@ -54,10 +54,10 @@ Model:
       drop_prob: 0.0
       projector:
         __name__: Linear
-        pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+        pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
         outfeatures: 512
     graph_encoder:
-      pretrained_model_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=438.pdparams"
+      pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams"
       n_layers_GT: 5
       input_dims:
         X: 17
@@ -69,6 +69,7 @@ Model:
         y: 256
       hidden_dims: {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
       output_dims: {'X': 9, 'E': 5, 'y': 0}
+      vocab_dim: 256
     diffusion_model: # to be deleted
       extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
       conditdim: 512

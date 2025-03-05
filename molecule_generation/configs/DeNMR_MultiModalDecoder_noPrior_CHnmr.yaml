@@ -16,7 +16,6 @@ Trainer:
   samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
-  # log_every_steps: 500
   number_chain_steps: 1        # Number of frames in each gif
   final_model_samples_to_generate: 512
   final_model_samples_to_save: 512
@@ -38,7 +37,7 @@ Tracker:
   log:
     log_freq: 500 # log frequency [step]
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder
+    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Metric:
@@ -46,9 +45,9 @@ Metric:
   gt_file_path: "./data/mp_20/test.csv"
 Model:
   __name__: MultiModalDecoder
-  encoder:
+  nmr_encoder:
     __name__: Transformer
-    pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+    pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
     enc_voc_size: 5450
     max_len: 256
     d_model: 256
@@ -58,11 +57,11 @@ Model:
     drop_prob: 0.0
     projector:
       __name__: Linear
-      pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+      pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
       outfeatures: 512
-  decoder:
+  graph_decoder:
     __name__: DiffGraphFormer
-    pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=438.pdparams"
+    pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams"
     hidden_mlp_dims: {
       'X': 256,
       'E': 128,
@@ -78,6 +77,7 @@ Model:
       'dim_ffy': 256
     }
     num_layers: 5
+    vocab_dim: 256
     diffusion_model:
       type: 'discrete_condition'
       transition: 'marginal' # uniform or marginal
@@ -91,36 +91,6 @@ Model:
       conditdim: 512
       number_chain_steps: 1
   connector: null
-  # TODO:
-  #  __name__: "DiffPrior"
-  #  network:
-  #    pretrained_path: "./output/digress_CHnmr/prior/checkpoints/latest.pdparams"
-  #    dim: 512
-  #    num_timesteps: 1000
-  #    num_time_embeds: 1
-  #    num_graph_embeds: 1
-  #    num_text_embeds: 1
-  #    max_text_len: 256
-  #    self_cond: False
-  #    depth: 6
-  #    dim_head: 64
-  #    heads: 8
-  #    graph_embed_dim: 512
-  #  timesteps: 1000
-  #  sample_timesteps: 64
-  #  cond_drop_prob: 0.1
-  #  text_cond_drop_prob: 0.05
-  #  graph_cond_drop_prob: 0.05
-  #  loss_type: "l2"
-  #  predict_x_start: true
-  #  predict_v: false
-  #  beta_schedule: "cosine"
-  #  condition_on_text_encodings: false
-  #  sampling_clamp_l2norm: false
-  #  sampling_final_clamp_l2norm: false
-  #  training_clamp_l2norm: false
-  #  init_graph_embed_l2norm: false
-  #  graph_embed_scale: null
   model_dtype: 'float32'
   diffusion_model:
     extra_features: 'all'

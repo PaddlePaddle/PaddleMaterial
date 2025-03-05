@@ -9,8 +9,6 @@ from ppmat.utils import logger
 
 try:
     from rdkit import Chem
-
-    logger.message(print("Found rdkit, all good"))
 except ModuleNotFoundError as e:
     use_rdkit = False
     from warnings import warn

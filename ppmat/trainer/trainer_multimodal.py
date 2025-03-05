@@ -693,9 +693,7 @@ class TrainerCLIP:
         self.model.train()
 
         total_loss = defaultdict(list)
-        # import pdb
-
-        # pdb.set_trace()
+ 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
@@ -1094,6 +1092,14 @@ class TrainerDiffPrior:
                     "Detected 'pretrained_model_path' is given, weights in which might"
                     " be overridden by weights loaded from given 'checkpoint_path'."
                 )
+            loaded_metric = save_load.load_checkpoint(
+                self.checkpoint_path,
+                self.model,
+                self.optimizer,
+            )
+            if isinstance(loaded_metric, dict):
+                self.best_metric.update(loaded_metric)
+
 
         # 获取当前进程的rank信息
         self.rank = dist.get_rank()
@@ -1336,6 +1342,16 @@ class TrainerDiffPrior:
             self.lr_scheduler.step()
 
         self.global_step += 1
+
+    def eval(self):
+        loss_dict = self.eval_epoch(self.val_dataloader, epoch_id=1)
+        msg = "Eval: "
+        for k, v in loss_dict.items():
+            if isinstance(v, paddle.Tensor):
+                v = v.item()
+            msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+        logger.info(msg)
+        return loss_dict
 
 
 class TrainerMMDecoder(TrainerDiffGraphFormer):

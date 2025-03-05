@@ -41,7 +41,7 @@ Metric:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=438.pdparams"
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams"
     n_layers_GT: 5
     input_dims:
       X: 17
@@ -53,6 +53,7 @@ Model:
       y: 256
     hidden_dims: {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
     output_dims: {'X': 9, 'E': 5, 'y': 0}
+    vocab_dim: 256
   nmr_encoder:
     enc_voc_size: 5450
     max_len: 256
@@ -63,7 +64,7 @@ Model:
     drop_prob: 0.0
     projector:
       __name__: Linear
-      pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=35.pdparams"
+      #pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
       outfeatures: 512
   diffusion_model: # to be deleted
     extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null

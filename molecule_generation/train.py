@@ -156,18 +156,18 @@ if __name__ == "__main__":
 
     elif args.step == 2:
         # build model from config
-        model = ContrastiveModel(**config["Model"])
+        clip_model = ContrastiveModel(**config["Model"])
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Trainer"]["Optimizer"],
-            model,
+            clip_model,
             config["Trainer"]["epochs"],
             len(train_loader),
         )
         # build trainer
         trainer = TrainerCLIP(
             config,
-            model,
+            clip_model,
             train_dataloader=train_loader,
             val_dataloader=val_loader,
             test_dataloader=test_loader,
