@@ -40,7 +40,7 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="./molecule_generation/configs/digress_CHnmr.yaml",
+        default="./molecule_generation/configs/DeNMR_DiffGraphFormer_CHnmr.yaml",
         help="Path to config file",
     )
     parser.add_argument(

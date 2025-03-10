@@ -4,63 +4,6 @@ import paddle.nn.functional as F
 from paddle.metric import Metric
 
 # =========================
-# Abstract Metrics Classes
-# =========================
-
-
-class TrainAbstractMetricsDiscrete(paddle.nn.Layer):
-    """
-    Abstract base class for discrete training metrics.
-    This class serves as a base for specific metric implementations.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, masked_pred_X, masked_pred_E, true_X, true_E, log: bool):
-        """
-        Forward method to compute metrics.
-
-        Args:
-            masked_pred_X (paddle.Tensor): Predicted X with masking applied.
-            masked_pred_E (paddle.Tensor): Predicted E with masking applied.
-            true_X (paddle.Tensor): True X values.
-            true_E (paddle.Tensor): True E values.
-            log (bool): Whether to log the metrics.
-        """
-        pass
-
-    def reset(self):
-        pass
-
-    def log_epoch_metrics(self):
-        return None, None
-
-
-class TrainAbstractMetrics(paddle.nn.Layer):
-    def __init__(self):
-        super().__init__()
-
-    def forward(
-        self,
-        masked_pred_epsX,
-        masked_pred_epsE,
-        pred_y,
-        true_epsX,
-        true_epsE,
-        true_y,
-        log,
-    ):
-        pass
-
-    def reset(self):
-        pass
-
-    def log_epoch_metrics(self):
-        return None, None
-
-
-# =========================
 # Concrete Metric Classes
 # =========================
 class SumExceptBatchMetric(Metric):
@@ -265,46 +208,6 @@ class CrossEntropyMetric(Metric):
 
     def accumulate(self) -> paddle.Tensor:
         return self.accumulate
-
-
-class ProbabilityMetric(Metric):
-    def __init__(self):
-        super().__init__()
-        self.reset()
-
-    def name(self):
-        self.name = self.__class__.__name__
-
-    def reset(self):
-        """
-        Reset the internal states.
-        """
-        self.prob = paddle.to_tensor(0.0, dtype="float32")
-        self.total = paddle.to_tensor(0.0, dtype="float32")
-
-    def update(self, preds: paddle.Tensor) -> None:
-        """
-        Update the probability metric with new predictions.
-
-        Args:
-            preds (paddle.Tensor): Predicted probabilities. Shape: (batch_size, ...)
-        """
-        self.prob += paddle.sum(preds)
-        self.total += paddle.numel(preds)
-    
-    def __call__(self, preds: paddle.Tensor):
-        self.update(preds)
-        nll_ave = self.total_nll / self.total_samples
-        return nll_ave
-
-    def accumulate(self) -> paddle.Tensor:
-        """
-        Compute the average predicted probability.
-
-        Returns:
-            paddle.Tensor: The average predicted probability.
-        """
-        return self.prob / self.total
 
 
 class NLL(Metric):

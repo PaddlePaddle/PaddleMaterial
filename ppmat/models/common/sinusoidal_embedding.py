@@ -9,7 +9,7 @@ def uniform_sample_t(batch_size, timesteps):
     return paddle.to_tensor(times)
 
 
-class SinusoidalTimeEmbeddings(paddle.nn.Layer):
+class SinusoidalEmbeddings(paddle.nn.Layer):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
@@ -17,8 +17,17 @@ class SinusoidalTimeEmbeddings(paddle.nn.Layer):
         embeddings = math.log(10000) / (half_dim - 1)
         self.embeddings = paddle.exp(x=paddle.arange(end=half_dim) * -embeddings)
 
-    def forward(self, time):
-        time = time.astype(paddle.get_default_dtype())
-        embeddings = time[:, None] * self.embeddings[None, :]
+    def forward(self, origin):
+        origin = origin.astype(paddle.get_default_dtype())
+        embeddings = origin[:, None] * self.embeddings[None, :]
         embeddings = paddle.concat(x=(embeddings.sin(), embeddings.cos()), axis=-1)
         return embeddings
+
+class SinusoidalTimeEmbeddings(SinusoidalEmbeddings):
+    def __init__(dim):
+        super().__init__(dim)
+
+
+class SinusoidalPosEmbeddings(SinusoidalEmbeddings):
+    def __init__(dim):
+        super().__init__(dim)

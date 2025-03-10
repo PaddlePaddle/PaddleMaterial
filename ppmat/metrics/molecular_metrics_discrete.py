@@ -2,32 +2,32 @@ import paddle
 import paddle.nn as nn
 
 # ================================
-# 1. 自定义 MetricCollection 类
+# 1. Custom MetricCollection Class
 # ================================
 
 
 class PaddleMetricCollection:
     """
-    用于收集多个自定义 Metric, 并统一调用 update / compute / reset。
-    功能类似 TorchMetrics 中的 MetricCollection。
+    Used for collecting multiple custom metrics and calling 
+    their update, compute, and reset methods uniformly.
     """
 
     def __init__(self, metrics_list):
         """
-        metrics_list: 一个列表，其中每个元素都是 Paddle Metric 对象
-                      (比如本示例中自定义的 CEPerClass 子类实例)。
+        metrics_list: Used to store multiple custom metrics and 
+        each metric can be an instance of a class derived from Metric. 
+        providing unified calls to update, compute, and reset.
         """
         self.metrics_list = metrics_list
 
     def update(self, preds, target):
-        """调用所有 metric 的 update 方法。"""
+        """call update methods of all metric"""
         for metric in self.metrics_list:
             metric.update(preds, target)
 
     def compute(self):
         """
-        与 TorchMetrics 中的 compute 类似，返回一个字典：
-        { metric_name: metric结果, ... }
+        returns a dictionary of the form {metric_name: metric_value}
         """
         results = {}
         for metric in self.metrics_list:
@@ -36,61 +36,63 @@ class PaddleMetricCollection:
         return results
 
     def reset(self):
-        """重置所有 metric 的内部状态。"""
+        """reset internal state of metrics"""
         for metric in self.metrics_list:
             metric.reset()
 
 
 # ================================
-# 2. 自定义 CEPerClass (Paddle Metric)
+# 2. Custom CEPerClass (Paddle Metric)
 # ================================
 
 
 class CEPerClass(paddle.metric.Metric):
     """
-    Paddle 中自定义的交叉熵度量示例，用于对特定类(class_id)的预测进行二进制交叉熵计算。
+    A custom metric in PaddlePaddle that computes the binary cross-entropy (BCE) loss 
+    for a specific class
     """
 
     def __init__(self, class_id):
         super().__init__()
         self._class_id = class_id
-        # 这里用普通 Python 变量累加，也可使用 paddle.to_tensor(0.0)
+        # using Python variable, alternatively paddle.to_tensor(0.0) for accumulation.
         self._total_ce = 0.0
         self._total_samples = 0
 
-        # softmax 用于多分类变成相应类别的概率
+        # softmax: Used to convert multi-class outputs into class-specific probabilities
         self.softmax = nn.Softmax(axis=-1)
-        # BCELoss 在 Paddle 中通过 paddle.nn.BCELoss(reduction='sum')
-        # 或 F.binary_cross_entropy
+        # paddle.nn.BCELoss() or paddle.nn.BCEWithLogitsLoss() for layer-based usage, 
+        # or The functional API: paddle.nn.functional.binary_cross_entropy()
         self.bce_loss = nn.BCELoss(reduction="sum")
 
     def name(self):
         """
-        Paddle 中可以通过 name() 方法返回该指标的名称。
-        也可以在 __init__ 中设置 self._name = xxx，然后在这里 return。
+        Binary cross-entropy (BCE) loss in Paddle can be computed using:
+        paddle.nn.BCELoss(), paddle.nn.functional.binary_cross_entropy()
+        or paddle.nn.functional.binary_cross_entropy_with_logits()
         """
-        # 例如返回 "ce_class_{id}"；在集合中也可结合外层类来命名。
+        # For example, return "ce_class_{id}"; 
+        # when used within a metric collection, naming can also incorporate the outer class name.
         return f"CE_class_{self._class_id}"
 
     def update(self, preds, target):
         """
-        批量更新内部状态。
-        preds.shape: (bs, n, d) 或 (bs, n, n, d)
-        target.shape: 同 preds，一般 (bs, n, d) 或 (bs, n, n, d)
+        batch update internal states。
+        preds.shape: (bs, n, d) or (bs, n, n, d)
+        target.shape: same as preds: (bs, n, d) or (bs, n, n, d)
         """
-        # 将 (bs, n, ...) 展开到 (X, d)
-        # Paddle 中可以用 reshape，注意与 torch.reshape 对应
+        # flatten (bs, n, ...) inot (X, d)
         last_dim = target.shape[-1]  # d
         target = paddle.reshape(target, [-1, last_dim])
 
-        # 创建 mask，排除全0行： (target != 0).any(axis=-1)
+        # create mask to exclude rows that are entirely zero:(target != 0).any(axis=-1)
         mask = paddle.any(target != 0.0, axis=-1)  # bool张量
 
-        # 取特定类别的概率
+        # Retrieve the probability of a specific class.
         prob_full = self.softmax(preds)  # preds => softmax => [batch, ..., d]
-        # 先 reshape preds => [X, d]
+        # reshape preds => [X, d]
         prob_full = paddle.reshape(prob_full, [-1, last_dim])
-        prob = prob_full[:, self._class_id]  # 取第 class_id 列
+        prob = prob_full[:, self._class_id]  # Select the column of `class_id`.
         # 根据 mask 选取有效元素
         prob = paddle.masked_select(prob, mask)
 

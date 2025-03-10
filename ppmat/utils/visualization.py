@@ -4,7 +4,7 @@ import imageio
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import rdkit.Chem
+import rdkit
 from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem import AllChem
@@ -60,7 +60,7 @@ class MolecularVisualization:
         return mol
 
     def visualize(
-        self, path: str, molecules: list, num_molecules_to_visualize: int, log="graph"
+        self, path: str, molecules: list, num_molecules_to_visualize: int
     ):
         if not os.path.exists(path):
             os.makedirs(path)
@@ -111,7 +111,7 @@ class MolecularVisualization:
             except rdkit.Chem.KekulizeException:
                 logger.info("Can't kekulize molecule")
 
-    def visualize_chain(self, batch_id, i, nodes_list, adjacency_matrix, trainer=None):
+    def visualize_chain(self, batch_id, i, nodes_list, adjacency_matrix):
         path = os.path.join(self.result_path, f"chain/molecule_{batch_id}_{i}")
         os.makedirs(path, exist_ok=True)
         RDLogger.DisableLog("rdApp.*")
@@ -207,7 +207,7 @@ class NonMolecularVisualization:
         plt.close("all")
 
     def visualize(
-        self, path: str, graphs: list, num_graphs_to_visualize: int, log="graph"
+        self, path: str, graphs: list, num_graphs_to_visualize: int
     ):
         if not os.path.exists(path):
             os.makedirs(path)

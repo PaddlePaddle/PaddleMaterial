@@ -17,9 +17,9 @@ class DistributionNodes:
         self.prob = prob / prob.sum()
         self.m = paddle.distribution.Categorical(prob)
 
-    def sample_n(self, n_samples, device):
+    def sample_n(self, n_samples):
         idx = self.m.sample((n_samples,))
-        return idx.to(device)
+        return idx
 
     def log_prob(self, batch_n_nodes):
         assert len(tuple(batch_n_nodes.shape)) == 1

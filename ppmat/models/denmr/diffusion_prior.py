@@ -9,8 +9,7 @@ from einops.layers.paddle import Rearrange
 from paddle.incubate.nn.functional import fused_rotary_position_embedding
 
 
-#import log
-from ppmat.models.common.position_embedding import SinusoidalPosEmbeddings
+from ppmat.models.common.sinusoidal_embedding import SinusoidalPosEmbeddings
 
 from .layer import MLP
 from .layer import Attention
@@ -21,6 +20,7 @@ from .layer import prob_mask_like
 from .utils.diffusionprior_utils import default
 from .utils.diffusionprior_utils import exists
 from .utils.diffusionprior_utils import first
+from .utils.diffusionprior_utils import log
 
 
 class DiffusionPriorNetwork(nn.Layer):
@@ -555,10 +555,3 @@ def freeze_model_and_make_eval_(model):
     model.eval()
     freeze_all_layers_(model)
 
-
-class EmptyLayer(nn.Layer):
-    def __init__(self):
-        super(EmptyLayer, self).__init__()
-
-    def forward(self, x):
-        return x

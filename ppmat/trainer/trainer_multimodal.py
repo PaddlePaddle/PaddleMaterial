@@ -19,7 +19,6 @@ from collections import defaultdict
 from typing import Callable
 from typing import Optional
 
-# import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
@@ -30,13 +29,9 @@ from paddle.distributed import fleet
 
 from ppmat.models.denmr import diffusion_utils
 
-# from ppmat.models.denmr.noise_schedule import DiscreteUniformTransition
-# from ppmat.models.denmr.noise_schedule import MarginalUniformTransition
-# from ppmat.models.denmr.noise_schedule import PredefinedNoiseScheduleDiscrete
 from ppmat.models.denmr.utils import digressutils as utils
-from ppmat.models.denmr.utils.model_utils import mol_from_graphs
+from ppmat.models.denmr.utils import model_utils as m_utils
 
-# from ppmat.trainer.trainer_diffusion import TrainerDiffusion
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
@@ -45,11 +40,6 @@ from ppmat.utils.io import write_json
 import rdkit
 from rdkit.Chem import DataStructs
 from rdkit.Chem import RDKFingerprint
-
-# from ppmat.models.denmr.utils.diffusionprior_utils import l2norm
-# from ppmat.models.denmr.utils.diffusionprior_utils import l2norm
-# from ppmat.models.denmr.base_model import ContrastGraphTransformer
-
 
 class TrainerDiffGraphFormer:
     """Class for Trainer."""
@@ -227,8 +217,6 @@ class TrainerDiffGraphFormer:
 
         # Log val nll with default Lightning logger, so it can be monitored by checkpoint callback
         val_nll = metrics[0]
-        logger.info(f"val/epoch_NLL {val_nll :.2f}")
-
         if val_nll < self.model.best_val_nll:
             self.model.best_val_nll = val_nll
         logger.info(f'Val loss: {val_nll :.4f} \t Best val loss: {self.model.best_val_nll :.4f}')
@@ -240,7 +228,7 @@ class TrainerDiffGraphFormer:
             samples_left_to_save = self.config["Trainer"]["samples_to_save"]
             chains_left_to_save = self.config["Trainer"]["chains_to_save"]
 
-            samples, all_ys, ident = [], [], 0
+            samples, ident = [], 0
 
             sample_val_y_collection = paddle.concat(x=self.model.val_y_collection, axis=0)
             sample_val_atomCount = paddle.concat(x=self.model.val_atomCount, axis=0)
@@ -277,7 +265,8 @@ class TrainerDiffGraphFormer:
                 batch_X = sample_val_data_X[start_index:start_index + to_generate]
                 batch_E = sample_val_data_E[start_index:start_index + to_generate]
 
-                molecule_list, molecule_list_True = self.model.sample_batch(
+                molecule_list, molecule_list_True = m_utils.sample_batch(
+                    self.model,
                     batch_id=ident,
                     batch_size=to_generate,
                     num_nodes=batch_atomCount,
@@ -292,12 +281,12 @@ class TrainerDiffGraphFormer:
                 samples.extend(molecule_list)
 
                 for i in range(to_generate):
-                    mol = mol_from_graphs(
+                    mol = m_utils.mol_from_graphs(
                         self.model.dataset_info.atom_decoder, 
                         molecule_list[i][0].numpy(), 
                         molecule_list[i][1].numpy()
                     )
-                    mol_true = mol_from_graphs(
+                    mol_true = m_utils.mol_from_graphs(
                         self.model.dataset_info.atom_decoder,
                         molecule_list_True[i][0].numpy(), 
                         molecule_list_True[i][1].numpy()

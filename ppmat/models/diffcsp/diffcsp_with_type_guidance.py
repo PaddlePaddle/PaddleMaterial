@@ -8,8 +8,8 @@ from ppmat.models.common import initializer
 from ppmat.models.common.noise_schedule import BetaScheduler
 from ppmat.models.common.noise_schedule import SigmaScheduler
 from ppmat.models.common.noise_schedule import d_log_p_wrapped_normal
-from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
-from ppmat.models.common.time_embedding import uniform_sample_t
+from ppmat.models.common.sinusoidal_embedding import SinusoidalTimeEmbeddings
+from ppmat.models.common.sinusoidal_embedding import uniform_sample_t
 from ppmat.models.diffcsp.cspnet import CSPNet
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 

@@ -13,7 +13,7 @@ Trainer:
   check_val_every_n_epochs: 1
   sample_every_val: 1
   val_check_interval: null
-  samples_to_generate: 1       # We advise to set it to 2 x batch_size maximum
+  samples_to_generate: 64       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
   number_chain_steps: 1        # Number of frames in each gif
@@ -102,9 +102,8 @@ Dataset:
       path: "./data/CHnmr/train.csv"
       vocab_path: "./data/CHnmr/vocab.src"
       datadir: "./data/CHnmr"
-      cache: True
+      cache: False
       remove_h: True
-      stage: "train"
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -112,20 +111,19 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/val.csv"
       vocab_path: "./data/CHnmr/vocab.src"
-      cache: True
+      cache: False
       remove_h: True
-      stage: "val"
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 512
   test:
     dataset:
       __name__: CHnmrDataset
@@ -133,19 +131,8 @@ Dataset:
       vocab_path: "./data/CHnmr/vocab.src"
       cache: True
       remove_h: True
-      stage: "test"
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
-      batch_size: 32
-  predict:
-    dataset:
-      __name__: GenDataset
-      total_num: 20
-      formula: MoSi2
-    sampler:
-      __name__: BatchSampler
-      shuffle: False
-      drop_last: False
-      batch_size: 128
+      batch_size: 512

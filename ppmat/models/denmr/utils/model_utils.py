@@ -7,6 +7,7 @@ from rdkit import Chem
 
 from .. import diffusion_utils
 from . import digressutils as utils
+from ppmat.utils import logger
 
 
 # -------------------------
@@ -56,7 +57,6 @@ def apply_noise(model, X, E, y, node_mask):
     }
     return noisy_data
 
-
 def compute_extra_data(model, noisy_data):
     #  mix extra_features with domain_features and
     # noisy_data into X/E/y final inputs. domain_features
@@ -78,13 +78,11 @@ def compute_extra_data(model, noisy_data):
 
     return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
-
 def concat_without_empty(tensor_lst, axis=-1):
     new_lst = [t.astype("float") for t in tensor_lst if 0 not in t.shape]
     if new_lst == []:
         return utils.return_empty(tensor_lst[0])
     return paddle.concat(new_lst, axis=axis)
-
 
 # -------------------------
 # KL prior
@@ -128,7 +126,6 @@ def kl_prior(model, X, E, node_mask):
     klE_sum = diffusion_utils.sum_except_batch(kl_distance_E)
     return klX_sum + klE_sum
 
-
 def compute_val_loss(
     model, pred, noisy_data, X, E, y, node_mask, condition, test=False
 ):
@@ -161,7 +158,6 @@ def compute_val_loss(
     nll = (model.test_nll if test else model.val_nll)(nlls)
 
     return nll
-
 
 def compute_Lt(model, X, E, y, pred, noisy_data, node_mask, test):
     """
@@ -226,7 +222,6 @@ def compute_Lt(model, X, E, y, pred, noisy_data, node_mask, test):
         prob_true.E, paddle.log(prob_pred.E + 1e-10)
     )
     return model.T * (kl_x + kl_e)
-
 
 def reconstruction_logp(model, t, X, E, node_mask, condition):
     """
@@ -315,6 +310,7 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
 # -------------------------
 # 采样 => sample_batch
 # -------------------------
+
 @paddle.no_grad()
 def sample_batch(
     model,
@@ -332,7 +328,7 @@ def sample_batch(
     采样: 反向扩散
     """
     if num_nodes is None:
-        n_nodes = model.node_dist.sample_n(batch_size, None)  # device
+        n_nodes = model.node_dist.sample_n(batch_size)
     elif isinstance(num_nodes, int):
         n_nodes = paddle.full([batch_size], num_nodes, dtype="int64")
     else:
@@ -349,7 +345,9 @@ def sample_batch(
     )
     X, E, y = z_T.X, z_T.E, z_T.y
 
-    chain_X = paddle.zeros([number_chain_steps, keep_chain, X.shape[1]], dtype="int64")
+    chain_X = paddle.zeros(
+        [number_chain_steps, keep_chain, X.shape[1]], dtype="int64"
+    )
     chain_E = paddle.zeros(
         [number_chain_steps, keep_chain, E.shape[1], E.shape[2]], dtype="int64"
     )
@@ -363,6 +361,7 @@ def sample_batch(
 
         # Sample z_s
         sampled_s, discrete_sampled_s = sample_p_zs_given_zt(
+            model,
             s=s_norm,
             t=t_norm,
             X_t=X,
@@ -372,11 +371,11 @@ def sample_batch(
             conditionVec=batch_condition,
             batch_X=batch_X,
             batch_E=batch_E,
-        )
-        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+    )
+    X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-        write_index = (s_int * number_chain_steps) // model.T
-        if write_index >= 0 and write_index < number_chain_steps:
+    write_index = (s_int * number_chain_steps) // model.T
+    if write_index >= 0 and write_index < number_chain_steps:
             chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
             chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
 
@@ -406,42 +405,25 @@ def sample_batch(
 
     # 可视化
     if model.visualization_tools is not None:
-        current_path = os.getcwd()
         num_molecules = chain_X.shape[1]
         for i in range(num_molecules):
-            result_path = os.path.join(
-                current_path,
-                f"chains/{model.cfg.general.name}",
-                f"epochXX/chains/molecule_{batch_id + i}",
-            )
-            os.makedirs(result_path, exist_ok=True)
             # chain_X与chain_E => numpy
             chain_X_np = chain_X[:, i, :].numpy()
             chain_E_np = chain_E[:, i, :, :].numpy()
 
             model.visualization_tools.visualize_chain(
-                result_path, chain_X_np, chain_E_np
+                batch_id, i, chain_X_np, chain_E_np
             )
-            print(f"\r {i+1}/{num_molecules} complete", end="", flush=True)
-        print("\n")
+            logger.message(f"{i+1}/{num_molecules} complete")
 
-        # graph
-        result_path = os.path.join(
-            current_path, f"graphs/{model.name}/epochXX_b{batch_id}/"
-        )
-        result_path_true = os.path.join(
-            current_path, f"graphs/{model.name}/True_epochXX_b{batch_id}/"
-        )
         model.visualization_tools.visualizeNmr(
-            result_path,
-            result_path_true,
+            batch_id,
             molecule_list,
             molecule_list_True,
             save_final,
         )
 
     return molecule_list, molecule_list_True
-
 
 @paddle.no_grad()
 def sample_p_zs_given_zt(
@@ -489,10 +471,11 @@ def sample_p_zs_given_zt(
             input_X, input_E, input_y, node_mask, conditionVec
         )
     else:
-        y_condition = paddle.zeros(shape=[input_X.shape[0], 0]).cuda(blocking=True)# y_condition for step 1 old version
+        y_condition = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)# y_condition for step 1 old version
         
         conditionVec = model.encoder(batch_X, batch_E, y_condition, node_mask)
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
+    
         # forward of decoder with encoder output as condition vector of input of decoder
         pred = model.decoder(input_X, input_E, input_y, node_mask)
 

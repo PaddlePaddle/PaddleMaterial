@@ -2,14 +2,11 @@ from typing import Any, List
 from typing import Union
 
 import paddle
-import wandb
 
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.utils import logger
 
 import os
-# from rdkit import Chem
-
 
 class Metric(paddle.metric.Metric):
     def __init__(self):
@@ -24,7 +21,6 @@ class Metric(paddle.metric.Metric):
         name: str,
         default: Union[List, paddle.Tensor],
         dist_reduce_fx: str = None,
-        persistent: bool = False,
     ) -> None:
         self._name = name
         self._reduce = dist_reduce_fx
@@ -128,55 +124,6 @@ class MetricCollection:
 
 ##############################################################
 
-
-class TrainMolecularMetrics(paddle.nn.Layer):
-    def __init__(self, remove_h):
-        super().__init__()
-        self.train_atom_metrics = AtomMetrics(remove_h)
-        self.train_bond_metrics = BondMetrics()
-
-    def forward(
-        self,
-        masked_pred_epsX,
-        masked_pred_epsE,
-        pred_y,
-        true_epsX,
-        true_epsE,
-        true_y,
-        log: bool,
-    ):
-        self.train_atom_metrics(masked_pred_epsX, true_epsX)
-        self.train_bond_metrics(masked_pred_epsE, true_epsE)
-        if log:
-            to_log = {}
-            for key, val in self.train_atom_metrics.accumulate().items():
-                to_log["train/" + key] = val.item()
-            for key, val in self.train_bond_metrics.accumulate().items():
-                to_log["train/" + key] = val.item()
-            if wandb.run:
-                wandb.log(to_log, commit=False)
-
-    def reset(self):
-        for metric in [self.train_atom_metrics, self.train_bond_metrics]:
-            metric.reset()
-
-    def log_epoch_metrics(self):
-        epoch_atom_metrics = self.train_atom_metrics.accumulate()
-        epoch_bond_metrics = self.train_bond_metrics.accumulate()
-        to_log = {}
-        for key, val in epoch_atom_metrics.items():
-            to_log["train_epoch/epoch" + key] = val.item()
-        for key, val in epoch_bond_metrics.items():
-            to_log["train_epoch/epoch" + key] = val.item()
-        if wandb.run:
-            wandb.log(to_log, commit=False)
-        for key, val in epoch_atom_metrics.items():
-            epoch_atom_metrics[key] = f"{val.item():.3f}"
-        for key, val in epoch_bond_metrics.items():
-            epoch_bond_metrics[key] = f"{val.item():.3f}"
-        return epoch_atom_metrics, epoch_bond_metrics
-
-
 class SamplingMolecularMetrics(paddle.nn.Layer):
     def __init__(self, dataset_infos, train_smiles):
         super().__init__()
@@ -265,21 +212,6 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         node_mae = self.node_dist_mae.accumulate()
         edge_mae = self.edge_dist_mae.accumulate()
         valency_mae = self.valency_dist_mae.accumulate()
-        if wandb.run:
-            wandb.log(to_log, commit=False)
-            wandb.run.summary["Gen n distribution"] = generated_n_dist
-            wandb.run.summary["Gen node distribution"] = generated_node_dist
-            wandb.run.summary["Gen edge distribution"] = generated_edge_dist
-            wandb.run.summary["Gen valency distribution"] = generated_valency_dist
-            wandb.log(
-                {
-                    "basic_metrics/n_mae": n_mae,
-                    "basic_metrics/node_mae": node_mae,
-                    "basic_metrics/edge_mae": edge_mae,
-                    "basic_metrics/valency_mae": valency_mae,
-                },
-                commit=False,
-            )
         if local_rank == 0:
             logger.message("Custom metrics computed.")
 

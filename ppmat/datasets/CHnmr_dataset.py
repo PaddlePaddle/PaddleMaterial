@@ -1,6 +1,7 @@
 import os
+import os.path as osp
+import pickle
 
-# import pathlib
 from collections import defaultdict
 
 # import random
@@ -25,63 +26,41 @@ from ppmat.datasets.ext_rdkit import build_molecule_with_partial_charges
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.datasets.ext_rdkit import mol2smiles
 from ppmat.datasets.utils import numericalize_text
+from ppmat.datasets.transform.preprocess import SelectMuTransform
+from ppmat.datasets.transform.preprocess import SelectHOMOTransform
+from ppmat.datasets.transform.preprocess import RemoveYTransform
 from ppmat.models.denmr.distributions import DistributionNodes
 from ppmat.models.denmr.utils import digressutils as utils
 from ppmat.utils import logger
-
-
-class RemoveYTransform:
-    def __call__(self, data):
-        data.y = paddle.zeros((1, 0), dtype=paddle.float32)
-        return data
-
-
-class SelectMuTransform:
-    def __call__(self, data):
-        data.y = data.y[..., :1]
-        return data
-
-
-class SelectHOMOTransform:
-    def __call__(self, data):
-        data.y = data.y[..., 1:]
-        return data
 
 
 class CHnmrData:
     """
     data process for Spectrum Graph Molecules
     """
-
     def __init__(
         self,
         path: Union[str, List[str]],
         vocab_path: str,
-        remove_h=False,
+        remove_h=True,
         pre_transform: Callable = None,
         pre_filter: Callable = None,
         split_ratio: Tuple = (0.9, 0.05, 0.05),
-        stage: Literal["train", "val", "test"] = None,
     ):
         self.path = path
         self.vocab_path = vocab_path
         self.remove_h = remove_h
         self.pre_transform = pre_transform
-        self.pre_filter = pre_transform
+        self.pre_filter = pre_filter
         self.split_ratio = split_ratio
+        
 
         self.vocabDim = 256
         self.vocab_to_id = {"<blank>": 0, "<unk>": 1}
 
         self.get_vocab_id_dict()
-        if stage is not None:
-            dataset = self.load_data(path, False)
-            setattr(self, stage, dataset)
-        else:
-            dataset = self.load_data(path, True)
-            setattr(self, "train", dataset[0])
-            setattr(self, "val", dataset[1])
-            setattr(self, "test", dataset[2])
+        self.dataset = self.load_data(path, False)
+        logger.info(f"Build {len(self.dataset)} molecules")
 
     def get_vocab_id_dict(self):
         with open(self.vocab_path, "r", encoding="utf-8") as vocab_file:
@@ -141,27 +120,24 @@ class CHnmrData:
         bonds = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
 
         data_list = []
-        # for idx, row in tqdm(target_df.iterrows(), total=target_df.shape[0]):
-        # for idx in tqdm(range(target_df.shape[0] // 100)):
-        for idx in tqdm(range(200)):
-            row = target_df.iloc[idx]
+        for idx, row in tqdm(target_df.iterrows(), total=target_df.shape[0]):
             smiles = row["smiles"]
             tokenized_input = row["tokenized_input"]
             atom_count = row["atom_count"]
 
-            # 将 SMILES 转化为 mol 对象
+            # transfer SMILES into mol object
             mol = Chem.MolFromSmiles(smiles)
             # if mol is None:
             #     continue
 
             N = mol.GetNumAtoms()
 
-            # 获取原子类型索引
+            # get index of atom type
             type_idx = []
             for atom in mol.GetAtoms():
                 type_idx.append(types[atom.GetSymbol()])
 
-            # 获取边信息
+            # get info of edges
             row, col, edge_type = [], [], []
             for bond in mol.GetBonds():
                 start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
@@ -194,7 +170,8 @@ class CHnmrData:
                 # Shift onehot encoding to match atom decoder
                 x = x[:, 1:]
 
-            # 创建 Data 对象，并包含额外的信息（tokenized_input 和 atom_count）
+            # create a new Graph Data object 
+            # and includes extra info tokenized_input(conditionVec) and atom_count
             data = pgl.Graph(
                 num_nodes=x.shape[0],
                 edges=edge_index.T.numpy(),
@@ -213,13 +190,13 @@ class CHnmrData:
             atom_count = paddle.to_tensor(atom_count, dtype=paddle.int64)
 
             other_data = {
-                "y": y,
-                "idx": paddle.to_tensor(idx, dtype=paddle.int64),
-                "conditionVec": conditionVec,
-                "atom_count": atom_count,
+                "y": y.numpy(),
+                "idx": paddle.to_tensor(idx, dtype=paddle.int64).numpy(),
+                "conditionVec": conditionVec.numpy(),
+                "atom_count": atom_count.numpy(),
             }
 
-            # 过滤和转换
+            # apply pre_transform and pre_filter to data
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
             if self.pre_transform is not None:
@@ -234,50 +211,66 @@ class CHnmrDataset(Dataset):
         self,
         path: Union[str, List[str]],
         vocab_path: str,
-        remove_h=False,
+        remove_h=True,
         pre_transform: Callable = None,
         pre_filter: Callable = None,
         split_ratio: Tuple = (0.9, 0.05, 0.05),
-        stage: Literal["train", "val", "test"] = "test",
+        cache: bool = True,
         **kwargs,
     ):
-        data = CHnmrData(
-            path,
-            vocab_path,
-            remove_h,
-            pre_transform,
-            pre_filter,
-            split_ratio,
-            stage,
-        )
-        self.dataset = getattr(data, stage)
-        self.fake_value = paddle.to_tensor(
+        
+        self.cache = cache
+        if cache:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "cached settings match your current settings."
+            )
+        # when cache is True, load cached molecules from cache file
+        cache_path = osp.join(path.rsplit(".", 1)[0] + "_strucs.pkl")
+        if self.cache and osp.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                self.dataset = pickle.load(f)
+            logger.info(
+                f"Load {len(self.dataset)} cached molecules from {cache_path}"
+            )
+        else:
+            data = CHnmrData(
+                path,
+                vocab_path,
+                remove_h,
+                pre_transform,
+                pre_filter,
+                split_ratio,
+            )
+            self.dataset = data.dataset
+            
+            if self.cache:
+                with open(cache_path, "wb") as f:
+                    pickle.dump(self.dataset, f)
+                logger.info(f"Cache {len(self.dataset)} molecules")
+
+        self.fake_value = paddle.to_tensor
+        (
             1.0
         )  # enable the dataloader to read the graph
 
-        # # TODO: apply transform
-        # target = kwargs.get("guidance_target", None)
-        # regressor = kwargs.get("regressor", None)
-        # if regressor and target == "mu":
-        #     transform = SelectMuTransform()
-        # elif regressor and target == "homo":
-        #     transform = SelectHOMOTransform()
-        # elif regressor and target == "both":
-        #     transform = None
-        # else:
-        #     transform = RemoveYTransform()
+        target = kwargs.get("guidance_target", None)
+        regressor = kwargs.get("regressor", None)
+        if regressor and target == "mu":
+            transform = SelectMuTransform()
+        elif regressor and target == "homo":
+            transform = SelectHOMOTransform()
+        elif regressor and target == "both":
+            transform = None
+        else:
+            transform = RemoveYTransform()
 
     def __getitem__(self, idx):
         return self.dataset[idx]
 
     def __len__(self):
         return len(self.dataset)
-
-    def __iter__(self):
-        # TODO: shuffle
-        # random.shuffle(self.dataset)
-        for item in self.dataset:
-            yield item
 
     def collate_fn(self, batch):
         graphs, other_datas = map(list, zip(*batch))
@@ -296,8 +289,14 @@ class CHnmrDataset(Dataset):
                         stacked_tensor.shape[0] * stacked_tensor.shape[1]
                     ] + list(stacked_tensor.shape[2:])
                     new_other_data[key] = stacked_tensor.reshape(new_shape)
+            elif isinstance(values[0], np.ndarray):
+                stacked_tensor = np.stack(values)
+                if len(stacked_tensor.shape) > 1:
+                    new_shape = [
+                        stacked_tensor.shape[0] * stacked_tensor.shape[1]
+                    ] + list(stacked_tensor.shape[2:])
+                    new_other_data[key] = stacked_tensor.reshape(new_shape)
         return batch_graph, new_other_data
-
 
 class CHnmrinfos:
     def __init__(self, dataloaders, cfg, recompute_statistics=False):
@@ -520,7 +519,8 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
     else:
         logger.message("Computing dataset smiles...")
         train_smiles = compute_CHnmr_smiles(atom_decoder, dataloader, remove_h)
-        # np.save(smiles_path, np.array(train_smiles))
+        np.save(smiles_path, np.array(train_smiles))
+
     if evaluate_dataset:
         all_molecules = []
         for i, data in enumerate(dataloader):
@@ -554,6 +554,7 @@ def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
     invalid = 0
     disconnected = 0
     for i, (data, _) in enumerate(dataloader()):
+        RDLogger.DisableLog('rdApp.*')
         logger.info(f"compute_CHnmr_smiles i: {i:d}")
         dense_data, node_mask = utils.to_dense(
             data.node_feat["feat"],

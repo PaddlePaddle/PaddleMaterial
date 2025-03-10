@@ -31,7 +31,7 @@ Trainer:
     #group_wd_params: True
 Tracker:
   log:
-    log_freq: 500 # log frequency [step]
+    log_freq: 1 # log frequency [step]
   save:
     output_dir: "./output/DeNMR_CHnmr/DiffPrior"
     save_freq: 100 # set 0 to disable saving during training
@@ -113,15 +113,14 @@ Dataset:
       datadir: "./data/CHnmr"
       cache: True
       remove_h: True
-      stage: "train"
     loader:
       num_workers: 0
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: False
+      shuffle: False # TODO
       drop_last: False
-      batch_size: 64
+      batch_size: 32
   val:
     dataset:
       __name__: CHnmrDataset
@@ -129,7 +128,6 @@ Dataset:
       vocab_path: "./data/CHnmr/vocab.src"
       cache: True
       remove_h: True
-      stage: "val"
     sampler:
       __name__: BatchSampler
       shuffle: False
@@ -142,7 +140,6 @@ Dataset:
       vocab_path: "./data/CHnmr/vocab.src"
       cache: True
       remove_h: True
-      stage: "test"
     sampler:
       __name__: BatchSampler
       shuffle: False

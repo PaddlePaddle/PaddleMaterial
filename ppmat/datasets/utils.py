@@ -185,7 +185,7 @@ def build_molecules_from_smiles(smiles_str, remove_h=None, num_cpus=None):
         return mol
 
     if isinstance(smiles_str, str):
-        return build_one(crystal_str)
+        return build_one(smiles_str)
     elif isinstance(smiles_str, list):
         mols = p_map(build_one, smiles_str, num_cpus=num_cpus)
         return mols

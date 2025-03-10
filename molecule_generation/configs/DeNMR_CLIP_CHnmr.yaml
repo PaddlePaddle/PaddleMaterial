@@ -27,7 +27,7 @@ Trainer:
     __name__: AdamW
     beta1: 0.9
     beta2: 0.999
-    lr: 0.0002
+    lr: 0.001
 Tracker:
   log:
     log_freq: 1 # log frequency [step]
@@ -78,15 +78,14 @@ Dataset:
       datadir: "./data/CHnmr"
       cache: True
       remove_h: True
-      stage: "train"
     loader:
       num_workers: 0
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 32
   val:
     dataset:
       __name__: CHnmrDataset
@@ -94,10 +93,9 @@ Dataset:
       vocab_path: "./data/CHnmr/vocab.src"
       cache: True
       remove_h: True
-      stage: "val"
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
       batch_size: 32
   test:
@@ -107,9 +105,8 @@ Dataset:
       vocab_path: "./data/CHnmr/vocab.src"
       cache: True
       remove_h: True
-      stage: "test"
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
       batch_size: 32
