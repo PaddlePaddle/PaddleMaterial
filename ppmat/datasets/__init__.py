@@ -7,19 +7,21 @@ from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
+from ppmat.datasets.CHnmr_dataset import CHnmrDataset
 from ppmat.datasets.cif_dataset import CIFDataset
 from ppmat.datasets.gen_dataset import GenDataset
 from ppmat.datasets.mp18_dataset import MP18Dataset  # noqa
 from ppmat.datasets.mp20_dataset import MP20Dataset  # noqa
+from ppmat.datasets.mp2018_dataset import MP2018Dataset  # noqa
 from ppmat.datasets.mp2024_dataset import MP2024Dataset
 from ppmat.datasets.struc_2d_dataset import SturctureDataFromJsonl
 from ppmat.datasets.tensor_dataset import TensorDataset
-from ppmat.datasets.CHnmr_dataset import CHnmrDataset
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
 __all__ = [
     "MP18Dataset",
+    "MP2018Dataset",
     "MP20Dataset",
     "MP2024Dataset",
     "CHnmrDataset",
