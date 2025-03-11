@@ -13,7 +13,7 @@ Trainer:
   check_val_every_n_epochs: 1
   sample_every_val: 1
   val_check_interval: null
-  samples_to_generate: 64       # We advise to set it to 2 x batch_size maximum
+  samples_to_generate: 16       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
   # log_every_steps: 500
@@ -172,7 +172,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 32
   val:
     dataset:
       __name__: CHnmrDataset
@@ -184,7 +184,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 32
   test:
     dataset:
       __name__: CHnmrDataset
@@ -196,4 +196,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 32

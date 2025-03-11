@@ -118,7 +118,7 @@ Dataset:
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: False # TODO
+      shuffle: True
       drop_last: False
       batch_size: 32
   val:

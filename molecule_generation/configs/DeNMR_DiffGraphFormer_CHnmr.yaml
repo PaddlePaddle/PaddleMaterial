@@ -100,7 +100,7 @@ Dataset:
       path: "./data/CHnmr/train.csv"
       vocab_path: "./molecule_generation/vocab.src"
       datadir: "./data/CHnmr"
-      cache: False # TODO
+      cache: True
       remove_h: True
     loader:
       num_workers: 0
@@ -115,7 +115,7 @@ Dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/val.csv"
       vocab_path: "./molecule_generation/vocab.src"
-      cache: False
+      cache: True
       remove_h: True
     sampler:
       __name__: BatchSampler
