@@ -8,9 +8,7 @@ import rdkit
 from rdkit import Chem
 from rdkit import RDLogger
 from rdkit.Chem import AllChem
-from rdkit.Chem import DataStructs
 from rdkit.Chem import Draw
-from rdkit.Chem import RDKFingerprint
 from rdkit.Geometry import Point3D
 
 from ppmat.utils import logger
@@ -20,7 +18,7 @@ class MolecularVisualization:
     def __init__(self, remove_h, dataset_infos, output_dir):
         self.remove_h = remove_h
         self.dataset_infos = dataset_infos
-        self.result_path = os.path.join(output_dir, f"graph/")
+        self.result_path = os.path.join(output_dir, "graph/")
 
     def mol_from_graphs(self, node_list, adjacency_matrix):
         """
@@ -59,14 +57,12 @@ class MolecularVisualization:
             mol = None
         return mol
 
-    def visualize(
-        self, path: str, molecules: list, num_molecules_to_visualize: int
-    ):
+    def visualize(self, path: str, molecules: list, num_molecules_to_visualize: int):
         if not os.path.exists(path):
             os.makedirs(path)
-        logger.message(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
+        logger.info(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            logger.message(f"Shortening to {len(molecules)}")
+            logger.info(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
@@ -82,7 +78,6 @@ class MolecularVisualization:
         molecules: list,
         molecules_true,
         num_molecules_to_visualize: int,
-        log="graph",
     ):
         path = os.path.join(self.result_path, f"batch_{batch_id}_predicted")
         path_true = os.path.join(self.result_path, f"batch_{batch_id}_true")
@@ -90,9 +85,9 @@ class MolecularVisualization:
             os.makedirs(path)
         if not os.path.exists(path_true):
             os.makedirs(path_true)
-        logger.message(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
+        logger.info(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
-            logger.info(f"Shortening to {len(molecules)}")
+            logger.info(f"Sampling: Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
@@ -104,10 +99,6 @@ class MolecularVisualization:
             try:
                 Draw.MolToFile(mol, file_path)
                 Draw.MolToFile(mol_true, file_path_true)
-                fp1 = RDKFingerprint(mol)
-                fp2 = RDKFingerprint(mol_true)
-                similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                logger.info(f"Tanimoto相似度: {similarity}")
             except rdkit.Chem.KekulizeException:
                 logger.info("Can't kekulize molecule")
 
@@ -206,9 +197,7 @@ class NonMolecularVisualization:
         plt.savefig(path)
         plt.close("all")
 
-    def visualize(
-        self, path: str, graphs: list, num_graphs_to_visualize: int
-    ):
+    def visualize(self, path: str, graphs: list, num_graphs_to_visualize: int):
         if not os.path.exists(path):
             os.makedirs(path)
         for i in range(num_graphs_to_visualize):

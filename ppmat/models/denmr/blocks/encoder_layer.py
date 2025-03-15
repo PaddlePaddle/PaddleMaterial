@@ -4,12 +4,6 @@ from ..layers.layer_norm import LayerNorm
 from ..layers.multi_head_attention import MultiHeadAttention
 from ..layers.position_wise_feed_forward import PositionwiseFeedForward
 
-"""
-@author : Hyunwoong
-@when : 2019-10-24
-@homepage : https://github.com/gusdnd852
-"""
-
 
 class EncoderLayer(paddle.nn.Layer):
     def __init__(self, d_model, ffn_hidden, n_head, drop_prob):

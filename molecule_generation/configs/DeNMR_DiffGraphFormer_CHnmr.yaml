@@ -36,7 +36,7 @@ Trainer:
       indicator: "train_loss"
 Tracker:
   log:
-    log_freq: 1 # log frequency [step]
+    log_freq: 100 # log frequency [step]
   save:
     output_dir: ./output/DeNMR_CHnmr/DiffGraphFormer
     save_freq: 100 # set 0 to disable saving during training
@@ -107,9 +107,9 @@ Dataset:
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 512 
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset

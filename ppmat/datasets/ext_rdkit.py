@@ -4,17 +4,9 @@ import re
 
 import numpy as np
 import paddle
+from rdkit import Chem
 
 from ppmat.utils import logger
-
-try:
-    from rdkit import Chem
-except ModuleNotFoundError as e:
-    use_rdkit = False
-    from warnings import warn
-
-    warn("Didn't find rdkit, this will fail")
-    assert use_rdkit, "Didn't find rdkit"
 
 allowed_bonds = {
     "H": 1,
@@ -72,28 +64,61 @@ class BasicMolecularMetrics(object):
                     mol, asMols=True, sanitizeFrags=True
                 )
                 num_components.append(len(mol_frags))
-            except:
-                pass
-            if smiles is not None:
-                try:
-                    mol_frags = Chem.rdmolops.GetMolFrags(
-                        mol, asMols=True, sanitizeFrags=True
-                    )
-                    largest_mol = max(
-                        mol_frags, default=mol, key=lambda m: m.GetNumAtoms()
-                    )
-                    smiles = mol2smiles(largest_mol)
+                largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
+                smiles = mol2smiles(largest_mol)
+                if smiles is not None:
                     valid.append(smiles)
                     all_smiles.append(smiles)
-                except Chem.rdchem.AtomValenceException:
-                    print("Valence error in GetmolFrags")
-                    all_smiles.append(None)
-                except Chem.rdchem.KekulizeException:
-                    print("Can't kekulize molecule")
-                    all_smiles.append(None)
-            else:
+            except Exception as e:
+                logger.debug(f"Error in GetMolFrags: {e}")
                 all_smiles.append(None)
+            except Chem.rdchem.AtomValenceException:
+                logger.debug("Valence error in GetmolFrags")
+                all_smiles.append(None)
+            except Chem.rdchem.KekulizeException:
+                logger.debug("Can't kekulize molecule")
+                all_smiles.append(None)
+            else:
+                if smiles is None:
+                    all_smiles.append(None)
         return valid, len(valid) / len(generated), np.array(num_components), all_smiles
+
+    # def compute_validity(self, generated):
+    #     """
+    #     generated: list of couples (positions, atom_types) for generated molecules
+    #     """
+    #     valid = []
+    #     num_components = []
+    #     all_smiles = []
+    #     for graph in generated:
+    #         atom_types, edge_types = graph
+    #         mol = build_molecule(
+    #           atom_types, edge_types, self.dataset_info.atom_decoder)
+    #         smiles = mol2smiles(mol)
+    #         try:
+    #             mol_frags = Chem.rdmolops.GetMolFrags(
+    #                 mol, asMols=True, sanitizeFrags=True
+    #             )
+    #             num_components.append(len(mol_frags))
+    #         except:
+    #             pass
+    #         if smiles is not None:
+    #             try:
+    #                 mol_frags = Chem.rdmolops.GetMolFrags(
+    #                     mol, asMols=True, sanitizeFrags=True
+    #                 )
+    #                 largest_mol = max(
+    #                     mol_frags, default=mol, key=lambda m: m.GetNumAtoms()
+    #                 )
+    #                 smiles = mol2smiles(largest_mol)
+    #                 valid.append(smiles)
+    #                 all_smiles.append(smiles)
+    #             except Chem.rdchem.AtomValenceException:
+    #                 print("Valence error in GetmolFrags")
+    #                 all_smiles.append(None)
+    #         else:
+    #             all_smiles.append(None)
+    #     return valid, len(valid)/len(generated), np.array(num_components), all_smiles
 
     def compute_uniqueness(self, valid):
         """valid: list of SMILES strings."""
@@ -138,28 +163,17 @@ class BasicMolecularMetrics(object):
     def evaluate(self, generated):
         """generated: list of pairs (positions: n x 3, atom_types: n [int])
         the positions and atom types should already be masked."""
-        valid, validity, num_components, all_smiles = self.compute_validity(generated)
+        _, validity, num_components, all_smiles = self.compute_validity(generated)
         nc_mu = num_components.mean() if len(num_components) > 0 else 0
         nc_min = num_components.min() if len(num_components) > 0 else 0
         nc_max = num_components.max() if len(num_components) > 0 else 0
-        logger.info(f"Validity over {len(generated)} molecules: {validity * 100:.2f}%")
-        logger.info(
-            f"Number of connected components of {len(generated)} molecules: min:{nc_min:.2f} mean:{nc_mu:.2f} max:{nc_max:.2f}"
-        )
+
         relaxed_valid, relaxed_validity = self.compute_relaxed_validity(generated)
-        logger.info(
-            f"Relaxed validity over {len(generated)} molecules: {relaxed_validity * 100:.2f}%"
-        )
+
         if relaxed_validity > 0:
             unique, uniqueness = self.compute_uniqueness(relaxed_valid)
-            print(
-                f"Uniqueness over {len(relaxed_valid)} valid molecules: {uniqueness * 100:.2f}%"
-            )
             if self.dataset_smiles_list is not None:
                 _, novelty = self.compute_novelty(unique)
-                print(
-                    f"Novelty over {len(unique)} unique valid molecules: {novelty * 100:.2f}%"
-                )
             else:
                 novelty = -1.0
         else:
@@ -332,7 +346,7 @@ def check_stability(
         else:
             is_stable = atom_n_bond in possible_bonds
         if not is_stable and debug:
-            print(
+            logger.info(
                 "Invalid bonds for molecule %s with %d bonds"
                 % (atom_decoder[atom_type], atom_n_bond)
             )
@@ -344,7 +358,7 @@ def check_stability(
 def compute_molecular_metrics(molecule_list, train_smiles, dataset_info):
     """molecule_list: (dict)"""
     if not dataset_info.remove_h:
-        print(f"Analyzing molecule stability...")
+        logger.info("Analyzing molecule stability...")
         molecule_stable = 0
         nr_stable_bonds = 0
         n_atoms = 0

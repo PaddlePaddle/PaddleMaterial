@@ -13,7 +13,7 @@ Trainer:
   check_val_every_n_epochs: 1
   sample_every_val: 1
   val_check_interval: null
-  samples_to_generate: 16       # We advise to set it to 2 x batch_size maximum
+  samples_to_generate: 32       # We advise to set it to 2 x batch_size maximum
   samples_to_save: 1
   chains_to_save: 1
   number_chain_steps: 1        # Number of frames in each gif

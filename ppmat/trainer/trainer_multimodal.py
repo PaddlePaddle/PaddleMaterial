@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import sys
 import time
 from collections import defaultdict
 from typing import Callable
@@ -28,22 +27,35 @@ from paddle import optimizer as optim
 from paddle.distributed import fleet
 
 from ppmat.models.denmr import diffusion_utils
-
-from ppmat.models.denmr.utils import digressutils as utils
+from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 from ppmat.models.denmr.utils import model_utils as m_utils
-
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
 
-import rdkit
-from rdkit.Chem import DataStructs
-from rdkit.Chem import RDKFingerprint
+
+def scale_shared_grads(model):
+    """Divide the gradients of the layers that are shared across multiple
+    blocks
+    by the number the weights are shared for
+    """
+    with paddle.no_grad():
+
+        def scale_grad(param, scale_factor):
+            if param.grad is None:
+                return
+            g_data = param.grad
+            new_grads = g_data / scale_factor
+            param.grad = new_grads  # .copy_(new_grads)
+
+        if isinstance(model, paddle.distributed.parallel.DataParallel):
+            model = model._layers
+        for layer, num_blocks in model.shared_parameters:
+            scale_grad(layer, num_blocks)
+
 
 class TrainerDiffGraphFormer:
-    """Class for Trainer."""
-
     def __init__(
         self,
         config,
@@ -79,6 +91,12 @@ class TrainerDiffGraphFormer:
         self.scale_grad = config["Trainer"].get("scale_grad", False)
         self.is_save_traj = config["Tracker"]["save"].get("is_save_traj", False)
         self.step_lr = config["Trainer"].get("step_lr", 0.000005)
+
+        # get sample config
+        self.samp_per_val = self.config["Trainer"]["sample_every_val"]
+        self.samples_left_to_generate = self.config["Trainer"]["samples_to_generate"]
+        self.samples_left_to_save = self.config["Trainer"]["samples_to_save"]
+        self.chains_left_to_save = self.config["Trainer"]["chains_to_save"]
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -148,261 +166,6 @@ class TrainerDiffGraphFormer:
         self.global_step = 0
         self.log_paddle_version()
 
-    def log_paddle_version(self):
-        # log paddlepaddle's version
-        if version.Version(paddle.__version__) != version.Version("0.0.0"):
-            paddle_version = paddle.__version__
-            if version.Version(paddle.__version__) < version.Version("2.6.0"):
-                logger.warning(
-                    f"Detected paddlepaddle version is '{paddle_version}', "
-                    "currently it is recommended to use release 2.6 or develop version."
-                )
-        else:
-            paddle_version = f"develop({paddle.version.commit[:7]})"
-
-        logger.info(f"Using paddlepaddle {paddle_version}")
-
-    @paddle.no_grad()
-    def eval_epoch(self, dataloader, epoch_id: int):
-        """Eval program for one epoch.
-
-        Args:
-            epoch_id (int): Epoch id.
-        """
-        reader_cost = 0.0
-        batch_cost = 0.0
-        reader_tic = time.perf_counter()
-        batch_tic = time.perf_counter()
-        self.model.eval()
-        total_loss = defaultdict(list)
-        data_length = len(dataloader)
-        for iter_id, batch_data in enumerate(dataloader):
-            reader_cost = time.perf_counter() - reader_tic
-
-            loss_dict = self.model.sample(batch_data, iter_id)
-
-            for key, value in loss_dict.items():
-                if isinstance(value, paddle.Tensor):
-                    value = value.item()
-                total_loss[key].append(value)
-
-            batch_cost = time.perf_counter() - batch_tic
-            if paddle.distributed.get_rank() == 0 and (
-                iter_id % self.log_freq == 0 or iter_id == data_length - 1
-            ):
-                msg = f"Epoch [{epoch_id}/{self.epochs}] "
-                msg += f"| Step: [{iter_id+1}/{data_length}]"
-                msg += f" | reader cost: {reader_cost:.5f}s"
-                msg += f" | batch cost: {batch_cost:.5f}s"
-                for k, v in loss_dict.items():
-                    if isinstance(v, paddle.Tensor):
-                        v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
-                logger.info(msg)
-
-            batch_tic = time.perf_counter()
-            reader_tic = time.perf_counter()
-
-        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
-
-        return total_loss_avg
-
-    def eval_epoch_end(self, epoch_id):
-        metrics = [self.model.val_nll.accumulate(), self.model.val_X_kl.accumulate() * self.model.T, self.model.val_E_kl.accumulate() * self.model.T,
-                   self.model.val_X_logp.accumulate(), self.model.val_E_logp.accumulate()]
-
-        logger.info(f"Val NLL {metrics[0] :.2f} -- Val Atom type KL {metrics[1] :.2f} -- Val Edge type KL: {metrics[2] :.2f}")
-
-        # Log val nll with default Lightning logger, so it can be monitored by checkpoint callback
-        val_nll = metrics[0]
-        if val_nll < self.model.best_val_nll:
-            self.model.best_val_nll = val_nll
-        logger.info(f'Val loss: {val_nll :.4f} \t Best val loss: {self.model.best_val_nll :.4f}')
-
-        self.model.val_counter += 1
-        if self.model.val_counter % self.config["Trainer"]["sample_every_val"] == 0:
-            start = time.time()
-            samples_left_to_generate = self.config["Trainer"]['samples_to_generate']
-            samples_left_to_save = self.config["Trainer"]["samples_to_save"]
-            chains_left_to_save = self.config["Trainer"]["chains_to_save"]
-
-            samples, ident = [], 0
-
-            sample_val_y_collection = paddle.concat(x=self.model.val_y_collection, axis=0)
-            sample_val_atomCount = paddle.concat(x=self.model.val_atomCount, axis=0)
-            sample_val_data_X = paddle.concat(x=self.model.val_data_X, axis=0)
-            #logger.info(f'val_data_X_shape{(sample_val_data_X.shape)}')
-            sample_val_data_E = paddle.concat(x=self.model.val_data_E, axis=0)
-            sample_val_y_collection = sample_val_y_collection.view(-1, self.model.vocabDim)
-            # self.val_atomCount = self.val_atomCount.view(-1,1)
-            num_examples = sample_val_y_collection.shape[0]
-
-
-            start_index = 0
-
-            self.model.val_allnum = len(sample_val_data_X)
-            self.model.val_right = 0
-
-            # 生成指定数量的样本
-            while samples_left_to_generate > 0:
-                bs = 1 * self.config["Dataset"]["val"]["sampler"]["batch_size"]
-                to_generate = min(samples_left_to_generate, bs)
-                to_save = min(samples_left_to_save, bs)
-                chains_save = min(chains_left_to_save, bs)
-                if start_index + to_generate > num_examples:
-                    start_index = 0
-                if to_generate > num_examples:
-                    ratio = to_generate // num_examples
-                    sample_val_y_collection = self.model.val_y_collection.repeat(ratio+1, 1)
-                    sample_val_atomCount = self.model.val_atomCount.repeat(ratio + 1, 1)
-                    sample_val_data_X = self.model.val_data_X.repeat(ratio+1, 1)
-                    sample_val_data_E = self.model.val_data_E.repeat(ratio+1, 1)
-                    num_examples = sample_val_y_collection.size(0)
-                batch_y = sample_val_y_collection[start_index:start_index + to_generate]
-                batch_atomCount = sample_val_atomCount[start_index:start_index + to_generate]
-                batch_X = sample_val_data_X[start_index:start_index + to_generate]
-                batch_E = sample_val_data_E[start_index:start_index + to_generate]
-
-                molecule_list, molecule_list_True = m_utils.sample_batch(
-                    self.model,
-                    batch_id=ident,
-                    batch_size=to_generate,
-                    num_nodes=batch_atomCount,
-                    batch_condition=batch_y,
-                    save_final=to_save,
-                    keep_chain=chains_save,
-                    number_chain_steps=self.model.number_chain_steps,
-                    batch_X=batch_X,
-                    batch_E=batch_E
-                )
-
-                samples.extend(molecule_list)
-
-                for i in range(to_generate):
-                    mol = m_utils.mol_from_graphs(
-                        self.model.dataset_info.atom_decoder, 
-                        molecule_list[i][0].numpy(), 
-                        molecule_list[i][1].numpy()
-                    )
-                    mol_true = m_utils.mol_from_graphs(
-                        self.model.dataset_info.atom_decoder,
-                        molecule_list_True[i][0].numpy(), 
-                        molecule_list_True[i][1].numpy()
-                    )
-                    try:
-                        fp1 = RDKFingerprint(mol)
-                        fp2 = RDKFingerprint(mol_true)
-                        # 计算Tanimoto相似度
-                        similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                        # 输出相似度
-                        if similarity == 1:
-                            self.model.val_right = self.model.val_right + 1
-                    except rdkit.Chem.KekulizeException:
-                        print("Can't kekulize molecule")
-
-                ident += to_generate
-                start_index += to_generate
-
-                samples_left_to_save -= to_save
-                samples_left_to_generate -= to_generate
-                chains_left_to_save -= chains_save
-            
-            # sampled molecules to compute metrics
-            logger.message("Computing sampling metrics...")
-            logger.info(f'right:{self.model.val_right} | all:{self.model.val_allnum} | accuracy:{self.model.val_right / self.model.val_allnum}')
-            self.model.sampling_metrics.forward(
-                samples, 
-                epoch_id, 
-                val_counter=-1, 
-                test=False,
-                local_rank= self.rank, 
-                output_dir=self.output_dir
-            )
-            logger.info(f'Done. Sampling took {time.time() - start:.2f} seconds')
-            logger.message("Validation epoch end ends...")
-            
-
-    def train_epoch(self, dataloader, epoch_id: int):
-        """Train program for one epoch.
-
-        Args:
-            epoch_id (int): Epoch id.
-        """
-        reader_cost = 0.0
-        batch_cost = 0.0
-        reader_tic = time.perf_counter()
-        batch_tic = time.perf_counter()
-        self.model.train()
-        total_loss = defaultdict(list)
-
-        data_length = len(dataloader)
-        for iter_id, batch_data in enumerate(dataloader):
-            reader_cost = time.perf_counter() - reader_tic
-
-            loss_dict = self.model(batch_data)
-
-            loss = loss_dict["train_loss"]
-            loss.backward()
-            # if self.scale_grad:
-            #     # TODO: no scale_shared_grads defined here!!!
-            #     scale_shared_grads(self.model)
-
-            self.optimizer.step()
-            self.optimizer.clear_grad()
-
-            for key, value in loss_dict.items():
-                if isinstance(value, paddle.Tensor):
-                    value = value.item()
-                total_loss[key].append(value)
-
-            # if solver.world_size > 1:
-            #     # fuse + allreduce manually before optimization if use DDP + no_sync
-            #     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
-            #     hpu.fused_allreduce_gradients(list(self.model.parameters()), None)
-            # update learning rate by step
-            if self.lr_scheduler is not None and not self.lr_scheduler.by_epoch:
-                if isinstance(self.lr_scheduler, paddle.optimizer.lr.ReduceOnPlateau):
-                    if (
-                        self.config["Optimizer"]["lr"].get("indicator", "train_loss")
-                        == "train_loss"
-                    ):
-                        train_loss = loss_dict["loss"]
-                        train_loss = paddle.to_tensor(train_loss)
-                        if self.world_size > 1:
-                            dist.all_reduce(train_loss)
-                            train_loss = train_loss / self.world_size
-                        self.lr_scheduler.step(train_loss)
-                else:
-                    self.lr_scheduler.step()
-
-            batch_cost = time.perf_counter() - batch_tic
-            # update and log training information
-            self.global_step += 1
-            if paddle.distributed.get_rank() == 0 and (
-                iter_id % self.log_freq == 0 or iter_id == data_length - 1
-            ):
-                msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
-                msg += f" | Step: [{iter_id+1}/{data_length}]"
-                msg += f" | lr: {self.optimizer._learning_rate():.6f}".rstrip("0")
-                msg += f" | reader cost: {reader_cost:.5f}s"
-                msg += f" | batch cost: {batch_cost:.5f}s"
-                for k, v in loss_dict.items():
-                    if isinstance(v, paddle.Tensor):
-                        v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
-                logger.info(msg)
-
-            batch_tic = time.perf_counter()
-            reader_tic = time.perf_counter()
-
-        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
-
-        return total_loss_avg
-    
     def train(self) -> None:
         """Training."""
         self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
@@ -411,14 +174,18 @@ class TrainerDiffGraphFormer:
         start_epoch = self.best_metric["epoch"] + 1
 
         for epoch_id in range(start_epoch, self.epochs + 1):
+            # train epoch
             train_loss_dict = self.train_epoch(self.train_dataloader, epoch_id)
 
+            # log train epoch info
             msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
             for k, v in train_loss_dict.items():
                 if isinstance(v, paddle.Tensor):
                     v = v.item()
                 msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
             logger.info(msg)
+
+            # eval epoch
             save_metric_dict = {"epoch": epoch_id}
             if (
                 epoch_id >= self.start_eval_epoch
@@ -426,9 +193,11 @@ class TrainerDiffGraphFormer:
                 and epoch_id % self.eval_freq == 0
                 and dist.get_rank() == 0
             ):
+                self.eval_epoch_start()
                 eval_loss_dict = self.eval_epoch(self.val_dataloader, epoch_id)
                 save_metric_dict.update(eval_loss_dict)
 
+                # log eval epoch loss info
                 msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
                 for k, v in eval_loss_dict.items():
                     if isinstance(v, paddle.Tensor):
@@ -436,6 +205,25 @@ class TrainerDiffGraphFormer:
                     msg += (
                         f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
                     )
+                logger.info(msg)
+
+                # log eval epoch metric info
+                metrics = [
+                    self.model.val_nll.accumulate(),
+                    self.model.val_X_kl.accumulate() * self.model.T,
+                    self.model.val_E_kl.accumulate() * self.model.T,
+                    self.model.val_X_logp.accumulate(),
+                    self.model.val_E_logp.accumulate(),
+                ]
+                val_nll = metrics[0]
+                if val_nll < self.model.best_val_nll:
+                    self.model.best_val_nll = val_nll
+
+                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}] "
+                msg += f" | Val NLL {metrics[0] :.2f}"
+                msg += f" | Val Atom type KL {metrics[1] :.2f}"
+                msg += f" | Val Edge type KL: {metrics[2] :.2f}"
+                msg += f" | Best val loss: {self.model.best_val_nll :.4f}"
                 logger.info(msg)
 
                 # update best metric
@@ -450,9 +238,29 @@ class TrainerDiffGraphFormer:
                         output_dir=self.output_dir,
                         prefix="best",
                     )
-                
-                # sampling for compute accuracy and visualization
-                self.eval_epoch_end(epoch_id)
+
+            # sample epoch
+            if (
+                epoch_id % (self.samp_per_val * self.eval_freq) == 0
+                and dist.get_rank() == 0
+            ):
+                start = time.time()
+
+                # eval sample epoch
+                metric_dict = self.sample_epoch(epoch_id)
+
+                # log eval sample metric info
+                msg = f"Sample: Epoch [{epoch_id}/{self.epochs}] "
+                msg += f" | sample_metric cost: {time.time() - start:.5f}s"
+                for k, v in metric_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item() if v.numel() == 1 else v.tolist()
+                    msg += (
+                        f" | {k}(metric): {', '.join(f'{x:.5f}' for x in v)}"
+                        if isinstance(v, (list, tuple))
+                        else f" | {k}(metric): {v:.5f}"
+                    )
+                logger.info(msg)
 
             # update learning rate by epoch
             if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
@@ -555,6 +363,252 @@ class TrainerDiffGraphFormer:
         logger.info(f"Test Metric: {metric_dict}")
         return pred_data_total, metric_dict
 
+    def train_epoch(self, dataloader, epoch_id: int):
+        """Train program for one epoch.
+
+        Args:
+            epoch_id (int): Epoch id.
+        """
+        reader_cost = 0.0
+        batch_cost = 0.0
+        reader_tic = time.perf_counter()
+        batch_tic = time.perf_counter()
+        self.model.train()
+        total_loss = defaultdict(list)
+
+        data_length = len(dataloader)
+        for iter_id, batch_data in enumerate(dataloader):
+            if iter_id == 1:  # TODO: for debug
+                break
+            reader_cost = time.perf_counter() - reader_tic
+
+            loss_dict, metric_dict = self.model(batch_data)
+
+            loss = loss_dict["train_loss"]
+            loss.backward()
+            if self.scale_grad:
+                scale_shared_grads(self.model)
+
+            self.optimizer.step()
+            self.optimizer.clear_grad()
+
+            for key, value in loss_dict.items():
+                if isinstance(value, paddle.Tensor):
+                    value = value.item()
+                total_loss[key].append(value)
+
+            # TODO: distrubuted
+            if self.world_size > 1:
+                fleet.utils.hybrid_parallel_util.fused_allreduce_gradients(
+                    list(self.model.parameters()), None
+                )
+
+            # update learning rate by step
+            if self.lr_scheduler is not None and not self.lr_scheduler.by_epoch:
+                if isinstance(self.lr_scheduler, paddle.optimizer.lr.ReduceOnPlateau):
+                    if (
+                        self.config["Optimizer"]["lr"].get("indicator", "train_loss")
+                        == "train_loss"
+                    ):
+                        train_loss = loss_dict["loss"]
+                        train_loss = paddle.to_tensor(train_loss)
+                        if self.world_size > 1:
+                            dist.all_reduce(train_loss)
+                            train_loss = train_loss / self.world_size
+                        self.lr_scheduler.step(train_loss)
+                else:
+                    self.lr_scheduler.step()
+
+            batch_cost = time.perf_counter() - batch_tic
+
+            # update and log training information
+            self.global_step += 1
+            if paddle.distributed.get_rank() == 0 and (
+                iter_id % self.log_freq == 0 or iter_id == data_length - 1
+            ):
+                msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
+                msg += f" | Step: [{iter_id+1}/{data_length}]"
+                msg += f" | lr: {self.optimizer._learning_rate():.6f}".rstrip("0")
+                msg += f" | reader cost: {reader_cost:.5f}s"
+                msg += f" | batch cost: {batch_cost:.5f}s"
+                for k, v in loss_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item()
+                    msg += (
+                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+                    )
+                for k, v in metric_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item()
+                    msg += (
+                        f" | {k}: {v:.5f}"
+                        if k == "metric"
+                        else f" | {k}(metric): {v:.5f}"
+                    )
+                logger.info(msg)
+
+            batch_tic = time.perf_counter()
+            reader_tic = time.perf_counter()
+
+        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
+
+        return total_loss_avg
+
+    @paddle.no_grad()
+    def eval_epoch(self, dataloader, epoch_id: int):
+        """Eval program for one epoch.
+
+        Args:
+            epoch_id (int): Epoch id.
+        """
+        reader_cost = 0.0
+        batch_cost = 0.0
+        reader_tic = time.perf_counter()
+        batch_tic = time.perf_counter()
+        self.model.eval()
+        total_loss = defaultdict(list)
+
+        data_length = len(dataloader)
+        for iter_id, batch_data in enumerate(dataloader):
+            reader_cost = time.perf_counter() - reader_tic
+
+            loss_dict = self.model.sample(batch_data, iter_id)
+
+            for key, value in loss_dict.items():
+                if isinstance(value, paddle.Tensor):
+                    value = value.item()
+                total_loss[key].append(value)
+
+            batch_cost = time.perf_counter() - batch_tic
+            if paddle.distributed.get_rank() == 0 and (
+                iter_id % self.log_freq == 0 or iter_id == data_length - 1
+            ):
+                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}] "
+                msg += f"| Step: [{iter_id+1}/{data_length}]"
+                msg += f" | reader cost: {reader_cost:.5f}s"
+                msg += f" | batch cost: {batch_cost:.5f}s"
+                for k, v in loss_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item()
+                    msg += (
+                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+                    )
+                logger.info(msg)
+
+            batch_tic = time.perf_counter()
+            reader_tic = time.perf_counter()
+
+        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
+
+        return total_loss_avg
+
+    @paddle.no_grad()
+    def sample_epoch(self, epoch_id: int):
+        # init counters
+        iter_id, start_index = 0, 0
+        bs = 1 * self.config["Dataset"]["val"]["sampler"]["batch_size"]
+        samples_left_to_generate = self.samples_left_to_generate
+        to_generate = min(samples_left_to_generate, bs)
+        samples_left_to_save = self.samples_left_to_save
+        to_save = min(samples_left_to_save, bs)
+        chains_left_to_save = self.chains_left_to_save
+        chains_save = min(chains_left_to_save, bs)
+
+        # prepart the whole input data for sample generation
+        sample_val_y_collection = paddle.concat(
+            x=self.model.val_y_collection, axis=0
+        ).view(-1, self.model.vocabDim)
+        sample_val_atomCount = paddle.concat(x=self.model.val_atomCount, axis=0)
+        sample_val_data_X = paddle.concat(x=self.model.val_data_X, axis=0)
+        sample_val_data_E = paddle.concat(x=self.model.val_data_E, axis=0)
+        num_examples = sample_val_y_collection.shape[0]
+
+        # init samples dict for transfer into calculate metrics
+        samples = dict()
+        samples["pred"] = list()
+        samples["true"] = list()
+        samples["n_all"] = num_examples
+        samples["dict"] = self.model.dataset_info.atom_decoder
+
+        # Generate Samples Iteration
+        while samples_left_to_generate > 0:
+            # Padding input data when smaller batch size at last iteration
+            if to_generate > num_examples:
+                ratio = to_generate // num_examples
+                sample_val_y_collection = self.model.val_y_collection.repeat(
+                    ratio + 1, 1
+                )
+                sample_val_atomCount = self.model.val_atomCount.repeat(ratio + 1, 1)
+                sample_val_data_X = self.model.val_data_X.repeat(ratio + 1, 1)
+                sample_val_data_E = self.model.val_data_E.repeat(ratio + 1, 1)
+                num_examples = sample_val_y_collection.size(0)
+
+            # prepare the batch of input data for sample generation
+            if start_index + to_generate > num_examples:
+                start_index = 0
+            batch_y = sample_val_y_collection[start_index : start_index + to_generate]
+            batch_atomCount = sample_val_atomCount[
+                start_index : start_index + to_generate
+            ]
+            batch_X = sample_val_data_X[start_index : start_index + to_generate]
+            batch_E = sample_val_data_E[start_index : start_index + to_generate]
+
+            # sample from the model
+            molecule_list, molecule_list_True = m_utils.sample_batch(
+                self.model,
+                batch_id=iter_id,
+                batch_size=to_generate,
+                num_nodes=batch_atomCount,
+                batch_condition=batch_y,
+                batch_X=batch_X,
+                batch_E=batch_E,
+                save_final=to_save,
+                keep_chain=chains_save,
+                number_chain_steps=self.model.number_chain_steps,
+            )
+
+            # save the samples for calculate metrics
+            samples["pred"].extend(molecule_list)
+            samples["true"].extend(molecule_list_True)
+
+            # update counters
+            iter_id += 1
+            start_index += to_generate
+            samples_left_to_save -= to_save
+            samples_left_to_generate -= to_generate
+            chains_left_to_save -= chains_save
+
+        # sampled molecules to compute metrics
+        metric_dict = self.model.sampling_metrics.forward(
+            samples,
+            epoch_id,
+            val_counter=-1,
+            test=True,
+            local_rank=self.rank,
+            output_dir=self.output_dir,
+        )
+        return metric_dict
+
+    def eval_epoch_start(self):
+        self.model.val_y_collection = []
+        self.model.val_atomCount = []
+        self.model.val_data_X = []
+        self.model.val_data_E = []
+
+    def log_paddle_version(self):
+        # log paddlepaddle's version
+        if version.Version(paddle.__version__) != version.Version("0.0.0"):
+            paddle_version = paddle.__version__
+            if version.Version(paddle.__version__) < version.Version("2.6.0"):
+                logger.warning(
+                    f"Detected paddlepaddle version is '{paddle_version}', "
+                    "currently it is recommended to use release 2.6 or develop version."
+                )
+        else:
+            paddle_version = f"develop({paddle.version.commit[:7]})"
+
+        logger.info(f"Using paddlepaddle {paddle_version}")
+
 
 class TrainerCLIP:
     def __init__(
@@ -567,12 +621,6 @@ class TrainerCLIP:
         optimizer,
         metric_class,
         lr_scheduler: Optional[optim.lr.LRScheduler] = None,
-        # dataset_infos,
-        # train_metrics,
-        # sampling_metrics,
-        # visualization_tools,
-        # extra_features,
-        # domain_features,
     ):
         super().__init__()
         self.config = config
@@ -657,16 +705,12 @@ class TrainerCLIP:
         logger.info(f"Using paddlepaddle {paddle_version}")
 
     def forward(self, noisy_data, extra_data, node_mask, X, E, condition):
-        # 拼接
         X_ = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype("float32")
         E_ = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype("float32")
         y_ = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype("float32")
 
-        # 把 condition 转到 Paddle Tensor
-        # 如果是 int64 -> 'int64', or as needed
         condition_tensor = paddle.to_tensor(condition, dtype="int64")
 
-        # 调用 self.model
         return self.model(X_, E_, y_, node_mask, X, E, condition_tensor)
 
     def train_epoch(self, dataloader, epoch_id: int):
@@ -682,7 +726,7 @@ class TrainerCLIP:
         self.model.train()
 
         total_loss = defaultdict(list)
- 
+
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
@@ -699,6 +743,7 @@ class TrainerCLIP:
                     value = value.item()
                 total_loss[key].append(value)
 
+            # TODO
             # if solver.world_size > 1:
             #     # fuse + allreduce manually before optimization if use DDP + no_sync
             #     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
@@ -736,11 +781,6 @@ class TrainerCLIP:
 
     @paddle.no_grad()
     def eval_epoch(self, dataloader, epoch_id: int):
-        """Eval program for one epoch.
-
-        Args:
-            epoch_id (int): Epoch id.
-        """
         reader_cost = 0.0
         batch_cost = 0.0
         reader_tic = time.perf_counter()
@@ -783,8 +823,7 @@ class TrainerCLIP:
         return total_loss_avg
 
     def train(self) -> None:
-        """Training."""
-        # self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
+        # TODO:self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
         self.max_steps = self.epochs * self.iters_per_epoch
 
         start_epoch = 0 + 1
@@ -840,9 +879,6 @@ class TrainerCLIP:
                 print_log=(epoch_id == start_epoch),
             )
 
-    # --------------------------
-    # 训练阶段
-    # --------------------------
     def train_step(self, data, i):
 
         if data.edge_index.size(0) == 0:
@@ -855,7 +891,6 @@ class TrainerCLIP:
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
 
-        # 加噪
         noisy_data = self.apply_noise(X, E, data.y, node_mask)
         extra_data = self.compute_extra_data(noisy_data)
 
@@ -863,7 +898,6 @@ class TrainerCLIP:
         conditionAll = data.conditionVec
         conditionAll = paddle.reshape(conditionAll, [batch_length, self.vocabDim])
 
-        # 前向
         predV1, predV2 = self.forward(
             noisy_data, extra_data, node_mask, X, E, conditionAll
         )
@@ -872,19 +906,18 @@ class TrainerCLIP:
         V1_e = F.normalize(predV1, p=2, axis=1)
         V2_e = F.normalize(predV2, p=2, axis=1)
 
-        # 矩阵相乘 => (bs, bs)
-        # 原: torch.matmul(V1_e, V2_e.T)*exp(torch.tensor(self.tem))
+        # Matrix multiplication => (bs, bs)
         temperature = paddle.to_tensor(self.tem, dtype=V1_e.dtype)
         logits = paddle.matmul(V1_e, V2_e, transpose_y=True) * paddle.exp(temperature)
 
-        # 交叉熵损失
+        # Cross-Entropy Loss
         n = V1_e.shape[0]
         labels = paddle.arange(0, n, dtype="int64")  # (bs,)
         loss_fn = nn.CrossEntropyLoss()
 
         # loss_v1
         loss_v1 = loss_fn(logits, labels)
-        # loss_v2 => 对称
+        # loss_v2 => symmetric
         loss_v2 = loss_fn(logits.transpose([1, 0]), labels)
 
         loss = (loss_v1 + loss_v2) / 2.0
@@ -894,9 +927,6 @@ class TrainerCLIP:
 
         return {"loss": loss}
 
-    # --------------------------
-    # 验证阶段
-    # --------------------------
     def val_step(self, data, i):
 
         dense_data, node_mask = utils.to_dense(
@@ -905,7 +935,6 @@ class TrainerCLIP:
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
 
-        # 加噪
         noisy_data = self.apply_noise(X, E, data.y, node_mask)
         extra_data = self.compute_extra_data(noisy_data)
 
@@ -937,20 +966,9 @@ class TrainerCLIP:
 
         return {"loss": loss}
 
-    # --------------------------
-    # 测试阶段
-    # --------------------------
-    def test_step(self, data, i):
-
-        # 可根据需求实现
-        pass
-
-    # --------------------------
-    # apply_noise
-    # --------------------------
     def apply_noise(self, X, E, y, node_mask):
         bs = X.shape[0]
-        # t_int in [1, T]
+
         t_int = paddle.randint(low=1, high=self.T + 1, shape=[bs, 1], dtype="int64")
         t_int = t_int.astype("float32")
         s_int = t_int - 1
@@ -963,7 +981,7 @@ class TrainerCLIP:
         alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)
 
         Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=None)
-        # probX = X @ Qtb.X => paddle.matmul(X, Qtb.X)
+
         probX = paddle.matmul(X, Qtb.X)  # (bs, n, dx_out)
         probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs, n, n, de_out)
 
@@ -1002,35 +1020,6 @@ class TrainerCLIP:
 
         return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
-    # --------------------------
-    # 可选的一些回调
-    # --------------------------
-    def on_train_epoch_start(self):
-        print("Starting train epoch...")
-
-    def on_train_epoch_end(self):
-        # 这里可以做一些清理或日志记录
-        sys.stdout.flush()
-
-    def on_validation_epoch_start(self):
-        self.val_loss = []
-
-    def on_validation_epoch_end(self):
-        val_loss_sum = paddle.add_n([v for v in self.val_loss])  # or sum(self.val_loss)
-        # sum(...) => 需要是相同dtype
-        val_loss_val = (
-            val_loss_sum.numpy()[0]
-            if len(val_loss_sum.shape) > 0
-            else val_loss_sum.numpy()
-        )
-        print(f"Epoch {0} : Val Loss {val_loss_val:.2f}")  # 或 self.current_epoch
-
-    def on_test_epoch_start(self):
-        pass
-
-    def on_test_epoch_end(self):
-        print("Done testing.")
-
 
 class TrainerDiffPrior:
     def __init__(
@@ -1045,7 +1034,6 @@ class TrainerDiffPrior:
     ):
         super().__init__()
 
-        # 初始化TrainerDiffPrior类的实例变量
         self.config = config
         self.model = model
         self.train_dataloader = train_dataloader
@@ -1055,7 +1043,6 @@ class TrainerDiffPrior:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
-        # 训练参数及日志设置，从config中读取
         self.epochs = config["Trainer"]["epochs"]
         self.output_dir = config["Tracker"]["save"]["output_dir"]
         self.save_freq = config["Tracker"]["save"]["save_freq"]
@@ -1089,8 +1076,7 @@ class TrainerDiffPrior:
             if isinstance(loaded_metric, dict):
                 self.best_metric.update(loaded_metric)
 
-
-        # 获取当前进程的rank信息
+        # Obtain rank information of the current process
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
 
@@ -1139,8 +1125,7 @@ class TrainerDiffPrior:
         logger.info(f"Using paddlepaddle {paddle_version}")
 
     def train(self) -> None:
-        """Training."""
-        # self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
+        # TODO:self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
         self.max_steps = self.epochs * self.iters_per_epoch
 
         start_epoch = 0 + 1
@@ -1197,11 +1182,6 @@ class TrainerDiffPrior:
             )
 
     def train_epoch(self, dataloader, epoch_id: int):
-        """Train program for one epoch.
-
-        Args:
-            epoch_id (int): Epoch id.
-        """
         reader_cost = 0.0
         batch_cost = 0.0
         reader_tic = time.perf_counter()
@@ -1230,7 +1210,7 @@ class TrainerDiffPrior:
                     value = value.item()
                 total_loss[key].append(value)
 
-            # if solver.world_size > 1:
+            # TODO: if solver.world_size > 1:
             #     # fuse + allreduce manually before optimization if use DDP + no_sync
             #     # details in https://github.com/PaddlePaddle/Paddle/issues/48898#issuecomment-1343838622
             #     hpu.fused_allreduce_gradients(list(self.model.parameters()), None)
@@ -1267,11 +1247,6 @@ class TrainerDiffPrior:
 
     @paddle.no_grad()
     def eval_epoch(self, dataloader, epoch_id: int):
-        """Eval program for one epoch.
-
-        Args:
-            epoch_id (int): Epoch id.
-        """
         reader_cost = 0.0
         batch_cost = 0.0
         reader_tic = time.perf_counter()
@@ -1319,12 +1294,11 @@ class TrainerDiffPrior:
         return total_loss_avg
 
     def update(self):
-        """梯度更新、调度器步进以及"""
-
+        """Gradient update, scheduler step"""
         self.optimizer.step()
         self.optimizer.clear_grad()
 
-        # 根据是否存在预热调度器，进行调度器更新
+        # Update the scheduler based on the existence of a warmup scheduler
         if self.warmup_scheduler is not None:
             self.warmup_scheduler.step()
         else:

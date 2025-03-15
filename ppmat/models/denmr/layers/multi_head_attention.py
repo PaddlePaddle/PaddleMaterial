@@ -1,6 +1,7 @@
 import paddle
 
-from ..paddle_utils import dim2perm  # noqa
+from ppmat.models.denmr.utils.clip_utils import dim2perm  # noqa
+
 from .scale_dot_product_attention import ScaleDotProductAttention
 
 """

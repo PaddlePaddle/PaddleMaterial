@@ -9,7 +9,7 @@ from ppmat.models.denmr.layer import Etoy
 from ppmat.models.denmr.layer import Xtoy
 from ppmat.models.denmr.layer import masked_softmax
 
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 
 
 class GraphTransformer(nn.Layer):
@@ -185,7 +185,6 @@ class GraphTransformer_C(nn.Layer):
             act_fn_in,
         )
 
-        # 用 LayerList 存放多层 Transformer
         self.tf_layers = nn.LayerList(
             [
                 XEyTransformerLayer(
@@ -206,10 +205,6 @@ class GraphTransformer_C(nn.Layer):
             nn.Linear(hidden_mlp_dims["X"], 512),
         )
 
-        # 其他输出层（如 E, y）在原示例里注释了，可自行添加
-        # self.mlp_out_E = ...
-        # self.mlp_out_y = ...
-
     def forward(self, X, E, y, node_mask):
         """
         X: (bs, n, input_dims['X'])
@@ -226,14 +221,9 @@ class GraphTransformer_C(nn.Layer):
             diag_mask.unsqueeze(0).unsqueeze(-1).expand([bs, -1, -1, -1])
         )  # (bs,n,n,1)
 
-        # 保存原来的 X/E/y 部分给 skip-connection（如果需要）
-        # X_to_out = X[..., : self.out_dim_X]
-        # E_to_out = E[..., : self.out_dim_E]
-        # y_to_out = y[..., : self.out_dim_y]
-
         # MLP in
         new_E = self.mlp_in_E(E)
-        # 对称化
+        # symmetrize
         E_t = paddle.transpose(new_E, perm=[0, 2, 1, 3])
         new_E = (new_E + E_t) / 2.0
 
@@ -243,16 +233,12 @@ class GraphTransformer_C(nn.Layer):
         after_in = utils.PlaceHolder(X, E=new_E, y=Y).mask(node_mask)
         X, E, Y = after_in.X, after_in.E, after_in.y
 
-        # 多层 Transformer
         for layer in self.tf_layers:
             X, E, Y = layer(X, E, Y, node_mask)
 
         # Output
         X = self.mlp_out_X(X)  # (bs, n, 512)
         X_mean = paddle.mean(X, axis=1)  # (bs, 512)
-
-        # 如果还需要输出 E,y，可以在此添加 mlp_out_E, mlp_out_y
-        # 并做对称化/加 skip connection 等
 
         return X_mean
 

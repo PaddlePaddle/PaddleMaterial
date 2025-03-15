@@ -8,14 +8,14 @@ import paddle.nn as nn
 
 class PaddleMetricCollection:
     """
-    Used for collecting multiple custom metrics and calling 
+    Used for collecting multiple custom metrics and calling
     their update, compute, and reset methods uniformly.
     """
 
     def __init__(self, metrics_list):
         """
-        metrics_list: Used to store multiple custom metrics and 
-        each metric can be an instance of a class derived from Metric. 
+        metrics_list: Used to store multiple custom metrics and
+        each metric can be an instance of a class derived from Metric.
         providing unified calls to update, compute, and reset.
         """
         self.metrics_list = metrics_list
@@ -31,7 +31,7 @@ class PaddleMetricCollection:
         """
         results = {}
         for metric in self.metrics_list:
-            # 使用 metric.name 来区别不同指标
+            # Use metric.name to distinguish between different metrics
             results[metric.name()] = metric.accumulate()
         return results
 
@@ -48,7 +48,7 @@ class PaddleMetricCollection:
 
 class CEPerClass(paddle.metric.Metric):
     """
-    A custom metric in PaddlePaddle that computes the binary cross-entropy (BCE) loss 
+    A custom metric in PaddlePaddle that computes the binary cross-entropy (BCE) loss
     for a specific class
     """
 
@@ -61,7 +61,7 @@ class CEPerClass(paddle.metric.Metric):
 
         # softmax: Used to convert multi-class outputs into class-specific probabilities
         self.softmax = nn.Softmax(axis=-1)
-        # paddle.nn.BCELoss() or paddle.nn.BCEWithLogitsLoss() for layer-based usage, 
+        # paddle.nn.BCELoss() or paddle.nn.BCEWithLogitsLoss() for layer-based usage,
         # or The functional API: paddle.nn.functional.binary_cross_entropy()
         self.bce_loss = nn.BCELoss(reduction="sum")
 
@@ -71,9 +71,12 @@ class CEPerClass(paddle.metric.Metric):
         paddle.nn.BCELoss(), paddle.nn.functional.binary_cross_entropy()
         or paddle.nn.functional.binary_cross_entropy_with_logits()
         """
-        # For example, return "ce_class_{id}"; 
-        # when used within a metric collection, naming can also incorporate the outer class name.
-        return f"CE_class_{self._class_id}"
+        # For example, return "ce_class_{id}";
+        # when used within a metric collection, naming can also incorporate
+        # the outer class name.
+        cls_name = str(self.__class__).split(".")[-1].split("'")[0]
+        metric_name = "".join(filter(str.isalpha, cls_name[:-2]))
+        return f"CE_class_{metric_name}"
 
     def update(self, preds, target):
         """
@@ -93,40 +96,35 @@ class CEPerClass(paddle.metric.Metric):
         # reshape preds => [X, d]
         prob_full = paddle.reshape(prob_full, [-1, last_dim])
         prob = prob_full[:, self._class_id]  # Select the column of `class_id`.
-        # 根据 mask 选取有效元素
+        # Select valid elements according to the mask
         prob = paddle.masked_select(prob, mask)
 
-        # 同理，取对应的 target
+        # obtain the corresponding target
         t = paddle.masked_select(target[:, self._class_id], mask)
 
-        # 计算 BCELoss (reduction='sum')
-        # 注意：BCELoss 要求输入是概率，标签是0或1
+        # Calculate BCELoss (reduction='sum')
+        # Note: BCELoss requires the input to be probabilities and labels to be 0 or 1
         loss = self.bce_loss(prob, t)
 
-        # 累加结果
+        # Accumulate results
         self._total_ce += float(loss.numpy())  # .item() 在 Paddle 中通常是 .numpy()[0]
         self._total_samples += prob.shape[0]
 
     def accumulate(self):
-        """
-        计算当前 metric 的结果，与 TorchMetrics 中的 compute 类似。
-        """
         if self._total_samples == 0:
             return 0.0
         return self._total_ce / self._total_samples
 
     def reset(self):
-        """重置内部状态。"""
         self._total_ce = 0.0
         self._total_samples = 0
 
     def clear(self):
-        """有些版本 Paddle Metric 会用 clear()，这里跟 reset() 同义。"""
         self.reset()
 
 
 # ================================
-# 3. 定义子类：各元素/键类型的 CE
+# 3. Define subclasses: CE for each element/key type
 # ================================
 
 
@@ -195,7 +193,7 @@ class SiCE(CEPerClass):
         super().__init__(i)
 
 
-# Bond 类型
+# Bond type
 class NoBondCE(CEPerClass):
     def __init__(self, i):
         super().__init__(i)
@@ -222,20 +220,19 @@ class AromaticCE(CEPerClass):
 
 
 # ================================
-# 4. 原先的 AtomMetricsCE 与 BondMetricsCE
-#    在 Paddle 中使用自定义的 PaddleMetricCollection
+# 4. The original AtomMetricsCE and BondMetricsCE
+# Use custom PaddleMetricCollection in Paddle
 # ================================
 
 
 class AtomMetricsCE(PaddleMetricCollection):
     """
-    用于管理与原子相关的多个 CEPerClass 子类。
+    Used to manage multiple CEPerClass subclasses related to atoms.
     """
 
     def __init__(self, dataset_infos):
         """
-        dataset_infos: 假设里边包含 'atom_decoder'，
-                       类似于原先 PyTorch 里 AtomDecoder 用来对应 i->原子类型。
+        dataset_infos: assuming it contains 'atom_decoder',
         """
         atom_decoder = dataset_infos.atom_decoder  # ['H','C','N',...]
         class_dict = {
@@ -264,11 +261,11 @@ class AtomMetricsCE(PaddleMetricCollection):
 
 class BondMetricsCE(PaddleMetricCollection):
     """
-    用于管理与键类型相关的多个 CEPerClass 子类。
+    Used to manage multiple CEPerClass subclasses related to bond types.
     """
 
     def __init__(self):
-        # 假设顺序：NoBond=0, Single=1, Double=2, Triple=3, Aromatic=4
+        # assume order：NoBond=0, Single=1, Double=2, Triple=3, Aromatic=4
         ce_no_bond = NoBondCE(0)
         ce_SI = SingleCE(1)
         ce_DO = DoubleCE(2)
@@ -279,36 +276,26 @@ class BondMetricsCE(PaddleMetricCollection):
 
 
 # ================================
-# 5. 训练/验证流程中的模块
-#    对应原先的 TrainMolecularMetricsDiscrete(nn.Module)
-#    在 Paddle 中使用 paddle.nn.Layer
+# 5. Modules in the training/validation process
 # ================================
 
 
 class TrainMolecularMetricsDiscrete(nn.Layer):
-    """
-    用于在训练/验证循环中调用 update / log / reset 等方法。
-    """
-
     def __init__(self, dataset_infos):
         super().__init__()
-        # 替代 PyTorch 里的 AtomMetricsCE / BondMetricsCE
         self.train_atom_metrics = AtomMetricsCE(dataset_infos=dataset_infos)
         self.train_bond_metrics = BondMetricsCE()
 
     def forward(self, masked_pred_X, masked_pred_E, true_X, true_E, log: bool = False):
         """
-        与 PyTorch 里的 forward 类似。
-        - masked_pred_X, masked_pred_E: 模型输出
-        - true_X, true_E: 真实标签
+        - masked_pred_X, masked_pred_E: model output
+        - true_X, true_E: true labels
         """
-        # 调用 update
         self.train_atom_metrics.update(masked_pred_X, true_X)
         self.train_bond_metrics.update(masked_pred_E, true_E)
 
         if log:
             to_log = {}
-            # compute() = accumulate()，得到每个指标的当前值
             atom_results = self.train_atom_metrics.compute()
             bond_results = self.train_bond_metrics.compute()
 
@@ -316,18 +303,13 @@ class TrainMolecularMetricsDiscrete(nn.Layer):
                 to_log[f"train/{key}"] = val
             for key, val in bond_results.items():
                 to_log[f"train/{key}"] = val
+        return to_log
 
     def reset(self):
-        """
-        每个 epoch 或特定阶段结束后重置，便于下一轮统计。
-        """
         self.train_atom_metrics.reset()
         self.train_bond_metrics.reset()
 
     def log_epoch_metrics(self):
-        """
-        计算并 log 本轮 epoch 累计下来的指标，可在 epoch 结束时调用。
-        """
         epoch_atom_metrics = self.train_atom_metrics.compute()
         epoch_bond_metrics = self.train_bond_metrics.compute()
 
@@ -337,41 +319,40 @@ class TrainMolecularMetricsDiscrete(nn.Layer):
         for key, val in epoch_bond_metrics.items():
             to_log[f"train_epoch/{key}"] = val
 
-        # 也可返回这些值给外层处理或打印
         return epoch_atom_metrics, epoch_bond_metrics
 
 
 # ================
-# 使用示例（伪代码）
+# Usage example (pseudocode)
 # ================
 if __name__ == "__main__":
-    # 模拟 dataset_infos
+    # simulate dataset_infos
     class DatasetInfosMock:
         def __init__(self):
             self.atom_decoder = ["H", "C", "N", "O", "F"]  # 仅作示例
 
     dataset_infos = DatasetInfosMock()
 
-    # 初始化
+    # init
     metrics_layer = TrainMolecularMetricsDiscrete(dataset_infos)
 
-    # 假设训练循环里
+    # Assuming within the training loop
     for epoch in range(3):
         metrics_layer.reset()
 
         for step in range(5):
-            # 模拟网络输出 preds / true
+            # Simulate network output preds / true
             batch_pred_X = paddle.rand(
                 [2, 10, len(dataset_infos.atom_decoder)]
             )  # (bs=2, n=10, d=5)
             batch_true_X = paddle.rand(
                 [2, 10, len(dataset_infos.atom_decoder)]
-            )  # 同样 shape
+            )  # same shape
 
-            batch_pred_E = paddle.rand([2, 10, 5])  # 例如 (bs=2, n=10, d=5)
-            batch_true_E = paddle.rand([2, 10, 5])  # 同样 shape
+            batch_pred_E = paddle.rand([2, 10, 5])  # such (bs=2, n=10, d=5)
+            batch_true_E = paddle.rand([2, 10, 5])  # same shape
 
-            # 调用 forward 更新指标
+            # Call forward to update metrics
             metrics_layer(
                 batch_pred_X,
                 batch_pred_E,
@@ -380,7 +361,7 @@ if __name__ == "__main__":
                 log=(step % 2 == 0),
             )
 
-        # epoch 结束后，打印或 log 一次 epoch 级别指标
+        # After each epoch, print or log epoch-level metrics once
         epoch_atom_metrics, epoch_bond_metrics = metrics_layer.log_epoch_metrics()
         print(f"Epoch {epoch} Atom Metrics:", epoch_atom_metrics)
         print(f"Epoch {epoch} Bond Metrics:", epoch_bond_metrics)

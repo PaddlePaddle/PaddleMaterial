@@ -1,13 +1,9 @@
 import os
 import os.path as osp
 import pickle
-
 from collections import defaultdict
-
-# import random
 from typing import Callable
 from typing import List
-from typing import Literal
 from typing import Tuple
 from typing import Union
 
@@ -22,15 +18,15 @@ from rdkit import RDLogger
 from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 
+from ppmat.datasets.collate_fn import DistributionNodes
 from ppmat.datasets.ext_rdkit import build_molecule_with_partial_charges
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.datasets.ext_rdkit import mol2smiles
-from ppmat.datasets.utils import numericalize_text
-from ppmat.datasets.transform.preprocess import SelectMuTransform
-from ppmat.datasets.transform.preprocess import SelectHOMOTransform
 from ppmat.datasets.transform.preprocess import RemoveYTransform
-from ppmat.models.denmr.distributions import DistributionNodes
-from ppmat.models.denmr.utils import digressutils as utils
+from ppmat.datasets.transform.preprocess import SelectHOMOTransform
+from ppmat.datasets.transform.preprocess import SelectMuTransform
+from ppmat.datasets.utils import numericalize_text
+from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 from ppmat.utils import logger
 
 
@@ -38,6 +34,7 @@ class CHnmrData:
     """
     data process for Spectrum Graph Molecules
     """
+
     def __init__(
         self,
         path: Union[str, List[str]],
@@ -53,7 +50,6 @@ class CHnmrData:
         self.pre_transform = pre_transform
         self.pre_filter = pre_filter
         self.split_ratio = split_ratio
-        
 
         self.vocabDim = 256
         self.vocab_to_id = {"<blank>": 0, "<unk>": 1}
@@ -170,7 +166,7 @@ class CHnmrData:
                 # Shift onehot encoding to match atom decoder
                 x = x[:, 1:]
 
-            # create a new Graph Data object 
+            # create a new Graph Data object
             # and includes extra info tokenized_input(conditionVec) and atom_count
             data = pgl.Graph(
                 num_nodes=x.shape[0],
@@ -218,7 +214,7 @@ class CHnmrDataset(Dataset):
         cache: bool = True,
         **kwargs,
     ):
-        
+
         self.cache = cache
         if cache:
             logger.warning(
@@ -231,9 +227,7 @@ class CHnmrDataset(Dataset):
         if self.cache and osp.exists(cache_path):
             with open(cache_path, "rb") as f:
                 self.dataset = pickle.load(f)
-            logger.info(
-                f"Load {len(self.dataset)} cached molecules from {cache_path}"
-            )
+            logger.info(f"Load {len(self.dataset)} cached molecules from {cache_path}")
         else:
             data = CHnmrData(
                 path,
@@ -244,27 +238,25 @@ class CHnmrDataset(Dataset):
                 split_ratio,
             )
             self.dataset = data.dataset
-            
+
             if self.cache:
                 with open(cache_path, "wb") as f:
                     pickle.dump(self.dataset, f)
                 logger.info(f"Cache {len(self.dataset)} molecules")
 
         self.fake_value = paddle.to_tensor
-        (
-            1.0
-        )  # enable the dataloader to read the graph
+        (1.0)  # enable the dataloader to read the graph
 
         target = kwargs.get("guidance_target", None)
         regressor = kwargs.get("regressor", None)
         if regressor and target == "mu":
-            transform = SelectMuTransform()
+            self.transform = SelectMuTransform()
         elif regressor and target == "homo":
-            transform = SelectHOMOTransform()
+            self.transform = SelectHOMOTransform()
         elif regressor and target == "both":
-            transform = None
+            self.transform = None
         else:
-            transform = RemoveYTransform()
+            self.transform = RemoveYTransform()
 
     def __getitem__(self, idx):
         return self.dataset[idx]
@@ -297,6 +289,7 @@ class CHnmrDataset(Dataset):
                     ] + list(stacked_tensor.shape[2:])
                     new_other_data[key] = stacked_tensor.reshape(new_shape)
         return batch_graph, new_other_data
+
 
 class CHnmrinfos:
     def __init__(self, dataloaders, cfg, recompute_statistics=False):
@@ -554,7 +547,7 @@ def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
     invalid = 0
     disconnected = 0
     for i, (data, _) in enumerate(dataloader()):
-        RDLogger.DisableLog('rdApp.*')
+        RDLogger.DisableLog("rdApp.*")
         logger.info(f"compute_CHnmr_smiles i: {i:d}")
         dense_data, node_mask = utils.to_dense(
             data.node_feat["feat"],
@@ -585,7 +578,7 @@ def compute_CHnmr_smiles(atom_decoder, dataloader, remove_h):
                     logger.info(f"Disconnected molecule {mol}, {mol_frags}")
                     disconnected += 1
             else:
-                logger.info(f"Invalid molecule obtained.")
+                logger.info("Invalid molecule obtained.")
                 invalid += 1
         if i % 1000 == 0:
             logger.info(f"Converting CHnmr dataset to SMILES {float(i)/len_train:.2%}")

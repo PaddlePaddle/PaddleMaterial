@@ -1,6 +1,6 @@
 import paddle
 
-from ..paddle_utils import *  # noqa
+from ppmat.models.denmr.utils.clip_utils import *  # noqa
 
 """
 @author : Hyunwoong

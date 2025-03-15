@@ -1,6 +1,7 @@
 import paddle
 from paddle import nn
 
+
 # helper functions
 def exists(val):
     return val is not None
@@ -21,5 +22,6 @@ def first(arr, d=None):
         return d
     return arr[0]
 
-def log(t, eps = 1e-12):
-    return paddle.log(t.clamp(min = eps))
+
+def log(t, eps=1e-12):
+    return paddle.log(t.clamp(min=eps))

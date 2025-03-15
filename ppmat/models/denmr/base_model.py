@@ -1,14 +1,10 @@
 import copy
-import os
 import random
 
 import paddle
 import paddle.nn as nn
-import rdkit
 from einops import rearrange
 from einops import repeat
-from paddle.nn import functional as F
-from rdkit import Chem
 from tqdm import tqdm
 
 from ppmat.metrics.abstract_metrics import NLL
@@ -19,20 +15,19 @@ from ppmat.models.denmr.diffusion_prior import DiffusionPriorNetwork
 from ppmat.models.denmr.diffusion_prior import NoiseScheduler
 from ppmat.models.denmr.diffusion_prior import freeze_model_and_make_eval_
 from ppmat.models.denmr.encoder import Encoder
-from ppmat.utils import save_load
 from ppmat.utils import logger
+from ppmat.utils import save_load
 
-from . import diffusion_utils
 from .graph_transformer import GraphTransformer
 from .graph_transformer import GraphTransformer_C
 from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 from .utils import model_utils as m_utils
-from .utils.diffusionprior_utils import default
-from .utils.diffusionprior_utils import exists
-from .utils.diffusionprior_utils import l2norm
+from .utils.diffprior_utils import default
+from .utils.diffprior_utils import exists
+from .utils.diffprior_utils import l2norm
 
 
 class MolecularGraphTransformer(nn.Layer):
@@ -48,34 +43,26 @@ class MolecularGraphTransformer(nn.Layer):
     ) -> None:
         super().__init__()
 
-        #############################################################
         # configure general variables settings
-        #############################################################
         self.name = config["__name__"]
         self.model_dtype = paddle.get_default_dtype()
         self.T = config["diffusion_model"]["diffusion_steps"]
         self.visualization_tools = visualization_tools
 
-        #############################################################
         # configure datasets inter-varibles
-        #############################################################
         input_dims = dataset_infos.input_dims
         output_dims = dataset_infos.output_dims
         self.dataset_info = dataset_infos
         self.extra_features = extra_features
         self.domain_features = domain_features
 
-        #############################################################
         # configure noise scheduler
-        #############################################################
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(
             config["diffusion_model"]["diffusion_noise_schedule"],
             timesteps=self.T,
         )
 
-        #############################################################
         # configure model
-        #############################################################
         self.con_input_dim = copy.deepcopy(input_dims)
         self.con_input_dim["X"] -= 8
         self.con_input_dim["y"] = 1024
@@ -101,9 +88,7 @@ class MolecularGraphTransformer(nn.Layer):
             act_fn_out=nn.ReLU(),
         )
 
-        #############################################################
         # configure loss calculation with initialization of transition model
-        #############################################################
         self.Xdim = input_dims["X"]
         self.Edim = input_dims["E"]
         self.ydim = input_dims["y"]
@@ -130,7 +115,9 @@ class MolecularGraphTransformer(nn.Layer):
 
             edge_types = self.dataset_info.edge_types.astype(self.model_dtype)
             e_marginals = edge_types / paddle.sum(edge_types)
-            logger.info(f"Marginal distribution of classes: {x_marginals.tolist()} for nodes, ")
+            logger.info(
+                f"Marginal distribution of classes: {x_marginals.tolist()} for nodes, "
+            )
             logger.info(f"{e_marginals.tolist()} for edges")
 
             self.transition_model = MarginalUniformTransition(
@@ -147,17 +134,13 @@ class MolecularGraphTransformer(nn.Layer):
         # configure loss
         self.train_loss = TrainLossDiscrete(config["diffusion_model"]["lambda_train"])
 
-        #############################################################
         # configure training setting and other properties
-        #############################################################
         self.best_val_nll = 1e8
         self.val_counter = 0
         self.vocabDim = config["vocab_dim"]
         self.number_chain_steps = config["diffusion_model"]["number_chain_steps"]
 
-        #############################################################
         # configure generated datas for visualization after forward
-        #############################################################
         self.val_nll = NLL()
         self.val_X_kl = SumExceptBatchKL()
         self.val_E_kl = SumExceptBatchKL()
@@ -181,9 +164,7 @@ class MolecularGraphTransformer(nn.Layer):
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
 
-        #############################################################
         # configure key data container
-        #############################################################
         self.val_y_collection = []
         self.val_atomCount = []
         self.val_data_X = []
@@ -193,7 +174,7 @@ class MolecularGraphTransformer(nn.Layer):
         self.test_data_X = []
         self.test_data_E = []
 
-    def forward(self, batch, is_val = False):
+    def forward(self, batch):
         batch_graph, other_data = batch
 
         # transfer to dense graph from sparse graph
@@ -248,14 +229,14 @@ class MolecularGraphTransformer(nn.Layer):
             true_y=other_data["y"],
         )
 
-        self.train_metrics(
+        metric = self.train_metrics(
             masked_pred_X=pred.X,
             masked_pred_E=pred.E,
             true_X=X,
             true_E=E,
-            log=False,
+            log=True,
         )
-        return loss
+        return loss, metric
 
     @paddle.no_grad()
     def sample(self, batch, i):
@@ -290,9 +271,9 @@ class MolecularGraphTransformer(nn.Layer):
         input_y = paddle.concat(
             [noisy_data["y_t"].astype("float"), extra_data.y], axis=1
         ).astype("float32")
-        
+
         y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
-        
+
         conditionVec = self.encoder(X, E, y_condition, node_mask)
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
@@ -325,7 +306,7 @@ class MolecularGraphTransformer(nn.Layer):
             test=False,
         )
         loss["nll"] = nll
-        
+
         # save the data for visualization
         self.val_y_collection.append(other_data["conditionVec"])
         self.val_atomCount.append(paddle.to_tensor(other_data["atom_count"]))
@@ -362,7 +343,7 @@ class ContrastiveModel(nn.Layer):
 
         self.con_input_dim = graph_encoder["input_dims"]
         self.con_input_dim["X"] = graph_encoder["input_dims"]["X"] - 8
-        self.con_input_dim["y"] = 1024  # to be write in yaml
+        self.con_input_dim["y"] = 1024
         self.con_output_dim = graph_encoder["output_dims"]
         self.graph_encoder = GraphTransformer_C(
             n_layers=graph_encoder["n_layers_GT"],
@@ -379,7 +360,6 @@ class ContrastiveModel(nn.Layer):
         self.vocabDim = graph_encoder["vocab_dim"]
         self.tem = 2
 
-        # TODO: need to revise pretrained parameters for model
         # for Constrastive Learning & Prior Training
         if graph_encoder["pretrained_model_path"] is not None:
             save_load.load_pretrain(
@@ -431,10 +411,14 @@ class ContrastiveModel(nn.Layer):
         X, E = dense_data.X, dense_data.E
         conditionAll = other_data["conditionVec"]
         conditionAll = conditionAll.reshape([batch_length, self.vocabDim])
-        conditionVecM, conditionVecNmr = self.forward_(node_mask, X, E, conditionAll)
+        conditionVecGraph, conditionVecNmr = self.forward_(
+            node_mask, X, E, conditionAll
+        )
 
-        V1_f = conditionVecM  # 假设 V1 是从图像（或者其他模态）得到的特征
-        V2_f = conditionVecNmr  # 假设 V2 是从文本（或者其他模态）得到的特征
+        V1_f = (
+            conditionVecGraph  # Assuming V1 is a feature obtained from molecular graph
+        )
+        V2_f = conditionVecNmr  # Assume V2 is a feature obtained from NMR text
 
         V1_e = paddle.nn.functional.normalize(x=V1_f, p=2, axis=1)
         V2_e = paddle.nn.functional.normalize(x=V2_f, p=2, axis=1)
@@ -464,14 +448,11 @@ class DiffusionPriorModel(nn.Layer):
     ):
         super().__init__()
 
-        # 初始化TrainerDiffPrior类的实例变量
         self.config = config
         self.model = model
         self.clip = clip
 
-        self.sample_timesteps = default(
-            config["sample_timesteps"], timesteps
-        )
+        self.sample_timesteps = default(config["sample_timesteps"], timesteps)
         self.noise_scheduler = NoiseScheduler(
             beta_schedule=config["beta_schedule"],
             timesteps=config["timesteps"],
@@ -500,9 +481,7 @@ class DiffusionPriorModel(nn.Layer):
             (keyword graph_embed_dim) for the DiffusionPrior was set \
             to {self.graph_embed_dim}"
 
-        self.cond_drop_prob = default(
-            config["cond_drop_prob"], cond_drop_prob
-        )
+        self.cond_drop_prob = default(config["cond_drop_prob"], cond_drop_prob)
         self.text_cond_drop_prob = default(
             config["text_cond_drop_prob"], self.cond_drop_prob
         )
@@ -517,18 +496,12 @@ class DiffusionPriorModel(nn.Layer):
             config["condition_on_text_encodings"], condition_on_text_encodings
         )
 
-        # in paper, they do not predict the noise, but predict x0 directly for image
-        # embedding, claiming empirically better results. I'll just offer both.
         self.predict_x_start = config["predict_x_start"]
         self.predict_v = config["predict_v"]
-
-        # @crowsonkb 's suggestion - https://github.com/lucidrains/DALLE2-pytorch/issues/60#issue-1226116132
 
         self.graph_embed_scale = default(
             graph_embed_scale, config["graph_embed_dim"] ** 0.5
         )
-
-        # whether to force an l2norm, similar to clipping denoised, when sampling
 
         self.sampling_clamp_l2norm = config["sampling_clamp_l2norm"]
         self.sampling_final_clamp_l2norm = config["sampling_final_clamp_l2norm"]
@@ -536,7 +509,7 @@ class DiffusionPriorModel(nn.Layer):
         self.training_clamp_l2norm = config["training_clamp_l2norm"]
         self.init_graph_embed_l2norm = config["init_graph_embed_l2norm"]
 
-        # device tracker, todo: maybe could be deleted
+        # TODO: maybe could remove this dummy buffer
         self.register_buffer(
             name="_dummy", tensor=paddle.to_tensor(data=[True]), persistable=False
         )
@@ -684,8 +657,6 @@ class DiffusionPriorModel(nn.Layer):
     ):
         timesteps = default(timesteps, self.sample_timesteps)
 
-        # in the paper, what they did was
-        # sample 2 image embeddings, choose the top 1 similarity, as judged by CLIP
         text = repeat(text, "b ... -> (b r) ...", r=num_samples_per_batch)
         mask = repeat(mask, "b ... -> (b r) ...", r=num_samples_per_batch)
 
@@ -858,9 +829,6 @@ class DiffusionPriorModel(nn.Layer):
         pred = model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
         return pred, x_start
 
-    def l2norm_clamp_embed(self, graph_embed):
-        return l2norm(graph_embed) * self.graph_embed_scale
-
     def p_mean_variance(
         self, x, t, text_cond, self_cond=None, clip_denoised=False, cond_scale=1.0
     ):
@@ -902,37 +870,25 @@ class MultiModalDecoder(nn.Layer):
     ) -> None:
         super().__init__()
 
-        #############################################################
-        # configure general variables settings
-        #############################################################
         self.name = config["__name__"]
         self.model_dtype = paddle.get_default_dtype()
         self.T = config["graph_decoder"]["diffusion_model"]["diffusion_steps"]
         self.visualization_tools = visualization_tools
 
-        #############################################################
-        # configure datasets inter-varibles
-        #############################################################
         input_dims = dataset_infos.input_dims
         output_dims = dataset_infos.output_dims
         self.dataset_info = dataset_infos
         self.extra_features = extra_features
         self.domain_features = domain_features
 
-        #############################################################
-        # configure noise scheduler
-        #############################################################
         self.noise_schedule = PredefinedNoiseScheduleDiscrete(
             config["graph_decoder"]["diffusion_model"]["diffusion_noise_schedule"],
             timesteps=self.T,
         )
 
-        #############################################################
-        # configure model
-        #############################################################
         self.add_condition = True
 
-        # set nmr encoder model #####################################
+        # set nmr encoder model
         self.encoder = Encoder(
             enc_voc_size=config["nmr_encoder"]["enc_voc_size"],
             max_len=config["nmr_encoder"]["max_len"],
@@ -951,11 +907,12 @@ class MultiModalDecoder(nn.Layer):
         }
         self.encoder.set_state_dict(encoder_state_dict)
 
-        # set nmr encoder projector head model #####################
+        # set nmr encoder projector head model
         state_dict = paddle.load(config["nmr_encoder"]["pretrained_path"])
         if config["nmr_encoder"]["projector"]["__name__"] == "Linear":
             self.encoder_projector = paddle.nn.Linear(
-                in_features=config["nmr_encoder"]["max_len"] * config["nmr_encoder"]["d_model"],
+                in_features=config["nmr_encoder"]["max_len"]
+                * config["nmr_encoder"]["d_model"],
                 out_features=config["nmr_encoder"]["projector"]["outfeatures"],
             )
             encoder_projector_state_dict = {
@@ -973,7 +930,7 @@ class MultiModalDecoder(nn.Layer):
         #    }
         #    self.encoder_projector.set_state_dict(encoder_projector_state_dict)
 
-        # set graph decoder model ###################################
+        # set graph decoder model
         self.decoder = GraphTransformer(
             n_layers=config["graph_decoder"]["num_layers"],
             input_dims=input_dims,
@@ -992,18 +949,24 @@ class MultiModalDecoder(nn.Layer):
         }
         self.decoder.set_state_dict(decoder_state_dict)
 
-        # set connector model #######################################
+        # set connector model
         self.connector_flag = False
         if config.get("connector") and config["connector"]["__name__"] == "DiffPrior":
             self.connector_flag = True
             self.connector = DiffusionPriorModel(
-                config= config["connector"],
-                model = DiffusionPriorNetwork(
+                config=config["connector"],
+                model=DiffusionPriorNetwork(
                     dim=config["connector"]["prior_network"]["dim"],
                     num_timesteps=config["connector"]["prior_network"]["num_timesteps"],
-                    num_time_embeds=config["connector"]["prior_network"]["num_time_embeds"],
-                    num_graph_embeds=config["connector"]["prior_network"]["num_graph_embeds"],
-                    num_text_embeds=config["connector"]["prior_network"]["num_text_embeds"],
+                    num_time_embeds=config["connector"]["prior_network"][
+                        "num_time_embeds"
+                    ],
+                    num_graph_embeds=config["connector"]["prior_network"][
+                        "num_graph_embeds"
+                    ],
+                    num_text_embeds=config["connector"]["prior_network"][
+                        "num_text_embeds"
+                    ],
                     max_text_len=config["connector"]["prior_network"]["max_text_len"],
                     self_cond=config["connector"]["prior_network"]["self_cond"],
                     depth=config["connector"]["prior_network"]["depth"],
@@ -1022,10 +985,6 @@ class MultiModalDecoder(nn.Layer):
         else:
             self.connector = nn.Identity()
 
-
-        #############################################################
-        # configure loss calculation with initialization of transition model
-        #############################################################
         self.Xdim = input_dims["X"]
         self.Edim = input_dims["E"]
         self.ydim = input_dims["y"]
@@ -1052,7 +1011,9 @@ class MultiModalDecoder(nn.Layer):
 
             edge_types = self.dataset_info.edge_types.astype(self.model_dtype)
             e_marginals = edge_types / paddle.sum(edge_types)
-            logger.info(f"Marginal distribution of classes: {x_marginals.tolist()} for nodes, ")
+            logger.info(
+                f"Marginal distribution of classes: {x_marginals.tolist()} for nodes, "
+            )
             logger.info(f"{e_marginals.tolist()} for edges")
 
             self.transition_model = MarginalUniformTransition(
@@ -1070,17 +1031,13 @@ class MultiModalDecoder(nn.Layer):
             config["graph_decoder"]["diffusion_model"]["lambda_train"]
         )
 
-        #############################################################
-        # configure training setting and other properties
-        #############################################################
         self.best_val_nll = 1e8
         self.val_counter = 0
-        self.vocabDim = config['graph_decoder']['vocab_dim']
-        self.number_chain_steps = config["graph_decoder"]["diffusion_model"]["number_chain_steps"]
+        self.vocabDim = config["graph_decoder"]["vocab_dim"]
+        self.number_chain_steps = config["graph_decoder"]["diffusion_model"][
+            "number_chain_steps"
+        ]
 
-        #############################################################
-        # configure for visualization and test
-        #############################################################
         self.val_nll = NLL()
         self.val_X_kl = SumExceptBatchKL()
         self.val_E_kl = SumExceptBatchKL()
@@ -1103,10 +1060,7 @@ class MultiModalDecoder(nn.Layer):
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
-        
-        #############################################################
-        # configure key data container
-        #############################################################
+
         self.val_y_collection = []
         self.val_atomCount = []
         self.val_data_X = []
@@ -1222,7 +1176,7 @@ class MultiModalDecoder(nn.Layer):
     @paddle.no_grad()
     def sample(self, batch, i):
         batch_graph, other_data = batch
-        
+
         # transfer to dense graph from sparse graph
         if batch_graph.edges.T.numel() == 0:
             print("Found a batch with no edges. Skipping.")
@@ -1247,7 +1201,7 @@ class MultiModalDecoder(nn.Layer):
             y_condition = conditionVec.reshape(batch_length, self.vocabDim)
         else:
             y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
-        
+
         # forward of the model
         pred = self.forward_MultiModalModel(
             input_X, input_E, input_y, node_mask, y_condition
@@ -1279,7 +1233,7 @@ class MultiModalDecoder(nn.Layer):
             test=False,
         )
         loss["nll"] = nll
-        
+
         # save the data for visualization
         self.val_y_collection.append(other_data["conditionVec"])
         self.val_atomCount.append(paddle.to_tensor(other_data["atom_count"]))
@@ -1287,118 +1241,3 @@ class MultiModalDecoder(nn.Layer):
         self.val_data_E.append(E)
 
         return loss
-
-
-if __name__ == "__main__":
-
-    paddle.set_device("gpu")
-
-    # setup CLIP, which contains a transformer and a vision encoder
-
-    clip = ContrastiveModel(
-        n_layers_GT=5,
-        input_dims={"X": 17, "E": 5, "y": 512},
-        hidden_mlp_dims={"X": 256, "E": 128, "y": 256},
-        hidden_dims={
-            "dx": 256,
-            "de": 64,
-            "dy": 256,
-            "n_head": 8,
-            "dim_ffX": 256,
-            "dim_ffE": 128,
-            "dim_ffy": 256,
-        },
-        output_dims={"X": 9, "E": 5, "y": 0},
-        act_fn_in=paddle.nn.ReLU(),
-        act_fn_out=paddle.nn.ReLU(),
-        enc_voc_size=5450,
-        max_len=256,
-        d_model=256,
-        ffn_hidden=1024,
-        n_head=8,
-        n_layers_TE=3,
-        drop_prob=0.0,
-    )
-    for param in clip.graph_encoder.parameters():
-        param.stop_gradient = True
-    clip.graph_encoder.eval()
-    for param in clip.text_encoder.parameters():
-        param.stop_gradient = True
-    clip.text_encoder.eval()
-
-    prior_network = DiffusionPriorNetwork(
-        dim=512,
-        num_timesteps=None,
-        num_time_embeds=1,
-        num_graph_embeds=1,
-        num_text_embeds=1,
-        max_text_len=256,
-        self_cond=False,
-        depth=6,
-        dim_head=64,
-        heads=8,
-    )
-    ################# for precision aligement #########################
-    prior_network.set_state_dict(
-        paddle.load(
-            "/home/liuxuwei01/PaddleScience-Material/tmp/priorNetwork_paddle.pdparams"
-        )
-    )
-    ###################################################################
-
-    # diffusion prior network, which contains the CLIP and network (with transformer)
-    # above
-    from omegaconf import OmegaConf
-
-    config_path = "./molecule_generation/configs/diffusionPrior_CHnmr.yaml"
-    config = OmegaConf.load(config_path)
-    config["Model"]["condition_on_text_encodings"] = False
-    config["Model"]["timesteps"] = 100
-    config["Model"]["cond_drop_prob"] = 0.2
-    diffusion_prior = DiffusionPriorModel(
-        config=config["Model"],
-        model=prior_network,
-        clip=clip,
-    )
-
-    # mock data
-
-    nmr_conditionVec = paddle.randint(0, 2, shape=[4, 256])
-    nmr_srcMask = paddle.randint(0, 100000, shape=[4, 1, 1, 256], dtype="int32").astype(
-        "bool"
-    )
-    graph_X = paddle.randn([4, 15, 9])
-    graph_E = paddle.randn([4, 15, 15, 5])
-    graph_y = paddle.randn([4, 1024])
-    graph_node_mask = paddle.randint(0, 2, shape=[4, 15], dtype="int32").astype("bool")
-
-    clip_text_embeds = diffusion_prior.clip.text_encoder(nmr_conditionVec, nmr_srcMask)
-    clip_text_embeds = clip_text_embeds.reshape([clip_text_embeds.shape[0], -1])
-    clip_text_embeds = clip.linear_layer(clip_text_embeds)
-    clip_graph_embeds = diffusion_prior.clip.graph_encoder(
-        graph_X, graph_E, graph_y, graph_node_mask
-    )
-
-    # feed text and images into diffusion prior network
-    ################# for precision aligement #########################
-    import numpy as np
-
-    clip_text_embeds = paddle.to_tensor(
-        np.load("/home/liuxuwei01/PaddleScience-Material/tmp/clip_text_embeds.npy")
-    )
-    clip_graph_embeds = paddle.to_tensor(
-        np.load("/home/liuxuwei01/PaddleScience-Material/tmp/clip_graph_embeds.npy")
-    )
-    ###################################################################
-
-    loss = diffusion_prior(
-        text_embed=clip_text_embeds, moleculargraph_embed=clip_graph_embeds
-    )
-
-    print(clip_graph_embeds)
-    print(clip_text_embeds)
-    print(loss)
-    loss.backward()
-
-    result_sample = diffusion_prior.sample(nmr_conditionVec, nmr_srcMask)
-    print(result_sample)

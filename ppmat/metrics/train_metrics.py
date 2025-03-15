@@ -1,19 +1,7 @@
 import paddle
 import paddle.nn as nn
-import wandb
 
 from ppmat.metrics.abstract_metrics import CrossEntropyMetric
-from ppmat.metrics.abstract_metrics import SumExceptBatchMSE
-
-
-class NodeMSE(SumExceptBatchMSE):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-
-class EdgeMSE(SumExceptBatchMSE):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
 
 class TrainLossDiscrete(nn.Layer):
@@ -44,7 +32,7 @@ class TrainLossDiscrete(nn.Layer):
         true_E : tensor -- (bs, n, n, de)
         true_y : tensor -- (bs, )
         """
-        # 重塑张量
+        # reshape tensor
         true_X = paddle.reshape(true_X, [-1, true_X.shape[-1]])  # (bs * n, dx)
         true_E = paddle.reshape(true_E, [-1, true_E.shape[-1]])  # (bs * n * n, de)
         masked_pred_X = paddle.reshape(
@@ -54,7 +42,7 @@ class TrainLossDiscrete(nn.Layer):
             masked_pred_E, [-1, masked_pred_E.shape[-1]]
         )  # (bs * n * n, de)
 
-        # 应用掩码，移除被掩盖的行
+        # Apply mask to remove masked rows
         mask_X = paddle.sum(true_X != 0.0, axis=-1) > 0  # (bs * n,)
         mask_E = paddle.sum(true_E != 0.0, axis=-1) > 0  # (bs * n * n,)
 
@@ -82,13 +70,13 @@ class TrainLossDiscrete(nn.Layer):
         # 返回加权损失
         Sloss = loss_X + loss_E + loss_y
         Wloss = loss_X + self.lambda_train[0] * loss_E + self.lambda_train[1] * loss_y
-        
+
         return {
-            "train_loss":Wloss, 
-            "batch_CE":Sloss, 
-            "X_CE":loss_X, 
-            "E_CE":loss_E, 
-            "Y_CE":loss_y
+            "train_loss": Wloss,
+            "batch_CE": Sloss,
+            "X_CE": loss_X,
+            "E_CE": loss_E,
+            "Y_CE": loss_y,
         }
 
     def reset(self):
@@ -97,7 +85,6 @@ class TrainLossDiscrete(nn.Layer):
             metric.reset()
 
     def log_epoch_metrics(self):
-        # 计算并记录每个 epoch 的指标
         epoch_node_loss = (
             self.node_loss.accumulate().item()
             if self.node_loss.total_samples > 0
@@ -117,6 +104,4 @@ class TrainLossDiscrete(nn.Layer):
             "train_epoch/E_CE": epoch_edge_loss,
             "train_epoch/y_CE": epoch_y_loss,
         }
-        if wandb.run:
-            wandb.log(to_log, commit=False)
         return to_log

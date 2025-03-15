@@ -4,19 +4,15 @@ import numpy as np
 import paddle
 import paddle.nn.functional as F
 
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 
 
 def sum_except_batch(x):
-    # 原: x.reshape(x.size(0), -1).sum(dim=-1)
-    # Paddle:
     x_reshaped = paddle.reshape(x, [x.shape[0], -1])
     return paddle.sum(x_reshaped, axis=-1)
 
 
 def assert_correctly_masked(variable, node_mask):
-    # 原: (variable * (1 - node_mask.long())).abs().max().item()
-    # Paddle:
     mask_int = node_mask.astype("int64")
     masked = variable * (1 - mask_int).astype(variable.dtype)
     if paddle.max(paddle.abs(masked)).item() >= 1e-4:
@@ -24,15 +20,11 @@ def assert_correctly_masked(variable, node_mask):
 
 
 def sample_gaussian(size):
-    # 原: torch.randn(size)
-    # Paddle:
     return paddle.randn(shape=size)
 
 
 def sample_gaussian_with_mask(size, node_mask):
-    # 原: x = torch.randn(size) + x.type_as(node_mask.float())
     x = paddle.randn(shape=size)
-    # 保持 dtype 与 node_mask 相同（若 node_mask 是 bool，可转 float32）
     x = x.astype(node_mask.dtype)
     x_masked = x * node_mask
     return x_masked
@@ -117,13 +109,11 @@ def gaussian_KL(q_mu, q_sigma):
 
 
 def cdf_std_gaussian(x):
-    # 原: 0.5 * (1. + torch.erf(x / math.sqrt(2)))
     return 0.5 * (1.0 + paddle.erf(x / math.sqrt(2)))
 
 
 def SNR(gamma):
     """Computes signal to noise ratio (alpha^2/sigma^2) given gamma."""
-    # 原: torch.exp(-gamma)
     return paddle.exp(-gamma)
 
 
@@ -132,8 +122,6 @@ def inflate_batch_array(array, target_shape):
     Inflates the batch array (array) with only a single axis (batch_size, ...)
     to match the target shape.
     """
-    # 原: target_shape = (array.size(0),) + (1,)*(len(target_shape)-1)
-    # array.view(target_shape)
     shape0 = array.shape[0]
     new_shape = [shape0] + [1] * (len(target_shape) - 1)
     return paddle.reshape(array, new_shape)
@@ -141,14 +129,12 @@ def inflate_batch_array(array, target_shape):
 
 def sigma(gamma, target_shape):
     """Computes sigma given gamma."""
-    # 原: torch.sqrt(torch.sigmoid(gamma))
     sig = paddle.sqrt(F.sigmoid(gamma))
     return inflate_batch_array(sig, target_shape)
 
 
 def alpha(gamma, target_shape):
     """Computes alpha given gamma."""
-    # 原: torch.sqrt(torch.sigmoid(-gamma))
     sig = paddle.sqrt(F.sigmoid(-gamma))
     return inflate_batch_array(sig, target_shape)
 
@@ -173,12 +159,10 @@ def sigma_and_alpha_t_given_s(
     """
     Computes sigma_t_given_s and alpha_t_given_s for sampling.
     """
-    # sigma2_t_given_s = -torch.expm1(F.softplus(gamma_s) - F.softplus(gamma_t))
     part = paddle.softplus(gamma_s) - paddle.softplus(gamma_t)
     sigma2_t = -paddle.expm1(part)
     sigma2_t_given_s = inflate_batch_array(sigma2_t, target_size)
 
-    # alpha_t_given_s = alpha_t / alpha_s
     log_alpha2_t = F.logsigmoid(-gamma_t)
     log_alpha2_s = F.logsigmoid(-gamma_s)
     log_alpha2_t_given_s = log_alpha2_t - log_alpha2_s
@@ -192,7 +176,6 @@ def sigma_and_alpha_t_given_s(
 
 
 def reverse_tensor(x):
-    # 原: x[torch.arange(x.size(0) - 1, -1, -1)]
     idx = paddle.arange(x.shape[0] - 1, -1, -1, dtype="int64")
     return paddle.index_select(x, index=idx, axis=0)
 
@@ -212,14 +195,11 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
 
     # Get upper triangular part of edge noise, without main diagonal
     upper_triangular_mask = paddle.zeros_like(epsE)
-    # 若 paddle 有 triu_indices:
-    #   row_idx, col_idx = paddle.triu_indices(epsE.shape[1], epsE.shape[2], offset=1)
-    # 否则可自己构造：
+
     row_idx, col_idx = np.triu_indices(n=epsE.shape[1], k=1)
     row_idx_t = paddle.to_tensor(row_idx, dtype="int64")
     col_idx_t = paddle.to_tensor(col_idx, dtype="int64")
 
-    # 对 batch 维度做展开
     for b in range(epsE.shape[0]):
         upper_triangular_mask[b, row_idx_t, col_idx_t, :] = 1.0
 
@@ -228,7 +208,7 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
     epsE = epsE + epsE_T
 
     # assert (epsE == torch.transpose(epsE, 1, 2)).all()
-    # Paddle 中:
+    # Paddle :
     eq_ = paddle.all(epsE == epsE_T)
     if not eq_.item():
         raise ValueError("epsE is not symmetric!")
@@ -323,7 +303,7 @@ def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
     # Flatten
     bs = M.shape[0]
     M_flat = paddle.reshape(M, [bs, -1, M.shape[-1]])  # e.g. (bs, N, d)
-    M_t_flat = paddle.reshape(M_t, [bs, -1, M_t.shape[-1]]).astype('float32')
+    M_t_flat = paddle.reshape(M_t, [bs, -1, M_t.shape[-1]]).astype("float32")
 
     Qt_M_T = paddle.transpose(Qt_M, perm=[0, 2, 1])  # (bs, d, d)
 
@@ -400,7 +380,6 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     Set masked rows to arbitrary distributions, so they don't contribute to loss.
     Then renormalize.
     """
-    # device_ = true_X.device
     dtype_ = true_X.dtype
 
     row_X = paddle.zeros([true_X.shape[-1]], dtype=dtype_)
@@ -412,15 +391,9 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
     diag_mask = paddle.eye(n_, dtype="int32").astype("bool")
     diag_mask_bs = diag_mask.unsqueeze(0).expand([node_mask.shape[0], n_, n_])
 
-    # ~node_mask => paddle.logical_not
     mask_bool = node_mask.astype("bool")
     mask_not = paddle.logical_not(mask_bool)
 
-    # true_X[~node_mask] = row_X
-    # Paddle 不支持直接高级索引赋值，需要 where 或 scatter
-    # 这里示例用 where 方式:
-    #   if mask_not => row_X, else => true_X
-    # 先把 row_X broadcast
     row_X_bc = row_X.unsqueeze(0).unsqueeze(0)  # shape (1,1,dx)
     row_X_bc = paddle.expand(
         row_X_bc, [mask_not.shape[0], mask_not.shape[1], row_X.shape[0]]

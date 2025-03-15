@@ -1,16 +1,17 @@
 import paddle
 
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 
 
 class ExtraMolecularFeatures:
     def __init__(self, dataset_infos):
         """
-        dataset_infos 中通常包含:
-          - remove_h: 是否移除氢 (bool)
-          - valencies: dict or list, 各原子对应的最大价/可能价
-          - max_weight: 用于归一化分子量的最大值
-          - atom_weights: dict, 记录每种原子的原子量 (如 {'H':1, 'C':12, ...})
+        dataset_infos:
+          - remove_h: whether to remove hydrogens (bool)
+          - valencies: dict or list, maximum/possible valences for each atom
+          - max_weight: maximum value used for normalizing molecular weight
+          - atom_weights: dict, recording the atomic weight of each type of atom
+            (such as {'H':1, 'C':12, ...})
         """
         self.charge = ChargeFeature(
             remove_h=dataset_infos.remove_h, valencies=dataset_infos.valencies
@@ -22,11 +23,10 @@ class ExtraMolecularFeatures:
 
     def __call__(self, noisy_data):
         """
-        计算并拼接分子/原子额外特征:
-         - 原子电荷 (charge)
-         - 原子实际价 (valency)
-         - 分子重量 (weight)
-        返回 (X, E, y) 格式的 utils.PlaceHolder
+        Calculate and concatenate molecule/atom additional features:
+        Atomic charge (charge)
+        Atomic actual valence (valency)
+        Molecular weight (weight) Return utils.PlaceHolder in (X, E, y) format.
         """
         # charge / valency => (bs, n, 1)
         charge = paddle.unsqueeze(self.charge(noisy_data), axis=-1)
@@ -34,11 +34,11 @@ class ExtraMolecularFeatures:
         # weight => (bs, 1)
         weight = self.weight(noisy_data)
 
-        # 边级额外特征默认为空 (bs, n, n, 0)
+        # Edge-level additional features are defaulted to empty  (bs, n, n, 0)
         E_t = noisy_data["E_t"]
         extra_edge_attr = paddle.zeros(shape=E_t.shape[:-1] + [0], dtype=E_t.dtype)
 
-        # 将电荷与价拼接到原子特征 X 的最后一维: (bs, n, 2)
+        # Concatenate charge and valence to the last dimension X: (bs, n, 2)
         x_cat = paddle.concat([charge, valency], axis=-1)
 
         return utils.PlaceHolder(X=x_cat, E=extra_edge_attr, y=weight)
@@ -51,8 +51,9 @@ class ChargeFeature:
 
     def __call__(self, noisy_data):
         """
-        估算每个原子的净电荷 = (理想价态 - 当前键合数)。
-        bond_orders = [0, 1, 2, 3, 1.5] 分别表示：无键 / 单键 / 双键 / 三键 / 芳香键。
+        Estimate the net charge of each atom = (ideal valence - current bonding number).
+        bond_orders = [0, 1, 2, 3, 1.5]
+        represent: no bond / single bond / double bond / triple bond / aromatic bond.
         """
         E_t = noisy_data["E_t"]
         dtype_ = E_t.dtype
@@ -65,7 +66,7 @@ class ChargeFeature:
         current_valencies = paddle.argmax(weighted_E, axis=-1)  # (bs, n, n)
         current_valencies = paddle.sum(current_valencies, axis=-1)  # (bs, n)
 
-        # 计算理想价态
+        # Calculate ideal valence state
         X_t = noisy_data["X_t"]
         valency_tensor = paddle.to_tensor(
             self.valencies, dtype=X_t.dtype
@@ -74,7 +75,7 @@ class ChargeFeature:
         X_val = X_t * valency_tensor  # (bs, n, dx)
         normal_valencies = paddle.argmax(X_val, axis=-1)  # (bs, n)
 
-        # 电荷 = (理想价态 - 当前键合数)
+        # Charge = (Ideal Valence - Current Bonding Number)
         charge = normal_valencies - current_valencies
         return charge.astype(X_t.dtype)
 
@@ -85,7 +86,8 @@ class ValencyFeature:
 
     def __call__(self, noisy_data):
         """
-        计算每个原子的实际价态 (仅由当前键类型决定)。
+        Calculate the actual valence state of each atom
+        (determined solely by the current bond type).
         """
         E_t = noisy_data["E_t"]
         dtype_ = E_t.dtype

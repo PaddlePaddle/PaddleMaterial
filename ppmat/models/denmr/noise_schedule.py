@@ -2,8 +2,7 @@ import numpy as np
 import paddle
 
 from . import diffusion_utils
-
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 
 
 class PredefinedNoiseSchedule(paddle.nn.Layer):
@@ -160,24 +159,24 @@ class MarginalUniformTransition:
         beta_t = beta_t.unsqueeze(axis=1)
         q_x = (
             (
-                beta_t * self.u_x + (1 - beta_t) * paddle.eye(
-                num_rows=self.X_classes).unsqueeze(axis=0)
+                beta_t * self.u_x
+                + (1 - beta_t) * paddle.eye(num_rows=self.X_classes).unsqueeze(axis=0)
             )
             if self.X_classes != 0
             else utils.return_empty
         )
         q_e = (
             (
-                beta_t * self.u_e + (1 - beta_t) * paddle.eye(
-                num_rows=self.E_classes).unsqueeze(axis=0)
+                beta_t * self.u_e
+                + (1 - beta_t) * paddle.eye(num_rows=self.E_classes).unsqueeze(axis=0)
             )
             if self.E_classes != 0
             else utils.return_empty
         )
         q_y = (
             (
-                beta_t * self.u_y + (1 - beta_t) * paddle.eye(
-                num_rows=self.y_classes).unsqueeze(axis=0)
+                beta_t * self.u_y
+                + (1 - beta_t) * paddle.eye(num_rows=self.y_classes).unsqueeze(axis=0)
             )
             if self.y_classes != 0
             else utils.return_empty

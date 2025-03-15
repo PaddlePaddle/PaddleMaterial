@@ -2,7 +2,7 @@ import math
 
 import paddle
 
-from ..paddle_utils import dim2perm  # noqa
+from ppmat.models.denmr.utils.clip_utils import dim2perm  # noqa
 
 """
 @author : Hyunwoong

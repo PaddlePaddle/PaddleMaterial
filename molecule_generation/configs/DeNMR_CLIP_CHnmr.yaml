@@ -30,7 +30,7 @@ Trainer:
     lr: 0.001
 Tracker:
   log:
-    log_freq: 1 # log frequency [step]
+    log_freq: 100 # log frequency [step]
   save:
     output_dir: ./output/DeNMR_CHnmr/CLIP
     save_freq: 100 # set 0 to disable saving during training
@@ -41,7 +41,7 @@ Metric:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams"
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams" #latest.pdparams
     n_layers_GT: 5
     input_dims:
       X: 17

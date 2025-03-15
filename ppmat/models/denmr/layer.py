@@ -5,8 +5,8 @@ import paddle.nn as nn
 from einops import rearrange
 from einops import repeat
 
-from .utils.diffusionprior_utils import exists
-from .utils.diffusionprior_utils import l2norm
+from .utils.diffprior_utils import exists
+from .utils.diffprior_utils import l2norm
 
 
 class Xtoy(nn.Layer):
@@ -92,7 +92,7 @@ class MLP(paddle.nn.Layer):
     def __init__(self, dim_in, dim_out, *, expansion_factor=2.0, depth=2, norm=False):
         super().__init__()
         hidden_dim = int(expansion_factor * dim_out)
-        norm_fn = (
+        norm_fn = (  # noqa
             lambda: paddle.nn.LayerNorm(normalized_shape=hidden_dim)
             if norm
             else paddle.nn.Identity()
@@ -217,50 +217,50 @@ class Attention(nn.Layer):
         )
 
     def forward(self, x, mask=None, attn_bias=None):
-        # 预处理输入
         b, n = tuple(x.shape)[:2]  # 获取输入的batch_size和序列长度
         x = self.norm(x)  # 归一化
 
-        # 生成Q, K, V
         q, k, v = self.to_q(x), *self.to_kv(x).chunk(
             chunks=2, axis=-1
-        )  # q线性映射；生成kv的拼接表示，沿-1维度均分为k和v
+        )  # q linear mapping; generate concatenated representation of kv,
+        # split evenly into k and v along the -1 dimension
 
-        # 多头分拆及缩放
+        # Multi-head splitting and scaling
         q = rearrange(q, "b n (h d) -> b n h d", h=self.heads)
         q = q * self.scale  # 有助于数值稳定
         k = rearrange(k, "b n (h d) -> b n h d", h=1)
 
-        # 应用旋转位置编码
+        # Apply rotary position encoding
         if exists(self.rotary_emb):
-            q, k, _ = self.rotary_emb(q, k)  # 将相对位置信息融入到查询和键中，
-            # 使得注意力计算能更好地捕捉序列中token之间的相对关系
+            q, k, _ = self.rotary_emb(q, k)
         q = rearrange(q, "b n h d -> b h n d", h=self.heads)
         k = rearrange(k, "b n h d -> b n (h d)", h=1)
 
-        # 添加空键值kv
+        # Add empty key-value kv
         nk, nv = map(
             lambda t: repeat(t, "d -> b 1 d", b=b), self.null_kv.unbind(axis=-2)
         )
         k = paddle.concat(x=(nk, k), axis=-2)
         v = paddle.concat(x=(nv, v), axis=-2)
 
-        # 可选的余弦相似性归一化
+        # Optional cosine similarity normalization
         if self.cosine_sim:
-            q, k = map(l2norm, (q, k))  # 使得它们的模长尾1，注意力分散计算就是余弦相似度
+            q, k = map(l2norm, (q, k))  # Normalize their lengths to 1,
+            # and the attention score computation becomes cosine similarity
 
-        # 二次缩放
+        # Quadratic scaling
         q, k = map(lambda t: t * math.sqrt(self.scale), (q, k))
 
-        # 计算相似度矩阵
+        # Compute similarity matrix
         sim = paddle.einsum("b h i d, b j d -> b h i j", q, k)
-        # i表示查询序列位置，j表示键序列位置
+        # i represents the position in the query sequence, j represents the
+        # position in the key sequence
 
-        # 添加注意力偏置
+        # Add attention bias
         if exists(attn_bias):
             sim = sim + attn_bias  # 调整注意力分数
 
-        # 掩码处理
+        # Masking processing
         max_neg_value = -paddle.finfo(dtype=sim.dtype).max
         if exists(mask):
             mask = paddle.nn.functional.pad(
@@ -269,7 +269,7 @@ class Attention(nn.Layer):
             mask = rearrange(mask, "b j -> b 1 1 j")
             sim = sim.masked_fill(mask=~mask, value=max_neg_value)
 
-        # 因果掩码处理
+        # Causal masking processing
         if self.causal:
             i, j = tuple(sim.shape)[-2:]
             causal_mask = paddle.ones(shape=(i, j), dtype="bool").triu(
@@ -277,12 +277,12 @@ class Attention(nn.Layer):
             )
             sim = sim.masked_fill(mask=causal_mask, value=max_neg_value)
 
-        # 计算注意力权重及Dropout
+        # Compute attention weights and apply Dropout
         attn = paddle.nn.functional.softmax(sim, axis=-1, dtype="float32")
         attn = attn.astype(sim.dtype)
         attn = self.dropout(attn)
 
-        # 计算注意力输出
+        # Compute attention output
         out = paddle.einsum("b h i j, b j d -> b h i d", attn, v)
         out = rearrange(out, "b h n d -> b n (h d)")
         return self.to_out(out)

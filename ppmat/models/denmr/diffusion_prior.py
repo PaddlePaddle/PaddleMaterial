@@ -8,7 +8,6 @@ from einops import repeat
 from einops.layers.paddle import Rearrange
 from paddle.incubate.nn.functional import fused_rotary_position_embedding
 
-
 from ppmat.models.common.sinusoidal_embedding import SinusoidalPosEmbeddings
 
 from .layer import MLP
@@ -17,10 +16,10 @@ from .layer import FeedForward
 from .layer import LayerNorm
 from .layer import RelPosBias
 from .layer import prob_mask_like
-from .utils.diffusionprior_utils import default
-from .utils.diffusionprior_utils import exists
-from .utils.diffusionprior_utils import first
-from .utils.diffusionprior_utils import log
+from .utils.diffprior_utils import default
+from .utils.diffprior_utils import exists
+from .utils.diffprior_utils import first
+from .utils.diffprior_utils import log
 
 
 class DiffusionPriorNetwork(nn.Layer):
@@ -92,10 +91,10 @@ class DiffusionPriorNetwork(nn.Layer):
 
     def forward(
         self,
-        graph_embed,  # 图像嵌入表示
-        diffusion_timesteps,  # 扩散时间步长
+        graph_embed,
+        diffusion_timesteps,
         *,
-        text_embed,  # 文本嵌入
+        text_embed,
         text_encodings=None,
         self_cond=None,
         text_cond_drop_prob=0.0,
@@ -330,7 +329,7 @@ class NoiseScheduler(paddle.nn.Layer):
             raise NotImplementedError()
         self.loss_type = loss_type
         self.loss_fn = loss_fn
-        register_buffer = lambda name, val: self.register_buffer(
+        register_buffer = lambda name, val: self.register_buffer(  # noqa
             name=name, tensor=val.to("float32")
         )
         register_buffer("betas", betas)
@@ -554,4 +553,3 @@ def unfreeze_all_layers_(module):
 def freeze_model_and_make_eval_(model):
     model.eval()
     freeze_all_layers_(model)
-

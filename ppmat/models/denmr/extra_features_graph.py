@@ -1,6 +1,6 @@
 import paddle
 
-from .utils import digressutils as utils
+from .utils import diffgraphformer_utils as utils
 
 
 class DummyExtraFeatures:
@@ -226,14 +226,14 @@ def compute_laplacian(adjacency, normalize: bool):
     eye_n = paddle.unsqueeze(paddle.eye(n, dtype=adjacency.dtype), axis=0)  # (1, n, n)
 
     L = eye_n - D_norm @ adjacency @ D_norm
-    # 对于 diag0 == 0 的节点，令其对应位置 = 0
+    # For nodes where diag0 == 0, set their corresponding positions to 0
     zero_mask = (diag0 == 0).astype(L.dtype)  # (bs, n)
-    # 需要 broadcast 到 (bs,n,n)，可先 unsqueeze
+    # Need to broadcast to (bs, n, n), can first use unsqueeze
     zero_mask_2d = paddle.unsqueeze(zero_mask, axis=-1)  # (bs, n, 1)
     zero_mask_2d = paddle.matmul(
         zero_mask_2d, paddle.ones_like(zero_mask_2d).transpose([0, 2, 1])
     )
-    # 将 L 中对应位置 = 0
+    # Set the corresponding position in L to 0
     L = paddle.where(zero_mask_2d > 0, paddle.zeros_like(L), L)
     return (L + paddle.transpose(L, perm=[0, 2, 1])) / 2
 
@@ -248,12 +248,11 @@ def get_eigenvalues_features(eigenvalues, k=5):
     # n_connected_components = (ev < 1e-5).sum(dim=-1)
     n_connected_components = paddle.sum(ev < 1e-5, axis=-1)  # (bs,)
 
-    # 断言: 这里可能需要自己处理报错 or 做一个检查
+    # TODO:Assertion: May need to handle errors here or add a check
     # assert (n_connected_components > 0).all(), "some assert..."
 
     to_extend = max(n_connected_components.numpy()) + k - n
     if to_extend > 0:
-        # 相当于 torch.hstack([...]) => paddle.concat([...], axis=1)
         fill_val = paddle.full(shape=[bs, to_extend], fill_value=2.0, dtype=ev.dtype)
         ev_extended = paddle.concat([ev, fill_val], axis=1)  # (bs, n+to_extend)
     else:
@@ -266,8 +265,7 @@ def get_eigenvalues_features(eigenvalues, k=5):
     indices = range_k + paddle.unsqueeze(
         n_connected_components.astype("int64"), axis=1
     )  # (bs,k)
-    # gather => 需要 index 的 shape 与 ev_extended 一致
-    # paddle.gather(ev_extended, axis=1, index=indices) 要写个 batch_gather
+
     first_k_ev = batch_gather_2d(ev_extended, indices)
 
     n_connected_components = paddle.unsqueeze(n_connected_components, axis=-1)  # (bs,1)
@@ -275,21 +273,16 @@ def get_eigenvalues_features(eigenvalues, k=5):
 
 
 def batch_gather_2d(data, index):
-    """
-    仿照 PyTorch 的 gather(dim=1)，对 2D data (bs, m)，
-    根据同样 shape (bs, k) 的 index，返回 (bs, k)
-    """
     bs, m = data.shape
     _, k = index.shape
     row_idx = paddle.arange(bs, dtype="int64")
     row_idx = paddle.unsqueeze(row_idx, axis=-1)  # (bs,1)
     row_idx = paddle.expand(row_idx, [bs, k])  # (bs,k)
 
-    # 将 row_idx 和 index 拼成 (bs*k, 2)
     flat_indices = paddle.stack([row_idx.flatten(), index.flatten()], axis=1)
-    # 按照 flat_indices 在 data 上取值
+
     gathered = paddle.gather_nd(data, flat_indices)  # (bs*k,)
-    # reshape 回 (bs,k)
+
     gathered = paddle.reshape(gathered, [bs, k])
     return gathered
 
@@ -303,34 +296,29 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     """
     bs, n = vectors.shape[0], vectors.shape[1]
 
-    # first_ev => 取第 0 列 => vectors[:, :, 0]  shape (bs,n)
     first_ev = vectors[:, :, 0]
     # round to 3 decimals
     first_ev = round_to_decimals(first_ev, decimals=3)
-    # 与 node_mask 相乘
+    # Multiply with node_mask
     first_ev = first_ev * node_mask
 
-    # 加一些随机数到 mask 里，防止 0 变成众数
-    # random => paddle.randn([bs,n]) * (1 - node_mask)  (若 node_mask 是 float 0/1)
+    # Add some random numbers to the mask to prevent 0 from becoming the mode
+    # random => paddle.randn([bs,n]) * (1 - node_mask)  (if node_mask is float 0/1)
     random_part = paddle.randn([bs, n], dtype=first_ev.dtype)
     random_part = random_part * (1.0 - node_mask)
     first_ev = first_ev + random_part
 
-    # 计算每行的众数
+    # Calculate the mode of each row
     most_common = paddle_mode(first_ev, axis=1)  # (bs,)
 
-    # 构造 mask => ~ (first_ev == most_common.unsqueeze(1))
-    # 先判断相等, shape (bs,n)
     mc_expanded = paddle.unsqueeze(most_common, axis=1)  # (bs,1)
     eq_mask = paddle.equal(first_ev, mc_expanded)
     mask = paddle.logical_not(eq_mask)
-    # not_lcc_indicator => (mask * node_mask).unsqueeze(-1)
-    # 这里 node_mask 若是 float，需要先转 bool
+
     node_mask_bool = node_mask > 0.5
     combined_mask = paddle.logical_and(mask, node_mask_bool)  # (bs,n)
     not_lcc_indicator = paddle.unsqueeze(combined_mask.astype("float32"), axis=-1)
 
-    # 拿到前 k 个非零特征向量
     to_extend = max(n_connected.numpy()) + k - n
     if to_extend > 0:
         extension = paddle.zeros(shape=[bs, n, to_extend], dtype=vectors.dtype)
@@ -340,26 +328,25 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     range_k = paddle.arange(k, dtype="int64")  # (k,)
     range_k = paddle.unsqueeze(range_k, axis=[0, 1])  # (1,1,k)
     n_connected_i64 = paddle.unsqueeze(n_connected.astype("int64"), axis=2)  # (bs,1,1)
-    # 广播 => (bs,1,k)
+    # broadcast => (bs,1,k)
     range_k = paddle.expand(range_k, [n_connected_i64.shape[0], 1, k])
     indices = range_k + n_connected_i64  # (bs,1,k)
-    # expand 到 (bs,n,k)
+    # expand to (bs,n,k)
     indices = paddle.expand(indices, [bs, n, k])  # (bs,n,k)
 
-    # gather => 需要 batch gather
+    # gather => need batch gather
     # vectors shape (bs,n,n+to_extend)
     # indices shape (bs,n,k)
-    # 在最后一维 gather => axis=2
+    # at last dimension gather => axis=2
     k_lowest_eigvec = batch_gather_3d(vectors, indices)  # (bs,n,k)
 
-    # 乘以 node_mask
+    # multiply by node_mask
     k_lowest_eigvec = k_lowest_eigvec * paddle.unsqueeze(node_mask, axis=2)  # (bs,n,k)
     return not_lcc_indicator, k_lowest_eigvec
 
 
 def batch_gather_3d(data, index):
     """
-    仿 torch.gather(dim=2).
     data:   (bs,n,m)
     index:  (bs,n,k), each element in [0, m-1]
     output: (bs,n,k)
@@ -367,11 +354,11 @@ def batch_gather_3d(data, index):
     bs, n, m = data.shape
     _, _, k = index.shape
 
-    # 将 (bs,n,k) 展平 => (bs*n*k)
+    # make (bs,n,k) flat into => (bs*n*k)
     data_flat = paddle.reshape(data, [bs * n, m])  # (bs*n, m)
     index_flat = paddle.reshape(index, [bs * n, k])  # (bs*n, k)
 
-    # 构造行号: 0 ~ bs*n-1
+    # Construct row numbers: 0 to bs*n-1
     row_idx = paddle.arange(0, bs * n, dtype="int64")
     row_idx = paddle.unsqueeze(row_idx, axis=-1)  # (bs*n, 1)
     row_idx = paddle.expand(row_idx, [bs * n, k])  # (bs*n, k)
@@ -390,7 +377,7 @@ def batch_gather_3d(data, index):
 def batch_trace(X):
     """
     X: shape (bs, n, n)
-    返回每个样本的 trace => shape (bs,)
+    Return the trace for each sample  trace => shape (bs,)
     """
     diag = paddle.diagonal(X, axis1=-2, axis2=-1)  # (bs, n)
     return paddle.sum(diag, axis=-1)
@@ -399,7 +386,7 @@ def batch_trace(X):
 def batch_diagonal(X):
     """
     X: shape (bs, n, n)
-    返回其对角线 => (bs, n)
+    Return its diagonal => (bs, n)
     """
     return paddle.diagonal(X, axis1=-2, axis2=-1)
 
@@ -522,27 +509,29 @@ class KNodeCycles:
 
 
 # ==============
-# 一些辅助函数
+# Some auxiliary functions
 # ==============
 
 
 def paddle_mode(tensor, axis=1):
     """
-    近似替代 torch.mode(...).values 的功能，返回给定 axis 上出现次数最多的元素。
-    注：Paddle 当前无直接 mode API，这里用一种简化写法:
-        1. 将 tensor 转为 numpy
-        2. 调用 scipy.stats 或 numpy 的方法找 mode
-        3. 再转回到 paddle.Tensor
-    如果您的场景对性能要求高，可自行实现更高效的 Paddle 原生统计。
+    approximate torch.mode(...).values function, returning the most frequently
+    occurring element along the given axis.
+    Note: Now, Paddle does not have a direct mode API, so here's a simplified approach:
+        1. turn tensor into numpy
+        2. call scipy.stats or numpy method to find mode
+        3. return paddle.Tensor
+    If your scenario has high performance requirements, you may implement a more
+    efficient native statistical method for Paddle.
     """
     import numpy as np
 
     data_np = tensor.numpy()
-    # 计算每行的众数
-    # 如果您有 scipy 可这样:
+    # Calculate the mode for each row
+    # if you have scipy, then you can use scipy.stats.mode directly:
     # from scipy.stats import mode
     # m = mode(data_np, axis=axis, keepdims=False).mode
-    # 这里纯 numpy 实现:
+    # here is pure inplementation of numpy:
     bs = data_np.shape[0]
     modes = []
     for i in range(bs):

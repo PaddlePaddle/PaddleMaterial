@@ -14,7 +14,7 @@ from pgl.math import segment_sum
 
 class PlaceHolder:
     """
-    辅助类，用于封装 (X, E, y) 并提供 type_as / mask 等方法。
+    Auxiliary class for encapsulating (X, E, y) and providing methods as type_as / mask.
     """
 
     def __init__(self, X, E, y):
@@ -213,23 +213,23 @@ def map_index(
 
 def to_dense(x, edge_index, edge_attr, batch):
     """
-    将稀疏图数据转换为密集格式 (PaddlePaddle 版)
+    Convert sparse graph data to dense format (PaddlePaddle version) (Paddle version)
     Args:
         x (paddle.Tensor): 节点特征矩阵 (N, F)
         edge_index (paddle.Tensor): 边索引矩阵 (2, E)
         edge_attr (paddle.Tensor): 边属性矩阵 (E, D)
         batch (paddle.Tensor): 节点批次索引 (N,)
     Returns:
-        PlaceHolder: 包含密集化后的节点特征矩阵和邻接矩阵
+        PlaceHolder: Contains the densified node feature matrix and adjacency matrix
     """
     X, node_mask = to_dense_batch(x=x, batch=batch)
-    # 移除自环
+    # remove self-loops
     edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
 
-    # # 将边索引转换为稀疏矩阵形式
+    # # Convert edge indices to sparse matrix format
     # values = edge_attr
     # shape = [num_nodes, num_nodes, edge_attr.shape[1]]
-    # # 构建稀疏邻接矩阵
+    # # Construct sparse adjacency matrix
     # indices = edge_index
     # E = sparse.sparse_coo_tensor(indices, values, shape)
     # E = sparse.to_dense(E)
@@ -381,19 +381,19 @@ def return_empty(x, shape=None):
 
 
 # ===========================
-# 测试代码
+# test
 # ===========================
 if __name__ == "__main__":
     import paddle
 
     # from paddle import sparse
-    # 创建测试数据
+    # create test data
     x = paddle.arange(15).reshape([5, 3])  # 5个节点，每个节点3维特征
     edge_index = paddle.to_tensor([[0, 1, 2], [1, 2, 0]], dtype="int64")
     edge_attr = paddle.ones([3, 2]) * 2  # 3条边，每条边2维特征
     batch = paddle.to_tensor([0, 0, 1, 1, 1], dtype="int64")
 
-    # 测试 to_dense 函数
+    # test to_dense function
     placeholder, node_mask = to_dense(x, edge_index, edge_attr, batch)
     print("X Shape:", placeholder.X.shape)
     print("E Shape:", placeholder.E.shape)
