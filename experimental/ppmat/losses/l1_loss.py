@@ -33,7 +33,6 @@ class L1Loss(nn.Layer):
         self,
         reduction: Literal["mean", "sum"] = "mean",
     ):
-
         super().__init__()
         if reduction not in ["mean", "sum"]:
             raise ValueError(
@@ -42,7 +41,6 @@ class L1Loss(nn.Layer):
         self.reduction = reduction
 
     def forward(self, pred, label) -> paddle.Tensor:
-
         mask = paddle.isnan(label) is False
 
         loss = F.l1_loss(pred[mask], label[mask], self.reduction)

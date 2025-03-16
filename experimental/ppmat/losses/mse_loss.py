@@ -32,7 +32,6 @@ class MSELoss(nn.Layer):
         self,
         reduction: Literal["mean", "sum"] = "mean",
     ):
-
         super().__init__()
         if reduction not in ["mean", "sum"]:
             raise ValueError(
