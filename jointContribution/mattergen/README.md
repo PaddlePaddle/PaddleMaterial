@@ -91,7 +91,7 @@ We train Mattergen from scratch on the `mp_20` dataset and subsequently finetune
 |                                    dft_bulk_modulus                                     | Dataset | train(loss) | val(loss) |
 | :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
 |                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.2478    |  0.3039   |
-| [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |    todo     |   todo    |
+| [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |   0.2747    |  0.2931   |
 
 
 ### Pretrain base model
