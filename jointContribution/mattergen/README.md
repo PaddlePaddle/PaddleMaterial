@@ -51,15 +51,15 @@ The original [MatterGen](https://github.com/microsoft/mattergen) repositoryis li
    - [x] training
    - [x] generation
    - [x] evaluation
- + [ ] Finetune with property constraints
+ + [x] Finetune with property constraints
    - [x] chemical_system
-   - [ ] space_group (coming soon)
-   - [ ] dft_mag_density (coming soon)
-   - [ ] dft_band_gap (coming soon)
-   - [ ] ml_bulk_modulus (coming soon)
-   - [ ] dft_mag_density_hhi_score (coming soon)
-   - [ ] chemical_system_energy_above_hull (coming soon)
-   - [ ] Multi-property fine-tuning (coming soon)
+   - [x] space_group
+   - [x] dft_mag_density 
+   - [x] dft_band_gap
+   - [x] ml_bulk_modulus 
+   - [x] dft_mag_density_hhi_score
+   - [x] chemical_system_energy_above_hull
+   - [x] Multi-property fine-tuning
 
 
 
@@ -76,6 +76,22 @@ We train Mattergen from scratch on the `mp_20` dataset and subsequently finetune
 | :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
 |                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.2761    |  0.3134   |
 | [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |   0.2803    |  0.3161   |
+
+|                                      dft_band_gap                                       | Dataset | train(loss) | val(loss) |
+| :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
+|                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.3194    |  0.3679   |
+| [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |   0.3057    |  0.3547   |
+
+|                                     dft_mag_density                                     | Dataset | train(loss) | val(loss) |
+| :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
+|                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.3211    |  0.3692   |
+| [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |   0.3112    |  0.3682   |
+
+
+|                                    dft_bulk_modulus                                     | Dataset | train(loss) | val(loss) |
+| :-------------------------------------------------------------------------------------: | :-----: | :---------: | :-------: |
+|                   [Original](https://github.com/microsoft/mattergen)                    | `mp_20` |   0.2478    |  0.3039   |
+| [This repo](https://github.com/PaddlePaddle/PaddleMaterial/jointContribution/mattergen) | `mp_20` |    todo     |   todo    |
 
 
 ### Pretrain base model
