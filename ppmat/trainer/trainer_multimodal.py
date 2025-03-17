@@ -25,6 +25,7 @@ from packaging import version
 from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
+from paddle import DataParallel as DP
 
 from ppmat.models.denmr import diffusion_utils
 from ppmat.models.denmr.utils import diffgraphformer_utils as utils
@@ -33,6 +34,8 @@ from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
+
+from ppmat.datasets.CHnmr_dataset import CHnmrinfos
 
 
 def scale_shared_grads(model):
@@ -97,6 +100,7 @@ class TrainerDiffGraphFormer:
         self.samples_left_to_generate = self.config["Trainer"]["samples_to_generate"]
         self.samples_left_to_save = self.config["Trainer"]["samples_to_save"]
         self.chains_left_to_save = self.config["Trainer"]["chains_to_save"]
+        self.number_chain_steps = self.config["Trainer"]["number_chain_steps"]
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -165,6 +169,9 @@ class TrainerDiffGraphFormer:
 
         self.global_step = 0
         self.log_paddle_version()
+        
+        # other
+        self.vocabDim = self.config["Trainer"]["vocab_dim"]
 
     def train(self) -> None:
         """Training."""
@@ -194,10 +201,10 @@ class TrainerDiffGraphFormer:
                 and dist.get_rank() == 0
             ):
                 self.eval_epoch_start()
-                eval_loss_dict = self.eval_epoch(self.val_dataloader, epoch_id)
+                eval_loss_dict, metric_dict = self.eval_epoch(self.val_dataloader, epoch_id)
                 save_metric_dict.update(eval_loss_dict)
 
-                # log eval epoch loss info
+                # log eval epoch loss & metric info
                 msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
                 for k, v in eval_loss_dict.items():
                     if isinstance(v, paddle.Tensor):
@@ -205,25 +212,12 @@ class TrainerDiffGraphFormer:
                     msg += (
                         f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
                     )
-                logger.info(msg)
-
-                # log eval epoch metric info
-                metrics = [
-                    self.model.val_nll.accumulate(),
-                    self.model.val_X_kl.accumulate() * self.model.T,
-                    self.model.val_E_kl.accumulate() * self.model.T,
-                    self.model.val_X_logp.accumulate(),
-                    self.model.val_E_logp.accumulate(),
-                ]
-                val_nll = metrics[0]
-                if val_nll < self.model.best_val_nll:
-                    self.model.best_val_nll = val_nll
-
-                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}] "
-                msg += f" | Val NLL {metrics[0] :.2f}"
-                msg += f" | Val Atom type KL {metrics[1] :.2f}"
-                msg += f" | Val Edge type KL: {metrics[2] :.2f}"
-                msg += f" | Best val loss: {self.model.best_val_nll :.4f}"
+                for k, v in metric_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item()
+                    msg += (
+                        f" | {k}: {v:.5f}" if k == "metric" else f" | {k}(metric): {v:.5f}"
+                    )
                 logger.info(msg)
 
                 # update best metric
@@ -247,7 +241,7 @@ class TrainerDiffGraphFormer:
                 start = time.time()
 
                 # eval sample epoch
-                metric_dict = self.sample_epoch(epoch_id)
+                metric_dict = self.sample_epoch(self.val_dataloader, epoch_id)
 
                 # log eval sample metric info
                 msg = f"Sample: Epoch [{epoch_id}/{self.epochs}] "
@@ -378,11 +372,11 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            if iter_id == 1:  # TODO: for debug
-                break
+            # if iter_id == 1:  # TODO: for debug
+            #     break
             reader_cost = time.perf_counter() - reader_tic
 
-            loss_dict, metric_dict = self.model(batch_data)
+            loss_dict, metric_dict = self.model(batch_data, mode="train")
 
             loss = loss_dict["train_loss"]
             loss.backward()
@@ -467,17 +461,22 @@ class TrainerDiffGraphFormer:
         batch_tic = time.perf_counter()
         self.model.eval()
         total_loss = defaultdict(list)
+        total_metric = defaultdict(list)
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
 
-            loss_dict = self.model.sample(batch_data, iter_id)
+            loss_dict, metric_dict = self.model(batch_data, mode="eval")
 
             for key, value in loss_dict.items():
                 if isinstance(value, paddle.Tensor):
                     value = value.item()
                 total_loss[key].append(value)
+            for key, value in metric_dict.items():
+                if isinstance(value, paddle.Tensor):
+                    value = value.item()
+                total_metric[key].append(value)
 
             batch_cost = time.perf_counter() - batch_tic
             if paddle.distributed.get_rank() == 0 and (
@@ -499,101 +498,107 @@ class TrainerDiffGraphFormer:
             reader_tic = time.perf_counter()
 
         total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
+        total_metric_avg = {k: sum(v) / len(v) for k, v in total_metric.items()}
 
-        return total_loss_avg
+        return total_loss_avg, total_metric_avg
 
     @paddle.no_grad()
-    def sample_epoch(self, epoch_id: int):
+    def sample_epoch(self, dataloader, epoch_id: int):
+       
         # init counters
-        iter_id, start_index = 0, 0
         bs = 1 * self.config["Dataset"]["val"]["sampler"]["batch_size"]
-        samples_left_to_generate = self.samples_left_to_generate
-        to_generate = min(samples_left_to_generate, bs)
         samples_left_to_save = self.samples_left_to_save
         to_save = min(samples_left_to_save, bs)
         chains_left_to_save = self.chains_left_to_save
         chains_save = min(chains_left_to_save, bs)
-
-        # prepart the whole input data for sample generation
-        sample_val_y_collection = paddle.concat(
-            x=self.model.val_y_collection, axis=0
-        ).view(-1, self.model.vocabDim)
-        sample_val_atomCount = paddle.concat(x=self.model.val_atomCount, axis=0)
-        sample_val_data_X = paddle.concat(x=self.model.val_data_X, axis=0)
-        sample_val_data_E = paddle.concat(x=self.model.val_data_E, axis=0)
-        num_examples = sample_val_y_collection.shape[0]
+        samples_left_to_generate = self.samples_left_to_generate
+        to_generate = min(samples_left_to_generate, bs)
 
         # init samples dict for transfer into calculate metrics
         samples = dict()
         samples["pred"] = list()
         samples["true"] = list()
-        samples["n_all"] = num_examples
-        samples["dict"] = self.model.dataset_info.atom_decoder
+        samples["n_all"] = 0
+        if isinstance(self.model, DP):
+            samples["dict"] = self.model._layers.dataset_info.atom_decoder
+        else:
+            samples["dict"] = self.model.dataset_info.atom_decoder
 
-        # Generate Samples Iteration
-        while samples_left_to_generate > 0:
-            # Padding input data when smaller batch size at last iteration
-            if to_generate > num_examples:
-                ratio = to_generate // num_examples
-                sample_val_y_collection = self.model.val_y_collection.repeat(
-                    ratio + 1, 1
-                )
-                sample_val_atomCount = self.model.val_atomCount.repeat(ratio + 1, 1)
-                sample_val_data_X = self.model.val_data_X.repeat(ratio + 1, 1)
-                sample_val_data_E = self.model.val_data_E.repeat(ratio + 1, 1)
-                num_examples = sample_val_y_collection.size(0)
+        for iter_id, batch_data in enumerate(dataloader):
 
-            # prepare the batch of input data for sample generation
-            if start_index + to_generate > num_examples:
-                start_index = 0
-            batch_y = sample_val_y_collection[start_index : start_index + to_generate]
-            batch_atomCount = sample_val_atomCount[
-                start_index : start_index + to_generate
-            ]
-            batch_X = sample_val_data_X[start_index : start_index + to_generate]
-            batch_E = sample_val_data_E[start_index : start_index + to_generate]
+            # prepare the batch data
+            batch_graph, other_data = batch_data
+            dense_data, node_mask = utils.to_dense(
+                batch_graph.node_feat["feat"],
+                batch_graph.edges.T,
+                batch_graph.edge_feat["feat"],
+                batch_graph.graph_node_id,
+            )
+            dense_data = dense_data.mask(node_mask)
+            batch_y = other_data["conditionVec"].view(-1, self.vocabDim)
+            batch_atomCount = other_data["atom_count"]
+            batch_X, batch_E = dense_data.X, dense_data.E
 
             # sample from the model
             molecule_list, molecule_list_True = m_utils.sample_batch(
-                self.model,
+                self.model._layers if isinstance(self.model, DP) else self.model,
                 batch_id=iter_id,
-                batch_size=to_generate,
+                batch_size=len(batch_y),
                 num_nodes=batch_atomCount,
                 batch_condition=batch_y,
                 batch_X=batch_X,
                 batch_E=batch_E,
                 save_final=to_save,
                 keep_chain=chains_save,
-                number_chain_steps=self.model.number_chain_steps,
+                number_chain_steps=self.number_chain_steps,
             )
 
             # save the samples for calculate metrics
             samples["pred"].extend(molecule_list)
             samples["true"].extend(molecule_list_True)
+            samples["n_all"] += len(batch_y)
 
             # update counters
-            iter_id += 1
-            start_index += to_generate
             samples_left_to_save -= to_save
-            samples_left_to_generate -= to_generate
             chains_left_to_save -= chains_save
+            samples_left_to_generate -= to_generate
+
+            # break if we have generated enough samples
+            if samples_left_to_generate <= 0:
+                break
 
         # sampled molecules to compute metrics
-        metric_dict = self.model.sampling_metrics.forward(
-            samples,
-            epoch_id,
-            val_counter=-1,
-            test=True,
-            local_rank=self.rank,
-            output_dir=self.output_dir,
-        )
+        if isinstance(self.model, DP):
+            metric_dict = self.model._layers.sampling_metrics.forward(
+                samples,
+                epoch_id,
+                val_counter=-1,
+                test=True,
+                local_rank=self.rank,
+                output_dir=self.output_dir,
+            )
+        else:
+            metric_dict = self.model.sampling_metrics.forward(
+                samples,
+                epoch_id,
+                val_counter=-1,
+                test=True,
+                local_rank=self.rank,
+                output_dir=self.output_dir,
+            )
         return metric_dict
 
     def eval_epoch_start(self):
-        self.model.val_y_collection = []
-        self.model.val_atomCount = []
-        self.model.val_data_X = []
-        self.model.val_data_E = []
+        if isinstance(self.model, DP):
+            self.model._layers.val_y_collection = []
+            self.model._layers.val_atomCount = []
+            self.model._layers.val_data_X = []
+            self.model._layers.val_data_E = []
+        else:
+            self.model.val_y_collection = []
+            self.model.val_atomCount = []
+            self.model.val_data_X = []
+            self.model.val_data_E = []
 
     def log_paddle_version(self):
         # log paddlepaddle's version

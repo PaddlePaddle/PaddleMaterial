@@ -1,6 +1,6 @@
 import paddle
-import rdkit
 from paddle.nn import functional as F
+import rdkit
 from rdkit import Chem
 
 from ppmat.utils import logger

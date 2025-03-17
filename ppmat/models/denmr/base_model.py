@@ -138,7 +138,6 @@ class MolecularGraphTransformer(nn.Layer):
         self.best_val_nll = 1e8
         self.val_counter = 0
         self.vocabDim = config["vocab_dim"]
-        self.number_chain_steps = config["diffusion_model"]["number_chain_steps"]
 
         # configure generated datas for visualization after forward
         self.val_nll = NLL()
@@ -174,7 +173,7 @@ class MolecularGraphTransformer(nn.Layer):
         self.test_data_X = []
         self.test_data_E = []
 
-    def forward(self, batch):
+    def forward(self, batch, mode="train"):
         batch_graph, other_data = batch
 
         # transfer to dense graph from sparse graph
@@ -229,91 +228,53 @@ class MolecularGraphTransformer(nn.Layer):
             true_y=other_data["y"],
         )
 
-        metric = self.train_metrics(
-            masked_pred_X=pred.X,
-            masked_pred_E=pred.E,
-            true_X=X,
-            true_E=E,
-            log=True,
-        )
-        return loss, metric
+        if mode == 'train':
+            metrics= self.train_metrics(
+                masked_pred_X=pred.X,
+                masked_pred_E=pred.E,
+                true_X=X,
+                true_E=E,
+                log=True,
+            )
+        
+        elif mode == 'eval':
+            batch_length = other_data["y"].shape[0]
+            conditionAll = other_data["conditionVec"]
+            conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
+            
+            nll = m_utils.compute_val_loss(
+                self,
+                pred,
+                noisy_data,
+                dense_data.X,
+                dense_data.E,
+                other_data["y"],
+                node_mask,
+                condition=conditionAll,
+                test=False,
+            )
+            loss["nll"] = nll
 
-    @paddle.no_grad()
-    def sample(self, batch, i):
-        batch_graph, other_data = batch
-        # transfer to dense graph from sparse graph
-        dense_data, node_mask = utils.to_dense(
-            batch_graph.node_feat["feat"],
-            batch_graph.edges.T,
-            batch_graph.edge_feat["feat"],
-            batch_graph.graph_node_id,
-        )
-        dense_data = dense_data.mask(node_mask)
-        X, E = dense_data.X, dense_data.E
+            # save the data for visualization
+            self.val_y_collection.append(other_data["conditionVec"])
+            self.val_atomCount.append(paddle.to_tensor(other_data["atom_count"]))
+            self.val_data_X.append(X)
+            self.val_data_E.append(E)
+            
+            # comput eval epoch metric info
+            metrics = {
+                'val_nll': self.val_nll.accumulate(),
+                'val_X_kl': self.val_X_kl.accumulate() * self.T,
+                'val_E_kl': self.val_E_kl.accumulate() * self.T,
+                'val_X_logp': self.val_X_logp.accumulate(),
+                'val_E_logp': self.val_E_logp.accumulate(),
+            }
+            val_nll = metrics["val_nll"]
+            if val_nll < self.best_val_nll:
+                self.best_val_nll = val_nll
+                metrics["best_val_nll"] = self.best_val_nll
 
-        # add noise to the inputs (X, E)
-        noisy_data = m_utils.apply_noise(
-            self, dense_data.X, dense_data.E, other_data["y"], node_mask
-        )
-        extra_data = m_utils.compute_extra_data(self, noisy_data)
-
-        # input_X
-        input_X = paddle.concat(
-            [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
-        ).astype("float32")
-
-        # input_E
-        input_E = paddle.concat(
-            [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
-        ).astype("float32")
-
-        # input_y
-        input_y = paddle.concat(
-            [noisy_data["y_t"].astype("float"), extra_data.y], axis=1
-        ).astype("float32")
-
-        y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
-
-        conditionVec = self.encoder(X, E, y_condition, node_mask)
-        input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
-
-        # forward of decoder with encoder output as condition vector of input of decoder
-        pred = self.decoder(input_X, input_E, input_y, node_mask)
-
-        # evaluate the loss especially in the inference stage
-        loss = self.train_loss(
-            masked_pred_X=pred.X,
-            masked_pred_E=pred.E,
-            pred_y=pred.y,
-            true_X=X,
-            true_E=E,
-            true_y=other_data["y"],
-        )
-
-        batch_length = other_data["y"].shape[0]
-        conditionAll = other_data["conditionVec"]
-        conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
-
-        nll = m_utils.compute_val_loss(
-            self,
-            pred,
-            noisy_data,
-            dense_data.X,
-            dense_data.E,
-            other_data["y"],
-            node_mask,
-            condition=conditionAll,
-            test=False,
-        )
-        loss["nll"] = nll
-
-        # save the data for visualization
-        self.val_y_collection.append(other_data["conditionVec"])
-        self.val_atomCount.append(paddle.to_tensor(other_data["atom_count"]))
-        self.val_data_X.append(X)
-        self.val_data_E.append(E)
-
-        return loss
+        return loss, metrics
 
 
 class ContrastiveModel(nn.Layer):
@@ -1034,9 +995,6 @@ class MultiModalDecoder(nn.Layer):
         self.best_val_nll = 1e8
         self.val_counter = 0
         self.vocabDim = config["graph_decoder"]["vocab_dim"]
-        self.number_chain_steps = config["graph_decoder"]["diffusion_model"][
-            "number_chain_steps"
-        ]
 
         self.val_nll = NLL()
         self.val_X_kl = SumExceptBatchKL()

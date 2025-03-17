@@ -34,6 +34,7 @@ Trainer:
       patience: 30
       min_lr: 0.0001
       indicator: "train_loss"
+  vocab_dim: 256
 Tracker:
   log:
     log_freq: 100 # log frequency [step]
@@ -90,7 +91,6 @@ Model:
     # At the moment (03/08), y contains quite little information
     lambda_train: [5, 0]
     conditdim: 512
-    number_chain_steps: 1
   model_dtype: 'float32'
   log_every_steps: 1 #500
 Dataset:
@@ -109,7 +109,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
+      batch_size: 128
   val:
     dataset:
       __name__: CHnmrDataset
@@ -121,7 +121,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 128
   test:
     dataset:
       __name__: CHnmrDataset
@@ -133,4 +133,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 128
