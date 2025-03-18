@@ -72,6 +72,10 @@ class TrainerDiffusion:
         self.scale_grad = config.trainer.scale_grad
         self.is_save_traj = config.trainer.is_save_traj
         self.step_lr = config.trainer.step_lr
+        self.accumulate_grad_batches = config.trainer.accumulate_grad_batches if 'accumulate_grad_batches' in config.trainer else 1
+        
+        if dist.get_rank() == 0:
+            logger.message(f'accumulate_grad_batches: {self.accumulate_grad_batches}')
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -221,14 +225,18 @@ class TrainerDiffusion:
         for iter_id, batch_data in enumerate(dataloader):
             reader_cost = time.perf_counter() - reader_tic
             loss, loss_dict = self.model(batch_data)
+
+            if self.accumulate_grad_batches > 1:
+                loss = loss / self.accumulate_grad_batches
             loss_dict["loss"] = loss
 
             loss.backward()
             # if self.scale_grad:
             #     scale_shared_grads(self.model)
 
-            self.optimizer.step()
-            self.optimizer.clear_grad()
+            if (iter_id+1) % self.accumulate_grad_batches == 0 or (iter_id+1) == len(dataloader):
+                self.optimizer.step()
+                self.optimizer.clear_grad()
 
             for key, value in loss_dict.items():
                 if isinstance(value, paddle.Tensor):
@@ -272,7 +280,7 @@ class TrainerDiffusion:
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
                     if k == "loss":
-                        msg += f" | {k}: {v:.5f}"
+                        msg += f" | {k}: {(v * self.accumulate_grad_batches):.5f}"
                     else:
                         msg += f" | {k}(loss): {v:.5f}"
                 logger.info(msg)
