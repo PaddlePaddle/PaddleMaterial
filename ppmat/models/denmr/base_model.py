@@ -145,33 +145,15 @@ class MolecularGraphTransformer(nn.Layer):
         self.val_E_kl = SumExceptBatchKL()
         self.val_X_logp = SumExceptBatchMetric()
         self.val_E_logp = SumExceptBatchMetric()
-        self.val_y_collection = []
-        self.val_atomCount = []
-        self.val_data_X = []
-        self.val_data_E = []
 
         self.test_nll = NLL()
         self.test_X_kl = SumExceptBatchKL()
         self.test_E_kl = SumExceptBatchKL()
         self.test_X_logp = SumExceptBatchMetric()
         self.test_E_logp = SumExceptBatchMetric()
-        self.test_y_collection = []
-        self.test_atomCount = []
-        self.test_data_X = []
-        self.test_data_E = []
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
-
-        # configure key data container
-        self.val_y_collection = []
-        self.val_atomCount = []
-        self.val_data_X = []
-        self.val_data_E = []
-        self.test_y_collection = []
-        self.test_atomCount = []
-        self.test_data_X = []
-        self.test_data_E = []
 
     def forward(self, batch, mode="train"):
         batch_graph, other_data = batch
@@ -209,13 +191,11 @@ class MolecularGraphTransformer(nn.Layer):
         input_y = paddle.hstack(
             [noisy_data["y_t"].astype("float"), extra_data.y]
         ).astype(dtype="float32")
-
         y_condition = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)
-
         conditionVec = self.encoder(X, E, y_condition, node_mask)
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
-        # forward of decoder with encoder output as condition vector of input of decoder
+        # forward of decoder
         pred = self.decoder(input_X, input_E, input_y, node_mask)
 
         # compute loss
@@ -228,20 +208,21 @@ class MolecularGraphTransformer(nn.Layer):
             true_y=other_data["y"],
         )
 
-        if mode == 'train':
-            metrics= self.train_metrics(
+        # compute metrics
+        if mode == "train":
+            metrics = self.train_metrics(
                 masked_pred_X=pred.X,
                 masked_pred_E=pred.E,
                 true_X=X,
                 true_E=E,
                 log=True,
             )
-        
-        elif mode == 'eval':
+
+        elif mode == "eval":
             batch_length = other_data["y"].shape[0]
             conditionAll = other_data["conditionVec"]
             conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
-            
+
             nll = m_utils.compute_val_loss(
                 self,
                 pred,
@@ -255,19 +236,13 @@ class MolecularGraphTransformer(nn.Layer):
             )
             loss["nll"] = nll
 
-            # save the data for visualization
-            self.val_y_collection.append(other_data["conditionVec"])
-            self.val_atomCount.append(paddle.to_tensor(other_data["atom_count"]))
-            self.val_data_X.append(X)
-            self.val_data_E.append(E)
-            
             # comput eval epoch metric info
             metrics = {
-                'val_nll': self.val_nll.accumulate(),
-                'val_X_kl': self.val_X_kl.accumulate() * self.T,
-                'val_E_kl': self.val_E_kl.accumulate() * self.T,
-                'val_X_logp': self.val_X_logp.accumulate(),
-                'val_E_logp': self.val_E_logp.accumulate(),
+                "val_nll": self.val_nll.accumulate(),
+                "val_X_kl": self.val_X_kl.accumulate() * self.T,
+                "val_E_kl": self.val_E_kl.accumulate() * self.T,
+                "val_X_logp": self.val_X_logp.accumulate(),
+                "val_E_logp": self.val_E_logp.accumulate(),
             }
             val_nll = metrics["val_nll"]
             if val_nll < self.best_val_nll:

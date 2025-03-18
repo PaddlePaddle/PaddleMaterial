@@ -23,8 +23,8 @@ from ppmat.models.denmr.extra_features_graph import ExtraFeatures
 from ppmat.models.denmr.extra_features_molecular_graph import ExtraMolecularFeatures
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.trainer_multimodal import TrainerCLIP
-from ppmat.trainer.trainer_multimodal import TrainerDiffPrior
 from ppmat.trainer.trainer_multimodal import TrainerDiffGraphFormer
+from ppmat.trainer.trainer_multimodal import TrainerDiffPrior
 from ppmat.trainer.trainer_multimodal import TrainerMMDecoder
 from ppmat.utils import logger
 from ppmat.utils import misc
@@ -82,6 +82,8 @@ if __name__ == "__main__":
     val_loader = build_dataloader(val_data_cfg)
     test_data_cfg = config["Dataset"]["test"]
     test_loader = build_dataloader(test_data_cfg)
+    sample_data_cfg = config["Dataset"]["sample"]
+    sample_loader = build_dataloader(sample_data_cfg)
     dataloaders = DataLoaderCollection(train_loader, val_loader, test_loader)
 
     # build datasetinfo
@@ -117,7 +119,7 @@ if __name__ == "__main__":
     sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
     # visualization tools
     visualization_tools = MolecularVisualization(
-        config["Dataset"]["train"]["dataset"]["remove_h"], 
+        config["Dataset"]["train"]["dataset"]["remove_h"],
         dataset_infos=dataset_infos,
         output_dir=config["Tracker"]["save"]["output_dir"],
     )
@@ -148,6 +150,7 @@ if __name__ == "__main__":
             model,
             train_dataloader=train_loader,
             val_dataloader=val_loader,
+            sample_dataloader=sample_loader,
             test_dataloader=test_loader,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,

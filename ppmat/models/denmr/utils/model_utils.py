@@ -1,6 +1,6 @@
 import paddle
-from paddle.nn import functional as F
 import rdkit
+from paddle.nn import functional as F
 from rdkit import Chem
 
 from ppmat.utils import logger
@@ -323,9 +323,9 @@ def sample_batch(
     batch_id: int,
     batch_size: int,
     batch_condition,
-    keep_chain: int,
     number_chain_steps: int,
-    save_final: int,
+    keep_chain: int,
+    visual_num: int,
     batch_X,
     batch_E,
     num_nodes=None,
@@ -424,7 +424,7 @@ def sample_batch(
             batch_id,
             molecule_list,
             molecule_list_True,
-            save_final,
+            visual_num,
         )
 
     return molecule_list, molecule_list_True

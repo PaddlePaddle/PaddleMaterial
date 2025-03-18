@@ -9,18 +9,6 @@ Trainer:
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
   pretrained_model_path: null # set your pretrained model path here
-  test_only: null
-  check_val_every_n_epochs: 1
-  sample_every_val: 1
-  val_check_interval: null
-  samples_to_generate: 64       # We advise to set it to 2 x batch_size maximum
-  samples_to_save: 1
-  chains_to_save: 1
-  number_chain_steps: 1        # Number of frames in each gif
-  final_model_samples_to_generate: 512
-  final_model_samples_to_save: 512
-  final_model_chains_to_save: 512
-  evaluate_all_checkpoints: False
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -35,6 +23,13 @@ Trainer:
       min_lr: 0.0001
       indicator: "train_loss"
   vocab_dim: 256
+Sampler:
+  sample_every_val: 2
+  visual_num: 10 # number of visualize molecules in the sample
+  chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
+  number_chain_steps: 10 # Number of frames in each gif
+  sample_batch_size: 100 # Number of molecules to sample in each batch
+  sample_batch_iters: 1 # Number of sample batches
 Tracker:
   log:
     log_freq: 100 # log frequency [step]
@@ -109,7 +104,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 128
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset
@@ -121,7 +116,19 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 128
+      batch_size: 512
+  sample:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/val.csv"
+      vocab_path: "./molecule_generation/vocab.src"
+      cache: True
+      remove_h: True
+    sampler:
+      __name__: BatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 100
   test:
     dataset:
       __name__: CHnmrDataset
@@ -133,4 +140,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 128
+      batch_size: 512

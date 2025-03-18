@@ -22,10 +22,10 @@ import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
 from packaging import version
+from paddle import DataParallel as DP
 from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
-from paddle import DataParallel as DP
 
 from ppmat.models.denmr import diffusion_utils
 from ppmat.models.denmr.utils import diffgraphformer_utils as utils
@@ -34,8 +34,6 @@ from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import read_json  # noqa
 from ppmat.utils.io import write_json
-
-from ppmat.datasets.CHnmr_dataset import CHnmrinfos
 
 
 def scale_shared_grads(model):
@@ -65,6 +63,7 @@ class TrainerDiffGraphFormer:
         model: nn.Layer,
         train_dataloader: Optional[paddle.io.DataLoader] = None,
         val_dataloader: Optional[paddle.io.DataLoader] = None,
+        sample_dataloader: Optional[paddle.io.DataLoader] = None,
         test_dataloader: Optional[paddle.io.DataLoader] = None,
         optimizer: Optional[optim.Optimizer] = None,
         metric_class: Optional[Callable] = None,
@@ -75,15 +74,13 @@ class TrainerDiffGraphFormer:
         self.optimizer = optimizer
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
+        self.sample_dataloader = sample_dataloader
         self.test_dataloader = test_dataloader
         self.metric_class = metric_class
         self.lr_scheduler = lr_scheduler
 
-        # get config from config file
+        # get trainer config
         self.epochs = config["Trainer"]["epochs"]
-        self.output_dir = config["Tracker"]["save"]["output_dir"]
-        self.save_freq = config["Tracker"]["save"]["save_freq"]
-        self.log_freq = config["Tracker"]["log"]["log_freq"]
         self.start_eval_epoch = config["Trainer"]["start_eval_epoch"]
         self.eval_freq = config["Trainer"]["eval_freq"]
         self.seed = config["Trainer"]["seed"]
@@ -96,11 +93,16 @@ class TrainerDiffGraphFormer:
         self.step_lr = config["Trainer"].get("step_lr", 0.000005)
 
         # get sample config
-        self.samp_per_val = self.config["Trainer"]["sample_every_val"]
-        self.samples_left_to_generate = self.config["Trainer"]["samples_to_generate"]
-        self.samples_left_to_save = self.config["Trainer"]["samples_to_save"]
-        self.chains_left_to_save = self.config["Trainer"]["chains_to_save"]
-        self.number_chain_steps = self.config["Trainer"]["number_chain_steps"]
+        self.samp_per_val = self.config["Sampler"]["sample_every_val"]
+        self.visual_num = self.config["Sampler"]["visual_num"]
+        self.chains_left_to_save = self.config["Sampler"]["chains_to_save"]
+        self.number_chain_steps = self.config["Sampler"]["number_chain_steps"]
+        self.sample_batch_iters = self.config["Sampler"]["sample_batch_iters"]
+
+        # get tracker config
+        self.output_dir = config["Tracker"]["save"]["output_dir"]
+        self.save_freq = config["Tracker"]["save"]["save_freq"]
+        self.log_freq = config["Tracker"]["log"]["log_freq"]
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -169,7 +171,7 @@ class TrainerDiffGraphFormer:
 
         self.global_step = 0
         self.log_paddle_version()
-        
+
         # other
         self.vocabDim = self.config["Trainer"]["vocab_dim"]
 
@@ -200,8 +202,10 @@ class TrainerDiffGraphFormer:
                 and epoch_id % self.eval_freq == 0
                 and dist.get_rank() == 0
             ):
-                self.eval_epoch_start()
-                eval_loss_dict, metric_dict = self.eval_epoch(self.val_dataloader, epoch_id)
+                # self.eval_epoch_start()
+                eval_loss_dict, metric_dict = self.eval_epoch(
+                    self.val_dataloader, epoch_id
+                )
                 save_metric_dict.update(eval_loss_dict)
 
                 # log eval epoch loss & metric info
@@ -216,7 +220,9 @@ class TrainerDiffGraphFormer:
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
                     msg += (
-                        f" | {k}: {v:.5f}" if k == "metric" else f" | {k}(metric): {v:.5f}"
+                        f" | {k}: {v:.5f}"
+                        if k == "metric"
+                        else f" | {k}(metric): {v:.5f}"
                     )
                 logger.info(msg)
 
@@ -241,7 +247,7 @@ class TrainerDiffGraphFormer:
                 start = time.time()
 
                 # eval sample epoch
-                metric_dict = self.sample_epoch(self.val_dataloader, epoch_id)
+                metric_dict = self.sample_epoch(self.sample_dataloader, epoch_id)
 
                 # log eval sample metric info
                 msg = f"Sample: Epoch [{epoch_id}/{self.epochs}] "
@@ -372,8 +378,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+            if iter_id == 1:  # TODO: for debug
+                break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
@@ -465,6 +471,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
+            if iter_id == 1:  # TODO: for debug
+                break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="eval")
@@ -482,8 +490,8 @@ class TrainerDiffGraphFormer:
             if paddle.distributed.get_rank() == 0 and (
                 iter_id % self.log_freq == 0 or iter_id == data_length - 1
             ):
-                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}] "
-                msg += f"| Step: [{iter_id+1}/{data_length}]"
+                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
+                msg += f" | Step: [{iter_id+1}/{data_length}]"
                 msg += f" | reader cost: {reader_cost:.5f}s"
                 msg += f" | batch cost: {batch_cost:.5f}s"
                 for k, v in loss_dict.items():
@@ -504,15 +512,8 @@ class TrainerDiffGraphFormer:
 
     @paddle.no_grad()
     def sample_epoch(self, dataloader, epoch_id: int):
-       
-        # init counters
-        bs = 1 * self.config["Dataset"]["val"]["sampler"]["batch_size"]
-        samples_left_to_save = self.samples_left_to_save
-        to_save = min(samples_left_to_save, bs)
-        chains_left_to_save = self.chains_left_to_save
-        chains_save = min(chains_left_to_save, bs)
-        samples_left_to_generate = self.samples_left_to_generate
-        to_generate = min(samples_left_to_generate, bs)
+        self.model.eval()
+        iters = self.sample_batch_iters  # TODO: use iterdataset for sampling
 
         # init samples dict for transfer into calculate metrics
         samples = dict()
@@ -538,18 +539,19 @@ class TrainerDiffGraphFormer:
             batch_y = other_data["conditionVec"].view(-1, self.vocabDim)
             batch_atomCount = other_data["atom_count"]
             batch_X, batch_E = dense_data.X, dense_data.E
+            bs = len(batch_y)
 
             # sample from the model
             molecule_list, molecule_list_True = m_utils.sample_batch(
                 self.model._layers if isinstance(self.model, DP) else self.model,
                 batch_id=iter_id,
-                batch_size=len(batch_y),
                 num_nodes=batch_atomCount,
                 batch_condition=batch_y,
                 batch_X=batch_X,
                 batch_E=batch_E,
-                save_final=to_save,
-                keep_chain=chains_save,
+                batch_size=bs,
+                visual_num=self.visual_num,
+                keep_chain=self.chains_left_to_save,
                 number_chain_steps=self.number_chain_steps,
             )
 
@@ -558,13 +560,9 @@ class TrainerDiffGraphFormer:
             samples["true"].extend(molecule_list_True)
             samples["n_all"] += len(batch_y)
 
-            # update counters
-            samples_left_to_save -= to_save
-            chains_left_to_save -= chains_save
-            samples_left_to_generate -= to_generate
-
-            # break if we have generated enough samples
-            if samples_left_to_generate <= 0:
+            # contral iters
+            iters -= 1
+            if iters == 0:
                 break
 
         # sampled molecules to compute metrics
@@ -587,18 +585,6 @@ class TrainerDiffGraphFormer:
                 output_dir=self.output_dir,
             )
         return metric_dict
-
-    def eval_epoch_start(self):
-        if isinstance(self.model, DP):
-            self.model._layers.val_y_collection = []
-            self.model._layers.val_atomCount = []
-            self.model._layers.val_data_X = []
-            self.model._layers.val_data_E = []
-        else:
-            self.model.val_y_collection = []
-            self.model.val_atomCount = []
-            self.model.val_data_X = []
-            self.model.val_data_E = []
 
     def log_paddle_version(self):
         # log paddlepaddle's version
