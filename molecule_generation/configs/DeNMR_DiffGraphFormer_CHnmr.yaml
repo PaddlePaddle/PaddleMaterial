@@ -93,10 +93,13 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/train.csv"
-      vocab_path: "./molecule_generation/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       datadir: "./data/CHnmr"
       cache: True
       remove_h: True
+      seq_len_H1: 20
+      seq_len_C13: 75
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -109,9 +112,12 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/val.csv"
-      vocab_path: "./molecule_generation/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      seq_len_H1: 20
+      seq_len_C13: 75
     sampler:
       __name__: BatchSampler
       shuffle: True
@@ -121,9 +127,12 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/val.csv"
-      vocab_path: "./molecule_generation/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      seq_len_H1: 20
+      seq_len_C13: 75
     sampler:
       __name__: BatchSampler
       shuffle: True
@@ -133,9 +142,12 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/test.csv"
-      vocab_path: "./molecule_generation/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      seq_len_H1: 20
+      seq_len_C13: 75
     sampler:
       __name__: BatchSampler
       shuffle: True

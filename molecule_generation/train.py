@@ -82,9 +82,10 @@ if __name__ == "__main__":
     val_loader = build_dataloader(val_data_cfg)
     test_data_cfg = config["Dataset"]["test"]
     test_loader = build_dataloader(test_data_cfg)
-    sample_data_cfg = config["Dataset"]["sample"]
-    sample_loader = build_dataloader(sample_data_cfg)
     dataloaders = DataLoaderCollection(train_loader, val_loader, test_loader)
+    if config["Dataset"].get("sample") is not None:
+        sample_data_cfg = config["Dataset"]["sample"]
+        sample_loader = build_dataloader(sample_data_cfg)
 
     # build datasetinfo
     dataset_infos = CHnmrinfos(dataloaders=dataloaders, cfg=config)

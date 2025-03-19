@@ -1,8 +1,7 @@
+import json
 import os
 import os.path as osp
 import pickle
-from collections import defaultdict
-from typing import Callable
 from typing import List
 from typing import Tuple
 from typing import Union
@@ -25,7 +24,7 @@ from ppmat.datasets.ext_rdkit import mol2smiles
 from ppmat.datasets.transform.preprocess import RemoveYTransform
 from ppmat.datasets.transform.preprocess import SelectHOMOTransform
 from ppmat.datasets.transform.preprocess import SelectMuTransform
-from ppmat.datasets.utils import numericalize_text
+from ppmat.datasets.utils import numericalize_H1C13
 from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 from ppmat.utils import logger
 
@@ -38,36 +37,40 @@ class CHnmrData:
     def __init__(
         self,
         path: Union[str, List[str]],
-        vocab_path: str,
-        remove_h=True,
-        pre_transform: Callable = None,
-        pre_filter: Callable = None,
+        vocab_peakwidth_path: str,
+        vocab_split_path: str,
+        remove_h: bool,
+        seq_len_H1: int,
+        seq_len_C13: int,
         split_ratio: Tuple = (0.9, 0.05, 0.05),
     ):
         self.path = path
-        self.vocab_path = vocab_path
+        self.vocab_peakwidth_path = vocab_peakwidth_path
+        self.vocab_split_path = vocab_split_path
         self.remove_h = remove_h
-        self.pre_transform = pre_transform
-        self.pre_filter = pre_filter
+        self.seq_len_H1 = seq_len_H1
+        self.seq_len_C13 = seq_len_C13
         self.split_ratio = split_ratio
 
-        self.vocabDim = 256
-        self.vocab_to_id = {"<blank>": 0, "<unk>": 1}
+        self.vocab_peakwidth = {"<pad>": 0, "<unk>": 1}
+        self.vocab_split = {"<pad>": 0, "<unk>": 1}
 
         self.get_vocab_id_dict()
         self.dataset = self.load_data(path, False)
         logger.info(f"Build {len(self.dataset)} molecules")
 
     def get_vocab_id_dict(self):
-        with open(self.vocab_path, "r", encoding="utf-8") as vocab_file:
-            current_id = 2
-            for line in vocab_file:
-                word, _ = line.strip().split("\t")
-                self.vocab_to_id[word] = current_id
-                current_id += 1
+        df_peakwidth = pd.read_csv(self.vocab_peakwidth_path)
+        for idx, value in enumerate(df_peakwidth["Value"]):
+            self.vocab_peakwidth[value] = idx + 2
+        df_split = pd.read_csv(self.vocab_split_path)
+        for idx, type in enumerate(df_split["Type"]):
+            self.vocab_split[type] = idx + 2
 
     def load_data(self, path, split=False):
-        dataset = pd.read_csv(path)
+        dataset = pd.read_csv(
+            path, index_col=0, converters={"tokenized_input": json.loads}
+        )
         if split:
             datasets = self.split_dataset(dataset)
             dataset_proc = [self.process(target_df) for target_df in datasets]
@@ -175,28 +178,28 @@ class CHnmrData:
                 edge_feat={"feat": edge_attr.numpy()},
             )
 
-            conditionVec = paddle.to_tensor(
-                numericalize_text(
-                    text=tokenized_input,
-                    vocab_to_id=self.vocab_to_id,
-                    dim=self.vocabDim,
-                ),
-                dtype=paddle.int64,
+            nmrVec = dict()
+            (
+                nmrVec["H_nmr"],
+                nmrVec["num_H_peak"],
+                nmrVec["C_nmr"],
+                nmrVec["num_C_peak"],
+            ) = numericalize_H1C13(
+                nmrdata=tokenized_input,
+                vocab_peakwidth=self.vocab_peakwidth,
+                vocab_split=self.vocab_split,
+                seq_len_H1=self.seq_len_H1,
+                seq_len_C13=self.seq_len_C13,
             )
+
             atom_count = paddle.to_tensor(atom_count, dtype=paddle.int64)
 
             other_data = {
                 "y": y.numpy(),
                 "idx": paddle.to_tensor(idx, dtype=paddle.int64).numpy(),
-                "conditionVec": conditionVec.numpy(),
+                "conditionVec": nmrVec,
                 "atom_count": atom_count.numpy(),
             }
-
-            # apply pre_transform and pre_filter to data
-            if self.pre_filter is not None and not self.pre_filter(data):
-                continue
-            if self.pre_transform is not None:
-                data = self.pre_transform(data)
 
             data_list.append((data, other_data))
         return data_list
@@ -206,10 +209,11 @@ class CHnmrDataset(Dataset):
     def __init__(
         self,
         path: Union[str, List[str]],
-        vocab_path: str,
-        remove_h=True,
-        pre_transform: Callable = None,
-        pre_filter: Callable = None,
+        vocab_peakwidth_path: str,
+        vocab_split_path: str,
+        remove_h: bool,
+        seq_len_H1: int,
+        seq_len_C13: int,
         split_ratio: Tuple = (0.9, 0.05, 0.05),
         cache: bool = True,
         **kwargs,
@@ -231,10 +235,11 @@ class CHnmrDataset(Dataset):
         else:
             data = CHnmrData(
                 path,
-                vocab_path,
+                vocab_peakwidth_path,
+                vocab_split_path,
                 remove_h,
-                pre_transform,
-                pre_filter,
+                seq_len_H1,
+                seq_len_C13,
                 split_ratio,
             )
             self.dataset = data.dataset
@@ -269,25 +274,44 @@ class CHnmrDataset(Dataset):
         batch_graph = pgl.Graph.batch(graphs)
         batch_graph.tensor()
 
-        new_other_data = defaultdict(list)
-        for other_data in other_datas:
-            for key, value in other_data.items():
-                new_other_data[key].append(value)
-        for key, values in new_other_data.items():
-            if isinstance(values[0], paddle.Tensor):
-                stacked_tensor = paddle.stack(values)
-                if len(stacked_tensor.shape) > 1:
-                    new_shape = [
-                        stacked_tensor.shape[0] * stacked_tensor.shape[1]
-                    ] + list(stacked_tensor.shape[2:])
-                    new_other_data[key] = stacked_tensor.reshape(new_shape)
-            elif isinstance(values[0], np.ndarray):
-                stacked_tensor = np.stack(values)
-                if len(stacked_tensor.shape) > 1:
-                    new_shape = [
-                        stacked_tensor.shape[0] * stacked_tensor.shape[1]
-                    ] + list(stacked_tensor.shape[2:])
-                    new_other_data[key] = stacked_tensor.reshape(new_shape)
+        def recursive_collate(items):
+            """
+            Recursively process list items:
+            - If an element in the list is a dict, recursively collate each key.
+            - If it is a Tensor or ndarray, stack them and merge first two dimensions.
+            - For other types, simply return the list.
+            """
+            if isinstance(items[0], dict):
+                collated = {}
+                # 针对所有样本内相同的子 key 进行合并
+                for k in items[0].keys():
+                    sub_items = [item[k] for item in items]
+                    collated[k] = recursive_collate(sub_items)
+                return collated
+            elif isinstance(items[0], paddle.Tensor):
+                stacked = paddle.stack(items)
+                # If the stacked tensor has more than 1 dimension, merge first two dims
+                if len(stacked.shape) > 1:
+                    new_shape = [stacked.shape[0] * stacked.shape[1]] + list(
+                        stacked.shape[2:]
+                    )
+                    return stacked.reshape(new_shape)
+                return stacked
+            elif isinstance(items[0], np.ndarray):
+                stacked = np.stack(items)
+                if len(stacked.shape) > 1:
+                    new_shape = [stacked.shape[0] * stacked.shape[1]] + list(
+                        stacked.shape[2:]
+                    )
+                    return stacked.reshape(new_shape)
+                return stacked
+            else:
+                return items
+
+        new_other_data = {}
+        for key in other_datas[0].keys():
+            new_other_data[key] = recursive_collate([d[key] for d in other_datas])
+
         return batch_graph, new_other_data
 
 

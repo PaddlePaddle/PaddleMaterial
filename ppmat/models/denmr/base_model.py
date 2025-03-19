@@ -14,12 +14,12 @@ from ppmat.metrics.train_metrics import TrainLossDiscrete
 from ppmat.models.denmr.diffusion_prior import DiffusionPriorNetwork
 from ppmat.models.denmr.diffusion_prior import NoiseScheduler
 from ppmat.models.denmr.diffusion_prior import freeze_model_and_make_eval_
-from ppmat.models.denmr.encoder import Encoder
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
 from .graph_transformer import GraphTransformer
-from .graph_transformer import GraphTransformer_C
+from .graph_transformer import MolecularEncoder
+from .nmr_encoder import NMR_encoder
 from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
@@ -64,11 +64,10 @@ class MolecularGraphTransformer(nn.Layer):
 
         # configure model
         self.con_input_dim = copy.deepcopy(input_dims)
-        self.con_input_dim["X"] -= 8
-        self.con_input_dim["y"] = 1024
+        self.con_input_dim["y"] = 12
         self.con_output_dim = dataset_infos.output_dims
 
-        self.encoder = GraphTransformer_C(
+        self.encoder = MolecularEncoder(
             n_layers=config["encoder"]["num_layers"],
             input_dims=self.con_input_dim,
             hidden_mlp_dims=config["encoder"]["hidden_mlp_dims"],
@@ -137,7 +136,6 @@ class MolecularGraphTransformer(nn.Layer):
         # configure training setting and other properties
         self.best_val_nll = 1e8
         self.val_counter = 0
-        self.vocabDim = config["vocab_dim"]
 
         # configure generated datas for visualization after forward
         self.val_nll = NLL()
@@ -170,29 +168,47 @@ class MolecularGraphTransformer(nn.Layer):
         )
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
+        y = other_data["y"]
 
         # add noise to the inputs (X, E)
-        noisy_data = m_utils.apply_noise(
-            self, dense_data.X, dense_data.E, other_data["y"], node_mask
-        )
+        noisy_data = m_utils.apply_noise(self, X, E, y, node_mask)
         extra_data = m_utils.compute_extra_data(self, noisy_data)
 
-        # input_X
+        # input_X for decoder
         input_X = paddle.concat(
             [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
         ).astype(dtype="float32")
 
-        # input_E
+        # input_E for decoder
         input_E = paddle.concat(
             [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
         ).astype(dtype="float32")
 
-        # input_y with encoder output as condition vector of input of decoder
+        # partial input_y for decoder
         input_y = paddle.hstack(
             [noisy_data["y_t"].astype("float"), extra_data.y]
         ).astype(dtype="float32")
-        y_condition = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)
-        conditionVec = self.encoder(X, E, y_condition, node_mask)
+
+        # prepare the extra feature for encoder input without noisy
+        z_t = utils.PlaceHolder(X=X, E=E, y=y).type_as(X).mask(node_mask)
+        extra_data_pure = m_utils.compute_extra_data(
+            self,
+            {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask},
+            isPure=True,
+        )
+        # prepare the input data for encoder combining extra features
+        input_X_pure = paddle.concat(
+            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+        ).astype(dtype="float32")
+        input_E_pure = paddle.concat(
+            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+        ).astype(dtype="float32")
+        input_y_pure = paddle.hstack(
+            x=(z_t.y.astype("float"), extra_data_pure.y)
+        ).astype(dtype="float32")
+        # obtain the condition vector from output of encoder
+        conditionVec = self.encoder(input_X_pure, input_E_pure, input_y_pure, node_mask)
+        # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
         # forward of decoder
@@ -219,10 +235,9 @@ class MolecularGraphTransformer(nn.Layer):
             )
 
         elif mode == "eval":
-            batch_length = other_data["y"].shape[0]
-            conditionAll = other_data["conditionVec"]
-            conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
-
+            # batch_length = other_data["y"].shape[0]
+            # conditionAll = other_data["conditionVec"]
+            # conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
             nll = m_utils.compute_val_loss(
                 self,
                 pred,
@@ -231,7 +246,7 @@ class MolecularGraphTransformer(nn.Layer):
                 dense_data.E,
                 other_data["y"],
                 node_mask,
-                condition=conditionAll,
+                condition=[],  # conditionAll,
                 test=False,
             )
             loss["nll"] = nll
@@ -261,27 +276,21 @@ class ContrastiveModel(nn.Layer):
     ):
         super().__init__()
         self.name = kwargs.get("__name__")
-        self.text_encoder = Encoder(
-            enc_voc_size=nmr_encoder["enc_voc_size"],
-            max_len=nmr_encoder["max_len"],
-            d_model=nmr_encoder["d_model"],
-            ffn_hidden=nmr_encoder["ffn_hidden"],
+        self.text_encoder = NMR_encoder(
+            dim_H=nmr_encoder["dim_enc_H"],
+            dimff_H=nmr_encoder["dimff_enc_H"],
+            dim_C=nmr_encoder["dim_enc_C"],
+            dimff_C=nmr_encoder["dimff_enc_C"],
+            hidden_dim=nmr_encoder["ffn_hidden"],
             n_head=nmr_encoder["n_head"],
-            n_layers=nmr_encoder["n_layers"],
+            num_layers=nmr_encoder["n_layers"],
             drop_prob=nmr_encoder["drop_prob"],
         )
-
-        if nmr_encoder["projector"]["__name__"] == "Linear":
-            self.text_encoder_projector = paddle.nn.Linear(
-                in_features=nmr_encoder["max_len"] * nmr_encoder["d_model"],
-                out_features=nmr_encoder["projector"]["outfeatures"],
-            )
-
         self.con_input_dim = graph_encoder["input_dims"]
         self.con_input_dim["X"] = graph_encoder["input_dims"]["X"] - 8
         self.con_input_dim["y"] = 1024
         self.con_output_dim = graph_encoder["output_dims"]
-        self.graph_encoder = GraphTransformer_C(
+        self.graph_encoder = MolecularEncoder(
             n_layers=graph_encoder["n_layers_GT"],
             input_dims=self.con_input_dim,
             hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
@@ -293,8 +302,10 @@ class ContrastiveModel(nn.Layer):
         for param in self.graph_encoder.parameters():
             param.stop_gradient = True
         self.graph_encoder.eval()
-        self.vocabDim = graph_encoder["vocab_dim"]
-        self.tem = 2
+
+        self.seq_len_H1 = graph_encoder["seq_len_H1"]  # TODO remove later
+        self.seq_len_C13 = graph_encoder["seq_len_C13"]  # TODO remove later
+        self.tem = 2  # TODO remove later
 
         # for Constrastive Learning & Prior Training
         if graph_encoder["pretrained_model_path"] is not None:
@@ -309,10 +320,6 @@ class ContrastiveModel(nn.Layer):
             save_load.load_pretrain(
                 self.text_encoder, nmr_encoder["pretrained_model_path"]
             )
-
-    def make_src_mask(self, src):
-        src_mask = (src != 0).unsqueeze(axis=1).unsqueeze(axis=2)
-        return src_mask
 
     def forward_(self, node_mask, X_condition, E_condtion, conditionVec):
         assert isinstance(
@@ -345,17 +352,26 @@ class ContrastiveModel(nn.Layer):
         )
         dense_data = dense_data.mask(node_mask)
         X, E = dense_data.X, dense_data.E
-        conditionAll = other_data["conditionVec"]
-        conditionAll = conditionAll.reshape([batch_length, self.vocabDim])
-        conditionVecGraph, conditionVecNmr = self.forward_(
-            node_mask, X, E, conditionAll
-        )
+        y = other_data["y"]
 
-        V1_f = (
-            conditionVecGraph  # Assuming V1 is a feature obtained from molecular graph
-        )
-        V2_f = conditionVecNmr  # Assume V2 is a feature obtained from NMR text
+        # prepare NMR vectors
+        condition_H1nmr = other_data["conditionVec"]["H_nmr"]
+        condition_H1nmr = condition_H1nmr.reshape(batch_length, self.seq_len_H1, -1)
+        condition_C13nmr = other_data["conditionVec"]["C_nmr"]
+        condition_C13nmr = condition_C13nmr.reshape(batch_length, self.seq_len_C13)
+        num_H_peak = other_data["conditionVec"]["num_H_peak"]
+        num_C_peak = other_data["conditionVec"]["num_C_peak"]
+        conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
 
+        # get NMR embedded vector
+        condition_nmr = self.text_encoder(conditionAll)
+
+        # get graph embedded vector
+        condition_graph = self.graph_encoder(X, E, y, node_mask)
+
+        # compute similarity between graph and NMR
+        V1_f = condition_graph  # Assuming V1 is a feature obtained from molecular graph
+        V2_f = condition_nmr  # Assume V2 is a feature obtained from NMR text
         V1_e = paddle.nn.functional.normalize(x=V1_f, p=2, axis=1)
         V2_e = paddle.nn.functional.normalize(x=V2_f, p=2, axis=1)
         logits = paddle.matmul(x=V1_e, y=V2_e.T) * paddle.exp(
@@ -825,7 +841,7 @@ class MultiModalDecoder(nn.Layer):
         self.add_condition = True
 
         # set nmr encoder model
-        self.encoder = Encoder(
+        self.encoder = NMR_encoder(
             enc_voc_size=config["nmr_encoder"]["enc_voc_size"],
             max_len=config["nmr_encoder"]["max_len"],
             d_model=config["nmr_encoder"]["d_model"],

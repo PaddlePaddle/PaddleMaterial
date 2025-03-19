@@ -4,7 +4,6 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from rdkit import Chem
 from rdkit import RDLogger
-from rdkit.Chem.rdchem import Mol
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
@@ -193,34 +192,33 @@ def build_molecules_from_smiles(smiles_str, remove_h=None, num_cpus=None):
         raise TypeError("crystal_str must be str or list.")
 
 
-def numericalize_text(text, vocab_to_id, dim):
-    """
-    将给定的文本转换为对应的 token id 。
+def numericalize_H1C13(nmrdata, vocab_peakwidth, vocab_split, seq_len_H1, seq_len_C13):
+    Hnmr = nmrdata["1HNMR"]
+    Cnmr = nmrdata["13CNMR"]
 
-    参数:
-        text (str): 输入文本为一个字符串，单词以空格分隔。
-        vocab_to_id (dict): 词汇表字典，将单词映射为唯一的 id。
-        dim (int): 返回的每个 token id 列表的长度。
+    num_h1peak = len(Hnmr)
+    hnmr_pro = []
+    for peak in Hnmr:
+        chem_shift = peak[0]
+        peakwidth_idx = vocab_peakwidth.get(peak[1], vocab_peakwidth["<unk>"])
+        split_idx = vocab_split.get(
+            peak[2], vocab_split["<unk>"]
+        )  # Establish a pattern dictionary
+        integral = int(peak[3].replace("H", "")) + 1
 
-    返回:
-        list of list: 对应的数值化 token id ，文本对应一个长度为 dim 的 token id 。
-    """
+        J_coupling = peak[4]
+        padded_J = (
+            J_coupling + [0] * (6 - len(J_coupling)) if len(J_coupling) > 0 else [0] * 6
+        )
 
-    # 如果输入文本为空，则返回长度为 dim 且全为 0 的列表
-    if not text:
-        token_ids = [0] * dim
-    else:
-        # 将文本按空格进行分割，生成单词列表
-        words = text.split(" ")
+        peak_new = [chem_shift, peakwidth_idx, split_idx, integral] + padded_J
+        hnmr_pro.append(peak_new)
 
-        # 使用词汇表字典将每个单词转换为对应的 id，如果不在词汇表中则使用 <unk> 的 id
-        token_ids = [vocab_to_id.get(word, vocab_to_id["<unk>"]) for word in words]
+    hnmr_ndarray = np.zeros((seq_len_H1, 10), dtype=np.float32)
+    hnmr_ndarray[:num_h1peak, :] = np.array(hnmr_pro, dtype=np.float32)
 
-        # 如果 token_ids 长度小于 dim，则在后面补充 0
-        if len(token_ids) < dim:
-            token_ids += [0] * (dim - len(token_ids))
-        # 如果 token_ids 长度超过 dim，则截断到 dim 长度
-        else:
-            token_ids = token_ids[:dim]
+    num_c13peak = len(Cnmr)
+    padded_cnmr = Cnmr + [0] * (seq_len_C13 - num_c13peak)
+    cnmr_ndarray = np.array(padded_cnmr, dtype=np.float32)
 
-    return token_ids
+    return hnmr_ndarray, num_h1peak, cnmr_ndarray, num_c13peak

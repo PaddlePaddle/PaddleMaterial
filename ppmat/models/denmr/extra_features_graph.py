@@ -12,7 +12,6 @@ class DummyExtraFeatures:
         E = noisy_data["E_t"]
         y = noisy_data["y_t"]
 
-        # 对应 torch 中 X.new_zeros(...):
         empty_x = paddle.zeros(shape=X.shape[:-1] + [0], dtype=X.dtype)
         empty_e = paddle.zeros(shape=E.shape[:-1] + [0], dtype=E.dtype)
         empty_y = paddle.zeros(shape=[y.shape[0], 0], dtype=y.dtype)

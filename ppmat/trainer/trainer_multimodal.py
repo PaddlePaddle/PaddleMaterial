@@ -20,14 +20,12 @@ from typing import Optional
 
 import paddle
 import paddle.distributed as dist
-import paddle.nn.functional as F
 from packaging import version
 from paddle import DataParallel as DP
 from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
 
-from ppmat.models.denmr import diffusion_utils
 from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 from ppmat.models.denmr.utils import model_utils as m_utils
 from ppmat.utils import logger
@@ -202,7 +200,6 @@ class TrainerDiffGraphFormer:
                 and epoch_id % self.eval_freq == 0
                 and dist.get_rank() == 0
             ):
-                # self.eval_epoch_start()
                 eval_loss_dict, metric_dict = self.eval_epoch(
                     self.val_dataloader, epoch_id
                 )
@@ -536,8 +533,9 @@ class TrainerDiffGraphFormer:
                 batch_graph.graph_node_id,
             )
             dense_data = dense_data.mask(node_mask)
-            batch_y = other_data["conditionVec"].view(-1, self.vocabDim)
+            batch_nmr = other_data["conditionVec"]
             batch_atomCount = other_data["atom_count"]
+            batch_y = other_data["y"]
             batch_X, batch_E = dense_data.X, dense_data.E
             bs = len(batch_y)
 
@@ -546,9 +544,10 @@ class TrainerDiffGraphFormer:
                 self.model._layers if isinstance(self.model, DP) else self.model,
                 batch_id=iter_id,
                 num_nodes=batch_atomCount,
-                batch_condition=batch_y,
+                batch_condition=batch_nmr,
                 batch_X=batch_X,
                 batch_E=batch_E,
+                batch_y=batch_y,
                 batch_size=bs,
                 visual_num=self.visual_num,
                 keep_chain=self.chains_left_to_save,
@@ -636,13 +635,13 @@ class TrainerCLIP:
             "pretrained_model_path", None
         )
         self.checkpoint_path = config["Trainer"].get("checkpoint_path", None)
-        self.cal_metric_during_train = config["Trainer"]["cal_metric_during_train"]
         self.scale_grad = config["Trainer"].get("scale_grad", False)
 
         self.iters_per_epoch = len(self.train_dataloader)
 
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
+
         # initialize distributed environment
         if self.world_size > 1:
             fleet.init(is_collective=True)
@@ -681,28 +680,67 @@ class TrainerCLIP:
         self.global_step = 0
         self.log_paddle_version()
 
-    def log_paddle_version(self):
-        # log paddlepaddle's version
-        if version.Version(paddle.__version__) != version.Version("0.0.0"):
-            paddle_version = paddle.__version__
-            if version.Version(paddle.__version__) < version.Version("2.6.0"):
-                logger.warning(
-                    f"Detected paddlepaddle version is '{paddle_version}', "
-                    "currently it is recommended to use release 2.6 or develop version."
+    def train(self) -> None:
+        # TODO:self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
+        self.max_steps = self.epochs * self.iters_per_epoch
+
+        start_epoch = 0 + 1
+
+        for epoch_id in range(start_epoch, self.epochs + 1):
+            # train epoch
+            train_loss_dict = self.train_epoch(self.train_dataloader, epoch_id)
+
+            # log train epoch info
+            msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
+            for k, v in train_loss_dict.items():
+                if isinstance(v, paddle.Tensor):
+                    v = v.item()
+                msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+            logger.info(msg)
+
+            # eval epoch
+            save_metric_dict = {"epoch": epoch_id}
+            if (
+                epoch_id >= self.start_eval_epoch
+                and self.eval_freq > 0
+                and epoch_id % self.eval_freq == 0
+                and dist.get_rank() == 0
+            ):
+                eval_loss_dict = self.eval_epoch(self.val_dataloader, epoch_id)
+
+                # log eval epoch info
+                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
+                for k, v in eval_loss_dict.items():
+                    if isinstance(v, paddle.Tensor):
+                        v = v.item()
+                    msg += (
+                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+                    )
+                logger.info(msg)
+
+            # update learning rate by epoch
+            if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
+                self.lr_scheduler.step()
+
+            # save epoch model every save_freq epochs
+            if self.save_freq > 0 and epoch_id % self.save_freq == 0:
+                save_load.save_checkpoint(
+                    self.model,
+                    self.optimizer,
+                    save_metric_dict,
+                    output_dir=self.output_dir,
+                    prefix=f"epoch_{epoch_id}",
                 )
-        else:
-            paddle_version = f"develop({paddle.version.commit[:7]})"
 
-        logger.info(f"Using paddlepaddle {paddle_version}")
-
-    def forward(self, noisy_data, extra_data, node_mask, X, E, condition):
-        X_ = paddle.concat([noisy_data["X_t"], extra_data.X], axis=2).astype("float32")
-        E_ = paddle.concat([noisy_data["E_t"], extra_data.E], axis=3).astype("float32")
-        y_ = paddle.concat([noisy_data["y_t"], extra_data.y], axis=1).astype("float32")
-
-        condition_tensor = paddle.to_tensor(condition, dtype="int64")
-
-        return self.model(X_, E_, y_, node_mask, X, E, condition_tensor)
+            # save the latest model for convenient resume training
+            save_load.save_checkpoint(
+                self.model,
+                self.optimizer,
+                save_metric_dict,
+                output_dir=self.output_dir,
+                prefix="latest",
+                print_log=(epoch_id == start_epoch),
+            )
 
     def train_epoch(self, dataloader, epoch_id: int):
         """Train program for one epoch.
@@ -813,203 +851,19 @@ class TrainerCLIP:
 
         return total_loss_avg
 
-    def train(self) -> None:
-        # TODO:self.global_step = self.best_metric["epoch"] * self.iters_per_epoch
-        self.max_steps = self.epochs * self.iters_per_epoch
-
-        start_epoch = 0 + 1
-
-        for epoch_id in range(start_epoch, self.epochs + 1):
-            train_loss_dict = self.train_epoch(self.train_dataloader, epoch_id)
-
-            msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
-            for k, v in train_loss_dict.items():
-                if isinstance(v, paddle.Tensor):
-                    v = v.item()
-                msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-            logger.info(msg)
-            save_metric_dict = {"epoch": epoch_id}
-            if (
-                epoch_id >= self.start_eval_epoch
-                and self.eval_freq > 0
-                and epoch_id % self.eval_freq == 0
-                and dist.get_rank() == 0
-            ):
-                eval_loss_dict = self.eval_epoch(self.val_dataloader, epoch_id)
-
-                msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
-                for k, v in eval_loss_dict.items():
-                    if isinstance(v, paddle.Tensor):
-                        v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
-                logger.info(msg)
-
-            # update learning rate by epoch
-            if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
-                self.lr_scheduler.step()
-
-            # save epoch model every save_freq epochs
-            if self.save_freq > 0 and epoch_id % self.save_freq == 0:
-                save_load.save_checkpoint(
-                    self.model,
-                    self.optimizer,
-                    save_metric_dict,
-                    output_dir=self.output_dir,
-                    prefix=f"epoch_{epoch_id}",
+    def log_paddle_version(self):
+        # log paddlepaddle's version
+        if version.Version(paddle.__version__) != version.Version("0.0.0"):
+            paddle_version = paddle.__version__
+            if version.Version(paddle.__version__) < version.Version("2.6.0"):
+                logger.warning(
+                    f"Detected paddlepaddle version is '{paddle_version}', "
+                    "currently it is recommended to use release 2.6 or develop version."
                 )
+        else:
+            paddle_version = f"develop({paddle.version.commit[:7]})"
 
-            # save the latest model for convenient resume training
-            save_load.save_checkpoint(
-                self.model,
-                self.optimizer,
-                save_metric_dict,
-                output_dir=self.output_dir,
-                prefix="latest",
-                print_log=(epoch_id == start_epoch),
-            )
-
-    def train_step(self, data, i):
-
-        if data.edge_index.size(0) == 0:
-            print("Found a batch with no edges. Skipping.")
-            return None
-
-        dense_data, node_mask = utils.to_dense(
-            data.x, data.edge_index, data.edge_attr, data.batch
-        )
-        dense_data = dense_data.mask(node_mask)
-        X, E = dense_data.X, dense_data.E
-
-        noisy_data = self.apply_noise(X, E, data.y, node_mask)
-        extra_data = self.compute_extra_data(noisy_data)
-
-        batch_length = data.num_graphs
-        conditionAll = data.conditionVec
-        conditionAll = paddle.reshape(conditionAll, [batch_length, self.vocabDim])
-
-        predV1, predV2 = self.forward(
-            noisy_data, extra_data, node_mask, X, E, conditionAll
-        )
-
-        # L2 normalize
-        V1_e = F.normalize(predV1, p=2, axis=1)
-        V2_e = F.normalize(predV2, p=2, axis=1)
-
-        # Matrix multiplication => (bs, bs)
-        temperature = paddle.to_tensor(self.tem, dtype=V1_e.dtype)
-        logits = paddle.matmul(V1_e, V2_e, transpose_y=True) * paddle.exp(temperature)
-
-        # Cross-Entropy Loss
-        n = V1_e.shape[0]
-        labels = paddle.arange(0, n, dtype="int64")  # (bs,)
-        loss_fn = nn.CrossEntropyLoss()
-
-        # loss_v1
-        loss_v1 = loss_fn(logits, labels)
-        # loss_v2 => symmetric
-        loss_v2 = loss_fn(logits.transpose([1, 0]), labels)
-
-        loss = (loss_v1 + loss_v2) / 2.0
-
-        if i % 100 == 0:
-            print(f"train_loss: {loss.numpy()}")
-
-        return {"loss": loss}
-
-    def val_step(self, data, i):
-
-        dense_data, node_mask = utils.to_dense(
-            data.x, data.edge_index, data.edge_attr, data.batch
-        )
-        dense_data = dense_data.mask(node_mask)
-        X, E = dense_data.X, dense_data.E
-
-        noisy_data = self.apply_noise(X, E, data.y, node_mask)
-        extra_data = self.compute_extra_data(noisy_data)
-
-        batch_length = data.num_graphs
-        conditionAll = data.conditionVec
-        conditionAll = paddle.reshape(conditionAll, [batch_length, self.vocabDim])
-
-        predV1, predV2 = self.forward(
-            noisy_data, extra_data, node_mask, X, E, conditionAll
-        )
-        V1_e = F.normalize(predV1, p=2, axis=1)
-        V2_e = F.normalize(predV2, p=2, axis=1)
-
-        temperature = paddle.to_tensor(self.tem, dtype=V1_e.dtype)
-        logits = paddle.matmul(V1_e, V2_e, transpose_y=True) * paddle.exp(temperature)
-
-        n = V1_e.shape[0]
-        labels = paddle.arange(0, n, dtype="int64")
-        loss_fn = nn.CrossEntropyLoss()
-
-        loss_v1 = loss_fn(logits, labels)
-        loss_v2 = loss_fn(logits.transpose([1, 0]), labels)
-        loss = (loss_v1 + loss_v2) / 2.0
-
-        self.val_loss.append(loss)
-
-        if i % 8 == 0:
-            print(f"val_loss: {loss.numpy()}")
-
-        return {"loss": loss}
-
-    def apply_noise(self, X, E, y, node_mask):
-        bs = X.shape[0]
-
-        t_int = paddle.randint(low=1, high=self.T + 1, shape=[bs, 1], dtype="int64")
-        t_int = t_int.astype("float32")
-        s_int = t_int - 1
-
-        t_float = t_int / self.T
-        s_float = s_int / self.T
-
-        beta_t = self.noise_schedule(t_normalized=t_float)
-        alpha_s_bar = self.noise_schedule.get_alpha_bar(t_normalized=s_float)
-        alpha_t_bar = self.noise_schedule.get_alpha_bar(t_normalized=t_float)
-
-        Qtb = self.transition_model.get_Qt_bar(alpha_t_bar, device=None)
-
-        probX = paddle.matmul(X, Qtb.X)  # (bs, n, dx_out)
-        probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs, n, n, de_out)
-
-        sampled_t = diffusion_utils.sample_discrete_features(
-            probX=probX, probE=probE, node_mask=node_mask
-        )
-
-        X_t = F.one_hot(sampled_t.X, num_classes=self.Xdim_output)
-        E_t = F.one_hot(sampled_t.E, num_classes=self.Edim_output)
-
-        z_t = utils.PlaceHolder(X=X_t, E=E_t, y=y).astype("float32").mask(node_mask)
-
-        noisy_data = {
-            "t_int": t_int,
-            "t": t_float,
-            "beta_t": beta_t,
-            "alpha_s_bar": alpha_s_bar,
-            "alpha_t_bar": alpha_t_bar,
-            "X_t": z_t.X,
-            "E_t": z_t.E,
-            "y_t": z_t.y,
-            "node_mask": node_mask,
-        }
-        return noisy_data
-
-    def compute_extra_data(self, noisy_data):
-        extra_features = self.extra_features(noisy_data)
-        extra_molecular_features = self.domain_features(noisy_data)
-
-        extra_X = paddle.concat([extra_features.X, extra_molecular_features.X], axis=-1)
-        extra_E = paddle.concat([extra_features.E, extra_molecular_features.E], axis=-1)
-        extra_y = paddle.concat([extra_features.y, extra_molecular_features.y], axis=-1)
-
-        t = noisy_data["t"]
-        extra_y = paddle.concat([extra_y, t], axis=1)
-
-        return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
+        logger.info(f"Using paddlepaddle {paddle_version}")
 
 
 class TrainerDiffPrior:

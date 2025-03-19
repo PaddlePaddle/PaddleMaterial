@@ -142,7 +142,7 @@ class GraphTransformer(nn.Layer):
         return utils.PlaceHolder(X=X, E=E, y=y).mask(node_mask)
 
 
-class GraphTransformer_C(nn.Layer):
+class MolecularEncoder(nn.Layer):
     """
     n_layers : int -- number of layers
     dims : dict -- contains dimensions for each feature type

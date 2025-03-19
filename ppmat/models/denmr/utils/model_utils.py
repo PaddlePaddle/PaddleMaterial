@@ -56,7 +56,7 @@ def apply_noise(model, X, E, y, node_mask):
     return noisy_data
 
 
-def compute_extra_data(model, noisy_data):
+def compute_extra_data(model, noisy_data, isPure=False):
     #  mix extra_features with domain_features and
     # noisy_data into X/E/y final inputs. domain_features
     extra_features = model.extra_features(noisy_data)
@@ -72,8 +72,9 @@ def compute_extra_data(model, noisy_data):
         [extra_features.y, extra_molecular_features.y], axis=-1
     )
 
-    t = noisy_data["t"]
-    extra_y = concat_without_empty([extra_y, t], axis=1)
+    if not isPure:
+        t = noisy_data["t"]
+        extra_y = concat_without_empty([extra_y, t], axis=1)
 
     return utils.PlaceHolder(X=extra_X, E=extra_E, y=extra_y)
 
@@ -263,12 +264,10 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
         [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
     ).astype(dtype="float32")
 
-    # input_y with encoder output as condition vector of input of decoder
+    # partial input_y for decoder
     input_y = paddle.hstack([noisy_data["y_t"].astype("float"), extra_data.y]).astype(
         dtype="float32"
     )
-
-    y0 = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(blocking=True)
 
     ###########################################################
     from ppmat.models.denmr.base_model import MultiModalDecoder
@@ -281,13 +280,35 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
         else:
             y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
         pred0 = model.forward_MultiModalModel(
-            input_X, input_E, input_y, node_mask, y_condition
+            input_X, input_E, input_y, node_mask, y_condition  # TODO : uniform
         )
     else:
-        conditionVec = model.encoder(X0, E0, y0, node_mask)
+        # prepare the extra feature for encoder input without noisy
+        z_t = utils.PlaceHolder(X=X0, E=E0, y=y0).type_as(X).mask(node_mask)
+        extra_data_pure = compute_extra_data(
+            model,
+            {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask},
+            isPure=True,
+        )
+        # prepare the input data for encoder combining extra features
+        input_X_pure = paddle.concat(
+            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+        ).astype(dtype="float32")
+        input_E_pure = paddle.concat(
+            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+        ).astype(dtype="float32")
+        input_y_pure = paddle.hstack(
+            x=(z_t.y.astype("float"), extra_data_pure.y)
+        ).astype(dtype="float32")
+        # obtain the condition vector from output of encoder
+        conditionVec = model.encoder(
+            input_X_pure, input_E_pure, input_y_pure, node_mask
+        )
+        # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
+
         # forward of decoder with encoder output as condition vector of input of decoder
-        pred0 = model.decoder(input_X, input_E, input_y, node_mask)
+        pred0 = model.decoder(input_X, input_E, input_y, node_mask)  # TODO: uniform
     ############################################################
 
     probX0 = F.softmax(pred0.X, axis=-1)
@@ -328,6 +349,7 @@ def sample_batch(
     visual_num: int,
     batch_X,
     batch_E,
+    batch_y,
     num_nodes=None,
 ):
     """
@@ -375,6 +397,7 @@ def sample_batch(
             conditionVec=batch_condition,
             batch_X=batch_X,
             batch_E=batch_E,
+            batch_y=batch_y,
         )
     X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
@@ -432,7 +455,7 @@ def sample_batch(
 
 @paddle.no_grad()
 def sample_p_zs_given_zt(
-    model, s, t, X_t, E_t, y_t, node_mask, conditionVec, batch_X, batch_E
+    model, s, t, X_t, E_t, y_t, node_mask, conditionVec, batch_X, batch_E, batch_y
 ):
     """
     sample from p(z_s | z_t) : take one step of reverse diffusion
@@ -445,7 +468,6 @@ def sample_p_zs_given_zt(
     Qsb = model.transition_model.get_Qt_bar(alpha_s_bar)
     Qt = model.transition_model.get_Qt(beta_t)
 
-    # forward
     noisy_data = {
         "X_t": X_t,
         "E_t": E_t,
@@ -455,17 +477,17 @@ def sample_p_zs_given_zt(
     }
     extra_data = compute_extra_data(model, noisy_data)
 
-    # input_X
+    # input_X for decoder
     input_X = paddle.concat(
         [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
     ).astype(dtype="float32")
 
-    # input_E
+    # input_E for decoder
     input_E = paddle.concat(
         [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
     ).astype(dtype="float32")
 
-    # input_y
+    # partial input_y for decoder
     input_y = paddle.hstack([noisy_data["y_t"].astype("float"), extra_data.y]).astype(
         dtype="float32"
     )
@@ -477,11 +499,32 @@ def sample_p_zs_given_zt(
             input_X, input_E, input_y, node_mask, conditionVec
         )
     else:
-        y_condition = paddle.zeros(shape=[input_X.shape[0], 1024]).cuda(
-            blocking=True
-        )  # y_condition for step 1 old version
-
-        conditionVec = model.encoder(batch_X, batch_E, y_condition, node_mask)
+        # prepare the extra feature for encoder input without noisy
+        z_t = (
+            utils.PlaceHolder(X=batch_X, E=batch_E, y=batch_y)
+            .type_as(batch_X)
+            .mask(node_mask)
+        )
+        extra_data_pure = compute_extra_data(
+            model,
+            {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask},
+            isPure=True,
+        )
+        # prepare the input data for encoder combining extra features
+        input_X_pure = paddle.concat(
+            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+        ).astype(dtype="float32")
+        input_E_pure = paddle.concat(
+            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+        ).astype(dtype="float32")
+        input_y_pure = paddle.hstack(
+            x=(z_t.y.astype("float"), extra_data_pure.y)
+        ).astype(dtype="float32")
+        # obtain the condition vector from output of encoder
+        conditionVec = model.encoder(
+            input_X_pure, input_E_pure, input_y_pure, node_mask
+        )
+        # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
         # forward of decoder with encoder output as condition vector of input of decoder
