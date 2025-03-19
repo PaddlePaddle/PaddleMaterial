@@ -73,7 +73,7 @@ class MaskedAttentionPool(nn.Layer):
 
         # add mask processing
         if mask is not None:
-            # Set the attention scores at padding positions to -∞, 
+            # Set the attention scores at padding positions to -∞,
             # resulting in zero weight after Softmax
             attn_scores = attn_scores.masked_fill(
                 mask.unsqueeze(-1) == 0, -float("inf")
