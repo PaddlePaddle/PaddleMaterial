@@ -4,7 +4,7 @@ from typing import List
 
 import paddle
 from paddle_scatter import scatter
-from paddle_scatter import scatter_softmax
+# from paddle_scatter import scatter_softmax
 from typing_extensions import Literal
 
 from paddle_utils import *  # noqa
@@ -173,7 +173,8 @@ class MultiHeadWeightedGraphReadout(GraphReadout):
         if self._weighting_type == "weighted_sum":
             weights = paddle.nn.functional.sigmoid(x=scores)
         elif self._weighting_type == "weighted_mean":
-            weights = scatter_softmax(scores, index=node_to_graph_id, dim=0)
+            # weights = scatter_softmax(scores, index=node_to_graph_id, dim=0)
+            raise NotImplementedError()
         else:
             raise ValueError(f"Unknown weighting type {self._weighting_type}!")
         values = self._transformation_mlp(node_embeddings)
