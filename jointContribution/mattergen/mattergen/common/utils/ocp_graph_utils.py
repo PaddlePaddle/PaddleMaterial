@@ -2,8 +2,13 @@ import sys
 
 import numpy as np
 import paddle
-from paddle_scatter import segment_coo
-from paddle_scatter import segment_csr
+
+import copy
+
+# Temporary use of alternative methods, no longer using paddle_stcatter
+# https://github.com/PFCCLab/paddle_scatter/tree/main
+# from paddle_scatter import segment_coo
+# from paddle_scatter import segment_csr
 
 from paddle_utils import *  # noqa
 from paddle_utils import dim2perm
@@ -230,13 +235,39 @@ def get_max_neighbors_mask(
     """
     device = natoms.place
     num_atoms = natoms.sum()
-    ones = paddle.ones(shape=[1], dtype=index.dtype).expand_as(y=index)
-    num_neighbors = segment_coo(ones, index, dim_size=num_atoms)
-    max_num_neighbors = num_neighbors.max()
-    num_neighbors_thresholded = num_neighbors.clip(max=max_num_neighbors_threshold)
-    image_indptr = paddle.zeros(shape=tuple(natoms.shape)[0] + 1, dtype="int64")
-    image_indptr[1:] = paddle.cumsum(x=natoms, axis=0)
-    num_neighbors_image = segment_csr(num_neighbors_thresholded, image_indptr)
+
+    # Temporary use of alternative methods, no longer using paddle_stcatter
+    # https://github.com/PFCCLab/paddle_scatter/tree/main
+    #===================================================================================
+    # ones = paddle.ones(shape=[1], dtype=index.dtype).expand_as(y=index)
+    # num_neighbors = segment_coo(ones, index, dim_size=num_atoms)
+    
+    num_neighbors = paddle.zeros(shape=num_atoms)
+    num_neighbors.index_add_(axis=0, index=index, value=paddle.ones(shape=len(index)))
+    num_neighbors = num_neighbors.astype(dtype="int64")
+    #===================================================================================
+
+    # Temporary use of alternative methods, no longer using paddle_stcatter
+    # https://github.com/PFCCLab/paddle_scatter/tree/main
+    #===================================================================================
+    # max_num_neighbors = num_neighbors.max()
+    # num_neighbors_thresholded = num_neighbors.clip(max=max_num_neighbors_threshold)
+    # image_indptr = paddle.zeros(shape=tuple(natoms.shape)[0] + 1, dtype="int64")
+    # image_indptr[1:] = paddle.cumsum(x=natoms, axis=0)
+    # num_neighbors_image = segment_csr(num_neighbors_thresholded, image_indptr)
+
+    max_num_neighbors = paddle.max(x=num_neighbors).astype(dtype="int64")
+    _max_neighbors = copy.deepcopy(num_neighbors)
+    _max_neighbors[
+        _max_neighbors > max_num_neighbors_threshold
+    ] = max_num_neighbors_threshold
+    _num_neighbors = paddle.zeros(shape=num_atoms + 1).astype(dtype="int64")
+    _natoms = paddle.zeros(shape=tuple(natoms.shape)[0] + 1).astype(dtype="int64")
+    _num_neighbors[1:] = paddle.cumsum(x=_max_neighbors, axis=0)
+    _natoms[1:] = paddle.cumsum(x=natoms, axis=0)
+    num_neighbors_image = _num_neighbors[_natoms[1:]] - _num_neighbors[_natoms[:-1]]
+    #===================================================================================
+
     if max_num_neighbors <= max_num_neighbors_threshold or max_num_neighbors_threshold <= 0:  # noqa
         mask_num_neighbors = paddle.to_tensor(
             data=[True], dtype=bool, place=device

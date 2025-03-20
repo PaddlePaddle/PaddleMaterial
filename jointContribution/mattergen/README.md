@@ -151,13 +151,9 @@ python scripts/evaluate.py \
     ```bash
     pip install -r requirements.txt
     ```
-5. Install [paddle_scatter](https://github.com/PFCCLab/paddle_scatter)
-    ```bash
-    git clone https://github.com/PFCCLab/paddle_scatter.git
-    cd paddle_scatter
-    pip install -v .
-    cd ..
-    ```
+5. ~~Install [paddle_scatter](https://github.com/PFCCLab/paddle_scatter). (The code repository includes built-in paddle_scatter support, so installation is unnecessary.)~~
+    
+
 6. Due to the current incompatibility of PGL with the latest version of Paddle, it is necessary to modify some code within the installation path after installing PGL. The modification can be automatically completed through the following command:
     ```bash
     python fix_pgl.py

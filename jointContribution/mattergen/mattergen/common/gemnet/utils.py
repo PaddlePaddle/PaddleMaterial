@@ -13,7 +13,7 @@ from typing import Dict
 from typing import Optional
 from typing import Tuple
 
-from paddle_scatter import segment_csr
+# from paddle_scatter import segment_csr
 
 
 def read_json(path: str) -> Dict:
@@ -147,9 +147,11 @@ def repeat_blocks(
         diffs = r1[1:] - r1[:-1]
         indptr = paddle.concat(x=(paddle.zeros(shape=[1], dtype=sizes.dtype), diffs.cumsum(axis=0)))
         if continuous_indexing:
-            insert_val += segment_csr(sizes[: r1[-1]], indptr, reduce="sum")
+            # insert_val += segment_csr(sizes[: r1[-1]], indptr, reduce="sum")
+            raise NotImplementedError()
         if isinstance(block_inc, paddle.Tensor):
-            insert_val += segment_csr(block_inc[: r1[-1]], indptr, reduce="sum")
+            # insert_val += segment_csr(block_inc[: r1[-1]], indptr, reduce="sum")
+            raise NotImplementedError()
         else:
             insert_val += block_inc * (indptr[1:] - indptr[:-1])
             if insert_dummy:
