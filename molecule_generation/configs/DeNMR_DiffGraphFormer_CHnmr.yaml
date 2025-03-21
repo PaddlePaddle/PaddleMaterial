@@ -1,6 +1,3 @@
-Global:
-  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
-  gpus: 1                     # Multi-gpu is not implemented on this branch
 Trainer:
   epochs: 1200
   seed: 42
@@ -8,7 +5,7 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: null # set your pretrained model path here
+  pretrained_model_path: ./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/best.pdparams # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -24,7 +21,7 @@ Trainer:
       indicator: "train_loss"
   vocab_dim: 256
 Sampler:
-  sample_every_val: 2
+  sample_every_val: 1
   visual_num: 10 # number of visualize molecules in the sample
   chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
@@ -33,13 +30,21 @@ Sampler:
 Tracker:
   log:
     log_freq: 100 # log frequency [step]
+    out_dict: # none is default, it output all loss and metrics, empty dict means no output
+      loss:
+        train: {"train_loss",}
+        eval: {"train_loss", "nll"}
+      metric:
+        train: {}
+        eval: {"val_nll"}
+        sample: {"Accuracy",}
+    flag_train_step: True # decidet output training batch iteration process or not
+    flag_eval_step: False
+    flag_sample_metric: False # decidet output tanimot similarity calculationg process or not
   save:
     output_dir: ./output/DeNMR_CHnmr/DiffGraphFormer
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
-Metric:
-  __name__: CSPMetric
-  gt_file_path: "./data/mp_20/test.csv"
 Model:
   __name__: MolecularGraphTransformer
   encoder:
@@ -79,11 +84,9 @@ Model:
     type: 'discrete_condition'
     transition: 'marginal' # uniform or marginal
     model: 'graph_tf'
-    diffusion_steps: 120
+    diffusion_steps: 50
     diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
     extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
-    # Do not set hidden_mlp_E, dim_ffE too high, computing large tensors on the edges is costly
-    # At the moment (03/08), y contains quite little information
     lambda_train: [5, 0]
     conditdim: 512
   model_dtype: 'float32'

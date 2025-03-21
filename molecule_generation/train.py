@@ -2,6 +2,7 @@ import argparse
 import os
 import os.path as osp
 
+import imageio  # noqa
 import paddle.distributed as dist
 from omegaconf import OmegaConf
 
@@ -245,4 +246,4 @@ if __name__ == "__main__":
             loss_dict = trainer.eval()
     elif args.mode == "test":
         if dist.get_rank() == 0:
-            result, metric_dict = trainer.test()
+            trainer.test()

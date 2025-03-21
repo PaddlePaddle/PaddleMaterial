@@ -2,6 +2,7 @@ import paddle
 import rdkit
 from paddle.nn import functional as F
 from rdkit import Chem
+from tqdm import tqdm
 
 from ppmat.utils import logger
 
@@ -363,23 +364,26 @@ def sample_batch(
         n_nodes = paddle.to_tensor(num_nodes)  # assume Tensor
     n_max = int(paddle.max(n_nodes).item())
 
-    # node_mask
+    # build masks
     arange = paddle.arange(n_max).unsqueeze(0).expand([batch_size, n_max])
     node_mask = arange < n_nodes.unsqueeze(1)
 
-    # z_T
+    # sample noise -- z hase saize (n_samples, n_nodes, n_features)
     z_T = diffusion_utils.sample_discrete_feature_noise(
         limit_dist=model.limit_dist, node_mask=node_mask
     )
     X, E, y = z_T.X, z_T.E, z_T.y
 
+    assert number_chain_steps < model.T
     chain_X = paddle.zeros([number_chain_steps, keep_chain, X.shape[1]], dtype="int64")
     chain_E = paddle.zeros(
         [number_chain_steps, keep_chain, E.shape[1], E.shape[2]], dtype="int64"
     )
 
-    # step by step restore
-    for s_int in reversed(range(model.T)):
+    # Iterate sample p(z_s | z_t) over diffusion steps, t = 1, ..., T, with s = t - 1
+    for s_int in tqdm(
+        reversed(range(model.T)), desc="Sampling", unit=" diffuision step"
+    ):
         s_array = paddle.full([batch_size, 1], float(s_int))
         t_array = s_array + 1.0
         s_norm = s_array / model.T
@@ -399,33 +403,50 @@ def sample_batch(
             batch_E=batch_E,
             batch_y=batch_y,
         )
-    X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-    write_index = (s_int * number_chain_steps) // model.T
-    if write_index >= 0 and write_index < number_chain_steps:
+        # save the first keep_chain graphs
+        write_index = (s_int * number_chain_steps) // model.T
         chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
         chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
 
-    # final mask
+    # sample results of last diffusion step
     sampled_s = sampled_s.mask(node_mask, collapse=True)
     X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
-    # batch_X, batch_E
+    # log sample result info
+    msg = f"Sampling: {len(batch_X)} molecules with {model.T} diffusion steps generated"
+    logger.message(msg)
+
+    # Prepare the chain for visualization and saving
+    if keep_chain > 0:
+        final_X_chain = X[:keep_chain]
+        final_E_chain = E[:keep_chain]
+
+        chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
+        chain_E[0] = final_E_chain
+
+        chain_X = diffusion_utils.reverse_tensor(chain_X)
+        chain_E = diffusion_utils.reverse_tensor(chain_E)
+
+        # Repeat last frame to see final sample better
+        chain_X = paddle.concat([chain_X, chain_X[-1:].tile([10, 1, 1])], axis=0)
+        chain_E = paddle.concat([chain_E, chain_E[-1:].tile([10, 1, 1, 1])], axis=0)
+        assert chain_X.shape[0] == (number_chain_steps + 10)
+
     batch_X = paddle.argmax(batch_X, axis=-1)
     batch_E = paddle.argmax(batch_E, axis=-1)
 
-    # assemble output
+    # Prepare the samples for visualization and saving
     molecule_list = []
     molecule_list_True = []
     n_nodes_np = n_nodes.numpy()
-
     for i in range(batch_size):
         n = n_nodes_np[i]
-        atom_types = X[i, :n].cpu()
-        edge_types = E[i, :n, :n].cpu()
+        atom_types = X[i, :n].numpy()
+        edge_types = E[i, :n, :n].numpy()
 
-        atom_types_true = batch_X[i, :n].cpu()
-        edge_types_true = batch_E[i, :n, :n].cpu()
+        atom_types_true = batch_X[i, :n].numpy()
+        edge_types_true = batch_E[i, :n, :n].numpy()
 
         molecule_list.append([atom_types, edge_types])
         molecule_list_True.append([atom_types_true, edge_types_true])
@@ -434,14 +455,16 @@ def sample_batch(
     if model.visualization_tools is not None:
         num_molecules = chain_X.shape[1]
         for i in range(num_molecules):
-            # chain_X与chain_E => numpy
             chain_X_np = chain_X[:, i, :].numpy()
             chain_E_np = chain_E[:, i, :, :].numpy()
 
             model.visualization_tools.visualize_chain(
                 batch_id, i, chain_X_np, chain_E_np
             )
-            logger.message(f"Sampling: {i+1}/{num_molecules} complete")
+        msg = "Sampling:"
+        msg += f" {num_molecules} of {batch_size} generated molecules"
+        msg += " visualization complete"
+        logger.message(msg)
 
         model.visualization_tools.visualizeNmr(
             batch_id,
@@ -449,6 +472,10 @@ def sample_batch(
             molecule_list_True,
             visual_num,
         )
+        msg = "Sampling:"
+        msg += f" {visual_num} of {batch_size} generated and true molecules"
+        msg += " visualization complete"
+        logger.message(msg)
 
     return molecule_list, molecule_list_True
 

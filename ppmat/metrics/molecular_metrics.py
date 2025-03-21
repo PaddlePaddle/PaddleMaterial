@@ -3,9 +3,8 @@ from typing import List
 from typing import Union
 
 import paddle
-import rdkit
+from rdkit import Chem
 from rdkit.Chem import DataStructs
-from rdkit.Chem import MolToSmiles
 from rdkit.Chem import RDKFingerprint
 
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
@@ -177,6 +176,7 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         local_rank,
         output_dir,
         test=False,
+        flag_sample_metric=True,
     ):
         # init
         to_log = {}
@@ -186,32 +186,44 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         total_num = samples["n_all"]
         right_num = 0
 
-        # compute Tanimoto Similarity
         for i in range(len(molecule_list)):
             mol = m_utils.mol_from_graphs(
                 atom_decoder,
-                molecule_list[i][0].numpy(),
-                molecule_list[i][1].numpy(),
+                molecule_list[i][0],
+                molecule_list[i][1],
             )
             mol_true = m_utils.mol_from_graphs(
                 atom_decoder,
-                molecule_list_True[i][0].numpy(),
-                molecule_list_True[i][1].numpy(),
+                molecule_list_True[i][0],
+                molecule_list_True[i][1],
             )
+
+            smiles_gen = Chem.MolToSmiles(mol, isomericSmiles=True)
+            smiles_true = Chem.MolToSmiles(mol_true, isomericSmiles=True)
+
             try:
                 fp1 = RDKFingerprint(mol)
                 fp2 = RDKFingerprint(mol_true)
                 # Calculate Tanimoto Similarity
                 similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                # Output similarity
-                if similarity == 1:
-                    right_num = right_num + 1
-            except rdkit.Chem.KekulizeException:
-                msg = "Sampling Metric Calculating:"
-                msg += f" Can't kekulize molecule {MolToSmiles(mol)}"
-                msg += f" with true molecule {MolToSmiles(mol_true)}"
-                logger.warning(msg)
-        to_log["Tanimoto Similarity"] = right_num / total_num
+                # log output result
+                msg = f" | Generated SMILES: {smiles_gen}"
+                msg += f" | True SMILES: {smiles_true}"
+                msg += f" | Tanimoto Similarity: {similarity}"
+
+                if similarity == 1 and smiles_gen != smiles_true:
+                    msg += "different_index:{i}"
+                if smiles_gen == smiles_true:
+                    right_num += 1
+                    msg += "same_index:{i}"
+            except Exception as e:
+                msg = f" Error processing molecule at index {i}: {e}."
+                msg += f" | Generated SMILES {smiles_gen} | True SMILES {smiles_true}"
+            msg = f"Sampling Metric Calculating: {i+1}/{len(molecule_list)}" + msg
+            if flag_sample_metric is True:
+                logger.info(msg)
+
+        to_log["Accuracy"] = right_num / total_num
         to_log["Right Number"] = right_num
         to_log["Total Number"] = total_num
 
@@ -379,6 +391,7 @@ class GeneratedEdgesDistribution(Metric):
     def update(self, molecules):
         for molecule in molecules:
             _, edge_types = molecule
+            edge_types = paddle.to_tensor(edge_types)
             mask = paddle.ones_like(x=edge_types)
             mask = paddle.triu(x=mask, diagonal=1).astype(dtype="bool")
             edge_types = edge_types[mask]
@@ -433,6 +446,7 @@ class ValencyDistribution(Metric):
     def update(self, molecules) -> None:
         for molecule in molecules:
             _, edge_types = molecule
+            edge_types = paddle.to_tensor(edge_types)
             edge_types[edge_types == 4] = 1.5
             valencies = paddle.sum(x=edge_types, axis=0)
             unique, counts = paddle.unique(x=valencies, return_counts=True)
@@ -596,27 +610,3 @@ class AtomMetrics(MetricCollection):
         metrics_list = []
         for i, atom_type in enumerate(self.atom_decoder):
             metrics_list.append(class_dict[atom_type](i))
-        super().__init__(metrics_list)
-
-
-class BondMetrics(MetricCollection):
-    def __init__(self):
-        mse_no_bond = NoBondMSE(0)
-        mse_SI = SingleMSE(1)
-        mse_DO = DoubleMSE(2)
-        mse_TR = TripleMSE(3)
-        mse_AR = AromaticMSE(4)
-        super().__init__([mse_no_bond, mse_SI, mse_DO, mse_TR, mse_AR])
-
-
-if __name__ == "__main__":
-    mae = MeanAbsoluteError()
-    mse = MeanSquaredError()
-    metric_collection = MetricCollection({"mae": mae, "mse": mse})
-
-    preds = paddle.to_tensor([3.0, 2.0, 7.0])
-    targets = paddle.to_tensor([2.0, 2.0, 6.0])
-
-    metric_collection.update(preds, targets)
-    results = metric_collection.accumulate()
-    print("Results:", results)

@@ -114,9 +114,8 @@ class MolecularGraphTransformer(nn.Layer):
 
             edge_types = self.dataset_info.edge_types.astype(self.model_dtype)
             e_marginals = edge_types / paddle.sum(edge_types)
-            logger.info(
-                f"Marginal distribution of classes: {x_marginals.tolist()} for nodes, "
-            )
+            logger.info("Marginal distribution of classes:")
+            logger.info(f"{x_marginals.tolist()} for nodes")
             logger.info(f"{e_marginals.tolist()} for edges")
 
             self.transition_model = MarginalUniformTransition(

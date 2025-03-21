@@ -85,17 +85,14 @@ class MolecularVisualization:
             os.makedirs(path)
         if not os.path.exists(path_true):
             os.makedirs(path_true)
-        logger.info(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
             logger.info(f"Sampling: Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
             file_path_true = os.path.join(path_true, "molecule_{}.png".format(i))
-            mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
-            mol_true = self.mol_from_graphs(
-                molecules_true[i][0].numpy(), molecules_true[i][1].numpy()
-            )
+            mol = self.mol_from_graphs(molecules[i][0], molecules[i][1])
+            mol_true = self.mol_from_graphs(molecules_true[i][0], molecules_true[i][1])
             try:
                 Draw.MolToFile(mol, file_path)
                 Draw.MolToFile(mol_true, file_path_true)

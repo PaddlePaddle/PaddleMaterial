@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 from collections import defaultdict
 from typing import Callable
@@ -30,8 +29,6 @@ from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 from ppmat.models.denmr.utils import model_utils as m_utils
 from ppmat.utils import logger
 from ppmat.utils import save_load
-from ppmat.utils.io import read_json  # noqa
-from ppmat.utils.io import write_json
 
 
 def scale_shared_grads(model):
@@ -87,7 +84,6 @@ class TrainerDiffGraphFormer:
         )
         self.checkpoint_path = config["Trainer"].get("checkpoint_path", None)
         self.scale_grad = config["Trainer"].get("scale_grad", False)
-        self.is_save_traj = config["Tracker"]["save"].get("is_save_traj", False)
         self.step_lr = config["Trainer"].get("step_lr", 0.000005)
 
         # get sample config
@@ -101,6 +97,24 @@ class TrainerDiffGraphFormer:
         self.output_dir = config["Tracker"]["save"]["output_dir"]
         self.save_freq = config["Tracker"]["save"]["save_freq"]
         self.log_freq = config["Tracker"]["log"]["log_freq"]
+        self.loss_dict_train = config["Tracker"]["log"]["out_dict"]["loss"].get(
+            "train", None
+        )
+        self.loss_dict_eval = config["Tracker"]["log"]["out_dict"]["loss"].get(
+            "eval", None
+        )
+        self.metric_dict_train = config["Tracker"]["log"]["out_dict"]["metric"].get(
+            "train", None
+        )
+        self.metric_dict_eval = config["Tracker"]["log"]["out_dict"]["metric"].get(
+            "eval", None
+        )
+        self.metric_dict_sample = config["Tracker"]["log"]["out_dict"]["metric"].get(
+            "sample", None
+        )
+        self.flag_train_step = config["Tracker"]["log"]["flag_train_step"]
+        self.flag_eval_step = config["Tracker"]["log"]["flag_eval_step"]
+        self.flag_sample_metric = config["Tracker"]["log"]["flag_sample_metric"]
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -189,7 +203,10 @@ class TrainerDiffGraphFormer:
             for k, v in train_loss_dict.items():
                 if isinstance(v, paddle.Tensor):
                     v = v.item()
-                msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+                if k in self.loss_dict_train or self.loss_dict_train is None:
+                    msg += (
+                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+                    )
             logger.info(msg)
 
             # eval epoch
@@ -210,17 +227,21 @@ class TrainerDiffGraphFormer:
                 for k, v in eval_loss_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
+                    if k in self.loss_dict_eval or self.loss_dict_eval is None:
+                        msg += (
+                            f" | {k}: {v:.5f}"
+                            if k == "loss"
+                            else f" | {k}(loss): {v:.5f}"
+                        )
                 for k, v in metric_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}"
-                        if k == "metric"
-                        else f" | {k}(metric): {v:.5f}"
-                    )
+                    if k in self.metric_dict_eval or self.metric_dict_eval is None:
+                        msg += (
+                            f" | {k}: {v:.5f}"
+                            if k == "metric"
+                            else f" | {k}(metric): {v:.5f}"
+                        )
                 logger.info(msg)
 
                 # update best metric
@@ -252,11 +273,12 @@ class TrainerDiffGraphFormer:
                 for k, v in metric_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item() if v.numel() == 1 else v.tolist()
-                    msg += (
-                        f" | {k}(metric): {', '.join(f'{x:.5f}' for x in v)}"
-                        if isinstance(v, (list, tuple))
-                        else f" | {k}(metric): {v:.5f}"
-                    )
+                    if k in self.metric_dict_sample or self.metric_dict_sample is None:
+                        msg += (
+                            f" | {k}(metric): {', '.join(f'{x:.5f}' for x in v)}"
+                            if isinstance(v, (list, tuple))
+                            else f" | {k}(metric): {v:.5f}"
+                        )
                 logger.info(msg)
 
             # update learning rate by epoch
@@ -305,60 +327,31 @@ class TrainerDiffGraphFormer:
                 print_log=(epoch_id == start_epoch),
             )
 
-    def eval(self):
-        loss_dict = self.eval_epoch(self.val_dataloader, epoch_id=1)
-        msg = "Eval: "
-        for k, v in loss_dict.items():
-            if isinstance(v, paddle.Tensor):
-                v = v.item()
-            msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-        logger.info(msg)
-        return loss_dict
-
     def test(self):
-        dataloader = self.test_dataloader
-        is_save_traj = self.is_save_traj
 
-        step_lr = self.step_lr
-        reader_cost = 0.0
-        batch_cost = 0.0
-        reader_tic = time.perf_counter()
-        batch_tic = time.perf_counter()
         self.model.eval()
 
-        data_length = len(dataloader)
-        logger.info(f"Total Test Steps: {data_length}")
-        pred_data_total = {"result": [], "traj": defaultdict(list)}
-        for iter_id, batch_data in enumerate(dataloader):
-            reader_cost = time.perf_counter() - reader_tic
-            pred_data = self.model.sample(
-                batch_data, step_lr=step_lr, is_save_traj=is_save_traj
-            )
-            pred_data_total["result"].extend(pred_data["result"])
-            if is_save_traj:
-                for key, value in pred_data["traj"].items():
-                    pred_data_total["traj"][key].extend(value)
+        data_length = len(self.test_dataloader)
+        logger.message(f"Total Test Batches: {data_length}")
+        start = time.time()
 
-            batch_cost = time.perf_counter() - batch_tic
-            # we set to log information only when rank 0 every step
-            if paddle.distributed.get_rank() == 0:
-                msg = "Test:"
-                msg += f" Step: [{iter_id+1}/{data_length}]"
-                msg += f" | reader cost: {reader_cost:.5f}s"
-                msg += f" | batch cost: {batch_cost:.5f}s"
-                msg += f" | eta: {(batch_cost*(data_length-(iter_id+1))):.5f}s"
-                logger.info(msg)
+        # sample epoch
+        metric_dict = self.sample_epoch(self.test_dataloader, epoch_id=0)
 
-            batch_tic = time.perf_counter()
-            reader_tic = time.perf_counter()
-
-        save_path = os.path.join(self.output_dir, "test_result.json")
-        # pred_data_total = read_json(save_path)
-        write_json(save_path, pred_data_total)
-        logger.info(f"Test Result Saved to {save_path}")
-        metric_dict = self.metric_class(pred_data_total["result"])
-        logger.info(f"Test Metric: {metric_dict}")
-        return pred_data_total, metric_dict
+        # log eval sample metric info
+        if paddle.distributed.get_rank() == 0:
+            msg = "Test: Sample:"
+            msg += f" | sample_metric cost: {time.time() - start:.5f}s"
+            for k, v in metric_dict.items():
+                if isinstance(v, paddle.Tensor):
+                    v = v.item() if v.numel() == 1 else v.tolist()
+                if k in self.metric_dict_sample or self.metric_dict_sample is None:
+                    msg += (
+                        f" | {k}(metric): {', '.join(f'{x:.5f}' for x in v)}"
+                        if isinstance(v, (list, tuple))
+                        else f" | {k}(metric): {v:.5f}"
+                    )
+            logger.info(msg)
 
     def train_epoch(self, dataloader, epoch_id: int):
         """Train program for one epoch.
@@ -375,8 +368,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+            if iter_id == 1:  # TODO: for debug
+                break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
@@ -420,8 +413,10 @@ class TrainerDiffGraphFormer:
 
             # update and log training information
             self.global_step += 1
-            if paddle.distributed.get_rank() == 0 and (
-                iter_id % self.log_freq == 0 or iter_id == data_length - 1
+            if (
+                paddle.distributed.get_rank() == 0
+                and (iter_id % self.log_freq == 0 or iter_id == data_length - 1)
+                and self.flag_train_step is True
             ):
                 msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
                 msg += f" | Step: [{iter_id+1}/{data_length}]"
@@ -431,17 +426,21 @@ class TrainerDiffGraphFormer:
                 for k, v in loss_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
+                    if k in self.loss_dict_train or self.loss_dict_train is None:
+                        msg += (
+                            f" | {k}: {v:.5f}"
+                            if k == "loss"
+                            else f" | {k}(loss): {v:.5f}"
+                        )
                 for k, v in metric_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}"
-                        if k == "metric"
-                        else f" | {k}(metric): {v:.5f}"
-                    )
+                    if k in self.metric_dict_train or self.metric_dict_train is None:
+                        msg += (
+                            f" | {k}: {v:.5f}"
+                            if k == "metric"
+                            else f" | {k}(metric): {v:.5f}"
+                        )
                 logger.info(msg)
 
             batch_tic = time.perf_counter()
@@ -468,8 +467,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+            if iter_id == 1:  # TODO: for debug
+                break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="eval")
@@ -484,8 +483,10 @@ class TrainerDiffGraphFormer:
                 total_metric[key].append(value)
 
             batch_cost = time.perf_counter() - batch_tic
-            if paddle.distributed.get_rank() == 0 and (
-                iter_id % self.log_freq == 0 or iter_id == data_length - 1
+            if (
+                paddle.distributed.get_rank() == 0
+                and (iter_id % self.log_freq == 0 or iter_id == data_length - 1)
+                and self.flag_eval_step is True
             ):
                 msg = f"Eval: Epoch [{epoch_id}/{self.epochs}]"
                 msg += f" | Step: [{iter_id+1}/{data_length}]"
@@ -494,9 +495,12 @@ class TrainerDiffGraphFormer:
                 for k, v in loss_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
-                    msg += (
-                        f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
-                    )
+                    if k in self.loss_dict_eval or self.loss_dict_eval is None:
+                        msg += (
+                            f" | {k}: {v:.5f}"
+                            if k == "loss"
+                            else f" | {k}(loss): {v:.5f}"
+                        )
                 logger.info(msg)
 
             batch_tic = time.perf_counter()
@@ -582,6 +586,7 @@ class TrainerDiffGraphFormer:
                 test=True,
                 local_rank=self.rank,
                 output_dir=self.output_dir,
+                flag_sample_metric=self.flag_sample_metric,
             )
         return metric_dict
 

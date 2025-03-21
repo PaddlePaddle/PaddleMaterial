@@ -57,6 +57,8 @@ class BasicMolecularMetrics(object):
         all_smiles = []
         for graph in generated:
             atom_types, edge_types = graph
+            atom_types = paddle.to_tensor(atom_types)
+            edge_types = paddle.to_tensor(edge_types)
             mol = build_molecule(atom_types, edge_types, self.dataset_info.atom_decoder)
             smiles = mol2smiles(mol)
             try:
@@ -140,6 +142,8 @@ class BasicMolecularMetrics(object):
         valid = []
         for graph in generated:
             atom_types, edge_types = graph
+            atom_types = paddle.to_tensor(atom_types)
+            edge_types = paddle.to_tensor(edge_types)
             mol = build_molecule_with_partial_charges(
                 atom_types, edge_types, self.dataset_info.atom_decoder
             )
