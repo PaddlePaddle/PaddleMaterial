@@ -336,7 +336,7 @@ class TrainerDiffGraphFormer:
         start = time.time()
 
         # sample epoch
-        metric_dict = self.sample_epoch(self.test_dataloader, epoch_id=0)
+        metric_dict = self.sample_epoch(self.test_dataloader, epoch_id=0, flag_sample=True)
 
         # log eval sample metric info
         if paddle.distributed.get_rank() == 0:
@@ -368,8 +368,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            if iter_id == 1:  # TODO: for debug
-                break
+            # if iter_id == 1:  # TODO: for debug
+            #     break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
@@ -467,8 +467,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            if iter_id == 1:  # TODO: for debug
-                break
+            # if iter_id == 1:  # TODO: for debug
+            #     break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="eval")
@@ -512,7 +512,7 @@ class TrainerDiffGraphFormer:
         return total_loss_avg, total_metric_avg
 
     @paddle.no_grad()
-    def sample_epoch(self, dataloader, epoch_id: int):
+    def sample_epoch(self, dataloader, epoch_id: int, flag_sample = False):
         self.model.eval()
         iters = self.sample_batch_iters  # TODO: use iterdataset for sampling
 
@@ -565,7 +565,7 @@ class TrainerDiffGraphFormer:
 
             # contral iters
             iters -= 1
-            if iters == 0:
+            if iters == 0 and flag_sample is True:
                 break
 
         # sampled molecules to compute metrics
