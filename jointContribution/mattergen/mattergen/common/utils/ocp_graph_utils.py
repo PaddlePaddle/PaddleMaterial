@@ -123,7 +123,8 @@ def radius_graph_pbc(
     )  # noqa
     atom_count_squared = paddle.arange(end=num_atom_pairs) - index_squared_offset
 
-    index1_tmp = paddle.divide(x=atom_count_squared, y=paddle.to_tensor(natoms_expand))
+    # index1_tmp = paddle.divide(x=atom_count_squared, y=paddle.to_tensor(natoms_expand))
+    index1_tmp = paddle.divide(x=atom_count_squared, y=natoms_expand)
     index1 = paddle.floor(index1_tmp).astype("int64") + index_offset_expand
     index2 = atom_count_squared % natoms_expand + index_offset_expand
     pos1 = paddle.index_select(x=pos, axis=0, index=index1)
