@@ -258,13 +258,9 @@ def sample_discrete_features(probX, probE, node_mask):
 
     # Noise X
     # The masked rows should define probability distributions as well
-    probX = paddle.where(
-        node_mask.unsqueeze(-1), probX, paddle.full_like(probX, 1 / probX.shape[-1])
-    )
-
+    probX[~node_mask] = 1 / probX.shape[-1]
     # Flatten the probability tensor to sample with multinomial
     probX = probX.reshape([bs * n, -1])  # (bs * n, dx_out)
-
     # Sample X
     X_t = paddle.multinomial(probX, num_samples=1).reshape([bs, n])  # (bs, n)
 
@@ -272,7 +268,6 @@ def sample_discrete_features(probX, probE, node_mask):
     # The masked rows should define probability distributions as well
     inverse_edge_mask = ~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2)).unsqueeze(-1)
     diag_mask = paddle.eye(n).unsqueeze(0).expand([bs, -1, -1]).unsqueeze(-1)
-
     probE = paddle.where(
         inverse_edge_mask, paddle.full_like(probE, 1 / probE.shape[-1]), probE
     )
@@ -281,9 +276,7 @@ def sample_discrete_features(probX, probE, node_mask):
         paddle.full_like(probE, 1 / probE.shape[-1]),
         probE,
     )
-
     probE = probE.reshape([bs * n * n, -1])  # (bs * n * n, de_out)
-
     # Sample E
     E_t = paddle.multinomial(probE, num_samples=1).reshape([bs, n, n])  # (bs, n, n)
     E_t = paddle.triu(E_t, diagonal=1)
@@ -355,8 +348,8 @@ def compute_batched_over0_posterior_distribution(X_t, Qt, Qsb, Qtb):
     """
     # Flatten
     X_t_f = X_t.flatten(start_axis=1, stop_axis=-2).astype("float32")  # (bs, N, dt)
-    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1])  # (bs, dt, d_t-1)
 
+    Qt_T = paddle.transpose(Qt, perm=[0, 2, 1])  # (bs, dt, d_t-1)
     left_term = paddle.matmul(X_t_f, Qt_T)  # (bs, N, d_t-1)
     left_term = paddle.unsqueeze(left_term, axis=2)  # (bs, N, 1, d_t-1)
     right_term = paddle.unsqueeze(Qsb, axis=1)  # (bs, 1, d0, d_t-1)

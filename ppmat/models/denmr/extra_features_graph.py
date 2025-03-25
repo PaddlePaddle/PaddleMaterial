@@ -30,7 +30,7 @@ class ExtraFeatures:
     def __call__(self, noisy_data):
         # n: (bs,1)
         mask_sum = paddle.sum(noisy_data["node_mask"], axis=1, keepdim=False)  # (bs,)
-        n = paddle.unsqueeze(mask_sum / self.max_n_nodes, axis=1)  # (bs,1)
+        n = paddle.unsqueeze(mask_sum, axis=1) / self.max_n_nodes  # (bs,1)
 
         # x_cycles, y_cycles: (bs, ?)
         x_cycles, y_cycles = self.ncycles(noisy_data)  # (bs, n_cycles)

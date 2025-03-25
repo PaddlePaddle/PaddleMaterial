@@ -382,7 +382,9 @@ def sample_batch(
 
     # Iterate sample p(z_s | z_t) over diffusion steps, t = 1, ..., T, with s = t - 1
     for s_int in tqdm(
-        reversed(range(model.T)), desc="Sampling", unit=" diffuision step"
+        reversed(range(model.T)),
+        desc=f"Batch iteration_{batch_id} with {model.T} diffusion steps sampling: ",
+        unit=" time step",
     ):
         s_array = paddle.full([batch_size, 1], float(s_int))
         t_array = s_array + 1.0
@@ -403,6 +405,7 @@ def sample_batch(
             batch_E=batch_E,
             batch_y=batch_y,
         )
+        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
 
         # save the first keep_chain graphs
         write_index = (s_int * number_chain_steps) // model.T
@@ -451,7 +454,7 @@ def sample_batch(
         molecule_list.append([atom_types, edge_types])
         molecule_list_True.append([atom_types_true, edge_types_true])
 
-    # visualization
+    # visualization # TODO: move it in sample_epoch
     if model.visualization_tools is not None:
         num_molecules = chain_X.shape[1]
         for i in range(num_molecules):
@@ -491,10 +494,12 @@ def sample_p_zs_given_zt(
     alpha_s_bar = model.noise_schedule.get_alpha_bar(t_normalized=s)
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_normalized=t)
 
+    # retrieve transitions matrix
     Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
     Qsb = model.transition_model.get_Qt_bar(alpha_s_bar)
     Qt = model.transition_model.get_Qt(beta_t)
 
+    # prepare neural net input
     noisy_data = {
         "X_t": X_t,
         "E_t": E_t,
@@ -506,17 +511,19 @@ def sample_p_zs_given_zt(
 
     # input_X for decoder
     input_X = paddle.concat(
-        [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
-    ).astype(dtype="float32")
+        [noisy_data["X_t"].astype("float32"), extra_data.X.astype(dtype="float32")],
+        axis=2,
+    )
 
     # input_E for decoder
     input_E = paddle.concat(
-        [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
-    ).astype(dtype="float32")
+        [noisy_data["E_t"].astype("float32"), extra_data.E.astype(dtype="float32")],
+        axis=3,
+    )
 
     # partial input_y for decoder
-    input_y = paddle.hstack([noisy_data["y_t"].astype("float"), extra_data.y]).astype(
-        dtype="float32"
+    input_y = paddle.hstack(
+        [noisy_data["y_t"].astype("float32"), extra_data.y.astype(dtype="float32")]
     )
 
     from ppmat.models.denmr.base_model import MultiModalDecoder
@@ -527,25 +534,30 @@ def sample_p_zs_given_zt(
         )
     else:
         # prepare the extra feature for encoder input without noisy
-        z_t = (
+        batch_values = (
             utils.PlaceHolder(X=batch_X, E=batch_E, y=batch_y)
             .type_as(batch_X)
             .mask(node_mask)
         )
         extra_data_pure = compute_extra_data(
             model,
-            {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask},
+            {
+                "X_t": batch_values.X,
+                "E_t": batch_values.E,
+                "y_t": batch_values.y,
+                "node_mask": node_mask,
+            },
             isPure=True,
         )
         # prepare the input data for encoder combining extra features
         input_X_pure = paddle.concat(
-            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+            [batch_values.X.astype("float"), extra_data_pure.X], axis=2
         ).astype(dtype="float32")
         input_E_pure = paddle.concat(
-            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+            [batch_values.E.astype("float"), extra_data_pure.E], axis=3
         ).astype(dtype="float32")
         input_y_pure = paddle.hstack(
-            x=(z_t.y.astype("float"), extra_data_pure.y)
+            x=(batch_values.y.astype("float"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
         conditionVec = model.encoder(
@@ -558,8 +570,9 @@ def sample_p_zs_given_zt(
         pred = model.decoder(input_X, input_E, input_y, node_mask)
 
     pred_X = F.softmax(pred.X, axis=-1)
-    pred_E = F.softmax(pred.E, axis=-1).reshape([X_t.shape[0], -1, pred.E.shape[-1]])
+    pred_E = F.softmax(pred.E, axis=-1)
 
+    # compute posterior distribution
     p_s_and_t_given_0_X = diffusion_utils.compute_batched_over0_posterior_distribution(
         X_t=X_t, Qt=Qt.X, Qsb=Qsb.X, Qtb=Qtb.X
     )
@@ -567,6 +580,7 @@ def sample_p_zs_given_zt(
         X_t=E_t, Qt=Qt.E, Qsb=Qsb.E, Qtb=Qtb.E
     )
 
+    # compute node probability
     weighted_X = pred_X.unsqueeze(-1) * p_s_and_t_given_0_X
     unnormalized_prob_X = paddle.sum(weighted_X, axis=2)
     unnormalized_prob_X = paddle.where(
@@ -578,6 +592,8 @@ def sample_p_zs_given_zt(
         unnormalized_prob_X, axis=-1, keepdim=True
     )
 
+    # compute edge probability
+    pred_E = pred_E.reshape([X_t.shape[0], -1, pred.E.shape[-1]])
     weighted_E = pred_E.unsqueeze(-1) * p_s_and_t_given_0_E
     unnormalized_prob_E = paddle.sum(weighted_E, axis=-2)
     unnormalized_prob_E = paddle.where(
@@ -590,10 +606,16 @@ def sample_p_zs_given_zt(
     )
     prob_E = prob_E.reshape([X_t.shape[0], X_t.shape[1], X_t.shape[1], -1])
 
-    # 采样
+    assert ((prob_X.sum(axis=-1) - 1).abs().max() < 1e-4).all()
+    assert ((prob_E.sum(axis=-1) - 1).abs() < 1e-4).all()
+
+    # sample from p(z_s | z_t)
     sampled_s = diffusion_utils.sample_discrete_features(prob_X, prob_E, node_mask)
     X_s = F.one_hot(sampled_s.X, num_classes=model.Xdim_output)
     E_s = F.one_hot(sampled_s.E, num_classes=model.Edim_output)
+
+    assert (E_s == paddle.transpose(E_s, [0, 1, 2])).all()
+    assert (X_t.shape == X_s.shape) and (E_t.shape == E_s.shape)
 
     out_one_hot = utils.PlaceHolder(X=X_s, E=E_s, y=paddle.zeros([y_t.shape[0], 0]))
     out_discrete = utils.PlaceHolder(X=X_s, E=E_s, y=paddle.zeros([y_t.shape[0], 0]))

@@ -330,13 +330,34 @@ class TrainerDiffGraphFormer:
     def test(self):
 
         self.model.eval()
+        epoch_id = 0
+
+        eval_loss_dict, metric_dict = self.eval_epoch(self.val_dataloader, epoch_id)
+
+        # log eval epoch loss & metric info
+        msg = f"Test: Epoch [{epoch_id+1}/1]"
+        for k, v in eval_loss_dict.items():
+            if isinstance(v, paddle.Tensor):
+                v = v.item()
+            if k in self.loss_dict_eval or self.loss_dict_eval is None:
+                msg += f" | {k}: {v:.5f}" if k == "loss" else f" | {k}(loss): {v:.5f}"
+        for k, v in metric_dict.items():
+            if isinstance(v, paddle.Tensor):
+                v = v.item()
+            if k in self.metric_dict_eval or self.metric_dict_eval is None:
+                msg += (
+                    f" | {k}: {v:.5f}" if k == "metric" else f" | {k}(metric): {v:.5f}"
+                )
+        logger.info(msg)
 
         data_length = len(self.test_dataloader)
-        logger.message(f"Total Test Batches: {data_length}")
+        logger.message(f"Start to sample ... | total rest batches: {data_length}")
         start = time.time()
 
         # sample epoch
-        metric_dict = self.sample_epoch(self.test_dataloader, epoch_id=0, flag_sample=True)
+        metric_dict = self.sample_epoch(
+            self.test_dataloader, epoch_id, flag_sample=True
+        )
 
         # log eval sample metric info
         if paddle.distributed.get_rank() == 0:
@@ -368,8 +389,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+            if iter_id == 1:  # TODO: for debug
+                break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
@@ -387,7 +408,6 @@ class TrainerDiffGraphFormer:
                     value = value.item()
                 total_loss[key].append(value)
 
-            # TODO: distrubuted
             if self.world_size > 1:
                 fleet.utils.hybrid_parallel_util.fused_allreduce_gradients(
                     list(self.model.parameters()), None
@@ -512,7 +532,7 @@ class TrainerDiffGraphFormer:
         return total_loss_avg, total_metric_avg
 
     @paddle.no_grad()
-    def sample_epoch(self, dataloader, epoch_id: int, flag_sample = False):
+    def sample_epoch(self, dataloader, epoch_id: int, flag_sample=False):
         self.model.eval()
         iters = self.sample_batch_iters  # TODO: use iterdataset for sampling
 
@@ -565,7 +585,7 @@ class TrainerDiffGraphFormer:
 
             # contral iters
             iters -= 1
-            if iters == 0 and flag_sample is True:
+            if iters == 0 and flag_sample is False:
                 break
 
         # sampled molecules to compute metrics

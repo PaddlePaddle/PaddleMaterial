@@ -531,7 +531,7 @@ def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"
     smiles_path = os.path.join(datadir, smiles_file_name)
     if os.path.exists(smiles_path):
-        logger.info("Dataset smiles were found.")
+        logger.message("Dataset smiles were found")
         train_smiles = np.load(smiles_path)
     else:
         logger.message("Computing dataset smiles...")

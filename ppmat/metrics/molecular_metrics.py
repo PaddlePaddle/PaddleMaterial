@@ -212,10 +212,10 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
                 msg += f" | Tanimoto Similarity: {similarity}"
 
                 if similarity == 1 and smiles_gen != smiles_true:
-                    msg += "different_index:{i}"
+                    msg += f" | different_index:{i}"
                 if smiles_gen == smiles_true:
                     right_num += 1
-                    msg += "same_index:{i}"
+                    msg += f" | same_index:{i}"
             except Exception as e:
                 msg = f" Error processing molecule at index {i}: {e}."
                 msg += f" | Generated SMILES {smiles_gen} | True SMILES {smiles_true}"
