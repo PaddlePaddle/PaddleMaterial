@@ -17,6 +17,7 @@ PROPERTY_SOURCE_IDS = [
     "dft_bulk_modulus",
     "dft_shear_modulus",
     "energy_above_hull",
+    "ehull",
     "formation_energy_per_atom",
     "space_group",
     "hhi_score",
