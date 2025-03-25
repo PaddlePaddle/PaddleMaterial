@@ -389,8 +389,8 @@ class TrainerDiffGraphFormer:
 
         data_length = len(dataloader)
         for iter_id, batch_data in enumerate(dataloader):
-            if iter_id == 1:  # TODO: for debug
-                break
+            # if iter_id == 1:  # TODO: for debug
+            #     break
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
