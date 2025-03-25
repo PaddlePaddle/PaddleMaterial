@@ -89,3 +89,19 @@
 # export PYTHONPATH=$PWD
 # python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=alex_mp_20 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY1=$PROPERTY1 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY2=$PROPERTY2 data_module.properties=["$PROPERTY1","$PROPERTY2"]
 # python -m paddle.distributed.launch --gpus="3,4,5,6" scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=alex_mp_20 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY1=$PROPERTY1 +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY2=$PROPERTY2 data_module.properties=["$PROPERTY1","$PROPERTY2"]
+
+
+#--------------------------- 2d_30k single property---------------------------------------
+# export PROPERTY=ehull
+# export MODEL_PATH=checkpoints/2d_30k
+# export PYTHONPATH=$PWD
+# python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=2d_30k +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY=$PROPERTY data_module.properties=["$PROPERTY"]
+# python -m paddle.distributed.launch --gpus="0,1,2,3" scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=2d_30k +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY=$PROPERTY data_module.properties=["$PROPERTY"]
+
+
+#--------------------------- 2d_30k mean distance single property---------------------------------------
+# export PROPERTY=ehull
+# export MODEL_PATH=checkpoints/2d_30k_md
+# export PYTHONPATH=$PWD
+# python scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=2d_30k +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY=$PROPERTY data_module.properties=["$PROPERTY"]
+# python -m paddle.distributed.launch --gpus="0,1,2,3" scripts/finetune.py adapter.model_path=$MODEL_PATH data_module=2d_30k +lightning_module/diffusion_module/model/property_embeddings@adapter.adapter.property_embeddings_adapt.$PROPERTY=$PROPERTY data_module.properties=["$PROPERTY"]
