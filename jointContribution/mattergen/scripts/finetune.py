@@ -58,9 +58,14 @@ def init_adapter_lightningmodule_from_pretrained(
                 for field in v:
                     if field in adapter_cfg.adapter.property_embeddings_adapt:
                         adapter_cfg.adapter.property_embeddings_adapt.remove(field)
-        adapter_cfg.adapter.gemnet[
-            "_target_"
-        ] = "mattergen.common.gemnet.gemnet_ctrl.GemNetTCtrl"
+        if 'GemNetT_MD' in adapter_cfg.adapter.gemnet["_target_"]:
+            adapter_cfg.adapter.gemnet[
+                "_target_"
+            ] = "mattergen.common.gemnet.gemnet_ctrl_md.GemNetTCtrl_MD"
+        else:
+            adapter_cfg.adapter.gemnet[
+                "_target_"
+            ] = "mattergen.common.gemnet.gemnet_ctrl.GemNetTCtrl"
         adapter_cfg.adapter.gemnet.condition_on_adapt = list(
             adapter_cfg.adapter.property_embeddings_adapt
         )
