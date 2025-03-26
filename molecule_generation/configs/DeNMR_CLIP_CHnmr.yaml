@@ -1,6 +1,3 @@
-Global:
-  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
-  gpus: 1                     # Multi-gpu is not implemented on this branch
 Trainer:
   epochs: 500
   seed: 42

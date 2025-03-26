@@ -18,7 +18,6 @@ class H1nmr_encoder(nn.Layer):
             nhead=n_head,
             dim_feedforward=dim_feedforward,
             dropout=drop_prob,
-            normalize_before=False,
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
