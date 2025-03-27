@@ -507,7 +507,8 @@ class Structure2Graph:
         edge_indices = [
             (idx1, idx2) for idx1, idx2 in zip(center_index, neighbor_index)
         ]
-
+        if len(edge_indices) == 0:
+            edge_indices = np.zeros((0, 2), dtype='int64')
         if len(bond_graph) == 0:
             bond_graph = np.zeros((0, 5)).astype(np.int32)
         graph = self.build_pgl_graph(
