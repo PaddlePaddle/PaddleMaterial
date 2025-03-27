@@ -10,6 +10,9 @@ class H1nmr_encoder(nn.Layer):
     def __init__(self, d_model, dim_feedforward, n_head, num_layers, drop_prob):
         super(H1nmr_encoder, self).__init__()
 
+        # for src padding mask
+        self.num_heads = n_head
+
         self.embed = H1nmr_embedding(dim=d_model, drop_prob=drop_prob)
 
         # Transformer Encoder
@@ -25,7 +28,10 @@ class H1nmr_encoder(nn.Layer):
         # input format: [batch, len_peak, feat_dim]
         x_emb = self.embed(x, src_mask)
 
+        # process for src_key_padding_mask
         pad_mask = src_mask == 0
+        bsz, src_len, _ = x_emb.shape
+        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand([-1, self.num_heads, src_len, -1])
 
         out = self.encoder(src=x_emb, src_mask=pad_mask)
         return out
@@ -34,6 +40,9 @@ class H1nmr_encoder(nn.Layer):
 class C13nmr_encoder(nn.Layer):
     def __init__(self, d_model, dim_feedforward, n_head, num_layers, drop_prob):
         super(C13nmr_encoder, self).__init__()
+
+        # for src padding mask
+        self.num_heads = n_head
 
         self.embed = C13nmr_embedding(dim=d_model, drop_prob=drop_prob)
         # Transformer Encoder
@@ -50,9 +59,12 @@ class C13nmr_encoder(nn.Layer):
         # input format: [batch, len_peak, feat_dim]
         x_emb = self.embed(x, src_mask)
 
+        # process for src_key_padding_mask
         pad_mask = src_mask == 0
+        bsz, src_len, _ = x_emb.shape
+        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand([-1, self.num_heads, src_len, -1])
 
-        out = self.encoder(src=x_emb, src_key_padding_mask=pad_mask)
+        out = self.encoder(src=x_emb, src_mask=pad_mask)
         return out
 
 
@@ -88,6 +100,7 @@ class NMR_fusion(nn.Layer):
         dim_h=1024,
         dim_c=256,
         hidden_dim=512,
+        n_head=8,
         out_dim=512,
         bi_crossattn_fusion_mode="",
         pool_mode="",
@@ -99,8 +112,8 @@ class NMR_fusion(nn.Layer):
         self.proj_h = nn.Linear(dim_h, hidden_dim)
         self.proj_c = nn.Linear(dim_c, hidden_dim)
         # Bidirectional cross-attention
-        self.cross_attn_ab = nn.MultiHeadAttention(hidden_dim, num_heads=8)
-        self.cross_attn_ba = nn.MultiHeadAttention(hidden_dim, num_heads=8)
+        self.cross_attn_ab = nn.MultiHeadAttention(hidden_dim, num_heads=n_head)
+        self.cross_attn_ba = nn.MultiHeadAttention(hidden_dim, num_heads=n_head)
 
         self.bi_crossattn_fusion_mode = bi_crossattn_fusion_mode
         self.pool_mode = pool_mode
@@ -113,6 +126,9 @@ class NMR_fusion(nn.Layer):
         self.attn_pool = MaskedAttentionPool(dim=self.hidden_dim)
         self.weighted_sum = nn.Linear(1024, 1)
         self.concat_linear = nn.Linear(1024, 512)
+        
+        # for src padding mask
+        self.num_heads = n_head
 
     def masked_mean_pool(self, tensor, mask):
         # tensor: [batch, seq_len, dim]
@@ -134,32 +150,30 @@ class NMR_fusion(nn.Layer):
         H_aligned = self.proj_h(tensor_Hnmr)
         C_aligned = self.proj_c(tensor_Cnmr)
 
-        H_aligned_perm = H_aligned.transpose([1, 0, 2])  # [seq_a, batch, hidden_dim]
-        C_aligned_perm = C_aligned.transpose([1, 0, 2])  # [seq_b, batch, hidden_dim]
-
         # bidirectonal cross-attention
         pad_mask_H = mask_H == 0
+        bsz_H, src_len_H, _ = H_aligned.shape
         pad_mask_C = mask_C == 0
+        bsz_C, src_len_C, _ = C_aligned.shape
+        pad_mask_H = pad_mask_H.reshape([bsz_H, 1, 1, src_len_H]).expand([-1, self.num_heads, src_len_C, -1])
+        pad_mask_C = pad_mask_C.reshape([bsz_C, 1, 1, src_len_C]).expand([-1, self.num_heads, src_len_H, -1])
 
-        attn_H2C, _ = self.cross_attn_ab(
-            query=H_aligned_perm,
-            key=C_aligned_perm,
-            value=C_aligned_perm,
-            key_padding_mask=pad_mask_C,
+        attn_H2C = self.cross_attn_ab(
+            query=H_aligned,
+            key=C_aligned,
+            value=C_aligned,
+            attn_mask=pad_mask_C,
         )
-        attn_C2H, _ = self.cross_attn_ba(
-            query=C_aligned_perm,
-            key=H_aligned_perm,
-            value=H_aligned_perm,
-            key_padding_mask=pad_mask_H,
+        attn_C2H = self.cross_attn_ba(
+            query=C_aligned,
+            key=H_aligned,
+            value=H_aligned,
+            attn_mask=pad_mask_H,
         )
-
-        attn_H2C = attn_H2C.transpose([1, 0, 2])  # [batch, seq_a, hidden_dim]
-        attn_C2H = attn_C2H.transpose([1, 0, 2])
 
         # combine the cross-attention output of two modalities with the origin features
         if self.bi_crossattn_fusion_mode == "concat":
-            # 方式1：拼接两个方向的输出
+            # Method 1: Concatenate outputs from two directions
             fused_H = paddle.concat(
                 [H_aligned, attn_H2C], axis=-1
             )  # [batch, seq_a, 2*hidden_dim]
@@ -168,12 +182,12 @@ class NMR_fusion(nn.Layer):
             )  # [batch, seq_b, 2*hidden_dim]
 
         elif self.bi_crossattn_fusion_mode == "add":
-            # 方式2：残差连接（保留原始信息）
+            # Method 2: Residual connection
             fused_H = H_aligned + attn_H2C  # [batch, seq_a, hidden_dim]
             fused_C = C_aligned + attn_C2H  # [batch, seq_b, hidden_dim]
 
         elif self.bi_crossattn_fusion_mode == "gated":
-            # 方式3：门控融合（自适应权重）
+            # Method 3: Gated Fusion (Adaptive Weights)
             gate_H = F.sigmoid(self.gate_linear(attn_H2C))  # 计算权重
             fused_H = (1 - gate_H) * H_aligned + gate_H * attn_H2C
             gate_C = F.sigmoid(self.gate_linear(attn_C2H))  # 计算权重
@@ -183,23 +197,19 @@ class NMR_fusion(nn.Layer):
             fused_H = attn_H2C
             fused_C = attn_C2H
 
-        """---------------------------------------------------------------------------------"""
-
-        """模态内聚合----------------------------"""
-
+        # Intra-modal Aggregation
         if self.pool_mode == "mean_pool":
-            # 方法1：平均池化
+            # method 1：average pooling
             global_H = self.masked_mean_pool(fused_H, mask_H)
 
             global_C = self.masked_mean_pool(fused_C, mask_C)  # [batch, 256]
 
         elif self.pool_mode == "attn_pool":
-            # 对两个模态分别做注意力池化
+            # Apply attention pooling to each of the two modalities separately
             global_H = self.attn_pool(fused_H, mask_H)
             global_C = self.attn_pool(fused_C, mask_C)  # [batch, 256]
 
-        """跨模态融合---------------------------------"""
-
+        # cross-modal fusion
         if self.crossmodal_fusion == "concat_linear":
             merged = paddle.concat([global_H, global_C], axis=-1)  # [batch, 512]
             global_output = self.concat_linear(merged)  # 压缩到 [batch, 256]
@@ -211,14 +221,6 @@ class NMR_fusion(nn.Layer):
 
             gate = F.sigmoid(self.weighted_sum(merged))  # [batch,1]
             global_output = gate * global_H + (1 - gate) * global_C
-
-        """--------------------------------------------------------------------------------------------------"""
-
-        """直接跨模态池化"""
-
-        # combined_features = paddle.concat([fused_H, fused_C], axis=1)
-        # mask = paddle.concat([mask_H, mask_C], axis=-1)
-        # global_output = self.pool(combined_features, mask)
 
         return global_output
 
@@ -248,6 +250,7 @@ class NMR_encoder(nn.Layer):
             dim_H,
             dim_C,
             hidden_dim,
+            n_head,
             bi_crossattn_fusion_mode="add",
             pool_mode="attn_pool",
             crossmodal_fusion_mode="concat_linear",

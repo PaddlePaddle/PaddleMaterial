@@ -26,7 +26,7 @@ for key, unit in [
 relaxer = StructOptimizer()
 
 # Perturb the structure
-structure.perturb(0.8)
+structure.perturb(0.2)
 
 # Relax the perturbed structure
 result = relaxer.relax(structure, verbose=True)
@@ -45,9 +45,9 @@ md = MolecularDynamics(
     timestep=2,  # in fs
     trajectory="md_out.traj",
     logfile="md_out.log",
-    loginterval=100,
+    loginterval=1,
 )
-md.run(50)  # run a 0.1 ps MD simulation
+md.run(1000)  # run a 0.1 ps MD simulation
 
 
 traj = Trajectory("md_out.traj")

@@ -318,7 +318,7 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     combined_mask = paddle.logical_and(mask, node_mask_bool)  # (bs,n)
     not_lcc_indicator = paddle.unsqueeze(combined_mask.astype("float32"), axis=-1)
 
-    to_extend = max(n_connected.numpy()) + k - n
+    to_extend = int(max(n_connected)) + k - n
     if to_extend > 0:
         extension = paddle.zeros(shape=[bs, n, to_extend], dtype=vectors.dtype)
         vectors = paddle.concat([vectors, extension], axis=2)  # (bs, n, n+to_extend)
