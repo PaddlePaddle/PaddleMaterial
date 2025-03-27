@@ -407,6 +407,17 @@ Please refer to the following command to split the dataset into train/val/test s
 
     python ppmat/datasets/dataset_split.py --format csv --src_path data/your/dataset/location
 
+### step 1: diff auto-encoder
+#### Train:
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_DiffGraphFormer_CHnmr.yaml --step 1 --mode=train
+    # parallel training
+    PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" molecule_generation/train.py -c molecule_generation/configs/DeNMR_DiffGraphFormer_CHnmr.yaml --step 1 --mode=train
+#### Test
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_DiffGraphFormer_CHnmr.yaml --step 1 --mode=test
+
+### step 2: contrastive learning
+#### Train:
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_DiffGraphFormer_CHnmr.yaml --step 1 --mode=train
 
 # Install
 

@@ -31,7 +31,9 @@ class H1nmr_encoder(nn.Layer):
         # process for src_key_padding_mask
         pad_mask = src_mask == 0
         bsz, src_len, _ = x_emb.shape
-        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand([-1, self.num_heads, src_len, -1])
+        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand(
+            [-1, self.num_heads, src_len, -1]
+        )
 
         out = self.encoder(src=x_emb, src_mask=pad_mask)
         return out
@@ -62,7 +64,9 @@ class C13nmr_encoder(nn.Layer):
         # process for src_key_padding_mask
         pad_mask = src_mask == 0
         bsz, src_len, _ = x_emb.shape
-        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand([-1, self.num_heads, src_len, -1])
+        pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand(
+            [-1, self.num_heads, src_len, -1]
+        )
 
         out = self.encoder(src=x_emb, src_mask=pad_mask)
         return out
@@ -126,7 +130,7 @@ class NMR_fusion(nn.Layer):
         self.attn_pool = MaskedAttentionPool(dim=self.hidden_dim)
         self.weighted_sum = nn.Linear(1024, 1)
         self.concat_linear = nn.Linear(1024, 512)
-        
+
         # for src padding mask
         self.num_heads = n_head
 
@@ -155,8 +159,12 @@ class NMR_fusion(nn.Layer):
         bsz_H, src_len_H, _ = H_aligned.shape
         pad_mask_C = mask_C == 0
         bsz_C, src_len_C, _ = C_aligned.shape
-        pad_mask_H = pad_mask_H.reshape([bsz_H, 1, 1, src_len_H]).expand([-1, self.num_heads, src_len_C, -1])
-        pad_mask_C = pad_mask_C.reshape([bsz_C, 1, 1, src_len_C]).expand([-1, self.num_heads, src_len_H, -1])
+        pad_mask_H = pad_mask_H.reshape([bsz_H, 1, 1, src_len_H]).expand(
+            [-1, self.num_heads, src_len_C, -1]
+        )
+        pad_mask_C = pad_mask_C.reshape([bsz_C, 1, 1, src_len_C]).expand(
+            [-1, self.num_heads, src_len_H, -1]
+        )
 
         attn_H2C = self.cross_attn_ab(
             query=H_aligned,
