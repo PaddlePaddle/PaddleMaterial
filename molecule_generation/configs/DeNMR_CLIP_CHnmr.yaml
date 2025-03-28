@@ -24,23 +24,23 @@ Metric:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams" #latest.pdparams
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/step1_best.pdparams" #latest.pdparams
     n_layers_GT: 5
-    input_dims:
-      X: 17
-      E: 5
-      y: 525
-    hidden_mlp_dims:
-      X: 256
-      E: 128
-      y: 256
-    hidden_dims: {'dx': 256, 'de': 64, 'dy': 256, 'n_head': 8, 'dim_ffX': 256, 'dim_ffE': 128, 'dim_ffy': 256}
-    output_dims: {'X': 9, 'E': 5, 'y': 0}
-    vocab_dim: 256
-    seq_len_H1: 20 # TODO: delete later
-    seq_len_C13: 75 # TODO: delete later
+    hidden_mlp_dims: {
+      "X": 256,
+      "E": 128,
+      "y": 256,
+    }
+    hidden_dims: {
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
+      'dim_ffy': 256,
+    }
   nmr_encoder:
-    # enc_voc_size: 5450
     dim_enc_H: 1024
     dimff_enc_H: 2048
     dim_enc_C: 256
@@ -49,6 +49,8 @@ Model:
     n_head: 8
     n_layers: 3
     drop_prob: 0.0
+    seq_len_H1: 20
+    seq_len_C13: 75
   diffusion_model: # to be deleted
     extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
     conditdim: 512
@@ -71,7 +73,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 1024
   val:
     dataset:
       __name__: CHnmrDataset
@@ -86,7 +88,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 1024
   test:
     dataset:
       __name__: CHnmrDataset
@@ -101,4 +103,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 1024

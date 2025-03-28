@@ -417,6 +417,7 @@ class AdamW:
         beta2: float = 0.999,
         epsilon: float = 1e-8,
         weight_decay: float = 0.001,
+        amsgrad: bool = False,
         grad_clip: Optional[
             Union[nn.ClipGradByNorm, nn.ClipGradByValue, nn.ClipGradByGlobalNorm]
         ] = None,
@@ -430,6 +431,7 @@ class AdamW:
         self.epsilon = epsilon
         self.grad_clip = grad_clip
         self.weight_decay = weight_decay
+        self.amsgrad = amsgrad
         self.no_weight_decay_name_list = (
             no_weight_decay_name.split() if no_weight_decay_name else []
         )
@@ -485,6 +487,7 @@ class AdamW:
             epsilon=self.epsilon,
             parameters=parameters,
             weight_decay=self.weight_decay,
+            amsgrad=self.amsgrad,
             grad_clip=self.grad_clip,
             apply_decay_param_fun=self._apply_decay_param_fun,
         )

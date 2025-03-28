@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
     elif args.step == 2:
         # build model from config
-        clip_model = ContrastiveModel(**config["Model"])
+        clip_model = ContrastiveModel(**config["Model"], **model_kwargs)
         # build optimizer and learning rate scheduler from config
         optimizer, lr_scheduler = build_optimizer(
             config["Trainer"]["Optimizer"],

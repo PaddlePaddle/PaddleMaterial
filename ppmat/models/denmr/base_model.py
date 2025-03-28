@@ -271,10 +271,39 @@ class ContrastiveModel(nn.Layer):
         self,
         graph_encoder: dict,
         nmr_encoder: dict,
+        dataset_infos,
+        extra_features,
+        domain_features,
         **kwargs,
     ):
         super().__init__()
         self.name = kwargs.get("__name__")
+
+        self.dataset_info = dataset_infos
+        self.extra_features = extra_features
+        self.domain_features = domain_features
+
+        self.con_input_dim = copy.deepcopy(dataset_infos.input_dims)
+        self.con_input_dim["y"] = 12
+        self.con_output_dim = dataset_infos.output_dims
+
+        self.graph_encoder = MolecularEncoder(
+            n_layers=graph_encoder["n_layers_GT"],
+            input_dims=self.con_input_dim,
+            hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
+            hidden_dims=graph_encoder["hidden_dims"],
+            output_dims=self.con_output_dim,
+            act_fn_in=paddle.nn.ReLU(),
+            act_fn_out=paddle.nn.ReLU(),
+        )
+        if graph_encoder["pretrained_model_path"] is not None:
+            save_load.load_pretrain(
+                self.graph_encoder, graph_encoder["pretrained_model_path"]
+            )
+        for param in self.graph_encoder.parameters():
+            param.stop_gradient = True
+        self.graph_encoder.eval()
+
         self.text_encoder = NMR_encoder(
             dim_H=nmr_encoder["dim_enc_H"],
             dimff_H=nmr_encoder["dimff_enc_H"],
@@ -285,32 +314,11 @@ class ContrastiveModel(nn.Layer):
             num_layers=nmr_encoder["n_layers"],
             drop_prob=nmr_encoder["drop_prob"],
         )
-        self.con_input_dim = graph_encoder["input_dims"]
-        self.con_input_dim["X"] = graph_encoder["input_dims"]["X"] - 8
-        self.con_input_dim["y"] = 1024
-        self.con_output_dim = graph_encoder["output_dims"]
-        self.graph_encoder = MolecularEncoder(
-            n_layers=graph_encoder["n_layers_GT"],
-            input_dims=self.con_input_dim,
-            hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
-            hidden_dims=graph_encoder["hidden_dims"],
-            output_dims=self.con_output_dim,
-            act_fn_in=paddle.nn.ReLU(),
-            act_fn_out=paddle.nn.ReLU(),
-        )
-        for param in self.graph_encoder.parameters():
-            param.stop_gradient = True
-        self.graph_encoder.eval()
 
-        self.seq_len_H1 = graph_encoder["seq_len_H1"]  # TODO remove later
-        self.seq_len_C13 = graph_encoder["seq_len_C13"]  # TODO remove later
+        self.seq_len_H1 = nmr_encoder["seq_len_H1"]  # TODO remove later
+        self.seq_len_C13 = nmr_encoder["seq_len_C13"]  # TODO remove later
         self.tem = 2  # TODO remove later
 
-        # for Constrastive Learning & Prior Training
-        if graph_encoder["pretrained_model_path"] is not None:
-            save_load.load_pretrain(
-                self.graph_encoder, graph_encoder["pretrained_model_path"]
-            )
         # for Prior Training
         if (
             "pretrained_model_path" in nmr_encoder
@@ -319,22 +327,6 @@ class ContrastiveModel(nn.Layer):
             save_load.load_pretrain(
                 self.text_encoder, nmr_encoder["pretrained_model_path"]
             )
-
-    def forward_(self, node_mask, X_condition, E_condtion, conditionVec):
-        assert isinstance(
-            conditionVec, paddle.Tensor
-        ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
-        srcMask = self.make_src_mask(conditionVec)  # .to(self.device)
-        conditionVecNmr = self.text_encoder(conditionVec, srcMask)
-        conditionVecNmr = conditionVecNmr.reshape([conditionVecNmr.shape[0], -1])
-        conditionVecNmr = self.text_encoder_projector(conditionVecNmr)
-        y_condition = paddle.zeros(shape=[X_condition.shape[0], 1024]).cuda(
-            blocking=True
-        )
-        conditionVecM = self.graph_encoder(
-            X_condition, E_condtion, y_condition, node_mask
-        )
-        return conditionVecM, conditionVecNmr
 
     def forward(self, batch):
         batch_graph, other_data = batch
@@ -353,6 +345,7 @@ class ContrastiveModel(nn.Layer):
         X, E = dense_data.X, dense_data.E
         y = other_data["y"]
 
+        # get NMR embedded vector
         # prepare NMR vectors
         condition_H1nmr = other_data["conditionVec"]["H_nmr"]
         condition_H1nmr = condition_H1nmr.reshape(batch_length, self.seq_len_H1, -1)
@@ -361,12 +354,30 @@ class ContrastiveModel(nn.Layer):
         num_H_peak = other_data["conditionVec"]["num_H_peak"]
         num_C_peak = other_data["conditionVec"]["num_C_peak"]
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
-
-        # get NMR embedded vector
         condition_nmr = self.text_encoder(conditionAll)
 
         # get graph embedded vector
-        condition_graph = self.graph_encoder(X, E, y, node_mask)
+        # prepare the extra feature for encoder input without noisy
+        z_t = utils.PlaceHolder(X=X, E=E, y=y).type_as(X).mask(node_mask)
+        extra_data_pure = m_utils.compute_extra_data(
+            self,
+            {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask},
+            isPure=True,
+        )
+        # prepare the input data for encoder combining extra features
+        input_X_pure = paddle.concat(
+            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+        ).astype(dtype="float32")
+        input_E_pure = paddle.concat(
+            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+        ).astype(dtype="float32")
+        input_y_pure = paddle.hstack(
+            x=(z_t.y.astype("float"), extra_data_pure.y)
+        ).astype(dtype="float32")
+        # obtain the condition vector from output of encoder
+        condition_graph = self.graph_encoder(
+            input_X_pure, input_E_pure, input_y_pure, node_mask
+        )
 
         # compute similarity between graph and NMR
         V1_f = condition_graph  # Assuming V1 is a feature obtained from molecular graph
@@ -374,7 +385,7 @@ class ContrastiveModel(nn.Layer):
         V1_e = paddle.nn.functional.normalize(x=V1_f, p=2, axis=1)
         V2_e = paddle.nn.functional.normalize(x=V2_f, p=2, axis=1)
         logits = paddle.matmul(x=V1_e, y=V2_e.T) * paddle.exp(
-            x=paddle.to_tensor(data=self.tem, place=V1_e.place)
+            x=paddle.to_tensor(data=self.tem)
         )
         n = V1_f.shape[0]
         labels = paddle.arange(end=n)

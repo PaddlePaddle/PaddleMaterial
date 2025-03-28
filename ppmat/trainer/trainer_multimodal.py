@@ -438,9 +438,14 @@ class TrainerDiffGraphFormer:
                 and (iter_id % self.log_freq == 0 or iter_id == data_length - 1)
                 and self.flag_train_step is True
             ):
+                lr = self.optimizer._learning_rate
+                if isinstance(lr, float):
+                    lr = lr
+                else:
+                    lr = lr()
                 msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
                 msg += f" | Step: [{iter_id+1}/{data_length}]"
-                msg += f" | lr: {self.optimizer._learning_rate():.6f}".rstrip("0")
+                msg += f" | lr: {lr:.6f}".rstrip("0")
                 msg += f" | reader cost: {reader_cost:.5f}s"
                 msg += f" | batch cost: {batch_cost:.5f}s"
                 for k, v in loss_dict.items():
