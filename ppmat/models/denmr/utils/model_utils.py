@@ -19,7 +19,7 @@ def apply_noise(model, X, E, y, node_mask):
     """
     t_int = paddle.randint(
         low=1, high=model.T + 1, shape=[X.shape[0], 1], dtype="int64"
-    ).astype("float32")
+    ).astype("float32") 
     s_int = t_int - 1
 
     t_float = t_int / model.T
@@ -30,6 +30,8 @@ def apply_noise(model, X, E, y, node_mask):
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_normalized=t_float)
 
     Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
+    assert (abs(Qtb.X.sum(axis=2) - 1.) < 1e-4).all(), Qtb.X.sum(axis=2) - 1
+    assert (abs(Qtb.E.sum(axis=2) - 1.) < 1e-4).all()
 
     probX = paddle.matmul(X, Qtb.X)  # (bs, n, dx_out)
     probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs, n, n, de_out)
@@ -40,6 +42,7 @@ def apply_noise(model, X, E, y, node_mask):
 
     X_t = F.one_hot(sampled_t.X, num_classes=model.Xdim_output).astype("int64")
     E_t = F.one_hot(sampled_t.E, num_classes=model.Edim_output).astype("int64")
+    assert (X.shape == X_t.shape) and (E.shape == E_t.shape)
 
     z_t = utils.PlaceHolder(X=X_t, E=E_t, y=y).type_as(X_t).mask(node_mask)
 
@@ -81,7 +84,7 @@ def compute_extra_data(model, noisy_data, isPure=False):
 
 
 def concat_without_empty(tensor_lst, axis=-1):
-    new_lst = [t.astype("float") for t in tensor_lst if 0 not in t.shape]
+    new_lst = [t.astype("float32") for t in tensor_lst if 0 not in t.shape]
     if new_lst == []:
         return utils.return_empty(tensor_lst[0])
     return paddle.concat(new_lst, axis=axis)
@@ -257,16 +260,16 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
 
     # input_X
     input_X = paddle.concat(
-        [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+        [noisy_data["X_t"].astype("float32"), extra_data.X], axis=2
     ).astype(dtype="float32")
 
     # input_E
     input_E = paddle.concat(
-        [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+        [noisy_data["E_t"].astype("float32"), extra_data.E], axis=3
     ).astype(dtype="float32")
 
     # partial input_y for decoder
-    input_y = paddle.hstack([noisy_data["y_t"].astype("float"), extra_data.y]).astype(
+    input_y = paddle.hstack([noisy_data["y_t"].astype("float32"), extra_data.y]).astype(
         dtype="float32"
     )
 
@@ -293,13 +296,13 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
         )
         # prepare the input data for encoder combining extra features
         input_X_pure = paddle.concat(
-            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+            [z_t.X.astype("float32"), extra_data_pure.X], axis=2
         ).astype(dtype="float32")
         input_E_pure = paddle.concat(
-            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+            [z_t.E.astype("float32"), extra_data_pure.E], axis=3
         ).astype(dtype="float32")
         input_y_pure = paddle.hstack(
-            x=(z_t.y.astype("float"), extra_data_pure.y)
+            x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
         conditionVec = model.encoder(
@@ -551,13 +554,13 @@ def sample_p_zs_given_zt(
         )
         # prepare the input data for encoder combining extra features
         input_X_pure = paddle.concat(
-            [batch_values.X.astype("float"), extra_data_pure.X], axis=2
+            [batch_values.X.astype("float32"), extra_data_pure.X], axis=2
         ).astype(dtype="float32")
         input_E_pure = paddle.concat(
-            [batch_values.E.astype("float"), extra_data_pure.E], axis=3
+            [batch_values.E.astype("float32"), extra_data_pure.E], axis=3
         ).astype(dtype="float32")
         input_y_pure = paddle.hstack(
-            x=(batch_values.y.astype("float"), extra_data_pure.y)
+            x=(batch_values.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
         conditionVec = model.encoder(

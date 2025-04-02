@@ -56,7 +56,7 @@ class PlaceHolder:
             # self.E = self.E * e_mask1 * e_mask2
             self.E = self.E * e_mask1 * e_mask2
 
-            E = self.E.astype("float")
+            E = self.E.astype("float32")
             if not paddle.allclose(E, paddle.transpose(E, perm=[0, 2, 1, 3])):
                 raise ValueError("E is not symmetric after masking.")
         return self

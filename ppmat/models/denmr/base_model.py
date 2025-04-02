@@ -175,17 +175,17 @@ class MolecularGraphTransformer(nn.Layer):
 
         # input_X for decoder
         input_X = paddle.concat(
-            [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+            [noisy_data["X_t"].astype("float32"), extra_data.X], axis=2
         ).astype(dtype="float32")
 
         # input_E for decoder
         input_E = paddle.concat(
-            [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+            [noisy_data["E_t"].astype("float32"), extra_data.E], axis=3
         ).astype(dtype="float32")
 
         # partial input_y for decoder
         input_y = paddle.hstack(
-            [noisy_data["y_t"].astype("float"), extra_data.y]
+            [noisy_data["y_t"].astype("float32"), extra_data.y]
         ).astype(dtype="float32")
 
         # prepare the extra feature for encoder input without noisy
@@ -197,13 +197,13 @@ class MolecularGraphTransformer(nn.Layer):
         )
         # prepare the input data for encoder combining extra features
         input_X_pure = paddle.concat(
-            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+            [z_t.X.astype("float32"), extra_data_pure.X], axis=2
         ).astype(dtype="float32")
         input_E_pure = paddle.concat(
-            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+            [z_t.E.astype("float32"), extra_data_pure.E], axis=3
         ).astype(dtype="float32")
         input_y_pure = paddle.hstack(
-            x=(z_t.y.astype("float"), extra_data_pure.y)
+            x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
         conditionVec = self.encoder(input_X_pure, input_E_pure, input_y_pure, node_mask)
@@ -366,13 +366,13 @@ class ContrastiveModel(nn.Layer):
         )
         # prepare the input data for encoder combining extra features
         input_X_pure = paddle.concat(
-            [z_t.X.astype("float"), extra_data_pure.X], axis=2
+            [z_t.X.astype("float32"), extra_data_pure.X], axis=2
         ).astype(dtype="float32")
         input_E_pure = paddle.concat(
-            [z_t.E.astype("float"), extra_data_pure.E], axis=3
+            [z_t.E.astype("float32"), extra_data_pure.E], axis=3
         ).astype(dtype="float32")
         input_y_pure = paddle.hstack(
-            x=(z_t.y.astype("float"), extra_data_pure.y)
+            x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
         condition_graph = self.graph_encoder(
@@ -1046,13 +1046,13 @@ class MultiModalDecoder(nn.Layer):
 
         # concate data
         input_X = paddle.concat(
-            [noisy_data["X_t"].astype("float"), extra_data.X], axis=2
+            [noisy_data["X_t"].astype("float32"), extra_data.X], axis=2
         ).astype(dtype="float32")
         input_E = paddle.concat(
-            [noisy_data["E_t"].astype("float"), extra_data.E], axis=3
+            [noisy_data["E_t"].astype("float32"), extra_data.E], axis=3
         ).astype(dtype="float32")
         input_y = paddle.hstack(
-            [noisy_data["y_t"].astype("float"), extra_data.y]
+            [noisy_data["y_t"].astype("float32"), extra_data.y]
         ).astype(dtype="float32")
 
         return dense_data, noisy_data, node_mask, extra_data, input_X, input_E, input_y

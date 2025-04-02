@@ -24,7 +24,7 @@ Metric:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/step1_best.pdparams" #latest.pdparams
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
     n_layers_GT: 5
     hidden_mlp_dims: {
       "X": 256,
@@ -71,9 +71,9 @@ Dataset:
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 1024
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset
@@ -86,9 +86,9 @@ Dataset:
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 1024
+      batch_size: 512
   test:
     dataset:
       __name__: CHnmrDataset
@@ -101,6 +101,6 @@ Dataset:
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 1024
+      batch_size: 512
