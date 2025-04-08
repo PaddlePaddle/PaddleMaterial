@@ -95,14 +95,14 @@ Dataset:
   train:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/train.csv"
-      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
-      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      path: "./data/CHnmr_large/train.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
       datadir: "./data/CHnmr"
-      cache: False
+      cache: True
       remove_h: True
-      data_flag: "small" # "large"
-      seq_len_H1: 20
+      data_flag: "large"
+      seq_len_H1: 25
       seq_len_C13: 75
     loader:
       num_workers: 0
@@ -115,13 +115,13 @@ Dataset:
   val:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/val.csv"
-      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
-      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      path: "./data/CHnmr_large/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
-      data_flag: "small" # "large"
-      seq_len_H1: 20
+      data_flag: "large"
+      seq_len_H1: 25
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
@@ -131,13 +131,13 @@ Dataset:
   sample:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/val.csv"
-      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
-      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      path: "./data/CHnmr_large/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
-      data_flag: "small" # "large"
-      seq_len_H1: 20
+      data_flag: "large"
+      seq_len_H1: 25
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
@@ -147,13 +147,13 @@ Dataset:
   test:
     dataset:
       __name__: CHnmrDataset
-      path: "./data/CHnmr/test.csv"
-      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
-      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      path: "./data/CHnmr_large/test.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
-      data_flag: "small" # "large"
-      seq_len_H1: 20
+      data_flag: "large"
+      seq_len_H1: 25
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler

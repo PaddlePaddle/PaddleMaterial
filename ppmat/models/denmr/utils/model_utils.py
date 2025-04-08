@@ -19,7 +19,7 @@ def apply_noise(model, X, E, y, node_mask):
     """
     t_int = paddle.randint(
         low=1, high=model.T + 1, shape=[X.shape[0], 1], dtype="int64"
-    ).astype("float32") 
+    ).astype("float32")
     s_int = t_int - 1
 
     t_float = t_int / model.T
@@ -30,8 +30,8 @@ def apply_noise(model, X, E, y, node_mask):
     alpha_t_bar = model.noise_schedule.get_alpha_bar(t_normalized=t_float)
 
     Qtb = model.transition_model.get_Qt_bar(alpha_t_bar)
-    assert (abs(Qtb.X.sum(axis=2) - 1.) < 1e-4).all(), Qtb.X.sum(axis=2) - 1
-    assert (abs(Qtb.E.sum(axis=2) - 1.) < 1e-4).all()
+    assert (abs(Qtb.X.sum(axis=2) - 1.0) < 1e-4).all(), Qtb.X.sum(axis=2) - 1
+    assert (abs(Qtb.E.sum(axis=2) - 1.0) < 1e-4).all()
 
     probX = paddle.matmul(X, Qtb.X)  # (bs, n, dx_out)
     probE = paddle.matmul(E, Qtb.E.unsqueeze(1))  # (bs, n, n, de_out)

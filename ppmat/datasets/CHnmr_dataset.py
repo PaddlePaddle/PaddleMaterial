@@ -68,9 +68,7 @@ class CHnmrData:
             self.vocab_split[type] = idx + 2
 
     def load_data(self, path, split=False):
-        dataset = pd.read_csv(
-            path, index_col=0, converters={"tokenized_input": json.loads}
-        )
+        dataset = pd.read_csv(path, converters={"tokenized_input": json.loads})
         if split:
             datasets = self.split_dataset(dataset)
             dataset_proc = [self.process(target_df) for target_df in datasets]
@@ -119,10 +117,11 @@ class CHnmrData:
         bonds = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
 
         data_list = []
-        for idx, row in tqdm(target_df.iterrows(), total=target_df.shape[0]):
-            smiles = row["smiles"]
-            tokenized_input = row["tokenized_input"]
-            atom_count = row["atom_count"]
+        for row in tqdm(target_df.itertuples(index=False), total=target_df.shape[0]):
+            # idx = row.Index if has_index else row.Index
+            smiles = row.smiles
+            tokenized_input = row.tokenized_input
+            atom_count = row.atom_count
 
             # transfer SMILES into mol object
             mol = Chem.MolFromSmiles(smiles)
@@ -196,7 +195,7 @@ class CHnmrData:
 
             other_data = {
                 "y": y.numpy(),
-                "idx": paddle.to_tensor(idx, dtype=paddle.int64).numpy(),
+                # "idx": paddle.to_tensor(idx, dtype=paddle.int64).numpy(),
                 "conditionVec": nmrVec,
                 "atom_count": atom_count.numpy(),
             }
@@ -318,6 +317,7 @@ class CHnmrDataset(Dataset):
 class CHnmrinfos:
     def __init__(self, dataloaders, cfg, recompute_statistics=False):
         self.remove_h = cfg["Dataset"]["train"]["dataset"]["remove_h"]
+        self.dataflag = cfg["Dataset"]["train"]["dataset"]["data_flag"]
         self.need_to_strip = (
             False  # to indicate whether we need to ignore one output from the model
         )
@@ -342,129 +342,212 @@ class CHnmrinfos:
         self.valencies = (
             [1, 4, 3, 2, 1] if not self.remove_h else [4, 3, 2, 1, 3, 2, 1, 1, 1]
         )
-        self.max_n_nodes = 29 if not self.remove_h else 15
-        self.max_weight = 390 if not self.remove_h else 564
-        self.atom_weights = (
-            {0: 1, 1: 12, 2: 14, 3: 16, 4: 19}
-            if not self.remove_h
-            else {
-                0: 12,
-                1: 14,
-                2: 16,
-                3: 19,
-                4: 30.97,
-                5: 32.07,
-                6: 35.45,
-                7: 79.9,
-                8: 126.9,
-            }
-        )
-        self.n_nodes = (
-            paddle.to_tensor(
-                [
-                    0,
-                    0,
-                    0,
-                    1.5287e-05,
-                    3.0574e-05,
-                    3.8217e-05,
-                    9.1721e-05,
-                    0.00015287,
-                    0.00049682,
-                    0.0013147,
-                    0.0036918,
-                    0.0080486,
-                    0.016732,
-                    0.03078,
-                    0.051654,
-                    0.078085,
-                    0.10566,
-                    0.1297,
-                    0.13332,
-                    0.1387,
-                    0.094802,
-                    0.10063,
-                    0.033845,
-                    0.048628,
-                    0.0054421,
-                    0.014698,
-                    0.00045096,
-                    0.0027211,
-                    0.0,
-                    0.00026752,
-                ]
+        if self.dataflag == "small":
+            self.max_n_nodes = 29 if not self.remove_h else 15
+            self.max_weight = 390 if not self.remove_h else 564
+            self.atom_weights = (
+                {0: 1, 1: 12, 2: 14, 3: 16, 4: 19}
+                if not self.remove_h
+                else {
+                    0: 12,
+                    1: 14,
+                    2: 16,
+                    3: 19,
+                    4: 30.97,
+                    5: 32.07,
+                    6: 35.45,
+                    7: 79.9,
+                    8: 126.9,
+                }
             )
-            if not self.remove_h
-            else paddle.to_tensor(
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.000657983182463795,
-                    0.0034172674641013145,
-                    0.009784846566617489,
-                    0.019774870947003365,
-                    0.04433957487344742,
-                    0.07253380119800568,
-                    0.10895635187625885,
-                    0.14755095541477203,
-                    0.17605648934841156,
-                    0.19964483380317688,
-                    0.21728302538394928,
-                ]
+            self.n_nodes = (
+                paddle.to_tensor(
+                    [
+                        0,
+                        0,
+                        0,
+                        1.5287e-05,
+                        3.0574e-05,
+                        3.8217e-05,
+                        9.1721e-05,
+                        0.00015287,
+                        0.00049682,
+                        0.0013147,
+                        0.0036918,
+                        0.0080486,
+                        0.016732,
+                        0.03078,
+                        0.051654,
+                        0.078085,
+                        0.10566,
+                        0.1297,
+                        0.13332,
+                        0.1387,
+                        0.094802,
+                        0.10063,
+                        0.033845,
+                        0.048628,
+                        0.0054421,
+                        0.014698,
+                        0.00045096,
+                        0.0027211,
+                        0.0,
+                        0.00026752,
+                    ]
+                )
+                if not self.remove_h
+                else paddle.to_tensor(
+                    [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.000657983182463795,
+                        0.0034172674641013145,
+                        0.009784846566617489,
+                        0.019774870947003365,
+                        0.04433957487344742,
+                        0.07253380119800568,
+                        0.10895635187625885,
+                        0.14755095541477203,
+                        0.17605648934841156,
+                        0.19964483380317688,
+                        0.21728302538394928,
+                    ]
+                )
             )
-        )
-        self.node_types = (
-            paddle.to_tensor([0.5122, 0.3526, 0.0562, 0.0777, 0.0013])
-            if not self.remove_h
-            else paddle.to_tensor(
-                [
-                    0.7162184715270996,
-                    0.09598348289728165,
-                    0.12478094547986984,
-                    0.01828921213746071,
-                    0.0004915347089990973,
-                    0.014545895159244537,
-                    0.01616295613348484,
-                    0.011324135586619377,
-                    0.002203370677307248,
-                ]
+            self.node_types = (
+                paddle.to_tensor([0.5122, 0.3526, 0.0562, 0.0777, 0.0013])
+                if not self.remove_h
+                else paddle.to_tensor(
+                    [
+                        0.7162184715270996,
+                        0.09598348289728165,
+                        0.12478094547986984,
+                        0.01828921213746071,
+                        0.0004915347089990973,
+                        0.014545895159244537,
+                        0.01616295613348484,
+                        0.011324135586619377,
+                        0.002203370677307248,
+                    ]
+                )
             )
-        )
-        self.edge_types = (
-            paddle.to_tensor([0.88162, 0.11062, 0.0059875, 0.0017758, 0])
-            if not self.remove_h
-            else paddle.to_tensor(
-                [
-                    0.8293983340263367,
-                    0.09064729511737823,
-                    0.011958839371800423,
-                    0.0011387828271836042,
-                    0.0668567642569542,
-                ]
+            self.edge_types = (
+                paddle.to_tensor([0.88162, 0.11062, 0.0059875, 0.0017758, 0])
+                if not self.remove_h
+                else paddle.to_tensor(
+                    [
+                        0.8293983340263367,
+                        0.09064729511737823,
+                        0.011958839371800423,
+                        0.0011387828271836042,
+                        0.0668567642569542,
+                    ]
+                )
             )
-        )
-
-        self.complete_infos(n_nodes=self.n_nodes, node_types=self.node_types)
-        self.valency_distribution = paddle.zeros(3 * self.max_n_nodes - 2)
-        if not self.remove_h:
-            self.valency_distribution[0:6] = paddle.to_tensor(
-                [0, 0.5136, 0.0840, 0.0554, 0.3456, 0.0012]
-            )
-        else:
-            self.valency_distribution[0:7] = paddle.to_tensor(
+        elif self.dataflag == "large":
+            self.max_n_nodes = 29 if not self.remove_h else 35
+            self.max_weight = 390 if not self.remove_h else 1094
+            self.n_nodes = paddle.to_tensor(
                 [
                     0.000000000000000000e00,
-                    1.856458932161331177e-01,
-                    2.707855999469757080e-01,
-                    3.008204102516174316e-01,
-                    2.362315803766250610e-01,
-                    3.544347826391458511e-03,
-                    2.972166286781430244e-03,
+                    0.000000000000000000e00,
+                    0.000000000000000000e00,
+                    0.000000000000000000e00,
+                    0.000000000000000000e00,
+                    1.465040404582396150e-04,
+                    7.087133126333355904e-04,
+                    2.005274174734950066e-03,
+                    4.010548349469900131e-03,
+                    9.273706004023551941e-03,
+                    1.550195924937725067e-02,
+                    2.318426594138145447e-02,
+                    3.164304420351982117e-02,
+                    3.758744522929191589e-02,
+                    4.201003536581993103e-02,
+                    4.522579908370971680e-02,
+                    4.758085310459136963e-02,
+                    4.873823374509811401e-02,
+                    5.004395171999931335e-02,
+                    4.889755696058273315e-02,
+                    4.859539121389389038e-02,
+                    4.685382544994354248e-02,
+                    4.636486992239952087e-02,
+                    4.473684355616569519e-02,
+                    4.392923787236213684e-02,
+                    4.205032438039779663e-02,
+                    4.190198704600334167e-02,
+                    3.956525027751922607e-02,
+                    3.861114010214805603e-02,
+                    3.698311373591423035e-02,
+                    3.511701896786689758e-02,
+                    3.210086748003959656e-02,
+                    2.951690368354320526e-02,
+                    2.601728774607181549e-02,
+                    2.254880405962467194e-02,
+                    1.854924298822879791e-02,
                 ]
             )
+            self.node_types = paddle.to_tensor(
+                [
+                    7.415896058082580566e-01,
+                    9.485986828804016113e-02,
+                    1.080681160092353821e-01,
+                    2.368708699941635132e-02,
+                    3.370510821696370840e-04,
+                    1.273731887340545654e-02,
+                    1.297908369451761246e-02,
+                    4.853925667703151703e-03,
+                    8.879197412170469761e-04,
+                ]
+            )
+            self.edge_types = paddle.to_tensor(
+                [
+                    9.066669344902038574e-01,
+                    4.404582828283309937e-02,
+                    5.253293085843324661e-03,
+                    3.737418155651539564e-04,
+                    4.366017505526542664e-02,
+                ]
+            )
+        self.complete_infos(n_nodes=self.n_nodes, node_types=self.node_types)
+        self.valency_distribution = paddle.zeros(3 * self.max_n_nodes - 2)
+        if self.dataflag == "small":
+            if not self.remove_h:
+                self.valency_distribution[0:6] = paddle.to_tensor(
+                    [0, 0.5136, 0.0840, 0.0554, 0.3456, 0.0012]
+                )
+            else:
+                self.valency_distribution[0:7] = paddle.to_tensor(
+                    [
+                        0.000000000000000000e00,
+                        1.856458932161331177e-01,
+                        2.707855999469757080e-01,
+                        3.008204102516174316e-01,
+                        2.362315803766250610e-01,
+                        3.544347826391458511e-03,
+                        2.972166286781430244e-03,
+                    ]
+                )
+        elif self.dataflag == "large":
+            if not self.remove_h:
+                self.valency_distribution[0:6] = paddle.to_tensor(
+                    [0, 0.5136, 0.0840, 0.0554, 0.3456, 0.0012]
+                )
+            else:
+                self.valency_distribution[0:7] = paddle.to_tensor(
+                    [
+                        0.000000000000000000e00,
+                        1.382219046354293823e-01,
+                        2.489367425441741943e-01,
+                        3.354085683822631836e-01,
+                        2.695656120777130127e-01,
+                        3.342652227729558945e-03,
+                        4.524504765868186951e-03,
+                    ]
+                )
         if recompute_statistics:
             self.n_nodes = dataloaders.node_counts()
             self.node_types = dataloaders.node_types()
