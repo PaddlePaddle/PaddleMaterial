@@ -228,10 +228,10 @@ class GemNetT_MD(GemNetT):
 
         if self.use_md:
             mean_distance = (frac_coords[:, 2] - 0.5).abs()
-            mean_distance = scatter(mean_distance, batch, reduce='mean')
+            # mean_distance = scatter(mean_distance, batch, reduce='mean')
             mean_distance_rbf = self.radial_basis_md(mean_distance)
             md_rbf_out = self.radial_basis_md_linear(mean_distance_rbf)
-            md_rbf_out = md_rbf_out[batch]
+            # md_rbf_out = md_rbf_out[batch]
             h = h + md_rbf_out
 
         m = self.edge_emb(h, rbf, idx_s, idx_t)
