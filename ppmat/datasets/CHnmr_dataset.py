@@ -342,10 +342,7 @@ class CHnmrinfos:
         self.valencies = (
             [1, 4, 3, 2, 1] if not self.remove_h else [4, 3, 2, 1, 3, 2, 1, 1, 1]
         )
-        if self.dataflag == "small":
-            self.max_n_nodes = 29 if not self.remove_h else 15
-            self.max_weight = 390 if not self.remove_h else 564
-            self.atom_weights = (
+        self.atom_weights = (
                 {0: 1, 1: 12, 2: 14, 3: 16, 4: 19}
                 if not self.remove_h
                 else {
@@ -360,6 +357,10 @@ class CHnmrinfos:
                     8: 126.9,
                 }
             )
+        if self.dataflag == "small":
+            self.max_n_nodes = 29 if not self.remove_h else 15
+            self.max_weight = 390 if not self.remove_h else 564
+            
             self.n_nodes = (
                 paddle.to_tensor(
                     [

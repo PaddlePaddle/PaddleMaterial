@@ -29,7 +29,7 @@ Sampler:
   sample_batch_iters: 1 # Number of sample batches
 Tracker:
   log:
-    log_freq: 100 # log frequency [step]
+    log_freq: 1 # log frequency [step]
     out_dict: # none is default, it output all loss and metrics, empty dict means no output
       loss:
         train: {"train_loss",}
@@ -111,7 +111,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
+      batch_size: 128
   val:
     dataset:
       __name__: CHnmrDataset
@@ -127,7 +127,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
+      batch_size: 128
   sample:
     dataset:
       __name__: CHnmrDataset
@@ -143,7 +143,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
+      batch_size: 128
   test:
     dataset:
       __name__: CHnmrDataset
@@ -159,4 +159,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 128
