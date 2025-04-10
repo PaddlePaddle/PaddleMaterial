@@ -50,8 +50,11 @@ def build_lr_scheduler(cfg, epochs, iters_per_epoch):
     """
     cfg = copy.deepcopy(cfg)
     cfg.update({"epochs": epochs, "iters_per_epoch": iters_per_epoch})
-    lr_scheduler_cls = cfg.pop("__name__")
-    lr_scheduler_ = getattr(lr_scheduler, lr_scheduler_cls)(**cfg)
+    lr_scheduler_cls = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
+    lr_scheduler_ = getattr(lr_scheduler, lr_scheduler_cls)(
+        epochs=epochs, iters_per_epoch=iters_per_epoch, **init_params
+    )
     return lr_scheduler_()
 
 
@@ -69,14 +72,15 @@ def build_optimizer(cfg, model_list, epochs, iters_per_epoch):
     """
     # build lr_scheduler
     cfg = copy.deepcopy(cfg)
-    lr_cfg = cfg.pop("lr")
+    init_params = cfg.pop("__init_params__")
+    lr_cfg = init_params.pop("lr")
     if isinstance(lr_cfg, float):
         lr_scheduler = lr_cfg
     else:
         lr_scheduler = build_lr_scheduler(lr_cfg, epochs, iters_per_epoch)
 
     # build optimizer
-    opt_cls = cfg.pop("__name__")
+    opt_cls = cfg.pop("__class_name__")
     if "clip_norm" in cfg:
         clip_norm = cfg.pop("clip_norm")
         grad_clip = paddle.nn.ClipGradByNorm(clip_norm=clip_norm)
@@ -89,9 +93,9 @@ def build_optimizer(cfg, model_list, epochs, iters_per_epoch):
     else:
         grad_clip = None
 
-    optimizer = eval(opt_cls)(learning_rate=lr_scheduler, grad_clip=grad_clip, **cfg)(
-        model_list
-    )
+    optimizer = eval(opt_cls)(
+        learning_rate=lr_scheduler, grad_clip=grad_clip, **init_params
+    )(model_list)
 
     if isinstance(lr_scheduler, float):
         return optimizer, None
