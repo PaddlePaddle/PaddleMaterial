@@ -18,18 +18,17 @@ import signal
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
+from paddle import io
 from paddle.io import BatchSampler  # noqa
 from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
-from ppmat.datasets.mp_base_dataset import MPBaseDataset
-from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
 __all__ = [
-    "MPBaseDataset",
     "MP2018Dataset",
     "set_signal_handlers",
 ]
@@ -82,13 +81,16 @@ def set_signal_handlers():
 
 
 def build_dataloader(cfg):
+    if cfg is None:
+        return None
+    world_size = dist.get_world_size()
     cfg = copy.deepcopy(cfg)
 
     dataset_cfg = cfg["dataset"]
-    cls_name = dataset_cfg.pop("__name__")
-    if "transforms" in dataset_cfg:
-        dataset_cfg["transforms"] = build_transforms(dataset_cfg.pop("transforms"))
-    dataset = eval(cls_name)(**dataset_cfg)
+    cls_name = dataset_cfg.pop("__class_name__")
+    init_params = dataset_cfg.pop("__init_params__")
+
+    dataset = eval(cls_name)(**init_params)
 
     loader_config = cfg.get("loader")
     if loader_config is None:
@@ -100,15 +102,45 @@ def build_dataloader(cfg):
         logger.message("No loader config is provided, use default config.")
         logger.message("Default loader config: {}".format(loader_config))
 
-    num_workers = loader_config.get("num_workers", 0)
-    use_shared_memory = loader_config.get("use_shared_memory", True)
+    num_workers = loader_config.pop("num_workers", 0)
+    use_shared_memory = loader_config.pop("use_shared_memory", True)
 
-    sampler_cfg = cfg["sampler"]
-    cls_name = sampler_cfg.pop("__name__")
-    batch_sampler = eval(cls_name)(dataset, **sampler_cfg)
+    # build sampler
+    sampler_cfg = cfg.get("sampler", None)
+    if sampler_cfg is not None:
+        batch_sampler_cls = sampler_cfg.pop("__class_name__")
+        init_params = sampler_cfg.pop("__init_params__")
+
+        if batch_sampler_cls == "BatchSampler":
+            if world_size > 1:
+                batch_sampler_cls = "DistributedBatchSampler"
+                logger.warning(
+                    f"Automatically use 'DistributedBatchSampler' instead of "
+                    f"'BatchSampler' when world_size({world_size}) > 1."
+                )
+
+        batch_sampler = getattr(io, batch_sampler_cls)(dataset, **init_params)
+    else:
+        batch_sampler_cls = "BatchSampler"
+        if world_size > 1:
+            batch_sampler_cls = "DistributedBatchSampler"
+            logger.warning(
+                f"Automatically use 'DistributedBatchSampler' instead of "
+                f"'BatchSampler' when world_size({world_size}) > 1."
+            )
+        batch_sampler = getattr(io, batch_sampler_cls)(
+            dataset,
+            batch_size=cfg["batch_size"],
+            shuffle=False,
+            drop_last=False,
+        )
+        logger.message(
+            "'shuffle' and 'drop_last' are both set to False in default as sampler "
+            "config is not specified."
+        )
 
     collate_obj = getattr(
-        collate_fn, loader_config.get("collate_fn", "DefaultCollator")
+        collate_fn, loader_config.pop("collate_fn", "DefaultCollator")
     )()
 
     data_loader = DataLoader(
@@ -119,6 +151,7 @@ def build_dataloader(cfg):
         use_shared_memory=use_shared_memory,
         collate_fn=collate_obj,
         worker_init_fn=worker_init_fn,
+        **loader_config,
     )
 
     return data_loader
