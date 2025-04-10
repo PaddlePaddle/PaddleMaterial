@@ -287,7 +287,7 @@ class ContrastiveModel(nn.Layer):
         self.con_input_dim["y"] = 12
         self.con_output_dim = dataset_infos.output_dims
 
-        self.graph_encoder = MolecularEncoder(
+        self.conditionEn = MolecularEncoder(
             n_layers=graph_encoder["n_layers_GT"],
             input_dims=self.con_input_dim,
             hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
@@ -298,13 +298,13 @@ class ContrastiveModel(nn.Layer):
         )
         if graph_encoder["pretrained_model_path"] is not None:
             save_load.load_pretrain(
-                self.graph_encoder, graph_encoder["pretrained_model_path"]
+                self.conditionEn, graph_encoder["pretrained_model_path"]
             )
-        for param in self.graph_encoder.parameters():
+        for param in self.conditionEn.parameters():
             param.stop_gradient = True
-        self.graph_encoder.eval()
+        self.conditionEn.eval()
 
-        self.text_encoder = NMR_encoder(
+        self.NMR_encoder = NMR_encoder(
             dim_H=nmr_encoder["dim_enc_H"],
             dimff_H=nmr_encoder["dimff_enc_H"],
             dim_C=nmr_encoder["dim_enc_C"],
@@ -325,7 +325,7 @@ class ContrastiveModel(nn.Layer):
             and nmr_encoder["pretrained_model_path"] is not None
         ):
             save_load.load_pretrain(
-                self.text_encoder, nmr_encoder["pretrained_model_path"]
+                self.NMR_encoder, nmr_encoder["pretrained_model_path"]
             )
 
     def forward(self, batch):
@@ -354,7 +354,7 @@ class ContrastiveModel(nn.Layer):
         num_H_peak = other_data["conditionVec"]["num_H_peak"]
         num_C_peak = other_data["conditionVec"]["num_C_peak"]
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
-        condition_nmr = self.text_encoder(conditionAll)
+        condition_nmr = self.NMR_encoder(conditionAll)
 
         # get graph embedded vector
         # prepare the extra feature for encoder input without noisy
@@ -375,7 +375,7 @@ class ContrastiveModel(nn.Layer):
             x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
-        condition_graph = self.graph_encoder(
+        condition_graph = self.conditionEn(
             input_X_pure, input_E_pure, input_y_pure, node_mask
         )
 

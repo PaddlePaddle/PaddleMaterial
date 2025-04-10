@@ -29,7 +29,7 @@ class H1nmr_encoder(nn.Layer):
         x_emb = self.embed(x, src_mask)
 
         # process for src_key_padding_mask
-        pad_mask = src_mask == 0
+        pad_mask = src_mask == 1
         bsz, src_len, _ = x_emb.shape
         pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand(
             [-1, self.num_heads, src_len, -1]
@@ -62,7 +62,7 @@ class C13nmr_encoder(nn.Layer):
         x_emb = self.embed(x, src_mask)
 
         # process for src_key_padding_mask
-        pad_mask = src_mask == 0
+        pad_mask = src_mask == 1
         bsz, src_len, _ = x_emb.shape
         pad_mask = pad_mask.reshape([bsz, 1, 1, src_len]).expand(
             [-1, self.num_heads, src_len, -1]
@@ -155,9 +155,9 @@ class NMR_fusion(nn.Layer):
         C_aligned = self.proj_c(tensor_Cnmr)
 
         # bidirectonal cross-attention
-        pad_mask_H = mask_H == 0
+        pad_mask_H = mask_H == 1
         bsz_H, src_len_H, _ = H_aligned.shape
-        pad_mask_C = mask_C == 0
+        pad_mask_C = mask_C == 1
         bsz_C, src_len_C, _ = C_aligned.shape
         pad_mask_H = pad_mask_H.reshape([bsz_H, 1, 1, src_len_H]).expand(
             [-1, self.num_heads, src_len_C, -1]
