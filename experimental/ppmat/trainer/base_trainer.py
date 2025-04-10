@@ -30,6 +30,7 @@ from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
+from paddle.optimizer.lr import ReduceOnPlateau
 
 from ppmat.trainer.callbacks.trainer_callback import CallbackHandler
 from ppmat.trainer.callbacks.trainer_callback import DefaultFlowCallback
@@ -314,27 +315,31 @@ class BaseTrainer:
 
             pred_dict = result.get("pred_dict", {})
 
-            if self.metric_strategy_during_eval == "step":
-                for key, compute_metric_func in self.compute_metric_func_dict.items():
-                    pred = pred_dict[key]
-                    label = batch_data[key]
-                    metric = compute_metric_func(pred, label)
-                    if key not in eval_metric_info:
-                        eval_metric_info[key] = AverageMeter(key)
-                    eval_metric_info[key].update(metric, batch_size)
-            else:
-                for key, pred in pred_dict.items():
-                    pred = pred.detach() if hasattr(pred, "detach") else pred
-                    if self.world_size > 1:
-                        pred = misc.all_gather(pred)
-                    all_pred_dict[key].append(pred)
-                label_keys = self.compute_metric_func_dict.keys()
-                for key in label_keys:
-                    label = batch_data[key]
-                    label = label.detach() if hasattr(label, "detach") else label
-                    if self.world_size > 1:
-                        label = misc.all_gather(label)
-                    all_label_dict[key].append(label)
+            if self.compute_metric_func_dict is not None:
+                if self.metric_strategy_during_eval == "step":
+                    for (
+                        key,
+                        compute_metric_func,
+                    ) in self.compute_metric_func_dict.items():
+                        pred = pred_dict[key]
+                        label = batch_data[key]
+                        metric = compute_metric_func(pred, label)
+                        if key not in eval_metric_info:
+                            eval_metric_info[key] = AverageMeter(key)
+                        eval_metric_info[key].update(metric, batch_size)
+                else:
+                    for key, pred in pred_dict.items():
+                        pred = pred.detach() if hasattr(pred, "detach") else pred
+                        if self.world_size > 1:
+                            pred = misc.all_gather(pred)
+                        all_pred_dict[key].append(pred)
+                    label_keys = self.compute_metric_func_dict.keys()
+                    for key in label_keys:
+                        label = batch_data[key]
+                        label = label.detach() if hasattr(label, "detach") else label
+                        if self.world_size > 1:
+                            label = misc.all_gather(label)
+                        all_label_dict[key].append(label)
 
             batch_cost = time.perf_counter() - batch_tic
             eval_time_info["batch_cost"].update(batch_cost)
@@ -346,7 +351,10 @@ class BaseTrainer:
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
 
-        if self.metric_strategy_during_eval == "epoch":
+        if (
+            self.metric_strategy_during_eval == "epoch"
+            and self.compute_metric_func_dict is not None
+        ):
             for key, compute_metric_func in self.compute_metric_func_dict.items():
                 pred = paddle.concat(all_pred_dict[key])[:num_eval_samples]
                 label = paddle.concat(all_label_dict[key])[:num_eval_samples]
@@ -529,7 +537,31 @@ class BaseTrainer:
 
             # update learning rate by epoch
             if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
-                self.lr_scheduler.step()
+                if isinstance(self.lr_scheduler, ReduceOnPlateau):
+                    if self.lr_scheduler.indicator == "train_loss":
+                        indicator_value = train_loss_info[
+                            self.lr_scheduler.indicator_name
+                        ].avg
+                    elif self.lr_scheduler.indicator == "train_metric":
+                        indicator_value = train_metric_info[
+                            self.lr_scheduler.indicator_name
+                        ].avg
+                    elif self.lr_scheduler.indicator == "eval_loss":
+                        indicator_value = eval_loss_info[
+                            self.lr_scheduler.indicator_name
+                        ].avg
+                    elif self.lr_scheduler.indicator == "eval_metric":
+                        indicator_value = eval_metric_info[
+                            self.lr_scheduler.indicator_name
+                        ].avg
+                    else:
+                        raise ValueError(
+                            "Unsupported lr scheduler indicator: "
+                            f"{self.lr_scheduler.indicator}"
+                        )
+                    self.lr_scheduler.step(metrics=indicator_value)
+                else:
+                    self.lr_scheduler.step()
 
     def _determine_best_metric(
         self, train_loss_info, train_metric_info, eval_loss_info, eval_metric_info
