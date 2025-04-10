@@ -30,6 +30,7 @@ from paddle.io import Dataset
 
 from ppmat.datasets.build_graph import Structure2Graph
 from ppmat.datasets.build_structure import BuildStructure
+from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.utils import logger
 from ppmat.utils.io import read_json
 
@@ -270,13 +271,13 @@ class MP2018Dataset(Dataset):
         lattice = structure.lattice.matrix.astype("float32")
 
         structure_array = {
-            "frac_coords": structure.frac_coords.astype("float32"),
-            "cart_coords": structure.cart_coords.astype("float32"),
-            "atom_types": atom_types,
-            "lattice": lattice.reshape(1, 3, 3),
-            "lengths": lengths,
-            "angles": angles,
-            "num_atoms": np.array([tuple(atom_types.shape)[0]]),
+            "frac_coords": ConcatData(structure.frac_coords.astype("float32")),
+            "cart_coords": ConcatData(structure.cart_coords.astype("float32")),
+            "atom_types": ConcatData(atom_types),
+            "lattice": ConcatData(lattice.reshape(1, 3, 3)),
+            "lengths": ConcatData(lengths),
+            "angles": ConcatData(angles),
+            "num_atoms": ConcatData(np.array([tuple(atom_types.shape)[0]])),
         }
         return structure_array
 
