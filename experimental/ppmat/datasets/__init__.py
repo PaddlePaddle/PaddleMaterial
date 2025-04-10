@@ -25,11 +25,13 @@ from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
+from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
 from ppmat.utils import logger
 
 __all__ = [
     "MP2018Dataset",
+    "MP20Dataset",
     "set_signal_handlers",
 ]
 
