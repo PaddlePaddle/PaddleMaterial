@@ -5,116 +5,138 @@ Global:
   # "band_gap",
   # "G",
   # "K"
- property_names: ["formation_energy_per_atom"]
-
+ label_names: ["formation_energy_per_atom"]
+ do_train: True
+ do_eval: False
+ do_test: False
 
 Trainer:
-  epochs: 500
-  output_dir: ./output/comformer_mp2018_train_60k_e_form
-  save_freq: 100 # set 0 to disable saving during training
-  log_freq: 100 # log frequency [step]
-  start_eval_epoch: 1
-  eval_freq: 1 # set 0 to disable evaluation during training
+  # Max epochs to train
+  max_epochs: 500
+  # Random seed
   seed: 42
-  cal_metric_during_train: True # True: the metric will be calculated on train dataset
-  use_amp: False
+  # Save path for checkpoints and logs
+  output_dir: ./output/comformer_mp2018_train_60k_e_form
+  # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
+  save_freq: 100 # set 0 to disable saving during training
+  # Logging frequency [step], for example, log_freq=10 means log every 10 steps
+  log_freq: 20 # log frequency [step]
 
-Module:
-  __name__: RegressionModule
-  model_cfg:
-    __name__: iComformer
-    property_names: ${Global.property_names}
-  loss_cfg:
-    __name__: LossWarper
-    loss_fns:
-      __name__: MSELoss
-    apply_keys: ${Global.property_names}
-  post_process_cfg:
-    - UnNormalize:
-        mean: -1.652
-        std: 1.069
-        apply_keys: "formation_energy_per_atom" # apply normalization to this property
-  metric_cfg:
-    __name__: MetricWarper
-    metric_fns:
-      __name__: MAEMetric
-    apply_keys: ${Global.property_names}
+  # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
+  eval_freq: 1 # set 0 to disable evaluation during training
+  # Pretrained model path, if null, no pretrained model will be loaded
+  pretrained_model_path: '/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/comformer_mp2018_train_60k_e_form/checkpoints/best.pdparams'
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  # whether use automatic mixed precision
+  whether_use_amp: False
+  # automatic mixed precision level
+  amp_level: 'O1'
 
+  # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
+  best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
+  # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
+  name_for_best_metric: "formation_energy_per_atom"
+  # The metric whether is better when it is greater
+  greater_is_better: False
+
+  # compute metric during training or evaluation
+  whether_compute_metric_during_train: True # True: the metric will be calculated on train dataset
+  metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+
+
+Model:
+  __class_name__: iComformer
+  __init_params__:
+    conv_layers: 4
+    edge_layers: 1
+    atom_input_features: 92
+    edge_features: 256
+    triplet_input_features: 256
+    node_features: 256
+    fc_features: 256
+    output_features: 1
+    node_layer_head: 1
+    edge_layer_head: 1
+    property_name: ${Global.label_names}
+    data_mean: -1.6519
+    data_std: 1.0694
+
+Metric:
+  formation_energy_per_atom:
+    __class_name__: paddle.nn.L1Loss #MAEMetric
+    __init_params__: {}
 
 Optimizer:
-  __name__: AdamW
-  lr:
-    __name__: OneCycleLR
-    max_learning_rate: 0.001
-    by_epoch: True
+  __class_name__: AdamW
+  __init_params__:
+    lr:
+      __class_name__: OneCycleLR
+      __init_params__:
+        max_learning_rate: 0.001
+        by_epoch: True
 
 Dataset:
   train:
     dataset:
-      __name__: MP2018Dataset
-      path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
-      property_names: ${Global.property_names}
-      build_structure_cfg:
-        format: cif_str
-        num_cpus: 10
-      build_graph_cfg:
-        cutoff: 4.0
-        method: comformer_graph
-        num_cpus: 10
-      transforms:
-        - Normalize:
-            mean: -1.652
-            std: 1.069
-            apply_keys: "formation_energy_per_atom" # apply normalization to this property
-    loader:
+      __class_name__: MP2018Dataset
+      __init_params__:
+        path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg:
+          cutoff: 4.0
+          method: comformer_graph
+          num_cpus: 10
       num_workers: 4
       use_shared_memory: False
     sampler:
-      __name__: DistributedBatchSampler
-      shuffle: True
-      drop_last: True
-      batch_size: 32
-  val:
+      __class_name__: DistributedBatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 32
+  eval:
     dataset:
-      __name__: MP2018Dataset
-      path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
-      property_names: ${Global.property_names}
-      build_structure_cfg:
-        format: cif_str
-        num_cpus: 10
-      build_graph_cfg:
-        cutoff: 4.0
-        method: comformer_graph
-        num_cpus: 10
-      transforms:
-        - Normalize:
-            mean: -1.652
-            std: 1.069
-            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+      __class_name__: MP2018Dataset
+      __init_params__:
+        path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg:
+          cutoff: 4.0
+          method: comformer_graph
+          num_cpus: 10
+
     sampler:
-      __name__: BatchSampler
-      shuffle: False
-      drop_last: False
-      batch_size: 32
+      __class_name__: DistributedBatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
   test:
     dataset:
-      __name__: MP2018Dataset
-      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
-      property_names: ${Global.property_names}
-      build_structure_cfg:
-        format: cif_str
-        num_cpus: 10
-      build_graph_cfg:
-        cutoff: 4.0
-        method: comformer_graph
-        num_cpus: 10
-      transforms:
-        - Normalize:
-            mean: -1.652
-            std: 1.069
-            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+      __class_name__: MP2018Dataset
+      __init_params__:
+        path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg:
+          cutoff: 4.0
+          method: comformer_graph
+          num_cpus: 10
+
     sampler:
-      __name__: BatchSampler
-      shuffle: False
-      drop_last: False
-      batch_size: 64
+      __class_name__: DistributedBatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
