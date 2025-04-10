@@ -30,10 +30,12 @@ def build_model(cfg):
     Returns:
         nn.Layer: Model.
     """
+    if cfg is None:
+        return None
     cfg = copy.deepcopy(cfg)
-    model_cls = cfg.pop("__name__")
-    model = eval(model_cls)(**cfg)
-
+    class_name = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
+    model = eval(class_name)(**init_params)
     logger.debug(str(model))
 
     return model
