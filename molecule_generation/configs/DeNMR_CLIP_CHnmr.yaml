@@ -5,12 +5,13 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
+  pretrained_model_path: "/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" # "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
     beta2: 0.999
     lr: 0.001
+    weight_decay: 1e-12
 Tracker:
   log:
     log_freq: 1 # log frequency [step]
@@ -24,7 +25,7 @@ Metric:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: null #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
     n_layers_GT: 5
     hidden_mlp_dims: {
       "X": 256,
@@ -64,6 +65,7 @@ Dataset:
       datadir: "./data/CHnmr"
       cache: True
       remove_h: True
+      data_flag: "small" # "large"
       seq_len_H1: 20
       seq_len_C13: 75
     loader:
@@ -82,6 +84,7 @@ Dataset:
       vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      data_flag: "small" # "large"
       seq_len_H1: 20
       seq_len_C13: 75
     sampler:
@@ -97,6 +100,7 @@ Dataset:
       vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      data_flag: "small" # "large"
       seq_len_H1: 20
       seq_len_C13: 75
     sampler:

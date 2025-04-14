@@ -7,6 +7,7 @@ from einops import rearrange
 from einops import repeat
 from tqdm import tqdm
 
+from ppmat.models.common import initializer
 from ppmat.metrics.abstract_metrics import NLL
 from ppmat.metrics.abstract_metrics import SumExceptBatchKL
 from ppmat.metrics.abstract_metrics import SumExceptBatchMetric
@@ -287,7 +288,7 @@ class ContrastiveModel(nn.Layer):
         self.con_input_dim["y"] = 12
         self.con_output_dim = dataset_infos.output_dims
 
-        self.conditionEn = MolecularEncoder(
+        self.graph_encoder = MolecularEncoder(
             n_layers=graph_encoder["n_layers_GT"],
             input_dims=self.con_input_dim,
             hidden_mlp_dims=graph_encoder["hidden_mlp_dims"],
@@ -297,14 +298,19 @@ class ContrastiveModel(nn.Layer):
             act_fn_out=paddle.nn.ReLU(),
         )
         if graph_encoder["pretrained_model_path"] is not None:
-            save_load.load_pretrain(
-                self.conditionEn, graph_encoder["pretrained_model_path"]
-            )
-        for param in self.conditionEn.parameters():
+            # load graph encoder model from pretrained model
+            state_dict = paddle.load(graph_encoder["pretrained_model_path"])
+            encoder_state_dict = {
+                k[len("encoder.") :]: v
+                for k, v in state_dict.items()
+                if k.startswith("encoder.")
+            }
+            self.graph_encoder.set_state_dict(encoder_state_dict)
+        for param in self.graph_encoder.parameters():
             param.stop_gradient = True
-        self.conditionEn.eval()
+        self.graph_encoder.eval()
 
-        self.NMR_encoder = NMR_encoder(
+        self.text_encoder = NMR_encoder(
             dim_H=nmr_encoder["dim_enc_H"],
             dimff_H=nmr_encoder["dimff_enc_H"],
             dim_C=nmr_encoder["dim_enc_C"],
@@ -314,6 +320,8 @@ class ContrastiveModel(nn.Layer):
             num_layers=nmr_encoder["n_layers"],
             drop_prob=nmr_encoder["drop_prob"],
         )
+        # for init model weights
+        self.text_encoder.apply(self._init_weights)
 
         self.seq_len_H1 = nmr_encoder["seq_len_H1"]  # TODO remove later
         self.seq_len_C13 = nmr_encoder["seq_len_C13"]  # TODO remove later
@@ -327,6 +335,12 @@ class ContrastiveModel(nn.Layer):
             save_load.load_pretrain(
                 self.NMR_encoder, nmr_encoder["pretrained_model_path"]
             )
+        
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            initializer.linear_init_(m)
+        elif isinstance(m, nn.Embedding):
+            initializer.normal_(m.weight)
 
     def forward(self, batch):
         batch_graph, other_data = batch
@@ -354,7 +368,7 @@ class ContrastiveModel(nn.Layer):
         num_H_peak = other_data["conditionVec"]["num_H_peak"]
         num_C_peak = other_data["conditionVec"]["num_C_peak"]
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
-        condition_nmr = self.NMR_encoder(conditionAll)
+        condition_nmr = self.text_encoder(conditionAll)
 
         # get graph embedded vector
         # prepare the extra feature for encoder input without noisy
@@ -375,7 +389,7 @@ class ContrastiveModel(nn.Layer):
             x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
-        condition_graph = self.conditionEn(
+        condition_graph = self.graph_encoder(
             input_X_pure, input_E_pure, input_y_pure, node_mask
         )
 
