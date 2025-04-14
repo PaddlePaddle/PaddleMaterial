@@ -14,10 +14,9 @@
 
 import copy
 
-from ppmat.metrics.mae_metric import MAEMetric
-from ppmat.metrics.metric_warper import MetricWarper
+import paddle  # noqa
 
-__all__ = ["MAEMetric", "MetricWarper", "CSPMetric", "GenMetric"]
+__all__ = ["build_metric"]
 
 
 def build_metric(cfg):
@@ -33,17 +32,15 @@ def build_metric(cfg):
         return None
     cfg = copy.deepcopy(cfg)
 
-    metric_cls = cfg.pop("__name__")
-    if metric_cls == "MetricWarper":
-        metric_cfg = cfg.pop("metric_fns")
+    if "__class_name__" not in cfg:
+        assert isinstance(cfg, dict)
+        metric_dict = {}
+        for key, sub_cfg in cfg.items():
+            metric_dict[key] = build_metric(sub_cfg)
+        return metric_dict
 
-        if isinstance(metric_cfg, list):
-            metric_fns = []
-            for i in range(len(metric_cfg)):
-                metric_fns.append(build_metric(metric_cfg[i]))
-        else:
-            metric_fns = build_metric(metric_cfg)
-        cfg["metric_fns"] = metric_fns
+    class_name = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
 
-    loss = eval(metric_cls)(**cfg)
-    return loss
+    metric = eval(class_name)(**init_params)
+    return metric

@@ -25,22 +25,27 @@ from typing import Optional
 
 import numpy as np
 import paddle.distributed as dist
+import pandas as pd
 from paddle.io import Dataset
 
+from ppmat.datasets.build_graph import Structure2Graph
+from ppmat.datasets.build_structure import BuildStructure
+from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.utils import logger
 
 
-class MPBaseDataset(Dataset):
-    """Base dataset for Materials Project, this is a supper class for all datasets
-        in Materials Project.
+class MP20Dataset(Dataset):
+    """This class is designed for handling the MP20 dataset.
 
     Args:
-        path (str): Path to data file.
-        property_names (Optional[list[str]], optional):  Property names you want to
-            use. Defaults to None.
-        build_structure_cfg (Dict, optional): Config for building structure. Defaults
+        path (str, optional): The path of the dataset. Defaults to
+            "./data/mp18/mp.2018.6.1.json".
+        property_names (Optional[list[str]], optional): Property names you want to use.
+            Defaults to None.
+        build_structure_cfg (Dict, optional): The configs for building the structure.
+            Defaults to None.
+        build_graph_cfg (Dict, optional): The configs for building the graph. Defaults
             to None.
-        build_graph_cfg (Dict, optional): Config for building graph. Defaults to None.
         transforms (Optional[Callable], optional): The transforms. Defaults to None.
         cache_path (Optional[str], optional): If a cache_path is set, structures and
             graph will be read directly from this path; if the cache does not exist,
@@ -48,12 +53,13 @@ class MPBaseDataset(Dataset):
             to None.
         overwrite (bool, optional): Overwrite the existing cache file at the given
             path if it already exists. Defaults to False.
-        filter_unvalid (bool, optional): Filter unvalid data. Defaults to True.
+        filter_unvalid (bool, optional): Whether to filter out unvalid samples. Defaults
+            to True.
     """
 
     def __init__(
         self,
-        path: str,
+        path: str = "./data/mp18/mp.2018.6.1.json",
         property_names: Optional[list[str]] = None,
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
@@ -63,6 +69,7 @@ class MPBaseDataset(Dataset):
         filter_unvalid: bool = True,
         **kwargs,  # for compatibility
     ):
+        super().__init__()
         self.path = path
         if isinstance(property_names, str):
             property_names = [property_names]
@@ -163,6 +170,20 @@ class MPBaseDataset(Dataset):
         if filter_unvalid:
             self.filter_unvalid_by_property()
 
+    def read_data(self, path: str):
+        """Read the data from the given json path.
+
+        Args:
+            path (str): Path to the data.
+        """
+        data = pd.read_csv(path)
+        logger.info(f"Read {len(data)} structures from {path}")
+        data = {key: data[key].tolist() for key in data if "Unnamed" not in key}
+        num_samples = 0
+        for key in data:
+            num_samples = max(num_samples, len(data[key]))
+        return data, num_samples
+
     def filter_unvalid_by_property(self):
         for property_name in self.property_names:
             data = self.property_data[property_name]
@@ -174,8 +195,8 @@ class MPBaseDataset(Dataset):
                 self.property_data[key] = [
                     self.property_data[key][i] for i in reserve_idx
                 ]
-
-            self.row_data = [self.row_data[i] for i in reserve_idx]
+            for key in self.row_data.keys():
+                self.row_data[key] = [self.row_data[key][i] for i in reserve_idx]
             self.structures = [self.structures[i] for i in reserve_idx]
             if self.graphs is not None:
                 self.graphs = [self.graphs[i] for i in reserve_idx]
@@ -183,29 +204,43 @@ class MPBaseDataset(Dataset):
                 f"Filter out {len(reserve_idx)} samples with valid properties: "
                 f"{property_name}"
             )
-        self.num_samples = len(self.row_data)
+        self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
-    def read_data(self, path: str):
-        raise NotImplementedError(
-            f"{self.__class__.__name_}.read_data function is not implemented"
-        )
-
     def read_property_data(self, data: Dict, property_names: list[str]):
-        raise NotImplementedError(
-            f"{self.__class__.__name_}.read_property_data function is not implemented"
-        )
+        """Read the property data from the given data and property names.
+
+        Args:
+            data (Dict): Data that contains the property data.
+            property_names (list[str]): Property names.
+        """
+        property_data = {
+            self.row_data[property_name] for property_name in property_names
+        }
+        return property_data
 
     def convert_to_structures(self, data: Dict, build_structure_cfg: Dict):
-        raise NotImplementedError(
-            f"{self.__class__.__name_}.convert_to_structures function is not "
-            "implemented"
-        )
+        """Convert the data to pymatgen structures.
+
+        Args:
+            data (Dict): Data dictionary.
+            build_structure_cfg (Dict): Build structure configuration.
+        """
+        structures = BuildStructure(**build_structure_cfg)(data["cif"])
+        return structures
 
     def convert_to_graphs(self, structures: list[Any], build_graph_cfg: Dict):
-        raise NotImplementedError(
-            f"{self.__class__.__name_}.convert_to_graphs function is not implemented"
-        )
+        """Convert the structure to graph.
+
+        Args:
+            structures (list[Any]): List of structures.
+            build_graph_cfg (Dict): Build graph configuration.
+        """
+        if build_graph_cfg is None:
+            return None
+        converter = Structure2Graph(**build_graph_cfg)
+        graphs = converter(structures)
+        return graphs
 
     def save_to_cache(self, cache_path: str, data: Any):
         with open(cache_path, "wb") as f:
@@ -228,13 +263,13 @@ class MPBaseDataset(Dataset):
         lattice = structure.lattice.matrix.astype("float32")
 
         structure_array = {
-            "frac_coords": structure.frac_coords.astype("float32"),
-            "cart_coords": structure.cart_coords.astype("float32"),
-            "atom_types": atom_types,
-            "lattice": lattice.reshape(1, 3, 3),
-            "lengths": lengths,
-            "angles": angles,
-            "num_atoms": np.array([tuple(atom_types.shape)[0]]),
+            "frac_coords": ConcatData(structure.frac_coords.astype("float32")),
+            "cart_coords": ConcatData(structure.cart_coords.astype("float32")),
+            "atom_types": ConcatData(atom_types),
+            "lattice": ConcatData(lattice.reshape(1, 3, 3)),
+            "lengths": ConcatData(lengths),
+            "angles": ConcatData(angles),
+            "num_atoms": ConcatData(np.array([tuple(atom_types.shape)[0]])),
         }
         return structure_array
 
@@ -263,7 +298,6 @@ class MPBaseDataset(Dataset):
         data["id"] = (
             self.property_data["id"][idx] if "id" in self.property_data else idx
         )
-
         data = self.transforms(data) if self.transforms is not None else data
 
         return data

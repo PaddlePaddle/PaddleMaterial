@@ -15,19 +15,27 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import os
+import os.path as osp
+import pickle
 from collections import defaultdict
 from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Optional
 
+import numpy as np
+import paddle.distributed as dist
+from paddle.io import Dataset
+
 from ppmat.datasets.build_graph import Structure2Graph
 from ppmat.datasets.build_structure import BuildStructure
-from ppmat.datasets.mp_base_dataset import MPBaseDataset
+from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.utils import logger
 from ppmat.utils.io import read_json
 
 
-class MP2018Dataset(MPBaseDataset):
+class MP2018Dataset(Dataset):
     """This class is designed for handling the MP2018 dataset.
 
     Args:
@@ -62,18 +70,106 @@ class MP2018Dataset(MPBaseDataset):
         filter_unvalid: bool = True,
         **kwargs,  # for compatibility
     ):
+        super().__init__()
+        self.path = path
+        if isinstance(property_names, str):
+            property_names = [property_names]
+        self.property_names = property_names if property_names is not None else []
+        self.build_structure_cfg = build_structure_cfg
+        self.build_graph_cfg = build_graph_cfg
+        self.transforms = transforms
 
-        super().__init__(
-            path,
-            property_names,
-            build_structure_cfg,
-            build_graph_cfg,
-            transforms,
-            cache_path,
-            overwrite,
-            filter_unvalid,
-            **kwargs,
-        )
+        if cache_path is not None:
+            self.cache_path = cache_path
+        else:
+            # for example:
+            # path = ./data/mp2018_train_60k/mp2018_train_60k_train.json
+            # cache_path = ./data/mp2018_train_60k_cache/mp2018_train_60k_train
+            self.cache_path = osp.join(
+                osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
+            )
+        logger.info(f"Cache path: {self.cache_path}")
+
+        self.overwrite = overwrite
+        self.filter_unvalid = filter_unvalid
+
+        self.cache_exists = True if osp.exists(self.cache_path) else False
+        self.row_data, self.num_samples = self.read_data(path)
+        logger.info(f"Load {self.num_samples} samples from {path}")
+        self.property_data = self.read_property_data(self.row_data, self.property_names)
+
+        if self.cache_exists and not overwrite:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "settings used in match your current settings."
+            )
+
+        structure_cache_path = osp.join(self.cache_path, "structures")
+        graph_cache_path = osp.join(self.cache_path, "graphs")
+        if overwrite or not self.cache_exists:
+            # convert strucutes and graphs
+            # only rank 0 process do the conversion
+            if dist.get_rank() == 0:
+                # save builded_structure_cfg and builded_graph_cfg to cache file
+                os.makedirs(self.cache_path, exist_ok=True)
+                self.save_to_cache(
+                    osp.join(self.cache_path, "builded_structure_cfg.pkl"),
+                    build_structure_cfg,
+                )
+                self.save_to_cache(
+                    osp.join(self.cache_path, "builded_graph_cfg.pkl"), build_graph_cfg
+                )
+                # convert strucutes
+                structures = self.convert_to_structures(
+                    self.row_data, build_structure_cfg
+                )
+                # save structures to cache file
+                os.makedirs(structure_cache_path, exist_ok=True)
+                for i in range(self.num_samples):
+                    self.save_to_cache(
+                        osp.join(structure_cache_path, f"{i:010d}.pkl"),
+                        structures[i],
+                    )
+                logger.info(
+                    f"Save {self.num_samples} structures to {structure_cache_path}"
+                )
+
+                if build_graph_cfg is not None:
+                    graphs = self.convert_to_graphs(structures, build_graph_cfg)
+                    # save graphs to cache file
+                    os.makedirs(graph_cache_path, exist_ok=True)
+                    for i in range(self.num_samples):
+                        self.save_to_cache(
+                            osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
+                        )
+                    logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
+
+            # sync all processes
+            if dist.is_initialized():
+                dist.barrier()
+        self.structures = [
+            osp.join(structure_cache_path, f"{i:010d}.pkl")
+            for i in range(self.num_samples)
+        ]
+        if build_graph_cfg is not None:
+            self.graphs = [
+                osp.join(graph_cache_path, f"{i:010d}.pkl")
+                for i in range(self.num_samples)
+            ]
+        else:
+            self.graphs = None
+
+        assert (
+            len(self.structures) == self.num_samples
+        ), "The number of structures must be equal to the number of samples."
+        assert (
+            self.graphs is None or len(self.graphs) == self.num_samples
+        ), "The number of graphs must be equal to the number of samples."
+
+        # filter by property data, since some samples may have no valid properties
+        if filter_unvalid:
+            self.filter_unvalid_by_property()
 
     def read_data(self, path: str):
         """Read the data from the given json path.
@@ -91,6 +187,29 @@ class MP2018Dataset(MPBaseDataset):
                 data[key].append(json_data[key][idx])
 
         return data, num_samples
+
+    def filter_unvalid_by_property(self):
+        for property_name in self.property_names:
+            data = self.property_data[property_name]
+            reserve_idx = []
+            for i, data_item in enumerate(data):
+                if data_item is not None:
+                    reserve_idx.append(i)
+            for key in self.property_data.keys():
+                self.property_data[key] = [
+                    self.property_data[key][i] for i in reserve_idx
+                ]
+
+            self.row_data = [self.row_data[i] for i in reserve_idx]
+            self.structures = [self.structures[i] for i in reserve_idx]
+            if self.graphs is not None:
+                self.graphs = [self.graphs[i] for i in reserve_idx]
+            logger.warning(
+                f"Filter out {len(reserve_idx)} samples with valid properties: "
+                f"{property_name}"
+            )
+        self.num_samples = len(self.row_data)
+        logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
     def read_property_data(self, data: Dict, property_names: list[str]):
         """Read the property data from the given data and property names.
@@ -130,3 +249,66 @@ class MP2018Dataset(MPBaseDataset):
         converter = Structure2Graph(**build_graph_cfg)
         graphs = converter(structures)
         return graphs
+
+    def save_to_cache(self, cache_path: str, data: Any):
+        with open(cache_path, "wb") as f:
+            pickle.dump(data, f)
+
+    def load_from_cache(self, cache_path: str):
+        if osp.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                data = pickle.load(f)
+            return data
+        else:
+            raise FileNotFoundError(f"No such file or directory: {cache_path}")
+
+    def get_structure_array(self, structure):
+        atom_types = np.array([site.specie.Z for site in structure])
+        # get lattice parameters and matrix
+        lattice_parameters = structure.lattice.parameters
+        lengths = np.array(lattice_parameters[:3], dtype="float32").reshape(1, 3)
+        angles = np.array(lattice_parameters[3:], dtype="float32").reshape(1, 3)
+        lattice = structure.lattice.matrix.astype("float32")
+
+        structure_array = {
+            "frac_coords": ConcatData(structure.frac_coords.astype("float32")),
+            "cart_coords": ConcatData(structure.cart_coords.astype("float32")),
+            "atom_types": ConcatData(atom_types),
+            "lattice": ConcatData(lattice.reshape(1, 3, 3)),
+            "lengths": ConcatData(lengths),
+            "angles": ConcatData(angles),
+            "num_atoms": ConcatData(np.array([tuple(atom_types.shape)[0]])),
+        }
+        return structure_array
+
+    def __getitem__(self, idx: int):
+        """Get item at index idx."""
+        data = {}
+        # get graph
+        if self.graphs is not None:
+            graph = self.graphs[idx]
+            if isinstance(graph, str):
+                graph = self.load_from_cache(graph)
+            data["graph"] = graph
+        else:
+            structure = self.structures[idx]
+            if isinstance(structure, str):
+                structure = self.load_from_cache(structure)
+            data["structure_array"] = self.get_structure_array(structure)
+        for property_name in self.property_names:
+            if property_name in self.property_data:
+                data[property_name] = np.array(
+                    [self.property_data[property_name][idx]]
+                ).astype("float32")
+            else:
+                raise KeyError(f"Property {property_name} not found.")
+
+        data["id"] = (
+            self.property_data["id"][idx] if "id" in self.property_data else idx
+        )
+        data = self.transforms(data) if self.transforms is not None else data
+
+        return data
+
+    def __len__(self):
+        return self.num_samples

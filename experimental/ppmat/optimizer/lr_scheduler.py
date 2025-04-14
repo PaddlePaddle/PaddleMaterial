@@ -796,7 +796,8 @@ class ReduceOnPlateau(LRBase):
         epochs: int,
         iters_per_epoch: int,
         learning_rate: float,
-        indicator: Literal["train_loss", "eval_loss"],
+        indicator: Literal["train_loss", "eval_loss", "train_metric", "eval_metric"],
+        indicator_name: str,
         mode: str = "min",
         factor: float = 0.1,
         patience: int = 10,
@@ -808,7 +809,7 @@ class ReduceOnPlateau(LRBase):
         warmup_epoch: int = 0,  # this lr do not support warmup, so set to 0
         warmup_start_lr: float = 0.0,
         last_epoch: int = -1,
-        by_epoch: bool = False,
+        by_epoch: bool = True,
     ):
         super().__init__(
             epochs,
@@ -820,10 +821,8 @@ class ReduceOnPlateau(LRBase):
             by_epoch,
         )
         self.indicator = indicator
-        if indicator == "eval_loss":
-            assert (
-                by_epoch
-            ), "ReduceOnPlateau only support by_epoch=True when indicator is eval_loss"
+        self.indicator_name = indicator_name
+        assert by_epoch, "ReduceOnPlateau only support by_epoch=True"
 
         self.decay_steps = (epochs - self.warmup_epoch) * iters_per_epoch
         self.mode = mode
@@ -855,6 +854,8 @@ class ReduceOnPlateau(LRBase):
         #     learning_rate = self.linear_warmup(learning_rate)
 
         setattr(learning_rate, "by_epoch", self.by_epoch)
+        setattr(learning_rate, "indicator", self.indicator)
+        setattr(learning_rate, "indicator_name", self.indicator_name)
         return learning_rate
 
 
