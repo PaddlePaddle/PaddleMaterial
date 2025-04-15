@@ -67,6 +67,8 @@ class H1nmr_embedding(nn.Layer):
         hidden=1024,
         dim=1024,
         drop_prob=0.1,
+        peakwidthemb_num=70,
+        integralemb_num=26,
     ):
         super(H1nmr_embedding, self).__init__()
 
@@ -74,13 +76,15 @@ class H1nmr_embedding(nn.Layer):
             min=H_shift_min, max=H_shift_max, bins=H_shift_bin
         )  # Covering common 1H ranges
 
-        self.peakwidth_emb = nn.Embedding(70, peakwidth_dim, padding_idx=0)
+        self.peakwidth_emb = nn.Embedding(
+            peakwidthemb_num, peakwidth_dim, padding_idx=0
+        )
 
         self.split_emb = nn.Embedding(
             116, split_dim, padding_idx=0
         )  # Supports 116 split patterns
 
-        self.integral_emb = nn.Embedding(26, integral_dim, padding_idx=0)
+        self.integral_emb = nn.Embedding(integralemb_num, integral_dim, padding_idx=0)
 
         self.J_emb = RBFEncoder_Jcouple(
             min1=min_j, max1=26, bins1=j_bins1, min2=27, max2=max_j, bins2=j_bins2

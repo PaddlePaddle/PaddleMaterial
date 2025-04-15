@@ -7,11 +7,11 @@ from einops import rearrange
 from einops import repeat
 from tqdm import tqdm
 
-from ppmat.models.common import initializer
 from ppmat.metrics.abstract_metrics import NLL
 from ppmat.metrics.abstract_metrics import SumExceptBatchKL
 from ppmat.metrics.abstract_metrics import SumExceptBatchMetric
 from ppmat.metrics.train_metrics import TrainLossDiscrete
+from ppmat.models.common import initializer
 from ppmat.models.denmr.diffusion_prior import DiffusionPriorNetwork
 from ppmat.models.denmr.diffusion_prior import NoiseScheduler
 from ppmat.models.denmr.diffusion_prior import freeze_model_and_make_eval_
@@ -319,6 +319,8 @@ class ContrastiveModel(nn.Layer):
             n_head=nmr_encoder["n_head"],
             num_layers=nmr_encoder["n_layers"],
             drop_prob=nmr_encoder["drop_prob"],
+            peakwidthemb_num=nmr_encoder["peakwidthemb_num"],
+            integralemb_num=nmr_encoder["integralemb_num"],
         )
         # for init model weights
         self.text_encoder.apply(self._init_weights)
@@ -335,7 +337,7 @@ class ContrastiveModel(nn.Layer):
             save_load.load_pretrain(
                 self.NMR_encoder, nmr_encoder["pretrained_model_path"]
             )
-        
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             initializer.linear_init_(m)

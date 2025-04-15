@@ -7,13 +7,27 @@ from ppmat.models.denmr.embedding.nmr_embedding import H1nmr_embedding
 
 
 class H1nmr_encoder(nn.Layer):
-    def __init__(self, d_model, dim_feedforward, n_head, num_layers, drop_prob):
+    def __init__(
+        self,
+        d_model,
+        dim_feedforward,
+        n_head,
+        num_layers,
+        drop_prob,
+        peakwidthemb_num,
+        integralemb_num,
+    ):
         super(H1nmr_encoder, self).__init__()
 
         # for src padding mask
         self.num_heads = n_head
 
-        self.embed = H1nmr_embedding(dim=d_model, drop_prob=drop_prob)
+        self.embed = H1nmr_embedding(
+            dim=d_model,
+            drop_prob=drop_prob,
+            peakwidthemb_num=peakwidthemb_num,
+            integralemb_num=integralemb_num,
+        )
 
         # Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -235,7 +249,17 @@ class NMR_fusion(nn.Layer):
 
 class NMR_encoder(nn.Layer):
     def __init__(
-        self, dim_H, dimff_H, dim_C, dimff_C, hidden_dim, n_head, num_layers, drop_prob
+        self,
+        dim_H,
+        dimff_H,
+        dim_C,
+        dimff_C,
+        hidden_dim,
+        n_head,
+        num_layers,
+        drop_prob,
+        peakwidthemb_num,
+        integralemb_num,
     ):
         super(NMR_encoder, self).__init__()
         self.H1nmr_encoder = H1nmr_encoder(
@@ -244,6 +268,8 @@ class NMR_encoder(nn.Layer):
             n_head=n_head,
             num_layers=num_layers,
             drop_prob=drop_prob,
+            peakwidthemb_num=peakwidthemb_num,
+            integralemb_num=integralemb_num,
         )
 
         self.C13nmr_encoder = C13nmr_encoder(

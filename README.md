@@ -422,7 +422,14 @@ Please refer to the following command to split the dataset into train/val/test s
 
 ### step 2: contrastive learning
 #### Train:
+    # single gpu & small dataset
     PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_CLIP_CHnmr.yaml --step 2 --mode=train
+    # parallel training & small dataset
+    PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" molecule_generation/train.py -c molecule_generation/configs/DeNMR_CLIP_CHnmr.yaml --step 2 --mode=train
+    # single gpu & large dataset
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_CLIP_CHnmr_large.yaml --step 2 --mode=train
+    # parallel training & large dataset
+    PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" molecule_generation/train.py -c molecule_generation/configs/DeNMR_CLIP_CHnmr_large.yaml --step 2 --mode=train
 
 # Install
 

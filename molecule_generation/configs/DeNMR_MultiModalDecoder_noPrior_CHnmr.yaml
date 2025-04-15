@@ -47,21 +47,20 @@ Model:
   __name__: MultiModalDecoder
   nmr_encoder:
     __name__: Transformer
-    pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
-    enc_voc_size: 5450
-    max_len: 256
-    d_model: 256
-    ffn_hidden: 1024
+    pretrained_path: "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams"
+    dim_enc_H: 1024
+    dimff_enc_H: 2048
+    dim_enc_C: 256
+    dimff_enc_C: 512
+    ffn_hidden: 512
     n_head: 8
     n_layers: 3
     drop_prob: 0.0
-    projector:
-      __name__: Linear
-      pretrained_path: "./output/DeNMR_CHnmr/CLIP/checkpoints/epoch=35.pdparams"
-      outfeatures: 512
+    seq_len_H1: 20
+    seq_len_C13: 75
   graph_decoder:
     __name__: DiffGraphFormer
-    pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch=438.pdparams"
+    pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams"
     hidden_mlp_dims: {
       'X': 256,
       'E': 128,
@@ -82,7 +81,7 @@ Model:
       type: 'discrete_condition'
       transition: 'marginal' # uniform or marginal
       model: 'graph_tf'
-      diffusion_steps: 120
+      diffusion_steps: 500
       diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
       extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
       # Do not set hidden_mlp_E, dim_ffE too high, computing large tensors on the edges is costly
@@ -100,39 +99,67 @@ Dataset:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/train.csv"
-      vocab_path: "./data/CHnmr/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       datadir: "./data/CHnmr"
-      cache: True
+      cache: False
       remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
     loader:
       num_workers: 0
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 32
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/val.csv"
-      vocab_path: "./data/CHnmr/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
     sampler:
       __name__: BatchSampler
-      shuffle: True
+      shuffle: False
       drop_last: False
-      batch_size: 32
+      batch_size: 512
+  sample:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 512
   test:
     dataset:
       __name__: CHnmrDataset
       path: "./data/CHnmr/test.csv"
-      vocab_path: "./data/CHnmr/vocab.src"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       cache: True
       remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
     sampler:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 32
+      batch_size: 512
