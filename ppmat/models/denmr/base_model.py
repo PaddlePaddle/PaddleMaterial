@@ -152,6 +152,9 @@ class MolecularGraphTransformer(nn.Layer):
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
+        
+        self.seq_len_H1 = config["seq_len_H1"]  # TODO remove later
+        self.seq_len_C13 = config["seq_len_C13"]  # TODO remove later
 
     def forward(self, batch, mode="train"):
         batch_graph, other_data = batch
@@ -864,49 +867,29 @@ class MultiModalDecoder(nn.Layer):
             timesteps=self.T,
         )
 
-        self.add_condition = True
+        self.add_condition = True # TODO revise it later
 
         # set nmr encoder model
         self.encoder = NMR_encoder(
-            enc_voc_size=config["nmr_encoder"]["enc_voc_size"],
-            max_len=config["nmr_encoder"]["max_len"],
-            d_model=config["nmr_encoder"]["d_model"],
-            ffn_hidden=config["nmr_encoder"]["ffn_hidden"],
+            dim_H=config["nmr_encoder"]["dim_enc_H"],
+            dimff_H=config["nmr_encoder"]["dimff_enc_H"],
+            dim_C=config["nmr_encoder"]["dim_enc_C"],
+            dimff_C=config["nmr_encoder"]["dimff_enc_C"],
+            hidden_dim=config["nmr_encoder"]["ffn_hidden"],
             n_head=config["nmr_encoder"]["n_head"],
-            n_layers=config["nmr_encoder"]["n_layers"],
+            num_layers=config["nmr_encoder"]["n_layers"],
             drop_prob=config["nmr_encoder"]["drop_prob"],
+            peakwidthemb_num=config["nmr_encoder"]["peakwidthemb_num"],
+            integralemb_num=config["nmr_encoder"]["integralemb_num"],
         )
         # load nmr encoder model from pretrained model
         state_dict = paddle.load(config["nmr_encoder"]["pretrained_path"])
         encoder_state_dict = {
-            k[len("encoder.") :]: v
+            k[len("text_encoder.") :]: v
             for k, v in state_dict.items()
-            if k.startswith("encoder.")
+            if k.startswith("text_encoder.")
         }
         self.encoder.set_state_dict(encoder_state_dict)
-
-        # set nmr encoder projector head model
-        state_dict = paddle.load(config["nmr_encoder"]["pretrained_path"])
-        if config["nmr_encoder"]["projector"]["__name__"] == "Linear":
-            self.encoder_projector = paddle.nn.Linear(
-                in_features=config["nmr_encoder"]["max_len"]
-                * config["nmr_encoder"]["d_model"],
-                out_features=config["nmr_encoder"]["projector"]["outfeatures"],
-            )
-            encoder_projector_state_dict = {
-                k[len("linear_layer.") :]: v
-                for k, v in state_dict.items()
-                if k.startswith("linear_layer.")
-            }
-            self.encoder_projector.set_state_dict(encoder_projector_state_dict)
-        # TODO: add support for LSTM
-        # elif config["encoder"]["__name__"] == "LSTM":
-        #    encoder_projector_state_dict = {
-        #        k[len("LSTM.") :]: v
-        #        for k, v in state_dict.items()
-        #        if k.startswith("lstm.")
-        #    }
-        #    self.encoder_projector.set_state_dict(encoder_projector_state_dict)
 
         # set graph decoder model
         self.decoder = GraphTransformer(
@@ -1018,32 +1001,19 @@ class MultiModalDecoder(nn.Layer):
         self.val_E_kl = SumExceptBatchKL()
         self.val_X_logp = SumExceptBatchMetric()
         self.val_E_logp = SumExceptBatchMetric()
-        self.val_y_collection = []
-        self.val_atomCount = []
-        self.val_data_X = []
-        self.val_data_E = []
 
         self.test_nll = NLL()
         self.test_X_kl = SumExceptBatchKL()
         self.test_E_kl = SumExceptBatchKL()
         self.test_X_logp = SumExceptBatchMetric()
         self.test_E_logp = SumExceptBatchMetric()
-        self.test_y_collection = []
-        self.test_atomCount = []
-        self.test_x = []
-        self.test_e = []
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
-
-        self.val_y_collection = []
-        self.val_atomCount = []
-        self.val_data_X = []
-        self.val_data_E = []
-        self.test_y_collection = []
-        self.test_atomCount = []
-        self.test_data_X = []
-        self.test_data_E = []
+        
+        self.seq_len_H1 = config["nmr_encoder"]["seq_len_H1"]  # TODO remove later
+        self.seq_len_C13 = config["nmr_encoder"]["seq_len_C13"]  # TODO remove later
+        self.tem = 2  # TODO remove later
 
     def preprocess_data(self, batch_graph, other_data):
         dense_data, node_mask = utils.to_dense(
@@ -1070,33 +1040,36 @@ class MultiModalDecoder(nn.Layer):
         input_y = paddle.hstack(
             [noisy_data["y_t"].astype("float32"), extra_data.y]
         ).astype(dtype="float32")
+        
+        batch_length = batch_graph.num_graph
+        condition_H1nmr = other_data["conditionVec"]["H_nmr"]
+        condition_H1nmr = condition_H1nmr.reshape(batch_length, self.seq_len_H1, -1)
+        condition_C13nmr = other_data["conditionVec"]["C_nmr"]
+        condition_C13nmr = condition_C13nmr.reshape(batch_length, self.seq_len_C13)
+        num_H_peak = other_data["conditionVec"]["num_H_peak"]
+        num_C_peak = other_data["conditionVec"]["num_C_peak"]
+        conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
 
-        return dense_data, noisy_data, node_mask, extra_data, input_X, input_E, input_y
+        return dense_data, noisy_data, node_mask, extra_data, input_X, input_E, input_y, conditionAll
 
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
         return src_mask
 
     def forward_MultiModalModel(self, X, E, y, node_mask, conditionVec):
-        assert isinstance(
-            conditionVec, paddle.Tensor
-        ), "conditionVec should be a tensor, but got type {}".format(type(conditionVec))
-
-        srcMask = self.make_src_mask(conditionVec).astype("float32")
         if self.connector_flag is True:
             with paddle.no_grad():
-                conditionVec = self.connector.sample(conditionVec, srcMask)
+                conditionVec = self.connector.sample(conditionVec)#, srcMask)
         else:
-            conditionVec = self.encoder(conditionVec, srcMask)
+            conditionVec = self.encoder(conditionVec)#, srcMask)
             conditionVec = conditionVec.reshape([conditionVec.shape[0], -1])
-            conditionVec = self.encoder_projector(conditionVec)
 
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
 
         output = self.decoder(X, E, y, node_mask)
         return output
 
-    def forward(self, batch):
+    def forward(self, batch, mode="train"):
         batch_graph, other_data = batch
 
         # transfer to dense graph from sparse graph
@@ -1113,20 +1086,19 @@ class MultiModalDecoder(nn.Layer):
             input_X,
             input_E,
             input_y,
+            conditionAll,
         ) = self.preprocess_data(batch_graph, other_data)
         X, E = dense_data.X, dense_data.E
 
         # set condition
         if self.add_condition:
-            batch_length = X.shape[0]
-            conditionVec = other_data["conditionVec"]
-            y_condition = conditionVec.reshape(batch_length, self.vocabDim)
+            conditionVec = conditionAll
         else:
-            y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
+            conditionVec = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
 
         # forward of the model
         pred = self.forward_MultiModalModel(
-            input_X, input_E, input_y, node_mask, y_condition
+            input_X, input_E, input_y, node_mask, conditionVec
         )
 
         # compute loss
@@ -1138,15 +1110,48 @@ class MultiModalDecoder(nn.Layer):
             true_E=E,
             true_y=other_data["y"],
         )
-        # log metrics to do move to another location
-        self.train_metrics(
-            masked_pred_X=pred.X,
-            masked_pred_E=pred.E,
-            true_X=X,
-            true_E=E,
-            log=False,
-        )
-        return loss
+
+        # compute metrics
+        if mode == "train":
+            metrics = self.train_metrics(
+                masked_pred_X=pred.X,
+                masked_pred_E=pred.E,
+                true_X=X,
+                true_E=E,
+                log=True,
+            )
+
+        elif mode == "eval":
+            # batch_length = other_data["y"].shape[0]
+            # conditionAll = other_data["conditionVec"]
+            # conditionAll = conditionAll.reshape(batch_length, self.vocabDim)
+            nll = m_utils.compute_val_loss(
+                self,
+                pred,
+                noisy_data,
+                dense_data.X,
+                dense_data.E,
+                other_data["y"],
+                node_mask,
+                condition = conditionVec,
+                test = False,
+            )
+            loss["nll"] = nll
+
+            # comput eval epoch metric info
+            metrics = {
+                "val_nll": self.val_nll.accumulate(),
+                "val_X_kl": self.val_X_kl.accumulate() * self.T,
+                "val_E_kl": self.val_E_kl.accumulate() * self.T,
+                "val_X_logp": self.val_X_logp.accumulate(),
+                "val_E_logp": self.val_E_logp.accumulate(),
+            }
+            val_nll = metrics["val_nll"]
+            if val_nll < self.best_val_nll:
+                self.best_val_nll = val_nll
+                metrics["best_val_nll"] = self.best_val_nll
+
+        return loss, metrics
 
     @paddle.no_grad()
     def sample(self, batch, i):

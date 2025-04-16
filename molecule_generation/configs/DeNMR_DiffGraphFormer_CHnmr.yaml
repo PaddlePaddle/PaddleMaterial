@@ -91,6 +91,8 @@ Model:
     conditdim: 512
   model_dtype: 'float32'
   log_every_steps: 1 #500
+  seq_len_H1: 20
+  seq_len_C13: 75
 Dataset:
   train:
     dataset:
@@ -99,7 +101,7 @@ Dataset:
       vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
       vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       datadir: "./data/CHnmr"
-      cache: False
+      cache: True
       remove_h: True
       data_flag: "small" # "large"
       seq_len_H1: 20

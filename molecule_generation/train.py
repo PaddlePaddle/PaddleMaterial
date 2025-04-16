@@ -211,6 +211,7 @@ if __name__ == "__main__":
             model,
             train_dataloader=train_loader,
             val_dataloader=val_loader,
+            sample_dataloader=sample_loader,
             test_dataloader=test_loader,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,

@@ -277,14 +277,8 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
     from ppmat.models.denmr.base_model import MultiModalDecoder
 
     if model.__class__ == MultiModalDecoder:
-        if model.add_condition:
-            batch_length = input_X.shape[0]
-            conditionVec = condition
-            y_condition = conditionVec.reshape(batch_length, model.vocabDim)
-        else:
-            y_condition = paddle.zeros(shape=[X.shape[0], 1024]).cuda(blocking=True)
         pred0 = model.forward_MultiModalModel(
-            input_X, input_E, input_y, node_mask, y_condition  # TODO : uniform
+            input_X, input_E, input_y, node_mask, condition  # TODO : uniform
         )
     else:
         # prepare the extra feature for encoder input without noisy
@@ -531,7 +525,7 @@ def sample_p_zs_given_zt(
 
     from ppmat.models.denmr.base_model import MultiModalDecoder
 
-    if model.__class__ == MultiModalDecoder:
+    if model.__class__ == MultiModalDecoder: 
         pred = model.forward_MultiModalModel(
             input_X, input_E, input_y, node_mask, conditionVec
         )

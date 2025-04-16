@@ -1,6 +1,3 @@
-Global:
-  name: 'm2m-model'      # Warning: 'debug' and 'test' are reserved name that have a special behavior
-  gpus: 1                     # Multi-gpu is not implemented on this branch
 Trainer:
   epochs: 500
   seed: 42
@@ -8,46 +5,44 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: null # set your pretrained model path here
-  test_only: null
-  check_val_every_n_epochs: 1
-  sample_every_val: 1
-  val_check_interval: null
-  samples_to_generate: 32       # We advise to set it to 2 x batch_size maximum
-  samples_to_save: 1
-  chains_to_save: 1
-  number_chain_steps: 1        # Number of frames in each gif
-  final_model_samples_to_generate: 512
-  final_model_samples_to_save: 512
-  final_model_chains_to_save: 512
-  evaluate_all_checkpoints: False
+  pretrained_model_path: "./output/step4_noprior_best.pdparams" #null # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
     beta2: 0.999
-    lr:
-      __name__: ReduceOnPlateau
-      learning_rate: 0.002
-      factor: 0.6
-      by_epoch: True
-      patience: 30
-      min_lr: 0.0001
-      indicator: "train_loss"
+    lr: 0.001
+    weight_decay: 1e-12
+  vocab_dim: 256
+Sampler:
+  sample_every_val: 1000
+  visual_num: 10 # number of visualize molecules in the sample
+  chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
+  number_chain_steps: 10 # Number of frames in each gif
+  sample_batch_iters: 1 # Number of sample batches
 Tracker:
   log:
-    log_freq: 500 # log frequency [step]
+    log_freq: 1 # log frequency [step]
+    out_dict: # none is default, it output all loss and metrics, empty dict means no output
+      loss:
+        train: {"train_loss",}
+        eval: {"train_loss", "nll"}
+      metric:
+        train: {}
+        eval: {"val_nll"}
+        sample: {"Accuracy",}
+    flag_train_step: True # decidet output training batch iteration process or not
+    flag_eval_step: False
+    flag_sample_metric: True # decidet output tanimot similarity calculationg process or not
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior
+    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/noinittest/
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
-Metric:
-  __name__: CSPMetric
-  gt_file_path: "./data/mp_20/test.csv"
 Model:
   __name__: MultiModalDecoder
   nmr_encoder:
-    __name__: Transformer
-    pretrained_path: "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams"
+    pretrained_path: "./output/step2_best.pdparams" #"/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" #"./output/step2_best.pdparams"
+    nmr_encoder:
+    pretrained_model_path: null
     dim_enc_H: 1024
     dimff_enc_H: 2048
     dim_enc_C: 256
@@ -58,9 +53,11 @@ Model:
     drop_prob: 0.0
     seq_len_H1: 20
     seq_len_C13: 75
+    peakwidthemb_num: 70
+    integralemb_num: 26
   graph_decoder:
     __name__: DiffGraphFormer
-    pretrained_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams"
+    pretrained_path: "./output/step1_best.pdparams"  #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_200.pdparams"
     hidden_mlp_dims: {
       'X': 256,
       'E': 128,
@@ -102,7 +99,7 @@ Dataset:
       vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
       vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
       datadir: "./data/CHnmr"
-      cache: False
+      cache: True
       remove_h: True
       data_flag: "small" # "large"
       seq_len_H1: 20

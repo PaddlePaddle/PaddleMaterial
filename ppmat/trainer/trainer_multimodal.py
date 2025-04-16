@@ -562,11 +562,20 @@ class TrainerDiffGraphFormer:
                 batch_graph.graph_node_id,
             )
             dense_data = dense_data.mask(node_mask)
-            batch_nmr = other_data["conditionVec"]
+            
             batch_atomCount = other_data["atom_count"]
             batch_y = other_data["y"]
             batch_X, batch_E = dense_data.X, dense_data.E
             bs = len(batch_y)
+            
+            batch_length = batch_graph.num_graph
+            condition_H1nmr = other_data["conditionVec"]["H_nmr"]
+            condition_H1nmr = condition_H1nmr.reshape(batch_length, self.model.seq_len_H1, -1)
+            condition_C13nmr = other_data["conditionVec"]["C_nmr"]
+            condition_C13nmr = condition_C13nmr.reshape(batch_length, self.model.seq_len_C13)
+            num_H_peak = other_data["conditionVec"]["num_H_peak"]
+            num_C_peak = other_data["conditionVec"]["num_C_peak"]
+            batch_nmr = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
 
             # sample from the model
             molecule_list, molecule_list_True = m_utils.sample_batch(
@@ -1200,6 +1209,7 @@ class TrainerMMDecoder(TrainerDiffGraphFormer):
         train_dataloader: Optional[paddle.io.DataLoader] = None,
         val_dataloader: Optional[paddle.io.DataLoader] = None,
         test_dataloader: Optional[paddle.io.DataLoader] = None,
+        sample_dataloader: Optional[paddle.io.DataLoader] = None,
         optimizer: Optional[optim.Optimizer] = None,
         metric_class: Optional[Callable] = None,
         lr_scheduler: Optional[optim.lr.LRScheduler] = None,
@@ -1209,6 +1219,7 @@ class TrainerMMDecoder(TrainerDiffGraphFormer):
             model,
             train_dataloader,
             val_dataloader,
+            sample_dataloader,
             test_dataloader,
             optimizer,
             metric_class,
