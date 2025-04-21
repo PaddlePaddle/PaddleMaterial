@@ -5,10 +5,16 @@ Global:
   # "band_gap",
   # "G",
   # "K"
- label_names: ["formation_energy_per_atom"]
- do_train: True
- do_eval: False
- do_test: False
+  label_names: ["formation_energy_per_atom"]
+  do_train: True
+  do_eval: False
+  do_test: False
+
+  graph_converter:
+    __class_name__: ComformerGraphConverter
+    __init_params__:
+        cutoff: 4.0
+        num_cpus: 10
 
 Trainer:
   # Max epochs to train
@@ -27,7 +33,7 @@ Trainer:
   # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
-  pretrained_model_path: '/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/comformer_mp2018_train_60k_e_form/checkpoints/best.pdparams'
+  pretrained_model_path: null
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
@@ -88,10 +94,7 @@ Dataset:
         build_structure_cfg:
           format: cif_str
           num_cpus: 10
-        build_graph_cfg:
-          cutoff: 4.0
-          method: comformer_graph
-          num_cpus: 10
+        build_graph_cfg: ${Global.graph_converter}
       num_workers: 4
       use_shared_memory: False
     sampler:
@@ -109,10 +112,7 @@ Dataset:
         build_structure_cfg:
           format: cif_str
           num_cpus: 10
-        build_graph_cfg:
-          cutoff: 4.0
-          method: comformer_graph
-          num_cpus: 10
+        build_graph_cfg: ${Global.graph_converter}
 
     sampler:
       __class_name__: DistributedBatchSampler
@@ -129,10 +129,7 @@ Dataset:
         build_structure_cfg:
           format: cif_str
           num_cpus: 10
-        build_graph_cfg:
-          cutoff: 4.0
-          method: comformer_graph
-          num_cpus: 10
+        build_graph_cfg: ${Global.graph_converter}
 
     sampler:
       __class_name__: DistributedBatchSampler
@@ -140,3 +137,7 @@ Dataset:
         shuffle: False
         drop_last: False
         batch_size: 64
+
+
+Predict:
+  graph_converter: ${Global.graph_converter}
