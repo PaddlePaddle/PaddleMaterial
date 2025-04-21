@@ -115,6 +115,48 @@ class MP2018Dataset(Dataset):
                 "read and current settings will be ignored. Please ensure that the "
                 "settings used in match your current settings."
             )
+            try:
+                build_structure_cfg_cache = self.load_from_cache(
+                    osp.join(self.cache_path, "build_structure_cfg.pkl")
+                )
+                if len(build_structure_cfg_cache.keys()) != len(
+                    build_structure_cfg.keys()
+                ):
+                    overwrite = True
+                else:
+                    for key in build_structure_cfg_cache.keys():
+                        if build_structure_cfg_cache[key] != build_structure_cfg[key]:
+                            overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                overwrite = True
+
+            if overwrite is True:
+                logger.warning(
+                    "Failed to load builded_structure_cfg.pkl from cache. "
+                    "Will rebuild the structures and graphs(if need)."
+                )
+
+            if build_graph_cfg is not None and not overwrite:
+                try:
+                    build_graph_cfg_cache = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
+                    if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                        overwrite = True
+                    else:
+                        for key in build_graph_cfg_cache.keys():
+                            if build_graph_cfg_cache[key] != build_graph_cfg[key]:
+                                overwrite = True
+
+                except Exception as e:
+                    logger.warning(e)
+                    overwrite = True
+                if overwrite is True:
+                    logger.warning(
+                        "Failed to load builded_graph_cfg.pkl from cache. "
+                        "Will rebuild the graphs."
+                    )
 
         structure_cache_path = osp.join(self.cache_path, "structures")
         graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -122,14 +164,14 @@ class MP2018Dataset(Dataset):
             # convert strucutes and graphs
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save builded_structure_cfg and builded_graph_cfg to cache file
+                # save build_structure_cfg and build_graph_cfg to cache file
                 os.makedirs(self.cache_path, exist_ok=True)
                 self.save_to_cache(
-                    osp.join(self.cache_path, "builded_structure_cfg.pkl"),
+                    osp.join(self.cache_path, "build_structure_cfg.pkl"),
                     build_structure_cfg,
                 )
                 self.save_to_cache(
-                    osp.join(self.cache_path, "builded_graph_cfg.pkl"), build_graph_cfg
+                    osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
                 structures = BuildStructure(**build_structure_cfg)(
