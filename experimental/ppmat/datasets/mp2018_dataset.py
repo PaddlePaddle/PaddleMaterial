@@ -28,9 +28,10 @@ import numpy as np
 import paddle.distributed as dist
 from paddle.io import Dataset
 
-from ppmat.datasets.build_graph import Structure2Graph
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.models import build_graph_converter
+from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils.io import read_json
 
@@ -58,6 +59,10 @@ class MP2018Dataset(Dataset):
             to True.
     """
 
+    name = "mp2018_train_60k"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip"
+    md5 = "216202f16a5081358798e15c060facee"
+
     def __init__(
         self,
         path: str = "./data/mp18/mp.2018.6.1.json",
@@ -71,6 +76,12 @@ class MP2018Dataset(Dataset):
         **kwargs,  # for compatibility
     ):
         super().__init__()
+
+        if not osp.exists(path):
+            logger.message("The dataset is not found. Will download it now.")
+            root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            path = osp.join(root_path, self.name, osp.basename(path))
+
         self.path = path
         if isinstance(property_names, str):
             property_names = [property_names]
@@ -121,8 +132,8 @@ class MP2018Dataset(Dataset):
                     osp.join(self.cache_path, "builded_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
-                structures = self.convert_to_structures(
-                    self.row_data, build_structure_cfg
+                structures = BuildStructure(**build_structure_cfg)(
+                    self.row_data["structure"]
                 )
                 # save structures to cache file
                 os.makedirs(structure_cache_path, exist_ok=True)
@@ -136,7 +147,8 @@ class MP2018Dataset(Dataset):
                 )
 
                 if build_graph_cfg is not None:
-                    graphs = self.convert_to_graphs(structures, build_graph_cfg)
+                    converter = build_graph_converter(**build_graph_cfg)
+                    graphs = converter(structures)
                     # save graphs to cache file
                     os.makedirs(graph_cache_path, exist_ok=True)
                     for i in range(self.num_samples):
@@ -226,29 +238,6 @@ class MP2018Dataset(Dataset):
                 data[property_name][i] for i in range(self.num_samples)
             ]
         return property_data
-
-    def convert_to_structures(self, data: Dict, build_structure_cfg: Dict):
-        """Convert the data to pymatgen structures.
-
-        Args:
-            data (Dict): Data dictionary.
-            build_structure_cfg (Dict): Build structure configuration.
-        """
-        structures = BuildStructure(**build_structure_cfg)(data["structure"])
-        return structures
-
-    def convert_to_graphs(self, structures: list[Any], build_graph_cfg: Dict):
-        """Convert the structure to graph.
-
-        Args:
-            structures (list[Any]): List of structures.
-            build_graph_cfg (Dict): Build graph configuration.
-        """
-        if build_graph_cfg is None:
-            return None
-        converter = Structure2Graph(**build_graph_cfg)
-        graphs = converter(structures)
-        return graphs
 
     def save_to_cache(self, cache_path: str, data: Any):
         with open(cache_path, "wb") as f:
