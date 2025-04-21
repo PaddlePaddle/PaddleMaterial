@@ -20,6 +20,11 @@ from ppmat.utils import logger
 __all__ = ["iComformer", "ComformerGraphConverter"]
 
 
+MODEL_NAMES = {
+    "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
+}
+
+
 def build_graph_converter(cfg):
     """Build Model.
 
