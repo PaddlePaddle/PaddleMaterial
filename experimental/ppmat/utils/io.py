@@ -6,6 +6,8 @@
 
 #     http://www.apache.org/licenses/LICENSE-2.0
 
+import hashlib
+
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an AS IS BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -63,3 +65,18 @@ def read_value_json(path, key):
         return content[key]
     else:
         return None
+
+
+def calc_md5(fullname):
+    md5 = hashlib.md5()
+    with open(fullname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5.update(chunk)
+    calc_md5sum = md5.hexdigest()
+
+    return calc_md5sum
+
+
+if __name__ == "__main__":
+    md5 = calc_md5("yourfile.zip")
+    print(md5)
