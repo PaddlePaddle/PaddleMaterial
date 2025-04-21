@@ -1,9 +1,9 @@
 from typing import Literal
 from typing import Optional
+from typing import Tuple
 
 import paddle
 from paddle.nn.functional import swish
-from paddle.sparse import sparse_coo_tensor
 
 from ppmat.utils import paddle_aux  # noqa: F401
 from ppmat.utils.crystal import frac_to_cart_coords  # noqa: F401
@@ -240,33 +240,59 @@ class GemNetT(paddle.nn.Layer):
             (self.mlp_rbf_out.linear.weight, self.num_blocks + 1),
         ]
 
-    def get_triplets(self, edge_index, num_atoms):
+    def get_triplets(
+        self, edge_index: paddle.Tensor, num_atoms: int
+    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Get all b->a for each edge c->a.
         It is possible that b=c, as long as the edges are distinct.
 
         Returns
         -------
-        id3_ba: torch.Tensor, shape (num_triplets,)
+        id3_ba: paddle.Tensor, shape (num_triplets,)
             Indices of input edge b->a of each triplet b->a<-c
-        id3_ca: torch.Tensor, shape (num_triplets,)
+        id3_ca: paddle.Tensor, shape (num_triplets,)
             Indices of output edge c->a of each triplet b->a<-c
-        id3_ragged_idx: torch.Tensor, shape (num_triplets,)
+        id3_ragged_idx: paddle.Tensor, shape (num_triplets,)
             Indices enumerating the copies of id3_ca for creating a padded matrix
         """
         idx_s, idx_t = edge_index
+
         value = paddle.arange(start=1, end=idx_s.shape[0] + 1, dtype=idx_s.dtype)
 
-        indices = paddle.to_tensor([idx_t, idx_s])
-        adj = sparse_coo_tensor(indices, value, (num_atoms, num_atoms))
-        adj_edges = adj.to_dense()[idx_s].to_sparse_coo(2)
-        id3_ba = adj_edges.values() - 1
-        id3_ca = adj_edges.indices()[0]
+        def custom_bincount(x, minlength=0):
+            unique, counts = paddle.unique(x, return_counts=True)
+            max_val = paddle.max(unique).numpy().item() if len(unique) > 0 else -1
+            length = (max_val + 1) if (max_val + 1) > minlength else minlength
+            result = paddle.zeros([length], dtype="int64")
+            if len(unique) > 0:
+                result = paddle.scatter_nd(unique.unsqueeze(1), counts, result.shape)
+            return result
+
+        n = idx_t.shape[0]
+        rows = paddle.arange(n).unsqueeze(1)  # [0,1,2,...,n-1]^T
+        cols = paddle.arange(n).unsqueeze(0)  # [0,1,2,...,n-1]
+        mask = (idx_t.unsqueeze(1) == idx_t.unsqueeze(0)) & (cols <= rows)
+        col = mask.sum(axis=1).astype("int64") - 1
+        rows = idx_t
+        indices = paddle.stack([rows, col], axis=1)
+
+        shape = [num_atoms.item(), col.max().item() + 1]
+        result = paddle.scatter_nd(indices, value, shape)
+        mat = result
+
+        id3_ba = mat[idx_t][mat[idx_t] > 0] - 1
+        tmp_r = paddle.nonzero(mat[idx_t], as_tuple=False)
+        id3_ca = tmp_r[:, 0]
 
         mask = id3_ba != id3_ca
         id3_ba = id3_ba[mask]
         id3_ca = id3_ca[mask]
-        num_triplets = paddle.bincount(x=id3_ca, minlength=idx_s.shape[0])
+
+        num_triplets = custom_bincount(id3_ca, minlength=idx_s.shape[0])
+        # num_triplets_api = paddle.bincount(x=id3_ca, minlength=idx_s.shape[0])
+        # assert (num_triplets == num_triplets_api).all()
+
         id3_ragged_idx = ragged_range(num_triplets)
         return id3_ba, id3_ca, id3_ragged_idx
 
@@ -397,16 +423,12 @@ class GemNetT(paddle.nn.Layer):
         data,
         **kwargs,
     ):
-        graph = data["graph"]
-        batch = graph.graph_node_id
-        lattices = graph.node_feat["lattice"]
-        pos = graph.node_feat["cart_coords"]
 
-        # edge_index = graph.edges.T
-        # to_jimages = graph.edge_feat["pbc_offset"]
-        # num_bonds = graph.edge_feat["num_edges"]
-        num_atoms = graph.node_feat["num_atoms"]
-        atom_types = graph.node_feat["atom_types"]
+        lattices = data["structure_array"].lattice
+        pos = data["structure_array"].cart_coords
+
+        num_atoms = data["structure_array"].num_atoms
+        atom_types = data["structure_array"].atom_types
 
         edge_index = None
         to_jimages = None
