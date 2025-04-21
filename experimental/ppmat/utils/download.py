@@ -31,6 +31,7 @@ from ppmat.utils import misc
 __all__ = ["get_weights_path_from_url"]
 
 WEIGHTS_HOME = osp.expanduser("~/.paddlemat/weights")
+DATASETS_HOME = osp.expanduser("~/.paddlemat/datasets")
 
 DOWNLOAD_RETRY_LIMIT = 3
 
@@ -57,6 +58,21 @@ def get_weights_path_from_url(url, md5sum=None):
         str: a local path to save downloaded weights.
     """
     path = get_path_from_url(url, WEIGHTS_HOME, md5sum)
+    return path
+
+
+def get_datasets_path_from_url(url, md5sum=None):
+    """Get datasets path from DATASETS_HOME, if not exists,
+    download it from url.
+
+    Args:
+        url (str): Download url
+        md5sum (str): md5 sum of download package
+
+    Returns:
+        str: a local path to save downloaded weights.
+    """
+    path = get_path_from_url(url, DATASETS_HOME, md5sum)
     return path
 
 

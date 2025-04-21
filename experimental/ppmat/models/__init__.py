@@ -14,11 +14,30 @@
 import copy
 
 from ppmat.models.comformer.comformer import iComformer
+from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.utils import logger
 
-__all__ = [
-    "iComformer",
-]
+__all__ = ["iComformer", "ComformerGraphConverter"]
+
+
+def build_graph_converter(cfg):
+    """Build Model.
+
+    Args:
+        cfg (DictConfig): Model config.
+
+    Returns:
+        nn.Layer: Model.
+    """
+    if cfg is None:
+        return None
+    cfg = copy.deepcopy(cfg)
+    class_name = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
+    model = eval(class_name)(**init_params)
+    logger.debug(str(model))
+
+    return model
 
 
 def build_model(cfg):
