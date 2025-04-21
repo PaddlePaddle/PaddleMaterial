@@ -474,3 +474,21 @@ class iComformer(nn.Layer):
             pred = self.unnormalize(pred)
             prediction[self.property_name] = pred
         return {"loss_dict": loss_dict, "pred_dict": prediction}
+
+    def predict(self, graphs):
+        if isinstance(graphs, list):
+            results = []
+            for graph in graphs:
+                result = self._forward(
+                    {
+                        "graph": graph,
+                    }
+                )
+                results.append(result)
+            return results
+
+        else:
+            data = {
+                "graph": graphs,
+            }
+            return self._forward(data)
