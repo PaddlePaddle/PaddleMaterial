@@ -475,6 +475,7 @@ class iComformer(nn.Layer):
             prediction[self.property_name] = pred
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
+    @paddle.no_grad()
     def predict(self, graphs):
         if isinstance(graphs, list):
             results = []
@@ -484,6 +485,7 @@ class iComformer(nn.Layer):
                         "graph": graph,
                     }
                 )
+                result = self.unnormalize(result).numpy()[0, 0]
                 results.append(result)
             return results
 
@@ -491,4 +493,6 @@ class iComformer(nn.Layer):
             data = {
                 "graph": graphs,
             }
-            return self._forward(data)
+            result = self._forward(data)
+            result = self.unnormalize(result).numpy()[0, 0]
+            return result
