@@ -1,0 +1,123 @@
+Global:
+  epochs: 2000
+  output_dir: ./output/gemnet_2d_0621_train_18k_e_form
+  save_freq: 100 # set 0 to disable saving during training
+  log_freq: 100 # log frequency [step]
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  seed: 42
+  cal_metric_during_train: True # True: the metric will be calculated on train dataset
+  scale_grad: True # True to scale the gradient
+  checkpoint_path: null # path to load checkpoint for resume training
+
+Model:
+  __name__: GemNetT
+  num_blocks: 3
+  emb_size_atom: 256
+  emb_size_edge: 256
+  cutoff: 7
+  # scale_file: ./ppmat/models/gemnet/gemnet-dT.json
+  scale_file: ./property_prediction/configs/gemnet-dT_mp20.json
+
+
+Loss:
+  __name__: LossWarper
+  loss_fn:
+    formation_energy_per_atom: # loss function for formation energy per atom
+      __name__: MSELoss
+  weights:
+    formation_energy_per_atom: 1.0 # weight for formation energy per atom
+
+
+Optimizer:
+  __name__: Adam
+  beta1: 0.9
+  beta2: 0.999
+  clip_norm: 10.0
+  lr:
+    __name__: Cosine
+    learning_rate: 0.001
+    by_epoch: True
+
+PostProcess:
+  - Denormalize:
+      mean: -1.3171
+      std: 1.2241
+      apply_keys: "formation_energy_per_atom" # apply normalization to this property
+
+Metric:
+  __name__: MetricWarper
+  metric_fn:
+    formation_energy_per_atom:
+      __name__: MAEMetric
+  main_indicator: formation_energy_per_atom # the main indicator to monitor and save model
+  min_better: True
+
+Dataset:
+  train:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/train.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom" # apply clip to this property
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom" # apply clip to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+      transforms:
+        - Normalize:
+            mean: -1.3171
+            std: 1.2241
+            apply_keys: "formation_energy_per_atom" # apply normalization to this property
+        - ClipData:
+            min: -6.0
+            apply_keys: "formation_energy_per_atom" # apply clip to this property
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  predict:
+    dataset:
+      __name__: CIFDataset
+      csv_path: "./data/2d_0621_train_18k/val.csv"
+      cif_path: './data/2d_0621_train_18k/cif_structure'
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 32
