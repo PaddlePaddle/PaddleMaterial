@@ -64,6 +64,12 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False
 ```
 
+### Prediction
+
+```bash
+python property_prediction/predict.py
+```
+
 
 ## Citation
 ```
