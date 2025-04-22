@@ -16,7 +16,9 @@ import copy
 
 import paddle  # noqa
 
-__all__ = ["build_metric"]
+from ppmat.metrics.csp_metric import CSPMetric
+
+__all__ = ["build_metric", "CSPMetric"]
 
 
 def build_metric(cfg):
