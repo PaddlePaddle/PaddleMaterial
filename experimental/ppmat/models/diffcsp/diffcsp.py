@@ -45,12 +45,18 @@ class CSPLayer(paddle.nn.Layer):
     """Message passing layer for cspnet."""
 
     def __init__(
-        self, hidden_dim=128, act_fn=paddle.nn.Silu(), dis_emb=None, ln=False, ip=True
+        self,
+        hidden_dim=128,
+        prop_dim=512,
+        act_fn=paddle.nn.Silu(),
+        dis_emb=None,
+        ln=False,
+        ip=True,
     ):
         super(CSPLayer, self).__init__()
         self.dis_dim = 3
         self.dis_emb = dis_emb
-        self.ip = True
+        self.ip = ip
         if dis_emb is not None:
             self.dis_dim = dis_emb.dim
         self.edge_mlp = paddle.nn.Sequential(
@@ -69,7 +75,7 @@ class CSPLayer(paddle.nn.Layer):
         )
 
         self.prop_mlp = paddle.nn.Sequential(
-            paddle.nn.Linear(in_features=512, out_features=hidden_dim),
+            paddle.nn.Linear(in_features=prop_dim, out_features=hidden_dim),
             act_fn,
             paddle.nn.Linear(in_features=hidden_dim, out_features=hidden_dim),
             act_fn,
@@ -129,7 +135,6 @@ class CSPLayer(paddle.nn.Layer):
         property_emb=None,
         property_mask=None,
     ):
-        # import pdb;pdb.set_trace()
         if property_emb is not None:
             property_features = self.prop_mlp(property_emb)
             if property_mask is not None:
@@ -150,29 +155,55 @@ class CSPLayer(paddle.nn.Layer):
 
 
 class CSPNet(paddle.nn.Layer):
+    """CSPNet model, based on https://arxiv.org/abs/2309.04475
+
+    Args:
+        hidden_dim (int, optional): Hidden dimension. Defaults to 128.
+        latent_dim (int, optional): Latent space dimension for time embedding.
+            Defaults to 256.
+        num_layers (int, optional): Number of CSPLayer. Defaults to 4.
+        act_fn (str, optional): Activation function type. Defaults to "silu".
+        dis_emb (str, optional): Distance embedding method, can be 'sin' or 'none'.
+            Defaults to "sin".
+        num_freqs (int, optional): Number of frequency components (effective only when
+            dis_emb='sin'). Defaults to 10.
+        edge_style (str, optional): Edge feature encoding method. Must be set to 'fc'
+            (fully connected atomic interactions). Default: "fc".
+        ln (bool, optional): Enable LayerNorm after CSPLayer. Defaults to False.
+        ip (bool, optional): Apply lattice inner product for O(3)-invariance. Defaults
+            to True.
+        smooth (bool, optional): Atomic number encoding method. True: Linear layer,
+            False: Embedding layer. Defaults to False.
+        pred_type (bool, optional): Enable atom type prediction. Defaults to False.
+        prop_dim (int, optional): Property feature dimension for scalar property
+            guidance. Defaults to 512.
+        pred_scalar (bool, optional): Enable scalar property prediction. Defaults to
+            False.
+        num_classes (Optional[int], optional): Number of atom type classes. Defaults
+            to None.
+    """
+
     def __init__(
         self,
-        hidden_dim=128,
-        latent_dim=256,
-        num_layers=4,
-        max_atoms=100,
-        act_fn="silu",
-        dis_emb="sin",
-        num_freqs=10,
-        edge_style="fc",
-        cutoff=6.0,
-        max_neighbors=20,
-        ln=False,
-        ip=True,
-        smooth=False,
-        pred_type=False,
-        pred_scalar=False,
-        num_classes=None,
+        hidden_dim: int = 128,
+        latent_dim: int = 256,
+        num_layers: int = 4,
+        act_fn: str = "silu",
+        dis_emb: str = "sin",
+        num_freqs: int = 10,
+        edge_style: str = "fc",
+        ln: bool = False,
+        ip: bool = True,
+        smooth: bool = False,
+        pred_type: bool = False,
+        prop_dim: int = 512,
+        pred_scalar: bool = False,
+        num_classes: int = 100,
     ):
         super(CSPNet, self).__init__()
         self.ip = ip
         self.smooth = smooth
-        self.num_classes = num_classes if num_classes is not None else max_atoms
+        self.num_classes = num_classes
 
         if self.smooth:
             self.node_embedding = paddle.nn.Linear(
@@ -191,10 +222,18 @@ class CSPNet(paddle.nn.Layer):
             self.dis_emb = SinusoidsEmbedding(n_frequencies=num_freqs)
         elif dis_emb == "none":
             self.dis_emb = None
+        self.prop_dim = prop_dim
         for i in range(0, num_layers):
             self.add_sublayer(
                 name="csp_layer_%d" % i,
-                sublayer=CSPLayer(hidden_dim, self.act_fn, self.dis_emb, ln=ln, ip=ip),
+                sublayer=CSPLayer(
+                    hidden_dim,
+                    prop_dim=self.prop_dim,
+                    act_fn=self.act_fn,
+                    dis_emb=self.dis_emb,
+                    ln=ln,
+                    ip=ip,
+                ),
             )
         self.num_layers = num_layers
         self.coord_out = paddle.nn.Linear(
@@ -203,8 +242,6 @@ class CSPNet(paddle.nn.Layer):
         self.lattice_out = paddle.nn.Linear(
             in_features=hidden_dim, out_features=9, bias_attr=False
         )
-        self.cutoff = cutoff
-        self.max_neighbors = max_neighbors
         self.pred_type = pred_type
         self.ln = ln
         self.edge_style = edge_style
@@ -225,7 +262,7 @@ class CSPNet(paddle.nn.Layer):
         tensor_ordered = tensor_cat[reorder_idx]
         return tensor_ordered
 
-    def gen_edges(self, num_atoms, frac_coords, lattices, node2graph):
+    def gen_edges(self, num_atoms, frac_coords):
         if self.edge_style == "fc":
             cum_num_atoms = paddle.cumsum(x=num_atoms)
             indices_pp = []
@@ -290,20 +327,31 @@ class CSPNet(paddle.nn.Layer):
 
 
 class DiffCSP(paddle.nn.Layer):
+    """Crystal Structure Prediction by Joint Equivariant Diffusion
+
+    https://arxiv.org/abs/2309.04475
+
+    Args:
+        decoder_cfg (dict): Decoder layer configuration. See `CSPNet` for more details.
+        lattice_noise_scheduler_cfg (dict): Noise scheduler configuration for lattice.
+        coord_noise_scheduler_cfg (dict): Noise scheduler configuration for coordinate.
+        num_train_timesteps (int): Number of diffusion steps. Defaults to 1000.
+        time_dim (int): Time embedding dimension. Defaults to 256.
+        lattice_loss_weight (float, optional): Lattice loss weight. Defaults to 1.0.
+        coord_loss_weight (float, optional): Coordinate loss weight. Defaults to 1.0.
+    """
+
     def __init__(
         self,
         decoder_cfg: dict,
-        # beta_scheduler_cfg: dict,
-        # sigma_scheduler_cfg: dict,
         lattice_noise_scheduler_cfg: dict,
         coord_noise_scheduler_cfg: dict,
-        num_train_timesteps: int,
-        time_dim: int,
+        num_train_timesteps: int = 1000,
+        time_dim: int = 256,
         lattice_loss_weight: float = 1.0,
         coord_loss_weight: float = 1.0,
-        num_classes: int = 100,
-        **kwargs,
     ) -> None:
+
         super().__init__()
 
         self.decoder = CSPNet(**decoder_cfg)
@@ -315,11 +363,8 @@ class DiffCSP(paddle.nn.Layer):
         self.time_dim = time_dim
         self.lattice_loss_weight = lattice_loss_weight
         self.coord_loss_weight = coord_loss_weight
-        self.num_classes = num_classes
 
         self.time_embedding = SinusoidalTimeEmbeddings(time_dim)
-        self.keep_lattice = self.lattice_loss_weight < 1e-05
-        self.keep_coords = self.coord_loss_weight < 1e-05
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -331,9 +376,7 @@ class DiffCSP(paddle.nn.Layer):
             initializer.lstm_init_(m)
 
     def forward(self, batch, **kwargs):
-        import pdb
 
-        pdb.set_trace()
         structure_array = batch["structure_array"]
         batch_size = structure_array["num_atoms"].shape[0]
         batch_idx = paddle.repeat_interleave(
@@ -365,10 +408,7 @@ class DiffCSP(paddle.nn.Layer):
             frac_coords, rand_x, timesteps=times_per_atom
         )
         input_frac_coords = input_frac_coords % 1.0
-        if self.keep_coords:
-            input_frac_coords = frac_coords
-        if self.keep_lattice:
-            input_lattice = lattices
+
         pred_l, pred_x = self.decoder(
             time_emb,
             structure_array["atom_types"] - 1,
