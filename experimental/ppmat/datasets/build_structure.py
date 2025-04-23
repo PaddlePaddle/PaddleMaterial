@@ -67,10 +67,10 @@ class BuildStructure:
                 lengths = crystal_data["lengths"]
                 angles = crystal_data["angles"]
             else:
-                lattices = crystal_data["lattices"]
-                if isinstance(lattices, list):
-                    lattices = np.asarray(lattices)
-                    lengths, angles = lattices_to_params_shape_numpy(lattices)
+                lattice = crystal_data["lattice"]
+                if isinstance(lattice, list):
+                    lattice = np.asarray(lattice)
+                    lengths, angles = lattices_to_params_shape_numpy(lattice)
 
             if isinstance(lengths, np.ndarray):
                 lengths = lengths.tolist()

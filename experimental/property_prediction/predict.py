@@ -138,13 +138,13 @@ if __name__ == "__main__":
         "--config_path",
         type=str,
         default=None,
-        description="Path to the configuration file.",
+        dest="Path to the configuration file.",
     )
     argparse.add_argument(
         "--checkpoint_path",
         type=str,
         default=None,
-        description="Path to the checkpoint file.",
+        dest="Path to the checkpoint file.",
     )
     argparse.add_argument(
         "--cif_file_path", type=str, default="./property_prediction/example_data/cifs/"

@@ -14,21 +14,26 @@
 
 import copy
 
-import paddle  # noqa
+from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
+from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeScheduler
+from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeSchedulerWrapped
 
-from ppmat.metrics.csp_metric import CSPMetric
+__all__ = [
+    "build_scheduler",
+    "DDPMScheduler",
+    "ScoreSdeVeScheduler",
+    "ScoreSdeVeSchedulerWrapped",
+]
 
-__all__ = ["build_metric", "CSPMetric"]
 
-
-def build_metric(cfg):
-    """Build metric.
+def build_scheduler(cfg):
+    """Build scheduler.
 
     Args:
-        cfg (DictConfig): Metric config.
+        cfg (DictConfig): Scheduler config.
 
     Returns:
-        Metric: Callable Metric object.
+        scheduler: Callable scheduler object.
     """
     if cfg is None:
         return None
@@ -36,13 +41,13 @@ def build_metric(cfg):
 
     if "__class_name__" not in cfg:
         assert isinstance(cfg, dict)
-        metric_dict = {}
+        scheduler_dict = {}
         for key, sub_cfg in cfg.items():
-            metric_dict[key] = build_metric(sub_cfg)
-        return metric_dict
+            scheduler_dict[key] = build_scheduler(sub_cfg)
+        return scheduler_dict
 
     class_name = cfg.pop("__class_name__")
     init_params = cfg.pop("__init_params__")
 
-    metric = eval(class_name)(**init_params)
-    return metric
+    scheduler = eval(class_name)(**init_params)
+    return scheduler
