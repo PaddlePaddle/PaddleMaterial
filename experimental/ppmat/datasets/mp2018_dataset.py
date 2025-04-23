@@ -37,23 +37,88 @@ from ppmat.utils.io import read_json
 
 
 class MP2018Dataset(Dataset):
-    """This class is designed for handling the MP2018 dataset.
+    """MP2018.6.1 Dataset Handler
+
+    This class provides utilities for loading and processing the MP2018.6.1 materials
+    science dataset. The dataset contains computed properties of inorganic materials.
+    The implementation supports both standard dataset loading and custom data
+    processing when adhering to the MP2018.6.1 schema.
+
+    **Dataset Overview**
+    - **Source**: Original data available at https://figshare.com/ndownloader/files/15087992
+    - **Preprocessed Version**:
+    ```
+    ┌───────────────────┬─────────┬─────────┬─────────┐
+    │ Dataset Partition │ Train   │ Val     │ Test    │
+    ├───────────────────┼─────────┼─────────┼─────────┤
+    │ Sample Count      │ 60,000  │ 5,000   │ 4,239   │
+    └───────────────────┴─────────┴─────────┴─────────┘
+    ```
+    Download preprocessed data: https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip
+
+    **Data Format**
+    The dataset is stored in JSON format with the following structure:
+
+    ```json
+    {
+    "structure": {
+        "0": "<CIF string>",    // Crystal structure in CIF format
+        "1": "<CIF string>",
+        // ...
+    },
+    "material_id": {
+        "0": "mvc-8139",        // Unique material identifier
+        "1": "mvc-600",
+        // ...
+    },
+    "formation_energy_per_atom": {  // Formation energy (eV/atom)
+        "0": -1.8169,
+        "1": -1.8948,
+        // ...
+    },
+    "band_gap": {              // Electronic band gap (eV)
+        "0": 0.0149,
+        "1": 0.0,
+        // ...
+    },
+    "G": {                     // Shear modulus (GPa)
+        "0": 45.0,
+        "1": null,               // Missing value indicator
+        // ...
+    },
+    "K": {                     // Bulk modulus (GPa)
+        "0": 91.0,
+        "1": null,               // Missing value indicator
+        // ...
+    }
+    }
+    ```
+
+    **Notes**
+    - Missing values are represented as `null` in JSON and converted to `NaN` during
+        loading
+    - CIF parsing requires additional dependencies (e.g., pymatgen)
+    - For custom data, ensure index consistency across all fields
+
 
     Args:
-        path (str, optional): The path of the dataset. Defaults to
-            "./data/mp18/mp.2018.6.1.json".
-        property_names (Optional[list[str]], optional): Property names you want to use.
-            Defaults to None.
-        build_structure_cfg (Dict, optional): The configs for building the structure.
-            Defaults to None.
-        build_graph_cfg (Dict, optional): The configs for building the graph. Defaults
-            to None.
-        transforms (Optional[Callable], optional): The transforms. Defaults to None.
+        path (str, optional): The path of the dataset, if path is not exists, it will
+            be downloaded. Defaults to "./data/mp18/mp.2018.6.1.json".
+        property_names (Optional[list[str]], optional): Property names you want to use,
+            for mp2018.6.1, the property_names should be selected from
+            ["formation_energy_per_atom", "band_gap", "G", "K"]. Defaults to None.
+        build_structure_cfg (Dict, optional): The configs for building the pymatgen
+            structure from cif string, if not specified, the default setting will be
+            used. Defaults to None.
+        build_graph_cfg (Dict, optional): The configs for building the graph from
+            structure. Defaults to None.
+        transforms (Optional[Callable], optional): The preprocess transforms for each
+            sample. Defaults to None.
         cache_path (Optional[str], optional): If a cache_path is set, structures and
             graph will be read directly from this path; if the cache does not exist,
             the converted structures and graph will be saved to this path. Defaults
             to None.
-        overwrite (bool, optional): Overwrite the existing cache file at the given
+        overwrite (bool, optional): Overwrite the existing cache file at the given cache
             path if it already exists. Defaults to False.
         filter_unvalid (bool, optional): Whether to filter out unvalid samples. Defaults
             to True.
@@ -85,6 +150,19 @@ class MP2018Dataset(Dataset):
         self.path = path
         if isinstance(property_names, str):
             property_names = [property_names]
+
+        if build_structure_cfg is None:
+            build_structure_cfg = {
+                "format": "cif_str",
+                "primitive": False,
+                "niggli": True,
+                "num_cpus": 1,
+            }
+            logger.message(
+                "The build_structure_cfg is not set, will use the default "
+                f"configs: {build_structure_cfg}"
+            )
+
         self.property_names = property_names if property_names is not None else []
         self.build_structure_cfg = build_structure_cfg
         self.build_graph_cfg = build_graph_cfg
