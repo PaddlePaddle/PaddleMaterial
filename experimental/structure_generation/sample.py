@@ -17,7 +17,7 @@ from pymatgen.io.cif import CifWriter
 from ppmat.datasets import build_dataloader
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.metrics import build_metric
-from ppmat.models import MODEL_NAMES
+from ppmat.models import PRETRAINED_MODES
 from ppmat.models import build_model
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -38,7 +38,7 @@ class StructureSampler:
             ), "config_path and checkpoint_path must be provided when model_name is None."
         else:
             logger.info("Since model_name is given, downloading it...")
-            path = download.get_weights_path_from_url(MODEL_NAMES[model_name])
+            path = download.get_weights_path_from_url(PRETRAINED_MODES[model_name])
             path = osp.join(path, model_name)
 
             config_path = osp.join(path, f"{model_name}.yaml")
