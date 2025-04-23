@@ -6,13 +6,15 @@
 
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-import math
-
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# This code is adapted from https://github.com/divelab/AIRS/tree/main/OpenMat/ComFormer
+
+import math
 from typing import Optional
 from typing import Tuple
 from typing import Union
@@ -35,7 +37,6 @@ class RBFExpansion(paddle.nn.Layer):
         bins: int = 40,
         lengthscale: Optional[float] = None,
     ):
-        """Register torch parameters for RBF expansion."""
         super().__init__()
         self.vmin = vmin
         self.vmax = vmax
@@ -333,6 +334,9 @@ class iComformer(nn.Layer):
         edge_layer_head (int, optional): Heads of the edge layer. Defaults to 1.
         property_name (Optional[str], optional):  Property name of the
             prediction data. Defaults to "formation_energy_per_atom".
+        data_mean (float, optional): Mean of the training data. Defaults to 0.0.
+        data_std (float, optional): Standard deviation of the training data.
+            Defaults to 1.0.
     """
 
     def __init__(

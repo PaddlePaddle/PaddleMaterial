@@ -158,8 +158,6 @@ def nearest_neighbor_edges_submit(
         lat2 = -lat2
         lat3 = -lat3
 
-    # if not correct_coord_sys(lat1, lat2, lat3, lat.matrix):
-    #     print(lat1, lat2, lat3)
     # lattice correction end
     for site_idx, neighborlist in enumerate(all_neighbors_now):
 
@@ -262,7 +260,9 @@ def atom_multigraph(
 
 
 class ComformerGraphConverter:
-    """Convert a structure to a graph.
+    """Convert a structure to a comformer graph.
+
+    https://arxiv.org/pdf/2403.11857
 
     Args:
         cutoff (float, optional): Cutoff distance. Defaults to 5.0.
@@ -274,28 +274,18 @@ class ComformerGraphConverter:
         atom_features (str, optional): Atom features. Defaults to "cgcnn".
         use_canonize (bool, optional): Whether to use canonize. Defaults to True.
         use_lattice (bool, optional): Whether to use lattice. Defaults to True.
-        atom_graph_cutoff (float, optional): Atom graph cutoff. Defaults to 6.0.
-        bond_graph_cutoff (float, optional): Bond graph cutoff. Defaults to 3.0.
-        composition_fea_len (int, optional): Length of composition feature.
-            Defaults to 94.
-        method (Literal[&quot;crystalnn&quot;, &quot;find_points_in_spheres&quot;,
-            &quot;comformer_graph&quot;, &quot;chgnet_graph&quot;], optional): Method
-            to convert structure to graph. Defaults to "crystalnn".
-        element_types (Literal[&quot;DEFAULT_ELEMENTS&quot;], optional): Element types.
-            Defaults to "DEFAULT_ELEMENTS".
         num_cpus (Optional[int], optional): Number of CPUs to use. Defaults to None.
     """
 
-    # TODO: Reorganize input parameters through graph method
     def __init__(
         self,
         cutoff: float = 5.0,
         pbc: tuple[int, int, int] = (1, 1, 1),
-        neighbor_strategy: str = "k-nearest",  # only used for method='comformer_graph'
-        max_neighbors: int = 25,  # only used for method='comformer_graph'
-        atom_features: str = "cgcnn",  # only used for method='comformer_graph'
-        use_canonize: bool = True,  # only used for method='comformer_graph'
-        use_lattice: bool = True,  # only used for method='comformer_graph'
+        neighbor_strategy: str = "k-nearest",
+        max_neighbors: int = 25,
+        atom_features: str = "cgcnn",
+        use_canonize: bool = True,
+        use_lattice: bool = True,
         num_cpus: Optional[int] = None,
         **kwargs,  # any additional arguments
     ) -> None:
