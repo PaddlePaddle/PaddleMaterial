@@ -31,22 +31,63 @@ from paddle.io import Dataset
 from ppmat.datasets.build_graph import Structure2Graph
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.utils import download
 from ppmat.utils import logger
 
 
 class MP20Dataset(Dataset):
-    """This class is designed for handling the MP20 dataset.
+    """MP20 Dataset Handler
+
+    This class provides utilities for loading and processing the MP20 materials
+    science dataset, which is utilized in both CDVAE and DiffCSP models. The
+    implementation supports both standard dataset loading and custom data processing
+    when adhering to the MP20 data schema.
+
+    **Dataset Overview**
+    - **Source**: Original data available at https://github.com/txie-93/cdvae/tree/main/data/mp_20
+    ```
+    ┌───────────────────┬─────────┬─────────┬─────────┐
+    │ Dataset Partition │ Train   │ Val     │ Test    │
+    ├───────────────────┼─────────┼─────────┼─────────┤
+    │ Sample Count      │ 27,136  │ 9,047   │ 9,046   │
+    └───────────────────┴─────────┴─────────┴─────────┘
+    ```
+    The dataset can also be downloaded from the following source: https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20.zip
+
+    **Data Format**
+    The dataset is structured as a comma-separated values (CSV) file with the following
+    columns:
+
+    | Column Name               | Description                         | Example Value |
+    |---------------------------|-------------------------------------|---------------|
+    | `material_id`             | Unique material identifier          | mp-10009      |
+    | `formation_energy_per_atom`| Formation energy per atom (eV/atom)| -0.57         |
+    | `band_gap`                | Electronic band gap (eV)            | 0.89          |
+    | `pretty_formula`          | Chemical formula in standard notation| GaTe         |
+    | `e_above_hull`            | Energy above convex hull (eV/atom)  | 0.0           |
+    | `cif`                     | CIF string                          | cif_str       |
+    | ...                       | Other properties...                 | -             |
+
+    **Example Row:**
+    ```csv
+    material_id,formation_energy_per_atom,band_gap,pretty_formula,e_above_hull,cif
+    mp-10009,-0.57,0.89,GaTe,0.0,cif_str
+    ```
 
     Args:
-        path (str, optional): The path of the dataset. Defaults to
-            "./data/mp18/mp.2018.6.1.json".
-        property_names (Optional[list[str]], optional): Property names you want to use.
-            Defaults to None.
-        build_structure_cfg (Dict, optional): The configs for building the structure.
-            Defaults to None.
-        build_graph_cfg (Dict, optional): The configs for building the graph. Defaults
-            to None.
-        transforms (Optional[Callable], optional): The transforms. Defaults to None.
+        path (str, optional): The path of the dataset, if path is not exists, it will
+            be downloaded. Defaults to "./data/mp_20/train.csv".
+        property_names (Optional[list[str]], optional): Property names you want to use
+            for mp_20, the property_names should be selected from
+            ["formation_energy_per_atom", "band_gap", "e_above_hull",
+            "spacegroup.number"]. Defaults to None.
+        build_structure_cfg (Dict, optional): The configs for building the pymatgen
+            structure from cif string, if not specified, the default setting will be
+            used. Defaults to None.
+        build_graph_cfg (Dict, optional): The configs for building the graph from
+            structure. Defaults to None.
+        transforms (Optional[Callable], optional): The preprocess transforms for each
+            sample. Defaults to None.
         cache_path (Optional[str], optional): If a cache_path is set, structures and
             graph will be read directly from this path; if the cache does not exist,
             the converted structures and graph will be saved to this path. Defaults
@@ -57,9 +98,13 @@ class MP20Dataset(Dataset):
             to True.
     """
 
+    name = "mp_20"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20.zip"
+    md5 = "73371948155aa9da609436e291142d7e"
+
     def __init__(
         self,
-        path: str = "./data/mp18/mp.2018.6.1.json",
+        path: str = "./data/mp_20/train.csv",
         property_names: Optional[list[str]] = None,
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
@@ -70,9 +115,27 @@ class MP20Dataset(Dataset):
         **kwargs,  # for compatibility
     ):
         super().__init__()
+        if not osp.exists(path):
+            logger.message("The dataset is not found. Will download it now.")
+            root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            path = osp.join(root_path, self.name, osp.basename(path))
+
         self.path = path
         if isinstance(property_names, str):
             property_names = [property_names]
+
+        if build_structure_cfg is None:
+            build_structure_cfg = {
+                "format": "cif_str",
+                "primitive": False,
+                "niggli": True,
+                "num_cpus": 1,
+            }
+            logger.message(
+                "The build_structure_cfg is not set, will use the default "
+                f"configs: {build_structure_cfg}"
+            )
+
         self.property_names = property_names if property_names is not None else []
         self.build_structure_cfg = build_structure_cfg
         self.build_graph_cfg = build_graph_cfg
@@ -82,8 +145,8 @@ class MP20Dataset(Dataset):
             self.cache_path = cache_path
         else:
             # for example:
-            # path = ./data/mp2018_train_60k/mp2018_train_60k_train.json
-            # cache_path = ./data/mp2018_train_60k_cache/mp2018_train_60k_train
+            # path = ./data/mp_20/train.csv
+            # cache_path = ./data/mp_20_cache/train
             self.cache_path = osp.join(
                 osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
             )
@@ -103,6 +166,48 @@ class MP20Dataset(Dataset):
                 "read and current settings will be ignored. Please ensure that the "
                 "settings used in match your current settings."
             )
+            try:
+                build_structure_cfg_cache = self.load_from_cache(
+                    osp.join(self.cache_path, "build_structure_cfg.pkl")
+                )
+                if len(build_structure_cfg_cache.keys()) != len(
+                    build_structure_cfg.keys()
+                ):
+                    overwrite = True
+                else:
+                    for key in build_structure_cfg_cache.keys():
+                        if build_structure_cfg_cache[key] != build_structure_cfg[key]:
+                            overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                overwrite = True
+
+            if overwrite is True:
+                logger.warning(
+                    "Failed to load builded_structure_cfg.pkl from cache. "
+                    "Will rebuild the structures and graphs(if need)."
+                )
+
+            if build_graph_cfg is not None and not overwrite:
+                try:
+                    build_graph_cfg_cache = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
+                    if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                        overwrite = True
+                    else:
+                        for key in build_graph_cfg_cache.keys():
+                            if build_graph_cfg_cache[key] != build_graph_cfg[key]:
+                                overwrite = True
+
+                except Exception as e:
+                    logger.warning(e)
+                    overwrite = True
+                if overwrite is True:
+                    logger.warning(
+                        "Failed to load builded_graph_cfg.pkl from cache. "
+                        "Will rebuild the graphs."
+                    )
 
         structure_cache_path = osp.join(self.cache_path, "structures")
         graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -110,14 +215,14 @@ class MP20Dataset(Dataset):
             # convert strucutes and graphs
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save builded_structure_cfg and builded_graph_cfg to cache file
+                # save build_structure_cfg and build_graph_cfg to cache file
                 os.makedirs(self.cache_path, exist_ok=True)
                 self.save_to_cache(
-                    osp.join(self.cache_path, "builded_structure_cfg.pkl"),
+                    osp.join(self.cache_path, "build_structure_cfg.pkl"),
                     build_structure_cfg,
                 )
                 self.save_to_cache(
-                    osp.join(self.cache_path, "builded_graph_cfg.pkl"), build_graph_cfg
+                    osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
                 structures = self.convert_to_structures(

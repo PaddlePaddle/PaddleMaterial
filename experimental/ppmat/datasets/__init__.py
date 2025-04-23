@@ -15,6 +15,7 @@ import copy
 import os
 import random
 import signal
+from typing import Dict
 
 import numpy as np
 import paddle
@@ -82,7 +83,16 @@ def set_signal_handlers():
             signal.signal(signal.SIGTERM, term_mp)
 
 
-def build_dataloader(cfg):
+def build_dataloader(cfg: Dict):
+    """Build dataloader from config.
+
+    Args:
+        cfg (Dict): config dictionary.
+
+    Returns:
+        paddle.io.DataLoader: paddle.io.DataLoader object.
+    """
+
     if cfg is None:
         return None
     world_size = dist.get_world_size()
