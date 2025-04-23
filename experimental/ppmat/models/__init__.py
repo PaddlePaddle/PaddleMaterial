@@ -12,47 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+from typing import Dict
 
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
+from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.utils import logger
 
-__all__ = ["iComformer", "ComformerGraphConverter"]
+__all__ = ["iComformer", "ComformerGraphConverter", "DiffCSP"]
 
 
-MODEL_NAMES = {
+PRETRAINED_MODES = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
 }
 
 
-def build_graph_converter(cfg):
-    """Build Model.
+def build_graph_converter(cfg: Dict):
+    """Build graph converter.
 
     Args:
-        cfg (DictConfig): Model config.
-
-    Returns:
-        nn.Layer: Model.
+        cfg (Dict): Graph converter config.
     """
     if cfg is None:
         return None
     cfg = copy.deepcopy(cfg)
     class_name = cfg.pop("__class_name__")
     init_params = cfg.pop("__init_params__")
-    model = eval(class_name)(**init_params)
-    logger.debug(str(model))
+    graph_converter = eval(class_name)(**init_params)
+    logger.debug(str(graph_converter))
 
-    return model
+    return graph_converter
 
 
-def build_model(cfg):
+def build_model(cfg: Dict):
     """Build Model.
 
     Args:
-        cfg (DictConfig): Model config.
+        cfg (Dict): Model config.
 
     Returns:
-        nn.Layer: Model.
+        nn.Layer: Model object.
     """
     if cfg is None:
         return None

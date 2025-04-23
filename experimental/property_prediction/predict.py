@@ -14,7 +14,7 @@ from omegaconf import OmegaConf
 from pymatgen.core import Structure
 from tqdm import tqdm
 
-from ppmat.models import MODEL_NAMES
+from ppmat.models import PRETRAINED_MODES
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.utils import download
@@ -37,7 +37,7 @@ class PropertyPredictor:
             ), "config_path and checkpoint_path must be provided when model_name is None."
         else:
             logger.info("Since model_name is given, downloading it...")
-            path = download.get_weights_path_from_url(MODEL_NAMES[model_name])
+            path = download.get_weights_path_from_url(PRETRAINED_MODES[model_name])
             path = osp.join(path, model_name)
 
             config_path = osp.join(path, f"{model_name}.yaml")
