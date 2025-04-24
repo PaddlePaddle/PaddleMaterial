@@ -358,22 +358,45 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         row, col = edge_index
         value = paddle.arange(start=1, end=row.shape[0] + 1)
 
-        indices = paddle.to_tensor([col, row])
-        adj_t = sparse_coo_tensor(indices, value, (num_nodes, num_nodes))
-        num_triplets = (adj_t.to_dense()[row] > 0).sum(axis=1)
+        # first method
+        n = col.shape[0]
+        rows = paddle.arange(n).unsqueeze(1)  # [0,1,2,...,n-1]^T
+        cols = paddle.arange(n).unsqueeze(0)  # [0,1,2,...,n-1]
+        mask = (col.unsqueeze(1) == col.unsqueeze(0)) & (cols <= rows)
+        col_ = mask.astype("int64").sum(axis=1) - 1
+        rows = col
+        indices = paddle.stack([rows, col_], axis=1)
 
-        adj_t_row = adj_t.to_dense()[row].to_sparse_coo(2)
-        adj_t_row_values = adj_t_row.values() - 1
-        adj_t_row_rows = adj_t_row.indices()[0]
-        adj_t_row_cols = adj_t_row.indices()[1]
+        shape = [num_nodes, col_.max().item() + 1]
+        result = paddle.scatter_nd(indices, value, shape)
+        mat = result
 
-        idx_i = col.repeat_interleave(repeats=num_triplets)
-        idx_j = row.repeat_interleave(repeats=num_triplets)
-        idx_k = adj_t_row_cols
-        mask = idx_i != idx_k
+        # second method, equivalent to the first method, bug easy to understand and debug
+        # data_list = []
+        # max_data_size = 0
+        # for i in range(num_nodes):
+        #     data = value[col == i]
+        #     data_list.append(data)
+        #     if data.shape[0] > max_data_size:
+        #         max_data_size = data.shape[0]
+
+        # mat = paddle.zeros((num_nodes, max_data_size), dtype="int64")
+        # for i in range(num_nodes):
+        #     data = data_list[i]
+        #     mat[i, : data.shape[0]] = data
+
+        idx_kj = mat[row][mat[row] > 0] - 1
+        tmp_r = paddle.nonzero(mat[row], as_tuple=False)
+        idx_ji = tmp_r[:, 0]
+
+        idx_k = row[idx_kj]
+        idx_j = row[idx_ji]
+        idx_i = col[idx_ji]
+
+        mask = idx_i != idx_k  # Remove i == k triplets.
         idx_i, idx_j, idx_k = idx_i[mask], idx_j[mask], idx_k[mask]
-        idx_kj = adj_t_row_values[mask]
-        idx_ji = adj_t_row_rows[mask]
+        idx_kj = idx_kj[mask]
+        idx_ji = idx_ji[mask]
         return col, row, idx_i, idx_j, idx_k, idx_kj, idx_ji
 
     def forward(self, z, pos, batch=None):
