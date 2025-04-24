@@ -2,7 +2,7 @@ Global:
   epochs: 2000
   output_dir: ./output/gemnet_mp20
   save_freq: 100 # set 0 to disable saving during training
-  log_freq: 1 # log frequency [step]
+  log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
@@ -57,8 +57,6 @@ Dataset:
     dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/train.csv"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.219802737236023
@@ -71,13 +69,11 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 256
+      batch_size: 64
   val:
     dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/val.csv"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.219802737236023
@@ -87,13 +83,11 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 256
+      batch_size: 128
   test:
     dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/test.csv"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.219802737236023
@@ -103,13 +97,11 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 256
+      batch_size: 128
   predict:
     dataset:
       __name__: MP20Dataset
       path: "./data/mp_20/test.csv"
-      converter_cfg:
-        method: crystalnn
     sampler:
       __name__: BatchSampler
       shuffle: False

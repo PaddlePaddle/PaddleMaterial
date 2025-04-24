@@ -58,8 +58,6 @@ Dataset:
     dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_train.json"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -77,8 +75,6 @@ Dataset:
     dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_val.json"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -93,8 +89,6 @@ Dataset:
     dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_test.json"
-      converter_cfg:
-        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -109,8 +103,6 @@ Dataset:
     dataset:
       __name__: MP18Dataset
       path: "./data/mp18/mp.2018.6.1_test.json"
-      converter_cfg:
-        method: crystalnn
     sampler:
       __name__: BatchSampler
       shuffle: False
