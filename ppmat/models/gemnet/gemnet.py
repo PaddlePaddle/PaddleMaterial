@@ -273,7 +273,7 @@ class GemNetT(paddle.nn.Layer):
         rows = paddle.arange(n).unsqueeze(1)  # [0,1,2,...,n-1]^T
         cols = paddle.arange(n).unsqueeze(0)  # [0,1,2,...,n-1]
         mask = (idx_t.unsqueeze(1) == idx_t.unsqueeze(0)) & (cols <= rows)
-        col = mask.sum(axis=1).astype("int64") - 1
+        col = mask.astype("int64").sum(axis=1) - 1
         rows = idx_t
         indices = paddle.stack([rows, col], axis=1)
 
