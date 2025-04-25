@@ -1,4 +1,3 @@
-
 Global:
   # for mp2018 dataset, the property names are:
   # "formation_energy_per_atom",
@@ -37,9 +36,14 @@ Trainer:
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
-  whether_use_amp: False
+  use_amp: False
   # automatic mixed precision level
   amp_level: 'O1'
+  # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
+  # gradient accumulation every 2 forward steps
+  # Note:
+  # one complete step  = gradient_accumulation_steps * forward steps + backward steps
+  gradient_accumulation_steps: 2
 
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
@@ -49,9 +53,13 @@ Trainer:
   greater_is_better: False
 
   # compute metric during training or evaluation
-  whether_compute_metric_during_train: True # True: the metric will be calculated on train dataset
+  compute_metric_during_train: True # True: the metric will be calculated on train dataset
   metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
 
+  # whether use visualdl, wandb, tensorboard to log
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
 
 Model:
   __class_name__: iComformer
@@ -103,7 +111,7 @@ Dataset:
         shuffle: True
         drop_last: True
         batch_size: 32
-  eval:
+  val:
     dataset:
       __class_name__: MP2018Dataset
       __init_params__:
