@@ -198,40 +198,42 @@ def error(msg, *args):
 
 
 def scalar(
+    tag: str,
     metric_dict: Dict[str, float],
     step: int,
-    vdl_writer: Optional["visualdl.LogWriter"] = None,
+    visualdl_writer: Optional["visualdl.LogWriter"] = None,
     wandb_writer: Optional["wandb.run"] = None,
-    tbd_writer: Optional["tbd.SummaryWriter"] = None,
+    tensorboard_writer: Optional["tbd.SummaryWriter"] = None,
 ):
     """This function will add scalar data to VisualDL or WandB for plotting curve(s).
 
     Args:
+        tag (str): The tag of the metric.
         metric_dict (Dict[str, float]): Metrics dict with metric name and value.
         step (int): The step of the metric.
-        vdl_writer (Optional[visualdl.LogWriter]): VisualDL writer to record metrics.
-            Defaults to None.
+        visualdl_writer (Optional[visualdl.LogWriter]): VisualDL writer to record
+            metrics. Defaults to None.
         wandb_writer (Optional[wandb.run]): Run object of WandB to record metrics.
             Defaults to None.
-        tbd_writer (Optional[tbd.SummaryWriter]): Run object of WandB to record metrics.
-            Defaults to None.
+        tensorboard_writer (Optional[tbd.SummaryWriter]): Run object of WandB to record
+            metrics. Defaults to None.
     """
-    if vdl_writer is not None:
+    tag_metric_dict = {f"{tag}_{k}": v for k, v in metric_dict.items()}
+    if visualdl_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                for name, value in metric_dict.items():
-                    vdl_writer.add_scalar(name, value, step)
-
+                for name, value in tag_metric_dict.items():
+                    visualdl_writer.add_scalar(name, value, step)
     if wandb_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                wandb_writer.log({"step": step, **metric_dict})
+                wandb_writer.log(data=tag_metric_dict, step=step)
 
-    if tbd_writer is not None:
+    if tensorboard_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                for name, value in metric_dict.items():
-                    tbd_writer.add_scalar(name, value, global_step=step)
+                for name, value in tag_metric_dict.items():
+                    tensorboard_writer.add_scalar(name, value, global_step=step)
 
 
 def advertise():
