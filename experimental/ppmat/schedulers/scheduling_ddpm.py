@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-# DISCLAIMER: This file is strongly influenced by https://github.com/ermongroup/ddim
+# This file is adapted from https://github.com/huggingface/diffusers/tree/main/src/diffusers/schedulers
 
 import math
 from dataclasses import dataclass
@@ -303,9 +303,6 @@ class DDPMScheduler:
             num_inference_steps (`int`):
                 The number of diffusion steps used when generating samples with a
                 pre-trained model. If used, `timesteps` must be `None`.
-            device (`str` or `torch.device`, *optional*):
-                The device to which the timesteps should be moved to. If `None`, the
-                timesteps are not moved.
             timesteps (`List[int]`, *optional*):
                 Custom timesteps used to support arbitrary spacing between timesteps.
                 If `None`, then the default timestep spacing strategy of equal spacing

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# DISCLAIMER: This file is strongly influenced by https://github.com/yang-song/score_sde_pytorch
+# This file is adapted from https://github.com/huggingface/diffusers/tree/main/src/diffusers/schedulers
 
 import math
 from dataclasses import dataclass
@@ -167,9 +167,6 @@ class ScoreSdeVeScheduler:
             sampling_eps (`float`, *optional*):
                 The final timestep value (overrides value given during scheduler
                 instantiation).
-            device (`str` or `torch.device`, *optional*):
-                The device to which the timesteps should be moved to. If `None`, the
-                timesteps are not moved.
 
         """
         sampling_eps = sampling_eps if sampling_eps is not None else self.sampling_eps
