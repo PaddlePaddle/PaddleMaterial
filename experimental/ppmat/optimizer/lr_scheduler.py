@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This file adapted from https://github.com/PaddlePaddle/PaddleScience
+
 from __future__ import annotations
 
 import abc
@@ -144,10 +146,6 @@ class Linear(LRBase):
         last_epoch (int): Last epoch.
         by_epoch (bool): Learning rate decays by epoch when by_epoch is True,
             else by iter.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.Linear(10, 2, 0.001)()
     """
 
     def __init__(
@@ -215,10 +213,6 @@ class ExponentialDecay(LRBase):
         last_epoch (int): Last epoch.
         by_epoch (bool): Learning rate decays by epoch when by_epoch is True,
             else by iter.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.ExponentialDecay(10, 2, 1e-3, 0.95, 3)()
     """
 
     def __init__(
@@ -278,10 +272,6 @@ class Cosine(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
             else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.Cosine(10, 2, 1e-3)()
     """
 
     def __init__(
@@ -347,10 +337,6 @@ class Step(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
             else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.Step(10, 1, 1e-3, 2, 0.95)()
     """
 
     def __init__(
@@ -410,12 +396,6 @@ class Piecewise(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
             else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.Piecewise(
-        ...     10, 1, [2, 4], (1e-3, 1e-4, 1e-5)
-        ... )()
     """
 
     def __init__(
@@ -473,10 +453,6 @@ class MultiStepDecay(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
             else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.MultiStepDecay(10, 1, 1e-3, (4, 5))()
     """
 
     def __init__(
@@ -610,10 +586,6 @@ class CosineWarmRestarts(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
             else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.CosineWarmRestarts(20, 1, 1e-3, 14, 2)()
     """
 
     def __init__(
@@ -697,10 +669,6 @@ class OneCycleLR(LRBase):
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
              else by iter. Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> lr = ppsci.optimizer.lr_scheduler.OneCycleLR(100, 1, 1e-3)()
     """
 
     def __init__(
@@ -757,12 +725,28 @@ class OneCycleLR(LRBase):
 
 
 class ReduceOnPlateau(LRBase):
-    """ReduceOnPlateau.
+    """ReduceOnPlateau learning rate scheduler.
+
+    Reduce learning rate when metrics has stopped descending. Models often benefit
+    from reducing the learning rate by 2 to 10 times once model performance has no
+    longer improvement.
+
+    The metrics is the one which has been pass into step, it must
+    be 1-D Tensor with shape [1]. When metrics stop descending for a patience number of
+    epochs, the learning rate will be reduced to learning_rate * factor . (Specially,
+    mode can also be set to 'max , in this case, when metrics stop ascending for a
+    patience number of epochs, the learning rate will be reduced.)
+
+    In addition, After each reduction, it will wait a cooldown number of epochs before
+    resuming above operation.
 
     Args:
         epochs (int): Total epoch(s).
         iters_per_epoch (int): Number of iterations within an epoch.
         learning_rate (float): The initial learning rate. It is a python float number.
+        indicator (Literal["train_loss", "eval_loss", "train_metric", "eval_metric"]):
+            Type of metrics.
+        indicator_name (str): The name of the metric.
         mode (str, optional): ``'min'`` or ``'max'`` can be selected. Normally, it is
             ``'min'`` , which means that the learning rate will reduce when ``loss``
             stops descending. Specially, if it's set to ``'max'`` ,  the learning
@@ -786,9 +770,13 @@ class ReduceOnPlateau(LRBase):
         epsilon (float, optional): Minimal decay applied to lr. If the difference
             between new and old lr is smaller than epsilon, the update is ignored.
             Default: 1e-8.
+        warmup_epoch (int, optional): The epoch numbers for LinearWarmup, this learning
+            rate does not currently support warmup. Defaults to 0.
+        warmup_start_lr (float, optional): Start learning rate within warmup.
+            Defaults to 0.0.
         last_epoch (int, optional): Last epoch. Defaults to -1.
         by_epoch (bool, optional): Learning rate decays by epoch when by_epoch is True,
-             else by iter. Defaults to False.
+            else by iter. Defaults to False.
     """
 
     def __init__(
@@ -864,12 +852,6 @@ class SchedulerList:
 
     Args:
         scheduler_list (Tuple[lr.LRScheduler, ...]): Schedulers listed in a tuple.
-
-    Examples:
-        >>> import ppsci
-        >>> sch1 = ppsci.optimizer.lr_scheduler.Linear(10, 2, 0.001)()
-        >>> sch2 = ppsci.optimizer.lr_scheduler.ExponentialDecay(10, 2, 1e-3, 0.95, 3)()
-        >>> sch = ppsci.optimizer.lr_scheduler.SchedulerList((sch1, sch2))
     """
 
     def __init__(self, scheduler_list: Tuple[lr.LRScheduler, ...]):
