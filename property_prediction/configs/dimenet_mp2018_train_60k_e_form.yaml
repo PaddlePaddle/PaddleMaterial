@@ -1,24 +1,33 @@
 Global:
   epochs: 2000
-  output_dir: ./output/gemnet_mp18
+  output_dir: ./output/dimenet_mp2018_train_60k_e_form
   save_freq: 100 # set 0 to disable saving during training
-  log_freq: 100 # log frequency [step]
+  log_freq: 10 # log frequency [step]
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   seed: 42
   cal_metric_during_train: True # True: the metric will be calculated on train dataset
-  scale_grad: True # True to scale the gradient
-  checkpoint_path: null # path to load checkpoint for resume training
+  # pretrained_model_path:
 
 Model:
-  __name__: GemNetT
-  num_blocks: 3
-  emb_size_atom: 256
-  emb_size_edge: 256
-  cutoff: 7
-  # scale_file: ./ppmat/models/gemnet/gemnet-dT.json
-  scale_file: ./property_prediction/configs/gemnet-dT_mp20.json
-
+  __name__: DimeNetPlusPlusWrap
+  num_targets: 1
+  hidden_channels: 128
+  num_blocks: 4
+  int_emb_size: 64
+  basis_emb_size: 8
+  out_emb_channels: 256
+  num_spherical: 7
+  num_embeddings: 95
+  num_radial: 6
+  otf_graph: false
+  cutoff: 7.0
+  max_num_neighbors: 20
+  envelope_exponent: 5
+  num_before_skip: 1
+  num_after_skip: 2
+  num_output_layers: 3
+  readout: mean
 
 Loss:
   __name__: LossWarper
@@ -33,7 +42,6 @@ Optimizer:
   __name__: Adam
   beta1: 0.9
   beta2: 0.999
-  clip_norm: 10.0
   lr:
     __name__: Cosine
     learning_rate: 0.001
@@ -57,7 +65,9 @@ Dataset:
   train:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_train.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
+      converter_cfg:
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -74,7 +84,9 @@ Dataset:
   val:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_val.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
+      converter_cfg:
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -84,11 +96,13 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 32
+      batch_size: 128
   test:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
       transforms:
         - Normalize:
             mean: -1.6519675510987046
@@ -98,13 +112,15 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 32
+      batch_size: 128
   predict:
     dataset:
       __name__: MP18Dataset
-      path: "./data/mp18/mp.2018.6.1_test.json"
+      path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
+      converter_cfg:
+        method: crystalnn
     sampler:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 32
+      batch_size: 128
