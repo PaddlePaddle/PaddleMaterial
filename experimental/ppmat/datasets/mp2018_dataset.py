@@ -200,20 +200,29 @@ class MP2018Dataset(Dataset):
                 if len(build_structure_cfg_cache.keys()) != len(
                     build_structure_cfg.keys()
                 ):
+                    logger.warning(
+                        "build_structure_cfg_cache has different keys than the original"
+                        " build_structure_cfg. Will rebuild the structures and graphs."
+                    )
                     overwrite = True
                 else:
                     for key in build_structure_cfg_cache.keys():
                         if build_structure_cfg_cache[key] != build_structure_cfg[key]:
+                            logger.warning(
+                                f"build_structure_cfg[{key}](build_structure_cfg[{key}])"
+                                f" is different from build_structure_cfg_cache[{key}]"
+                                f"(build_structure_cfg_cache[{key}]). Will rebuild the "
+                                "structures and graphs."
+                            )
                             overwrite = True
+                            break
             except Exception as e:
                 logger.warning(e)
-                overwrite = True
-
-            if overwrite is True:
                 logger.warning(
                     "Failed to load builded_structure_cfg.pkl from cache. "
                     "Will rebuild the structures and graphs(if need)."
                 )
+                overwrite = True
 
             if build_graph_cfg is not None and not overwrite:
                 try:
@@ -221,20 +230,30 @@ class MP2018Dataset(Dataset):
                         osp.join(self.cache_path, "build_graph_cfg.pkl")
                     )
                     if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                        logger.warning(
+                            "build_graph_cfg_cache has different keys than the original"
+                            " build_graph_cfg. Will rebuild the graphs."
+                        )
                         overwrite = True
                     else:
                         for key in build_graph_cfg_cache.keys():
                             if build_graph_cfg_cache[key] != build_graph_cfg[key]:
+                                logger.warning(
+                                    f"build_graph_cfg[{key}](build_graph_cfg[{key}]) is"
+                                    f" different from build_graph_cfg_cache[{key}]"
+                                    f"(build_graph_cfg_cache[{key}]). Will rebuild the "
+                                    "graphs."
+                                )
                                 overwrite = True
+                                break
 
                 except Exception as e:
                     logger.warning(e)
-                    overwrite = True
-                if overwrite is True:
                     logger.warning(
                         "Failed to load builded_graph_cfg.pkl from cache. "
                         "Will rebuild the graphs."
                     )
+                    overwrite = True
 
         structure_cache_path = osp.join(self.cache_path, "structures")
         graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -267,7 +286,7 @@ class MP2018Dataset(Dataset):
                 )
 
                 if build_graph_cfg is not None:
-                    converter = build_graph_converter(**build_graph_cfg)
+                    converter = build_graph_converter(build_graph_cfg)
                     graphs = converter(structures)
                     # save graphs to cache file
                     os.makedirs(graph_cache_path, exist_ok=True)

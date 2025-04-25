@@ -28,9 +28,9 @@ import paddle.distributed as dist
 import pandas as pd
 from paddle.io import Dataset
 
-from ppmat.datasets.build_graph import Structure2Graph
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
 
@@ -115,6 +115,7 @@ class MP20Dataset(Dataset):
         **kwargs,  # for compatibility
     ):
         super().__init__()
+
         if not osp.exists(path):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
@@ -173,20 +174,29 @@ class MP20Dataset(Dataset):
                 if len(build_structure_cfg_cache.keys()) != len(
                     build_structure_cfg.keys()
                 ):
+                    logger.warning(
+                        "build_structure_cfg_cache has different keys than the original"
+                        " build_structure_cfg. Will rebuild the structures and graphs."
+                    )
                     overwrite = True
                 else:
                     for key in build_structure_cfg_cache.keys():
                         if build_structure_cfg_cache[key] != build_structure_cfg[key]:
+                            logger.warning(
+                                f"build_structure_cfg[{key}](build_structure_cfg[{key}])"
+                                f" is different from build_structure_cfg_cache[{key}]"
+                                f"(build_structure_cfg_cache[{key}]). Will rebuild the "
+                                "structures and graphs."
+                            )
                             overwrite = True
+                            break
             except Exception as e:
                 logger.warning(e)
-                overwrite = True
-
-            if overwrite is True:
                 logger.warning(
                     "Failed to load builded_structure_cfg.pkl from cache. "
                     "Will rebuild the structures and graphs(if need)."
                 )
+                overwrite = True
 
             if build_graph_cfg is not None and not overwrite:
                 try:
@@ -194,20 +204,30 @@ class MP20Dataset(Dataset):
                         osp.join(self.cache_path, "build_graph_cfg.pkl")
                     )
                     if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                        logger.warning(
+                            "build_graph_cfg_cache has different keys than the original"
+                            " build_graph_cfg. Will rebuild the graphs."
+                        )
                         overwrite = True
                     else:
                         for key in build_graph_cfg_cache.keys():
                             if build_graph_cfg_cache[key] != build_graph_cfg[key]:
+                                logger.warning(
+                                    f"build_graph_cfg[{key}](build_graph_cfg[{key}]) is"
+                                    f" different from build_graph_cfg_cache[{key}]"
+                                    f"(build_graph_cfg_cache[{key}]). Will rebuild the "
+                                    "graphs."
+                                )
                                 overwrite = True
+                                break
 
                 except Exception as e:
                     logger.warning(e)
-                    overwrite = True
-                if overwrite is True:
                     logger.warning(
                         "Failed to load builded_graph_cfg.pkl from cache. "
                         "Will rebuild the graphs."
                     )
+                    overwrite = True
 
         structure_cache_path = osp.join(self.cache_path, "structures")
         graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -225,8 +245,8 @@ class MP20Dataset(Dataset):
                     osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
-                structures = self.convert_to_structures(
-                    self.row_data, build_structure_cfg
+                structures = BuildStructure(**build_structure_cfg)(
+                    self.row_data["structure"]
                 )
                 # save structures to cache file
                 os.makedirs(structure_cache_path, exist_ok=True)
@@ -240,7 +260,8 @@ class MP20Dataset(Dataset):
                 )
 
                 if build_graph_cfg is not None:
-                    graphs = self.convert_to_graphs(structures, build_graph_cfg)
+                    converter = build_graph_converter(build_graph_cfg)
+                    graphs = converter(structures)
                     # save graphs to cache file
                     os.makedirs(graph_cache_path, exist_ok=True)
                     for i in range(self.num_samples):
@@ -319,33 +340,8 @@ class MP20Dataset(Dataset):
             data (Dict): Data that contains the property data.
             property_names (list[str]): Property names.
         """
-        property_data = {
-            self.row_data[property_name] for property_name in property_names
-        }
+        property_data = {data[property_name] for property_name in property_names}
         return property_data
-
-    def convert_to_structures(self, data: Dict, build_structure_cfg: Dict):
-        """Convert the data to pymatgen structures.
-
-        Args:
-            data (Dict): Data dictionary.
-            build_structure_cfg (Dict): Build structure configuration.
-        """
-        structures = BuildStructure(**build_structure_cfg)(data["cif"])
-        return structures
-
-    def convert_to_graphs(self, structures: list[Any], build_graph_cfg: Dict):
-        """Convert the structure to graph.
-
-        Args:
-            structures (list[Any]): List of structures.
-            build_graph_cfg (Dict): Build graph configuration.
-        """
-        if build_graph_cfg is None:
-            return None
-        converter = Structure2Graph(**build_graph_cfg)
-        graphs = converter(structures)
-        return graphs
 
     def save_to_cache(self, cache_path: str, data: Any):
         with open(cache_path, "wb") as f:

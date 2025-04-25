@@ -19,11 +19,25 @@ from ppmat.schedulers import build_scheduler
 from tqdm import tqdm
 
 from ppmat.models.common import initializer
-from ppmat.models.common.noise_schedule import d_log_p_wrapped_normal
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.common.time_embedding import uniform_sample_t
 from ppmat.utils import paddle_aux  # noqa
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
+
+
+def p_wrapped_normal(x, sigma, N=10, T=1.0):
+    p_ = 0
+    for i in range(-N, N + 1):
+        p_ += paddle.exp(x=-((x + T * i) ** 2) / 2 / sigma**2)
+    return p_
+
+
+def d_log_p_wrapped_normal(x, sigma, N=10, T=1.0):
+    p_ = 0
+    for i in range(-N, N + 1):
+        exp1 = paddle.exp(x=-((x + T * i) ** 2) / 2 / sigma**2)
+        p_ += (x + T * i) / sigma**2 * exp1
+    return p_ / p_wrapped_normal(x, sigma, N, T)
 
 
 class SinusoidsEmbedding(paddle.nn.Layer):

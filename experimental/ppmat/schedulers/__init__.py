@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from typing import Dict
 
 from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeScheduler
@@ -26,14 +27,14 @@ __all__ = [
 ]
 
 
-def build_scheduler(cfg):
+def build_scheduler(cfg: Dict):
     """Build scheduler.
 
     Args:
-        cfg (DictConfig): Scheduler config.
+        cfg (Dict): Scheduler config.
 
     Returns:
-        scheduler: Callable scheduler object.
+        scheduler: Scheduler object.
     """
     if cfg is None:
         return None
