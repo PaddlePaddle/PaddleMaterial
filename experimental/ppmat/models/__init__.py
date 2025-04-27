@@ -12,17 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import os.path as osp
 from typing import Dict
+from typing import Optional
+
+from omegaconf import OmegaConf
 
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.utils import download
 from ppmat.utils import logger
+from ppmat.utils import save_load
 
 __all__ = ["iComformer", "ComformerGraphConverter", "DiffCSP"]
 
 
-PRETRAINED_MODES = {
+MODE_NAMES = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
 }
 
@@ -62,3 +68,21 @@ def build_model(cfg: Dict):
     logger.debug(str(model))
 
     return model
+
+
+def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
+    path = download.get_weights_path_from_url(MODE_NAMES[model_name])
+    path = osp.join(path, model_name)
+
+    config_path = osp.join(path, f"{model_name}.yaml")
+
+    config = OmegaConf.load(config_path)
+    config = OmegaConf.to_container(config, resolve=True)
+
+    model_config = config.get("Model", None)
+    assert model_config is not None, "Model config must be provided."
+    model = build_model(model_config)
+
+    save_load.load_pretrain(model, path, weights_name)
+
+    return model, config
