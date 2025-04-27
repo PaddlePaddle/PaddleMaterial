@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Dict
@@ -57,7 +58,7 @@ def _load_pretrain_from_path(path: str, model: nn.Layer):
     logger.message(f"Finish loading pretrained model from: {path}.pdparams")
 
 
-def load_pretrain(model: nn.Layer, path: str, weights_name="latest.pdparams"):
+def load_pretrain(model: nn.Layer, path: str, weights_name: Optional[str] = None):
     """
     Load pretrained model from given path or URL.
 
@@ -72,10 +73,10 @@ def load_pretrain(model: nn.Layer, path: str, weights_name="latest.pdparams"):
             - Directory should contain '*.pdparams' files
             - Archive should contain '*.pdparams' file
 
-        weights_name (str, optional): Explicit weight filename when:
+        weights_name (Optional[str]): Explicit weight filename when:
             - Loading from directory (defaults to 'model.pdparams')
             - Archive contains multiple parameter files
-            Defaults to 'latest.pdparams'.
+            Defaults to None.
     """
     if path.startswith("http"):
         # download from path(url) and get its' physical path
@@ -83,14 +84,53 @@ def load_pretrain(model: nn.Layer, path: str, weights_name="latest.pdparams"):
 
     if os.path.isdir(path):
         flag = False
-        for root, _, files in os.walk(path):
-            for name in files:
-                if name == weights_name:
-                    path = os.path.join(root, name)
-                    flag = True
-                    break
-        if not flag:
-            raise ValueError(f"No such file named {weights_name} in dir {path}")
+
+        if weights_name is not None:
+            for root, _, files in os.walk(path):
+                for name in files:
+                    if os.path.basename(name) == weights_name:
+                        path = os.path.join(root, name)
+                        flag = True
+                        break
+            if not flag:
+                raise ValueError(f"No such file named {weights_name} in dir {path}")
+        else:
+            logger.info(
+                "No weights_name specified. Searching for .pdparams files in the "
+                "following priority order:\n"
+                "\t1. best.pdparams (highest priority)\n"
+                "\t2. latest.pdparams\n"
+                "\t3. epoch_XXX.pdparams (sorted numerically in descending order, "
+                "e.g., epoch_10 > epoch_5)\n"
+                "\t4. Other .pdparams files (e.g., custom_name.pdparams)"
+            )
+            epoch_pattern = re.compile(r"^epoch_(\d+)\.pdparams$")
+            best, latest, epochs, others = None, None, [], []
+            for root, _, files in os.walk(path):
+                for name in files:
+                    if name == "best.pdparams":
+                        best = os.path.join(root, name)
+                    elif name == "latest.pdparams":
+                        latest = os.path.join(root, name)
+                    elif name.endswith(".pdparams"):
+                        match = epoch_pattern.match(name)
+                        if match:
+                            epochs.append(
+                                (int(match.groups(1)), os.path.join(root, name))
+                            )
+                        else:
+                            others.append(os.path.join(root, name))
+            if best is not None:
+                path = best
+            elif latest is not None:
+                path = latest
+            elif len(epochs) > 0:
+                epochs.sort(key=lambda x: -x[0])
+                path = epochs[0][1]
+            elif len(others) > 0:
+                path = others[0]
+            else:
+                raise ValueError(f"No valid weight file found in dir {path}")
 
     # remove ".pdparams" in suffix of path for convenient
     if path.endswith(".pdparams"):
@@ -131,17 +171,22 @@ def load_checkpoint(
         scaler_dict = paddle.load(f"{path}.pdscaler")
 
     # set state dict
-    missing_keys, unexpected_keys = model.set_state_dict(param_dict)
-    if missing_keys:
-        logger.warning(
-            f"There are missing keys when loading checkpoint: {missing_keys}, "
-            "and corresponding parameters will be initialized by default."
-        )
-    if unexpected_keys:
-        logger.warning(
-            f"There are redundant keys: {unexpected_keys}, "
-            "and corresponding weights will be ignored."
-        )
+    missing_keys_unexpected_keys = model.set_state_dict(param_dict)
+    if (
+        missing_keys_unexpected_keys is not None
+        and len(missing_keys_unexpected_keys) == 2
+    ):
+        missing_keys, unexpected_keys = missing_keys_unexpected_keys
+        if missing_keys:
+            logger.warning(
+                f"There are missing keys when loading checkpoint: {missing_keys}, "
+                "and corresponding parameters will be initialized by default."
+            )
+        if unexpected_keys:
+            logger.warning(
+                f"There are redundant keys: {unexpected_keys}, "
+                "and corresponding weights will be ignored."
+            )
 
     optimizer.set_state_dict(optim_dict)
     if grad_scaler is not None:
