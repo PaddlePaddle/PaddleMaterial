@@ -28,7 +28,7 @@ from ppmat.utils import save_load
 __all__ = ["iComformer", "ComformerGraphConverter", "DiffCSP"]
 
 
-MODE_NAMES = {
+MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
 }
 
@@ -71,7 +71,7 @@ def build_model(cfg: Dict):
 
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
-    path = download.get_weights_path_from_url(MODE_NAMES[model_name])
+    path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
     path = osp.join(path, model_name)
 
     config_path = osp.join(path, f"{model_name}.yaml")
