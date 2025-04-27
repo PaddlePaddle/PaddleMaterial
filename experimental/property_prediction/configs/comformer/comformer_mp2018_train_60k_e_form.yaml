@@ -33,6 +33,8 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
   pretrained_model_path: null
+  # Pretrained weight name, will be used when pretrained_model_path is a directory
+  pretrained_weight_name: null #'latest.pdparams'
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
@@ -43,7 +45,7 @@ Trainer:
   # gradient accumulation every 2 forward steps
   # Note:
   # one complete step  = gradient_accumulation_steps * forward steps + backward steps
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 1
 
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
