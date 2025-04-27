@@ -145,7 +145,7 @@ class MP2018Dataset(Dataset):
         if not osp.exists(path):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            path = osp.join(root_path, self.name, osp.basename(path))
+            path = osp.join(root_path, osp.basename(path))
 
         self.path = path
         if isinstance(property_names, str):
