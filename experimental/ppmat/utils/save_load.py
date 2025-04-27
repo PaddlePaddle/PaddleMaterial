@@ -57,26 +57,40 @@ def _load_pretrain_from_path(path: str, model: nn.Layer):
     logger.message(f"Finish loading pretrained model from: {path}.pdparams")
 
 
-def load_pretrain(model: nn.Layer, path: str):
+def load_pretrain(model: nn.Layer, path: str, weights_name="latest.pdparams"):
     """
-    Load pretrained model from given path or url.
+    Load pretrained model from given path or URL.
 
     Args:
-        model (nn.Layer): Model with parameters.
-        path (str): File path or url of pretrained model, i.e. `/path/to/model.pdparams`
-            or `http://xxx.com/model.pdparams`.
+        model (nn.Layer): Neural network model to load weights into.
+        path (str): Path specification which can be:
+            1. Local directory containing model files (e.g., '/path/to/model')
+            2. Local weight file (e.g., '/path/to/model.pdparams')
+            3. Remote compressed archive (e.g., 'https://xxx.com/model.zip')
 
-    Examples:
-        >>> import ppsci
-        >>> from ppsci.utils import save_load
-        >>> model = ppsci.arch.MLP(("x", "y"), ("u", "v", "p"), 9, 50, "tanh")
-        >>> save_load.load_pretrain(
-        ...     model=model,
-        ...     path="path/to/pretrain_model") # doctest: +SKIP
+            Supported formats:
+            - Directory should contain '*.pdparams' files
+            - Archive should contain '*.pdparams' file
+
+        weights_name (str, optional): Explicit weight filename when:
+            - Loading from directory (defaults to 'model.pdparams')
+            - Archive contains multiple parameter files
+            Defaults to 'latest.pdparams'.
     """
     if path.startswith("http"):
         # download from path(url) and get its' physical path
         path = download.get_weights_path_from_url(path)
+
+    if os.path.isdir(path):
+        flag = False
+        for root, _, files in os.walk(path):
+            for name in files:
+                if name == weights_name:
+                    path = os.path.join(root, name)
+                    flag = True
+                    break
+        if not flag:
+            raise ValueError(f"No such file named {weights_name} in dir {path}")
 
     # remove ".pdparams" in suffix of path for convenient
     if path.endswith(".pdparams"):

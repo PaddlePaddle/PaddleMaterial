@@ -95,6 +95,7 @@ class BaseTrainer:
         self.eval_freq = config["eval_freq"]
         self.seed = config["seed"]
         self.pretrained_model_path = config.get("pretrained_model_path", None)
+        self.pretrained_weight_name = config.get("pretrained_weight_name", None)
         self.resume_from_checkpoint = config.get("resume_from_checkpoint", None)
         self.compute_metric_during_train = config["compute_metric_during_train"]
         self.use_amp = config.get("use_amp", False)
@@ -128,7 +129,9 @@ class BaseTrainer:
 
         # 4. load pretrained model, usually used for transfer learning
         if self.pretrained_model_path is not None:
-            save_load.load_pretrain(self.model, self.pretrained_model_path)
+            save_load.load_pretrain(
+                self.model, self.pretrained_model_path, self.pretrained_weight_name
+            )
 
         # 5. set automatic mixed precision(AMP) configuration
         self.scaler = paddle.amp.GradScaler(True) if self.use_amp else None

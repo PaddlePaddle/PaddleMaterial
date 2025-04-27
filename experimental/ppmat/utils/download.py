@@ -221,12 +221,21 @@ def _decompress(fname):
     return uncompressed_path
 
 
+def _get_extract_dir(filepath):
+    return os.path.splitext(filepath)[0]
+
+
 def _uncompress_file_zip(filepath):
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"{filepath} not found")
+
+    file_dir = _get_extract_dir(filepath)
+
     with zipfile.ZipFile(filepath, "r") as files:
+        if files.testzip() is not None:
+            raise IOError(f"{filepath} is broken")
+
         file_list = files.namelist()
-
-        file_dir = os.path.dirname(filepath)
-
         if _is_a_single_file(file_list):
             rootpath = file_list[0]
             uncompressed_path = os.path.join(file_dir, rootpath)
@@ -256,7 +265,7 @@ def _uncompress_file_tar(filepath, mode="r:*"):
     with tarfile.open(filepath, mode) as files:
         file_list = files.getnames()
 
-        file_dir = os.path.dirname(filepath)
+        file_dir = _get_extract_dir(filepath)
 
         if _is_a_single_file(file_list):
             rootpath = file_list[0]
