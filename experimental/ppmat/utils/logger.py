@@ -71,7 +71,7 @@ def init_logger(
     is specified a FileHandler will also be added.
 
     Args:
-        name (str, optional): Logger name. Defaults to "ppsci".
+        name (str, optional): Logger name. Defaults to "ppmat".
         log_file (Optional[str]): The log filename. If specified, a FileHandler
             will be added to the logger. Defaults to None.
         log_level (int, optional): The logger level. Note that only the process of
