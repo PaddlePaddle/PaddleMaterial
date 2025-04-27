@@ -62,12 +62,12 @@ class CSPMetric:
 
     def __call__(self, pred_data, gt_data=None) -> Any:
 
-        # pred_crys = p_map(lambda x: Crystal(x), pred_data, desc="Loading predictions")
+        pred_crys = p_map(lambda x: Crystal(x), pred_data, desc="Loading predictions")
         # the following line is equivalent to the above line, but it is slower,
         # it is used for debugging purposes
-        pred_crys = []
-        for i in tqdm(range(len(pred_data))):
-            pred_crys.append(Crystal(pred_data[i]))
+        # pred_crys = []
+        # for i in tqdm(range(len(pred_data))):
+        #     pred_crys.append(Crystal(pred_data[i]))
 
         if gt_data is not None:
             gt_crys = p_map(
