@@ -59,11 +59,12 @@ class AverageMeter:
     Code was based on https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
 
-    def __init__(self, name="", fmt="f", postfix="", need_avg=True):
+    def __init__(self, name="", fmt="f", postfix="", need_avg=True, smooth_window=1):
         self.name = name
         self.fmt = fmt
         self.postfix = postfix
         self.need_avg = need_avg
+        self.smooth_window = smooth_window
         self.reset()
 
     def reset(self):
@@ -81,6 +82,14 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
         self.history.append(val)
+
+    @property
+    def smooth_avg(self):
+        if len(self.history) >= self.smooth_window:
+            avg = sum(self.history[-self.smooth_window :]) / self.smooth_window
+        else:
+            avg = sum(self.history) / len(self.history)
+        return avg
 
     @property
     def avg_info(self):
