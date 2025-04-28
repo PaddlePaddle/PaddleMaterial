@@ -60,7 +60,7 @@ Trainer:
 
   # compute metric during training or evaluation
   compute_metric_during_train: True # True: the metric will be calculated on train dataset
-  metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+  metric_strategy_during_eval: 'epoch' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
 
   # whether use visualdl, wandb, tensorboard to log
   use_visualdl: False
