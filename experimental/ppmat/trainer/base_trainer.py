@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import os.path as osp
 import sys
 import time
@@ -103,6 +104,7 @@ class BaseTrainer:
         self.metric_strategy_during_eval = config.get(
             "metric_strategy_during_eval", "step"
         )
+        self.eval_with_no_grad = config.get("eval_with_no_grad", True)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
 
         self.use_visualdl = config.get("use_visualdl", False)
@@ -273,7 +275,28 @@ class BaseTrainer:
             )
         return ctx_manager
 
-    @paddle.no_grad()
+    @functools.lru_cache()
+    def no_grad_context_manager(
+        self, enable: bool
+    ) -> contextlib.AbstractContextManager:
+        """Smart no_grad context manager.
+
+        Args:
+            enable (bool): Enable no_grad.
+
+        Returns:
+            contextlib.AbstractContextManager: Smart no_grad context manager.
+        """
+        if enable:
+            ctx_manager = paddle.no_grad()
+        else:
+            ctx_manager = (
+                contextlib.nullcontext()
+                if sys.version_info >= (3, 7)
+                else contextlib.suppress()
+            )
+        return ctx_manager
+
     def eval_epoch(self, dataloader: paddle.io.DataLoader):
         """Evaluate model on a dataset.
 
@@ -315,7 +338,10 @@ class BaseTrainer:
             self.state.step_in_eval_epoch += 1
 
             # forward model
-            result = self.model(batch_data)
+            with self.autocast_context_manager(
+                self.use_amp, self.amp_level
+            ), self.no_grad_context_manager(self.eval_with_no_grad):
+                result = self.model(batch_data)
             loss_dict = result.get("loss_dict", {})
 
             # update loss and metric for log
@@ -792,27 +818,3 @@ class BaseTrainer:
         logger.info(msg)
 
         return time_info, loss_info, metric_info
-
-    def _maybe_log(self, time_info, loss_info, metric_info):
-        if self.control.should_log_step:
-            logs: OrderedDict[str, float] = {}
-            for name, average_meter in time_info.items():
-                logs[name] = average_meter.val
-            for name, average_meter in loss_info.items():
-                logs[name] = average_meter.val
-            for name, average_meter in metric_info.items():
-                logs[name] = average_meter.val
-            self.control = self.callback_handler.on_log_step(
-                self.config, self.state, self.control, logs=logs
-            )
-        if self.control.should_log_epoch:
-            logs: OrderedDict[str, float] = {}
-            for name, average_meter in time_info.items():
-                logs[name] = average_meter.avg
-            for name, average_meter in loss_info.items():
-                logs[name] = average_meter.avg
-            for name, average_meter in metric_info.items():
-                logs[name] = average_meter.avg
-            self.control = self.callback_handler.on_log_epoch(
-                self.config, self.state, self.control, logs=logs
-            )
