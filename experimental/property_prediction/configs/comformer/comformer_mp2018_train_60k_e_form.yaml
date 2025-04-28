@@ -41,6 +41,10 @@ Trainer:
   use_amp: False
   # automatic mixed precision level
   amp_level: 'O1'
+  # whether run a model on no_grad mode during evaluation, useful for saving memory
+  # If the model contains higher-order derivatives in the forward, it should be set to
+  # False
+  eval_with_no_grad: True
   # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
   # gradient accumulation every 2 forward steps
   # Note:
@@ -108,11 +112,11 @@ Dataset:
       num_workers: 4
       use_shared_memory: False
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 32
+        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
   val:
     dataset:
       __class_name__: MP2018Dataset
@@ -125,7 +129,7 @@ Dataset:
         build_graph_cfg: ${Global.graph_converter}
 
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
@@ -142,12 +146,13 @@ Dataset:
         build_graph_cfg: ${Global.graph_converter}
 
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 64
+        batch_size: 32
 
 
 Predict:
   graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True
