@@ -9,6 +9,7 @@ sys.path.insert(0, osp.abspath(osp.join(__dir__, "..")))  # ruff: noqa
 import argparse
 from typing import Optional
 
+import paddle
 import pandas as pd
 from omegaconf import OmegaConf
 from pymatgen.core import Structure
@@ -90,6 +91,7 @@ class PropertyPredictor:
 
         predict_config = config.get("Predict", None)
         self.predict_config = predict_config
+        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
 
         self.graph_converter_fn = None
         if self.predict_config is not None:
@@ -105,7 +107,11 @@ class PropertyPredictor:
     def from_structures(self, structures):
 
         data = self.graph_converter(structures)
-        out = self.model.predict(data)
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                out = self.model.predict(data)
+        else:
+            out = self.model.predict(data)
         return out
 
     def from_cif_file(self, cif_file_path, save_path=None):
