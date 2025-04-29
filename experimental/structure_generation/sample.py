@@ -16,18 +16,54 @@ from pymatgen.io.cif import CifWriter
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets.build_structure import BuildStructure
+from ppmat.datasets.transform import build_post_transforms
 from ppmat.metrics import build_metric
-from ppmat.models import PRETRAINED_MODES
+from ppmat.models import MODEL_REGISTRY
 from ppmat.models import build_model
+from ppmat.models import build_model_from_name
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
 
 class StructureSampler:
+    """Structure Sampler.
+
+    This class provides an interface for sampling structures using pre-trained deep
+    learning models. Supports two initialization modes:
+
+    1. **Automatic Model Loading**
+       Specify `model_name` and `weights_name` to automatically download
+       and load pre-trained weights from the `MODEL_REGISTRY`.
+
+    2. **Custom Model Loading**
+       Provide explicit `config_path` and `checkpoint_path` to load
+       custom-trained models from local files.
+
+    Args:
+        model_name (Optional[str], optional): Name of the pre-defined model architecture
+            from the `MODEL_REGISTRY` registry. When specified, associated weights
+            will be automatically downloaded. Defaults to None.
+
+        weights_name (Optional[str], optional): Specific pre-trained weight identifier.
+            Used only when `model_name` is provided. Valid options include:
+            - 'best.pdparams' (highest validation performance)
+            - 'latest.pdparams' (most recent training checkpoint)
+            - Custom weight files ending with '.pdparams'
+            Defaults to None.
+
+        config_path (Optional[str], optional): Path to model configuration file (YAML)
+            for custom models. Required when not using predefined `model_name`.
+            Defaults to None.
+        checkpoint_path (Optional[str], optional): Path to model checkpoint file
+            (.pdparams) for custom models. Required when not using predefined
+            `model_name`. Defaults to None.
+    """
+
     def __init__(
         self,
         model_name: Optional[str] = None,
+        weights_name: Optional[str] = None,
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
@@ -36,50 +72,35 @@ class StructureSampler:
             assert (
                 config_path is not None and checkpoint_path is not None
             ), "config_path and checkpoint_path must be provided when model_name is None."
+
+            logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
+
+            config = OmegaConf.load(config_path)
+            config = OmegaConf.to_container(config, resolve=True)
+
+            model_config = config.get("Model", None)
+            assert model_config is not None, "Model config must be provided."
+            model = build_model(model_config)
+            save_load.load_pretrain(model, checkpoint_path)
+
         else:
             logger.info("Since model_name is given, downloading it...")
-            path = download.get_weights_path_from_url(PRETRAINED_MODES[model_name])
-            path = osp.join(path, model_name)
+            model, config = build_model_from_name(model_name, weights_name)
 
-            config_path = osp.join(path, f"{model_name}.yaml")
-
-            if "best.pdparams" in os.listdir(path):
-                checkpoint_path = osp.join(path, "checkpoints", "best.pdparams")
-            elif "latest.pdparams" in os.listdir(path):
-                checkpoint_path = osp.join(path, "checkpoints", "latest.pdparams")
-            else:
-                checkpoint_path = None
-                for file in os.listdir(osp.join(path, "checkpoints")):
-                    if file.endswith(".pdparams"):
-                        checkpoint_path = osp.join(path, "checkpoints", file)
-
-                assert (
-                    checkpoint_path is not None
-                ), "Do not find any .pdparams files under directory {}".format(
-                    osp.join(path, "checkpoints")
-                )
-        logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
-
-        config = OmegaConf.load(config_path)
-        config = OmegaConf.to_container(config, resolve=True)
-
+        self.model = model
         self.config = config
 
-        model_config = config.get("Model", None)
-        assert model_config is not None, "Model config must be provided."
-        self.model_config = model_config
-
-        self.model_name = model_name
-        self.config_path = config_path
-        self.checkpoint_path = checkpoint_path
-
-        self.model = build_model(model_config)
-        save_load.load_pretrain(self.model, checkpoint_path)
         self.model.eval()
 
         # sample config
         sample_config = config.get("Sample", None)
         self.sample_config = sample_config
+
+        self.post_transforms_cfg = self.sample_config.get("post_transforms", None)
+        if self.post_transforms_cfg is not None:
+            self.post_transforms = build_post_transforms(self.post_transforms_cfg)
+        else:
+            self.post_transforms = None
 
     def compute_metric(
         self,
@@ -120,11 +141,17 @@ class StructureSampler:
         metric = metrics_fn(total_results)
         return metric
 
+    def post_process(self, data):
+        if self.post_transforms is None:
+            return data
+        return self.post_transforms(data)
+
     def sample(self, data, save_path=None, sample_params=None):
         if sample_params is None:
             sample_params = {}
         assert isinstance(sample_params, dict), "sample_params must be a dict or None."
         pred_data = self.model.sample(data, **sample_params)
+        pred_data = self.post_process(pred_data)
         return pred_data
 
     def sample_by_num_atoms(self, num_atoms, save_path=None, sample_params=None):
