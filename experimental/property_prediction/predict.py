@@ -15,6 +15,7 @@ from omegaconf import OmegaConf
 from pymatgen.core import Structure
 from tqdm import tqdm
 
+from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
@@ -99,10 +100,21 @@ class PropertyPredictor:
             if graph_converter_config is not None:
                 self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
+        self.post_transforms_cfg = predict_config.get("post_transforms", None)
+        if self.post_transforms_cfg is not None:
+            self.post_transforms = build_post_transforms(self.post_transforms_cfg)
+        else:
+            self.post_transforms = None
+
     def graph_converter(self, structure):
         if self.graph_converter_fn is None:
             return structure
         return self.graph_converter_fn(structure)
+
+    def post_process(self, data):
+        if self.post_transforms is None:
+            return data
+        return self.post_transforms(data)
 
     def from_structures(self, structures):
 
@@ -112,6 +124,7 @@ class PropertyPredictor:
                 out = self.model.predict(data)
         else:
             out = self.model.predict(data)
+        out = self.post_process(out)
         return out
 
     def from_cif_file(self, cif_file_path, save_path=None):
@@ -153,7 +166,7 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--model_name",
         type=str,
-        default="comformer_mp2018_train_60k_e_form",
+        default=None,
         help="Model name.",
     )
     argparse.add_argument(
@@ -180,6 +193,12 @@ if __name__ == "__main__":
         default="./property_prediction/example_data/cifs/",
         help="Path to the CIF file whose material properties you want to predict.",
     )
+    argparse.add_argument(
+        "--save_path",
+        type=str,
+        default="result.csv",
+        help="Path to save the prediction result.",
+    )
     args = argparse.parse_args()
 
     predictor = PropertyPredictor(
@@ -189,5 +208,5 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    results = predictor.from_cif_file(args.cif_file_path, "result.csv")
+    results = predictor.from_cif_file(args.cif_file_path, args.save_path)
     print(results)
