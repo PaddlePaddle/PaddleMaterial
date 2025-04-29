@@ -71,8 +71,8 @@ class TrainerState:
         return dataclasses.asdict(self)
 
     @staticmethod
-    def from_dict(cls, dict_data):
-        return cls(**dict_data)
+    def from_dict(dict_data):
+        return TrainerState(**dict_data)
 
     def save_to_json(self, json_path: str):
         """Save the content of this instance in JSON format inside `json_path`."""
@@ -83,8 +83,8 @@ class TrainerState:
             f.write(json_string)
 
     @classmethod
-    def load_from_json(cls, json_path: str):
+    def load_from_json(json_path: str):
         """Create an instance from the content of `json_path`."""
         with open(json_path, encoding="utf-8") as f:
             text = f.read()
-        return cls(**json.loads(text))
+        return TrainerState(**json.loads(text))
