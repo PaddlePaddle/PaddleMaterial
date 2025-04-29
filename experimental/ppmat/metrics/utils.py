@@ -16,8 +16,6 @@ from smact.screening import pauling_test
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
-# from ppmat.utils.default_elements import DEFAULT_ELEMENTS
-
 # Ignore warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
