@@ -30,6 +30,7 @@ __all__ = ["iComformer", "ComformerGraphConverter", "DiffCSP"]
 
 MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
+    "comformer_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_G.zip",
 }
 
 
