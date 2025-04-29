@@ -499,6 +499,7 @@ class iComformer(nn.Layer):
                     }
                 )
                 result = self.unnormalize(result).numpy()[0, 0]
+                result = {self.property_name: result}
                 results.append(result)
             return results
 
@@ -508,4 +509,5 @@ class iComformer(nn.Layer):
             }
             result = self._forward(data)
             result = self.unnormalize(result).numpy()[0, 0]
+            result = {self.property_name: result}
             return result
