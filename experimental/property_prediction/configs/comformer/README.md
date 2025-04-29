@@ -17,7 +17,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
 
     |                                   Dataset                                    | Train |  Val  | Test  |
     | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2018_train_60k](https://pan.baidu.com/s/1GyjEyW9kL9OZiO15P5LuKQ?pwd=uzzg) | 60000 | 5000  | 4239  |
+    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  |
 
 ## formation energy per atom
 
@@ -37,11 +37,11 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">0.0168 / 0.0176</td>
+            <td  nowrap="nowrap">0.0164 / 0.0181</td>
             <td  nowrap="nowrap">4</td>
-            <td  nowrap="nowrap">10.3 hours</td>
+            <td  nowrap="nowrap">~12 hours</td>
             <td  nowrap="nowrap"><a href="comformer_mp2018_train_60k_e_form.yaml">comformer_mp2018_train_60k_e_form</a></td>
-            <td  nowrap="nowrap"><a href="Comming Soon">checkpoint | log</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
@@ -56,18 +56,29 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 
 ### Validation
 ```bash
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False
+# Adjust program behavior on-the-fly using command-line parameters – this provides a convenient way to customize settings without modifying the configuration file directly.
+# such as: --Global.do_eval=True
+python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
 
 ### Testing
 ```bash
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False
+# This command is used to evaluate the model's performance on the test dataset.
+python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
 ```
 
 ### Prediction
 
 ```bash
-python property_prediction/predict.py
+# This command is used to predict the properties of new crystal structures using a trained model.
+# Note: The model_name and weights_name parameters are used to specify the pre-trained model and its corresponding weights. The cif_file_path parameter is used to specify the path to the CIF files for which properties need to be predicted.
+# The prediction results will be saved in a CSV file specified by the save_path parameter. Default save_path is 'result.csv'.
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
+python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 ```
 
 

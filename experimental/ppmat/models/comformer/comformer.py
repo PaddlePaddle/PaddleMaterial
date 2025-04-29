@@ -72,7 +72,7 @@ class ComformerConv(MessagePassing):
         dropout: float = 0.0,
         edge_dim: Optional[int] = None,
         root_weight: bool = True,
-        **kwargs
+        **kwargs,
     ):
         kwargs.setdefault("aggr", "add")
         super(ComformerConv, self).__init__(node_dim=0, **kwargs)
@@ -337,6 +337,8 @@ class iComformer(nn.Layer):
         data_mean (float, optional): Mean of the training data. Defaults to 0.0.
         data_std (float, optional): Standard deviation of the training data.
             Defaults to 1.0.
+        loss_type (str, optional): Loss type, can be 'mse_loss' or 'l1_loss'. Defaults
+            to "mse_loss".
     """
 
     def __init__(
@@ -354,6 +356,7 @@ class iComformer(nn.Layer):
         property_name: Optional[str] = "formation_energy_per_atom",
         data_mean: float = 0.0,
         data_std: float = 1.0,
+        loss_type: str = "mse_loss",
     ):
         super().__init__()
         self.conv_layers = conv_layers
@@ -413,6 +416,12 @@ class iComformer(nn.Layer):
         self.fc_out = nn.Linear(
             in_features=self.fc_features, out_features=self.output_features
         )
+        if loss_type == "mse_loss":
+            self.loss_fn = paddle.nn.functional.mse_loss
+        elif loss_type == "l1_loss":
+            self.loss_fn = paddle.nn.functional.l1_loss
+        else:
+            raise ValueError(f"Unknown loss type {loss_type}.")
 
     def normalize(self, tensor):
         return (tensor - self.data_mean) / self.data_std
@@ -449,9 +458,9 @@ class iComformer(nn.Layer):
         edge_features = self.edge_update_layer(
             edge_features, edge_nei_len, edge_nei_angle
         )
-        node_features = self.att_layers[1](node_features, edges, edge_features)
-        node_features = self.att_layers[2](node_features, edges, edge_features)
-        node_features = self.att_layers[3](node_features, edges, edge_features)
+        for i in range(1, len(self.att_layers)):
+            node_features = self.att_layers[i](node_features, edges, edge_features)
+
         features = scatter(node_features, batch_idx, dim=0, reduce="mean")
         features = self.fc(features)
         result = self.fc_out(features)
@@ -467,7 +476,7 @@ class iComformer(nn.Layer):
         if return_loss:
             label = data[self.property_name]
             label = self.normalize(label)
-            loss = paddle.nn.functional.mse_loss(
+            loss = self.loss_fn(
                 input=pred,
                 label=label,
             )

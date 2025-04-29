@@ -33,17 +33,23 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
   pretrained_model_path: null
+  # Pretrained weight name, will be used when pretrained_model_path is a directory
+  pretrained_weight_name: null #'latest.pdparams'
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
   use_amp: False
   # automatic mixed precision level
   amp_level: 'O1'
+  # whether run a model on no_grad mode during evaluation, useful for saving memory
+  # If the model contains higher-order derivatives in the forward, it should be set to
+  # False
+  eval_with_no_grad: True
   # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
   # gradient accumulation every 2 forward steps
   # Note:
   # one complete step  = gradient_accumulation_steps * forward steps + backward steps
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 1
 
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
@@ -54,7 +60,7 @@ Trainer:
 
   # compute metric during training or evaluation
   compute_metric_during_train: True # True: the metric will be calculated on train dataset
-  metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+  metric_strategy_during_eval: 'epoch' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
 
   # whether use visualdl, wandb, tensorboard to log
   use_visualdl: False
@@ -106,11 +112,11 @@ Dataset:
       num_workers: 4
       use_shared_memory: False
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 32
+        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
   val:
     dataset:
       __class_name__: MP2018Dataset
@@ -123,7 +129,7 @@ Dataset:
         build_graph_cfg: ${Global.graph_converter}
 
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
@@ -140,12 +146,13 @@ Dataset:
         build_graph_cfg: ${Global.graph_converter}
 
     sampler:
-      __class_name__: DistributedBatchSampler
+      __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 64
+        batch_size: 32
 
 
 Predict:
   graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True

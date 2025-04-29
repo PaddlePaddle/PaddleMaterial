@@ -49,3 +49,29 @@ class Normalize:
                 continue
             data[key] = (data[key] - self.mean) / self.std
         return data
+
+
+class Log10:
+    """Calculates the base-10 logarithm of the data, element-wise."""
+
+    def __init__(
+        self,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
+            )
+        else:
+            self.apply_keys = None
+
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            data[key] = np.log10(data[key])
+        return data

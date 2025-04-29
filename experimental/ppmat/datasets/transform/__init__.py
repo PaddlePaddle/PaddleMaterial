@@ -19,14 +19,13 @@ from typing import Tuple
 
 from paddle import vision
 
+from ppmat.datasets.transform.post_process import PowerData
 from ppmat.datasets.transform.post_process import UnNormalize
+from ppmat.datasets.transform.preprocess import Log10
 from ppmat.datasets.transform.preprocess import Normalize
 from ppmat.utils import logger
 
-__all__ = [
-    "Normalize",
-    "UnNormalize",
-]
+__all__ = ["Normalize", "Log10", "UnNormalize", "PowerData"]
 
 
 class Compose(vision.Compose):
@@ -51,25 +50,26 @@ class Compose(vision.Compose):
 def build_transforms(cfg):
     if not cfg:
         return None
+    cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:
-        transform_cls = next(iter(_item.keys()))
-        transform_cfg = _item[transform_cls]
-        transform = eval(transform_cls)(**transform_cfg)
+        transform_cls = _item.pop("__class_name__")
+        init_params = _item.pop("__init_params__")
+        transform = eval(transform_cls)(**init_params)
         transform_list.append(transform)
 
     return vision.Compose(transform_list)
 
 
-def build_post_process(cfg):
+def build_post_transforms(cfg):
     if not cfg:
         return None
     cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:
-        transform_cls = next(iter(_item.keys()))
-        transform_cfg = _item[transform_cls]
-        transform = eval(transform_cls)(**transform_cfg)
+        transform_cls = _item.pop("__class_name__")
+        init_params = _item.pop("__init_params__")
+        transform = eval(transform_cls)(**init_params)
         transform_list.append(transform)
 
-    return Compose(transform_list)
+    return vision.Compose(transform_list)
