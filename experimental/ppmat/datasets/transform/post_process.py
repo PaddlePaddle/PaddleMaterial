@@ -47,24 +47,58 @@ class UnNormalize:
         else:
             self.apply_keys = None
 
-    def __call__(self, pred_data, batch_data=None):
-
-        apply_keys = (
-            self.apply_keys if self.apply_keys is not None else pred_data.keys()
-        )
-
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
         for key in apply_keys:
-            if key not in pred_data:
+            if key not in data:
                 continue
-            pred_data[key] = pred_data[key] * self.std + self.mean
+            data[key] = data[key] * self.std + self.mean
+        return data
 
-        if batch_data is not None:
-            apply_keys = (
-                self.apply_keys if self.apply_keys is not None else batch_data.keys()
+
+class PowerData:
+    """Power Data.
+
+    Args:
+        base (Optional[int]): Base of the power. Defaults to None.
+        exp (Optional[int]): Exponent of the power. Defaults to None.
+        apply_keys (Optional[Tuple[str, ...]]): Keys that need to be powered.
+            If `None`, all keys will be powered. Defaults to None.
+    """
+
+    def __init__(
+        self,
+        base: Optional[int] = None,
+        exp: Optional[int] = None,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        assert (
+            base is not None or exp is not None
+        ), "Base or exponent must be specified."
+        assert base is None or exp is None, "Base and exponent must be specified."
+
+        self.base = base
+        self.exp = exp
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
             )
-            for key in apply_keys:
-                if key not in batch_data:
-                    continue
-                batch_data[key] = batch_data[key] * self.std + self.mean
+        else:
+            self.apply_keys = None
 
-        return pred_data, batch_data
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            if self.base is not None:
+                data[key] = self.base ** data[key]
+            else:
+                data[key] = data[key] ** self.exp
+        return data

@@ -28,6 +28,7 @@ from paddle.io import DistributedBatchSampler  # noqa
 from ppmat.datasets import collate_fn
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
+from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
 __all__ = [
@@ -101,6 +102,9 @@ def build_dataloader(cfg: Dict):
     dataset_cfg = cfg["dataset"]
     cls_name = dataset_cfg.pop("__class_name__")
     init_params = dataset_cfg.pop("__init_params__")
+
+    if "transforms" in init_params:
+        init_params["transforms"] = build_transforms(init_params.pop("transforms"))
 
     dataset = eval(cls_name)(**init_params)
 
