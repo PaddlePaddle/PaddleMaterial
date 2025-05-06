@@ -7,6 +7,7 @@ sys.path.insert(0, osp.abspath(osp.join(__dir__, "..")))  # ruff: noqa
 
 
 import argparse
+from collections import defaultdict
 from typing import Optional
 
 import paddle
@@ -142,8 +143,15 @@ class PropertyPredictor:
                 result = self.from_structures(structure)
                 results.append(result)
             if save_path is not None:
+
+                keys = list(results[0].keys())
+                result_properties = defaultdict(list)
+                for key in keys:
+                    for r in results:
+                        result_properties[key].append(r[key])
+
                 # save cif_files and result to csv file
-                df = pd.DataFrame({"cif_file": cif_files, "result": results})
+                df = pd.DataFrame({"cif_file": cif_files, **result_properties})
                 df.to_csv(save_path, index=False)
                 logger.info(f"Saved the prediction result to {save_path}")
 
@@ -152,8 +160,13 @@ class PropertyPredictor:
             structure = Structure.from_file(cif_file_path)
             result = self.from_structures(structure)
 
+            keys = list(result.keys())
+            result_properties = defaultdict(list)
+            for key in keys:
+                result_properties[key].append(result[key])
+
             if save_path is not None:
-                df = pd.DataFrame({"cif_file": [cif_file_path], "result": [result]})
+                df = pd.DataFrame({"cif_file": [cif_file_path], **result_properties})
                 df.to_csv(save_path, index=False)
                 logger.info(f"Saved the prediction result to {save_path}")
 
