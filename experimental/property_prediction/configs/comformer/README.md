@@ -44,6 +44,16 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">~12 hours</td>
             <td  nowrap="nowrap"><a href="comformer_mp2018_train_60k_e_form.yaml">comformer_mp2018_train_60k_e_form</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">mp2018_train_60k</td>
+            <th  nowrap="nowrap">Bulk Moduli( log(GPa) )</th>
+            <td  nowrap="nowrap">0.0346 / 0.0416</td>
+            <td  nowrap="nowrap">4</td>
+            <td  nowrap="nowrap">~0.5 hours</td>
+            <td  nowrap="nowrap"><a href="comformer_mp2018_train_60k_K.yaml">comformer_mp2018_train_60k_k</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_K.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">Comformer</td>
@@ -66,6 +76,12 @@ python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.p
 # single-gpu training
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml
 
+# bulk moduli
+# multi-gpu training, we use 4 gpus here
+python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
+# single-gpu training
+python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
+
 # shear moduli
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml
@@ -81,6 +97,9 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 # formation energy per atom
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 
+# bulk moduli
+python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+
 # shear moduli
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
@@ -91,6 +110,9 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 
 # formation energy per atom
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
+
+# bulk moduli
+python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
 
 # shear moduli
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
@@ -110,6 +132,15 @@ python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_e
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+
+
+# bulk moduli
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal bulk moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_K' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal bulk moduli prediction. This approach allows for more flexibility and customization.
+python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
 
 # shear moduli
