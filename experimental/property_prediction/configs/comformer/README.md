@@ -38,7 +38,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <th  nowrap="nowrap">Form. Energy(eV/atom)</th>
+            <td  nowrap="nowrap">Form. Energy(eV/atom)</td>
             <td  nowrap="nowrap">0.0164 / 0.0181</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~12 hours</td>
@@ -48,7 +48,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <th  nowrap="nowrap">Bulk Moduli( log(GPa) )</th>
+            <td  nowrap="nowrap">Bulk Moduli( log(GPa) )</td>
             <td  nowrap="nowrap">0.0346 / 0.0416</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~0.5 hours</td>
@@ -58,7 +58,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <th  nowrap="nowrap">Shear Moduli( log(GPa) )</th>
+            <td  nowrap="nowrap">Shear Moduli( log(GPa) )</td>
             <td  nowrap="nowrap">0.0615 / 0.0651</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~0.5 hours</td>
