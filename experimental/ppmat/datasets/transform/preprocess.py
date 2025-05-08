@@ -75,3 +75,31 @@ class Log10:
                 continue
             data[key] = np.log10(data[key])
         return data
+
+
+class LatticePolarDecomposition:
+    """Lattice Polar Decomposition"""
+
+    def __init__(self):
+        pass
+
+    def __call__(self, data):
+        lattice = data["structure_array"]["lattice"]
+        lattice_symm = self.compute_lattice_polar_decomposition(lattice)
+        data["structure_array"]["lattice"] = lattice_symm
+        return data
+
+    def compute_lattice_polar_decomposition(
+        self, lattice_matrix: np.ndarray
+    ) -> np.ndarray:
+
+        U, S, Vh = np.linalg.svd(lattice_matrix, full_matrices=True)
+        S_square = np.diag(S.squeeze())
+
+        V = Vh.transpose(0, 2, 1)
+        U = U @ Vh
+
+        P = V @ S_square @ Vh
+        P_prime = U @ P @ U.transpose(0, 2, 1)
+
+        return P_prime

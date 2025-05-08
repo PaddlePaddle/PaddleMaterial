@@ -21,11 +21,18 @@ from paddle import vision
 
 from ppmat.datasets.transform.post_process import PowerData
 from ppmat.datasets.transform.post_process import UnNormalize
+from ppmat.datasets.transform.preprocess import LatticePolarDecomposition
 from ppmat.datasets.transform.preprocess import Log10
 from ppmat.datasets.transform.preprocess import Normalize
 from ppmat.utils import logger
 
-__all__ = ["Normalize", "Log10", "UnNormalize", "PowerData"]
+__all__ = [
+    "Normalize",
+    "Log10",
+    "UnNormalize",
+    "PowerData",
+    "LatticePolarDecomposition",
+]
 
 
 class Compose(vision.Compose):
