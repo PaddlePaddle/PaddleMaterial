@@ -75,16 +75,6 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap"><a href="comformer_mp2018_train_60k_G.yaml">comformer_mp2018_train_60k_G</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_G.zip">checkpoint | log</a></td>
         </tr>
-        <tr>
-            <td  nowrap="nowrap">Comformer</td>
-            <td  nowrap="nowrap">mp2018_train_60k</td>
-            <th  nowrap="nowrap">Shear Moduli( log(GPa) )</th>
-            <td  nowrap="nowrap">0.0615 / 0.0651</td>
-            <td  nowrap="nowrap">4</td>
-            <td  nowrap="nowrap">~0.5 hours</td>
-            <td  nowrap="nowrap"><a href="comformer_mp2018_train_60k_G.yaml">comformer_mp2018_train_60k_G</a></td>
-            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_G.zip">checkpoint | log</a></td>
-        </tr>
     </body>
 </table>
 
