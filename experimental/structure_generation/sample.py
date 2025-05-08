@@ -203,24 +203,31 @@ if __name__ == "__main__":
 
     argparse.add_argument("--model_name", type=str, default=None)
     argparse.add_argument(
+        "--weights_name",
+        type=str,
+        default=None,
+        help="Weights name, e.g., best.pdparams, latest.pdparams.",
+    )
+    argparse.add_argument(
         "--config_path",
         type=str,
-        default="./structure_generation/configs/diffcsp/diffcsp_mp20.yaml",
+        default=None,
         help="Path to the configuration file.",
     )
     argparse.add_argument(
         "--checkpoint_path",
         type=str,
-        default="./output/diffcsp_mp20/checkpoints/latest.pdparams",
+        default=None,
         help="Path to the checkpoint file.",
     )
-    argparse.add_argument("--save_path", type=str, default="results_sample")
+    argparse.add_argument("--save_path", type=str, default="results")
     argparse.add_argument("--chemical_formula", type=str, default="LiMnO2")
     argparse.add_argument("--compute_metric", action="store_true")
     args = argparse.parse_args()
 
     sampler = StructureSampler(
         model_name=args.model_name,
+        weights_name=args.weights_name,
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,
     )
