@@ -303,7 +303,7 @@ class CSPNet(paddle.nn.Layer):
         property_emb=None,
         property_mask=None,
     ):
-        edges, frac_diff = self.gen_edges(num_atoms, frac_coords, lattices, node2graph)
+        edges, frac_diff = self.gen_edges(num_atoms, frac_coords)
         edge2graph = node2graph[edges[0]]
         node_features = self.node_embedding(atom_types)
 

@@ -1,6 +1,5 @@
 import argparse
 import os
-import os.path as osp
 import sys
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
@@ -18,10 +17,8 @@ from ppmat.datasets import build_dataloader
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.metrics import build_metric
-from ppmat.models import MODEL_REGISTRY
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
-from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
@@ -146,7 +143,7 @@ class StructureSampler:
             return data
         return self.post_transforms(data)
 
-    def sample(self, data, save_path=None, sample_params=None):
+    def sample(self, data, sample_params=None):
         if sample_params is None:
             sample_params = {}
         assert isinstance(sample_params, dict), "sample_params must be a dict or None."
@@ -176,8 +173,23 @@ class StructureSampler:
                 ),
             }
         }
+        result = self.sample(data, sample_params=sample_params)
 
-        result = self.sample(data, save_path=save_path, sample_params=sample_params)
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=True)
+            logger.info(f"Save results to {save_path}")
+            build_structure_cfg = self.sample_config["build_structure_cfg"]
+            structure_converter = BuildStructure(**build_structure_cfg)
+            structures = structure_converter(result["result"])
+            for i, structure in enumerate(structures):
+                formula = structure.formula.replace(" ", "-")
+                tar_file = os.path.join(save_path, f"{formula}_{i + 1}.cif")
+                if structure is not None:
+                    writer = CifWriter(structure)
+                    writer.write_file(tar_file)
+                else:
+                    logger.info(f"No structure generated for index {i}")
+
         return result
 
     def sample_by_condition(self, composition, save_path=None, sample_params=None):
@@ -191,31 +203,40 @@ if __name__ == "__main__":
 
     argparse.add_argument("--model_name", type=str, default=None)
     argparse.add_argument(
+        "--weights_name",
+        type=str,
+        default=None,
+        help="Weights name, e.g., best.pdparams, latest.pdparams.",
+    )
+    argparse.add_argument(
         "--config_path",
         type=str,
-        default="./structure_generation/configs/diffcsp/diffcsp_mp20.yaml",
+        default=None,
         help="Path to the configuration file.",
     )
     argparse.add_argument(
         "--checkpoint_path",
         type=str,
-        default="./output/diffcsp_mp20/checkpoints/latest.pdparams",
+        default=None,
         help="Path to the checkpoint file.",
     )
     argparse.add_argument("--save_path", type=str, default="results")
     argparse.add_argument("--chemical_formula", type=str, default="LiMnO2")
+    argparse.add_argument("--compute_metric", action="store_true")
     args = argparse.parse_args()
 
     sampler = StructureSampler(
         model_name=args.model_name,
+        weights_name=args.weights_name,
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,
     )
-    result = sampler.sample_by_chemical_formula(
-        chemical_formula=args.chemical_formula,
-        save_path=args.save_path,
-    )
-    print(result)
-
-    result = sampler.compute_metric(save_path=args.save_path)
-    print(result)
+    if args.compute_metric:
+        metric_result = sampler.compute_metric(save_path=args.save_path)
+        for metric_name, metric_value in metric_result.items():
+            logger.info(f"{metric_name}: {metric_value}")
+    else:
+        result = sampler.sample_by_chemical_formula(
+            chemical_formula=args.chemical_formula,
+            save_path=args.save_path,
+        )
