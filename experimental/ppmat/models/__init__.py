@@ -20,17 +20,27 @@ from omegaconf import OmegaConf
 
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
+from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
-__all__ = ["iComformer", "ComformerGraphConverter", "DiffCSP"]
+__all__ = [
+    "iComformer",
+    "ComformerGraphConverter",
+    "DiffCSP",
+    "FindPointsInSpheres",
+    "MEGNetPlus",
+]
 
 
 MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
     "comformer_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_G.zip",
+    "comformer_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_K.zip",
+    "megnet_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_e_form.zip",
 }
 
 
