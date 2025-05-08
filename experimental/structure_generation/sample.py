@@ -220,7 +220,7 @@ if __name__ == "__main__":
         default=None,
         help="Path to the checkpoint file.",
     )
-    argparse.add_argument("--save_path", type=str, default="results_sample")
+    argparse.add_argument("--save_path", type=str, default="results")
     argparse.add_argument("--chemical_formula", type=str, default="LiMnO2")
     argparse.add_argument("--compute_metric", action="store_true")
     args = argparse.parse_args()
