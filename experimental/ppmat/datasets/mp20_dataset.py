@@ -245,9 +245,7 @@ class MP20Dataset(Dataset):
                     osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
-                structures = BuildStructure(**build_structure_cfg)(
-                    self.row_data["structure"]
-                )
+                structures = BuildStructure(**build_structure_cfg)(self.row_data["cif"])
                 # save structures to cache file
                 os.makedirs(structure_cache_path, exist_ok=True)
                 for i in range(self.num_samples):
