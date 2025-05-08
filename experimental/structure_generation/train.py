@@ -79,12 +79,12 @@ if __name__ == "__main__":
     else:
         train_loader = build_dataloader(train_data_cfg)
 
-    eval_data_cfg = config["Dataset"].get("eval")
-    if eval_data_cfg is None:
+    val_data_cfg = config["Dataset"].get("val")
+    if val_data_cfg is None:
         logger.warning("val dataset is not defined in config.")
-        eval_loader = None
+        val_loader = None
     else:
-        eval_loader = build_dataloader(eval_data_cfg)
+        val_loader = build_dataloader(val_data_cfg)
     test_data_cfg = config["Dataset"].get("test")
     if test_data_cfg is None:
         logger.warning("test dataset is not defined in config.")
@@ -121,8 +121,7 @@ if __name__ == "__main__":
         config["Trainer"],
         model,
         train_dataloader=train_loader,
-        eval_dataloader=eval_loader,
-        test_dataloader=test_loader,
+        val_dataloader=val_loader,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         compute_metric_func_dict=metric_func,
@@ -131,6 +130,8 @@ if __name__ == "__main__":
     if config["Global"].get("do_train", True):
         trainer.train()
     if config["Global"].get("do_eval", False):
-        loss_dict, metric_dict = trainer.eval()
+        logger.info("Evaluating on validation set")
+        time_info, loss_info, metric_info = trainer.eval(val_loader)
     if config["Global"].get("do_test", False):
-        loss_dict, metric_dict = trainer.test()
+        logger.info("Evaluating on test set")
+        time_info, loss_info, metric_info = trainer.eval(test_loader)
