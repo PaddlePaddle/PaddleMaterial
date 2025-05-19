@@ -22,6 +22,7 @@ from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -33,6 +34,7 @@ __all__ = [
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",
+    "MatterGen",
 ]
 
 
