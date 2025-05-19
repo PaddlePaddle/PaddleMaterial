@@ -22,6 +22,27 @@ def uniform_sample_t(batch_size, timesteps):
     return paddle.to_tensor(times)
 
 
+class UniformTimestepSampler:
+    """Samples diffusion timesteps uniformly over the training time."""
+
+    def __init__(self, *, min_t: float, max_t: float):
+        """Initializes the sampler.
+
+        Args:
+            min_t (float): Smallest timestep that will be seen during training.
+            max_t (float): Largest timestep that will be seen during training.
+        """
+        super().__init__()
+        self.min_t = min_t
+        self.max_t = max_t
+
+    def __call__(
+        self,
+        batch_size: int,
+    ) -> paddle.float32:
+        return paddle.rand(shape=[batch_size]) * (self.max_t - self.min_t) + self.min_t
+
+
 class SinusoidalTimeEmbeddings(paddle.nn.Layer):
     def __init__(self, dim):
         super().__init__()
