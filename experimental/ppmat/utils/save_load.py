@@ -52,9 +52,27 @@ def _load_pretrain_from_path(path: str, model: nn.Layer):
         raise FileNotFoundError(
             f"Pretrained model path {path}.pdparams does not exists."
         )
-
     param_state_dict = paddle.load(f"{path}.pdparams")
-    model.set_state_dict(param_state_dict)
+    if "state_dict" in param_state_dict:
+        param_state_dict = param_state_dict["state_dict"]
+
+    missing_keys_unexpected_keys = model.set_state_dict(param_state_dict)
+    if (
+        missing_keys_unexpected_keys is not None
+        and len(missing_keys_unexpected_keys) == 2
+    ):
+        missing_keys, unexpected_keys = missing_keys_unexpected_keys
+        if missing_keys:
+            logger.warning(
+                f"There are missing keys when loading checkpoint: {missing_keys}, "
+                "and corresponding parameters will be initialized by default."
+            )
+        if unexpected_keys:
+            logger.warning(
+                f"There are redundant keys: {unexpected_keys}, "
+                "and corresponding weights will be ignored."
+            )
+
     logger.message(f"Finish loading pretrained model from: {path}.pdparams")
 
 
