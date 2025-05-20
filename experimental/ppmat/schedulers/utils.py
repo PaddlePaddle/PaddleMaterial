@@ -80,5 +80,4 @@ def maybe_expand(
     if batch is None:
         return x
     else:
-        # if tuple(x.shape)[0] == tuple(batch.shape)[0]:
         return x[batch]
