@@ -2018,20 +2018,15 @@ class MatterGen(paddle.nn.Layer):
         self.timestep_sampler = UniformTimestepSampler(min_t=1e-05, max_t=max_t)
 
     def forward(self, batch) -> Any:
-        import pdb
-
-        pdb.set_trace()
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = structure_array["num_atoms"].shape[0]
         batch_idx = paddle.repeat_interleave(
             paddle.arange(batch_size), repeats=structure_array["num_atoms"]
         )
-        paddle.seed(42)
         times = self.timestep_sampler(batch_size)
 
         # coord noise
-        paddle.seed(42)
         frac_coords = structure_array["frac_coords"]
         rand_x = paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
 
@@ -2050,7 +2045,7 @@ class MatterGen(paddle.nn.Layer):
             lattices = lattice_params_to_matrix_paddle(
                 structure_array["lengths"], structure_array["angles"]
             )
-        paddle.seed(42)
+
         rand_l = paddle.randn(shape=lattices.shape, dtype=lattices.dtype)
         rand_l = make_noise_symmetric_preserve_variance(rand_l)
 
@@ -2065,7 +2060,6 @@ class MatterGen(paddle.nn.Layer):
         atom_type = structure_array["atom_types"]
         atom_type_zero_based = atom_type - 1
 
-        paddle.seed(42)
         input_atom_type_zero_based = self.atom_scheduler.add_noise(
             atom_type_zero_based,
             timesteps=times,
@@ -2147,9 +2141,6 @@ class MatterGen(paddle.nn.Layer):
         n_step_corrector: int = 1,
         record: bool = False,
     ):
-        import pdb
-
-        pdb.set_trace()
         structure_array = batch_data["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
@@ -2157,7 +2148,6 @@ class MatterGen(paddle.nn.Layer):
             paddle.arange(batch_size), repeats=num_atoms
         )
 
-        paddle.seed(42)
         # get the initial noise
         lattice = self.lattice_scheduler.prior_sampling(
             shape=(batch_size, 3, 3), num_atoms=num_atoms
@@ -2283,11 +2273,11 @@ class MatterGen(paddle.nn.Layer):
             }
 
         start_idx = 0
-        result_mean = []
         result = []
         for i in range(batch_size):
             end_idx = start_idx + num_atoms[i]
-            result_mean.append(
+            # for mattertgen, we need to use the mean value of the predicted structure
+            result.append(
                 {
                     "num_atoms": num_atoms[i].tolist(),
                     "atom_types": structure_array_mean["atom_types"][
@@ -2299,18 +2289,18 @@ class MatterGen(paddle.nn.Layer):
                     "lattice": structure_array_mean["lattice"][i].tolist(),
                 }
             )
-            result.append(
-                {
-                    "num_atoms": num_atoms[i].tolist(),
-                    "atom_types": structure_array["atom_types"][
-                        start_idx:end_idx
-                    ].tolist(),
-                    "frac_coords": structure_array["frac_coords"][
-                        start_idx:end_idx
-                    ].tolist(),
-                    "lattice": structure_array["lattice"][i].tolist(),
-                }
-            )
+            # result.append(
+            #     {
+            #         "num_atoms": num_atoms[i].tolist(),
+            #         "atom_types": structure_array["atom_types"][
+            #             start_idx:end_idx
+            #         ].tolist(),
+            #         "frac_coords": structure_array["frac_coords"][
+            #             start_idx:end_idx
+            #         ].tolist(),
+            #         "lattice": structure_array["lattice"][i].tolist(),
+            #     }
+            # )
             start_idx += num_atoms[i]
 
-        return {"result": result, "result_mean": result_mean}
+        return {"result": result}
