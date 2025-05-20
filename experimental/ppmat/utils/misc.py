@@ -22,6 +22,7 @@ from contextlib import ContextDecorator
 from typing import Callable
 from typing import Dict
 from typing import List
+from typing import Literal
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
@@ -30,6 +31,7 @@ from typing import Union
 import numpy as np
 import paddle
 from paddle import distributed as dist
+from paddle_scatter import scatter
 
 from ppmat.utils import logger
 
@@ -686,3 +688,40 @@ def repeat_blocks(
     id_ar[0] += start_idx
     res = id_ar.cumsum(axis=0)
     return res
+
+
+def aggregate_per_sample(
+    data_per_row: paddle.Tensor,
+    batch_idx: (paddle.Tensor | None),
+    reduce: Literal["sum", "mean"],
+    batch_size: int,
+):
+    """
+    Aggregate (potentially) batched input tensor to get a scalar for each sample in the
+    batch.
+    E.g., (num_atoms, d1, d2, ..., dn) -> (batch_size, d1, d2, ..., dn) -> (batch_size,)
+    where the first aggregation only happens when batch_idx is provided.
+
+    Args:
+        data_per_row: shape (num_nodes, any_more_dims). May contain multiple nodes per
+            sample.
+        batch_idx: shape (num_nodes,). Indicates which sample each row belongs to. If
+            not provided, then we assume the first dimension is the batch dimension.
+        reduce: determines how to aggregate over nodes within each sample. (Aggregation
+            over samples and within dims for one node is always mean.)
+        batch_size: number of samples in the batch.
+
+    Returns:
+        Scalar for each sample, shape (batch_size,).
+
+    """
+    data_per_row = paddle.mean(
+        x=data_per_row.reshape(tuple(data_per_row.shape)[0], -1), axis=1
+    )
+    if batch_idx is None:
+        data_per_sample = data_per_row
+    else:
+        data_per_sample = scatter(
+            src=data_per_row, index=batch_idx, dim_size=batch_size, reduce=reduce
+        )
+    return data_per_sample
