@@ -17,6 +17,7 @@ import numpy as np
 import paddle
 
 from ppmat.utils import paddle_aux  # noqa: F401
+from ppmat.utils.paddle_aux import dim2perm
 
 OFFSET_LIST = [
     [-1, -1, -1],
@@ -347,6 +348,14 @@ def frac_to_cart_coords(
     return pos
 
 
+def frac_to_cart_coords_with_lattice(
+    frac_coords: paddle.Tensor, num_atoms: paddle.Tensor, lattice: paddle.Tensor
+) -> paddle.Tensor:
+    lattice_nodes = paddle.repeat_interleave(x=lattice, repeats=num_atoms, axis=0)
+    pos = paddle.einsum("bi,bij->bj", frac_coords, lattice_nodes)
+    return pos
+
+
 def cart_to_frac_coords(
     cart_coords, num_atoms, lengths=None, angles=None, lattices=None
 ):
@@ -369,3 +378,14 @@ def polar_decomposition(x):
     )
     U = vecU @ vecV
     return U, P
+
+
+def compute_lattice_polar_decomposition(lattice_matrix: paddle.Tensor) -> paddle.Tensor:
+    W, S, V_transp = paddle.linalg.svd(full_matrices=True, x=lattice_matrix)
+    S_square = paddle.diag_embed(input=S)
+    V = V_transp.transpose(perm=dim2perm(V_transp.ndim, 1, 2))
+    U = W @ V_transp
+    P = V @ S_square @ V_transp
+    P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
+    symm_lattice_matrix = P_prime
+    return symm_lattice_matrix
