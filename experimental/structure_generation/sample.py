@@ -175,7 +175,7 @@ class StructureSampler:
                     writer.write_file(tar_file)
                 else:
                     logger.info(f"No structure generated for index {i}")
-        
+
         return result
 
     def sample_by_chemical_formula(
@@ -246,7 +246,12 @@ if __name__ == "__main__":
     argparse.add_argument("--save_path", type=str, default="results")
     argparse.add_argument("--chemical_formula", type=str, default="LiMnO2")
     argparse.add_argument("--num_atoms", type=int, default=4)
-    argparse.add_argument("--mode", type=str, choices=["by_chemical_formula", "by_num_atoms", 'compute_metric'], default="by_chemical_formula")
+    argparse.add_argument(
+        "--mode",
+        type=str,
+        choices=["by_chemical_formula", "by_num_atoms", "compute_metric"],
+        default="by_chemical_formula",
+    )
 
     args = argparse.parse_args()
 
@@ -256,16 +261,16 @@ if __name__ == "__main__":
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,
     )
-    if args.mode == 'compute_metric':
+    if args.mode == "compute_metric":
         metric_result = sampler.compute_metric(save_path=args.save_path)
         for metric_name, metric_value in metric_result.items():
             logger.info(f"{metric_name}: {metric_value}")
-    elif args.mode == 'by_chemical_formula':
+    elif args.mode == "by_chemical_formula":
         result = sampler.sample_by_chemical_formula(
             chemical_formula=args.chemical_formula,
             save_path=args.save_path,
         )
-    elif args.mode == 'by_num_atoms':
+    elif args.mode == "by_num_atoms":
         result = sampler.sample_by_num_atoms(
             num_atoms=args.num_atoms,
             save_path=args.save_path,
