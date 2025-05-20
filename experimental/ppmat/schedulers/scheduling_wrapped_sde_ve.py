@@ -18,9 +18,9 @@ from typing import Tuple
 
 import paddle
 from paddle_scatter import scatter_add
-from ppmat.schedulers.utils import maybe_expand
 
 from ppmat.utils import logger
+from ppmat.utils.misc import maybe_expand
 
 
 def wrap_at_boundary(x: paddle.Tensor, wrapping_boundary: float) -> paddle.Tensor:

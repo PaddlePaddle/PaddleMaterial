@@ -18,9 +18,9 @@ from typing import Tuple
 from typing import Union
 
 import paddle
-from ppmat.schedulers.utils import maybe_expand
 
 from ppmat.utils.misc import aggregate_per_sample
+from ppmat.utils.misc import maybe_expand
 
 
 class D3PMScheduler:

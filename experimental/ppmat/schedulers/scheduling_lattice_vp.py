@@ -14,12 +14,12 @@
 
 
 import paddle
-from ppmat.schedulers.utils import expand
-from ppmat.schedulers.utils import make_noise_symmetric_preserve_variance
-from ppmat.schedulers.utils import maybe_expand
 
 from ppmat.utils import logger
 from ppmat.utils.crystal import compute_lattice_polar_decomposition
+from ppmat.utils.misc import expand
+from ppmat.utils.misc import make_noise_symmetric_preserve_variance
+from ppmat.utils.misc import maybe_expand
 
 
 class LatticeVPSDEScheduler:
