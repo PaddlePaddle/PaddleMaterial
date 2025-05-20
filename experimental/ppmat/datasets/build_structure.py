@@ -18,6 +18,7 @@ import numpy as np
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
+from pymatgen.io.cif import CifParser
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
@@ -87,6 +88,10 @@ class BuildStructure:
             crystal = Structure.from_file(crystal_data)
         elif format == "dict":
             crystal = Structure.from_dict(crystal_data)
+        elif format == "cif_str_by_CifParser":
+            crystal = CifParser.from_str(crystal_data).parse_structures(
+                primitive=True, on_error="ignore"
+            )[0]
         else:
             raise ValueError(f"Invalid format specified: {format}")
 
@@ -94,13 +99,14 @@ class BuildStructure:
             crystal = crystal.get_primitive_structure()
         if niggli:
             crystal = crystal.get_reduced_structure()
-        canonical_crystal = Structure(
-            lattice=Lattice.from_parameters(*crystal.lattice.parameters),
-            species=crystal.species,
-            coords=crystal.frac_coords,
-            coords_are_cartesian=False,
-        )
-        return canonical_crystal
+        # canonical_crystal = crystal
+        # canonical_crystal = Structure(
+        #     lattice=Lattice.from_parameters(*crystal.lattice.parameters),
+        #     species=crystal.species,
+        #     coords=crystal.frac_coords,
+        #     coords_are_cartesian=False,
+        # )
+        return crystal
 
     def __call__(self, crystals_data):
         if isinstance(crystals_data, list):
