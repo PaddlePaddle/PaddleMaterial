@@ -103,15 +103,37 @@ class StructureSampler:
         self,
         save_path=None,
     ):
+        metrics_cfg = self.sample_config.get("metrics")
+        assert metrics_cfg is not None, "metrics config must be provided."
+        metrics_fn = build_metric(metrics_cfg)
+
+        total_results = self.sample_by_dataloader(save_path)
+
+        metric = metrics_fn(total_results)
+        return metric
+
+    def post_process(self, data):
+        if self.post_transforms is None:
+            return data
+        return self.post_transforms(data)
+
+    def sample(self, data, sample_params=None):
+        if sample_params is None:
+            sample_params = {}
+        assert isinstance(sample_params, dict), "sample_params must be a dict or None."
+        pred_data = self.model.sample(data, **sample_params)
+        pred_data = self.post_process(pred_data)
+        return pred_data
+
+    def sample_by_dataloader(
+        self,
+        save_path=None,
+    ):
         dataset_cfg = self.sample_config["data"]
         data_loader = build_dataloader(dataset_cfg)
 
         build_structure_cfg = self.sample_config["build_structure_cfg"]
         structure_converter = BuildStructure(**build_structure_cfg)
-
-        metrics_cfg = self.sample_config.get("metrics")
-        assert metrics_cfg is not None, "metrics config must be provided."
-        metrics_fn = build_metric(metrics_cfg)
 
         logger.info(f"Total iterations: {len(data_loader)}")
         logger.info("Start sampling process...\n")
@@ -135,21 +157,7 @@ class StructureSampler:
                             f"No structure generated for iteration {iter_id}, index {i}"
                         )
             total_results.extend(pred_data["result"])
-        metric = metrics_fn(total_results)
-        return metric
-
-    def post_process(self, data):
-        if self.post_transforms is None:
-            return data
-        return self.post_transforms(data)
-
-    def sample(self, data, sample_params=None):
-        if sample_params is None:
-            sample_params = {}
-        assert isinstance(sample_params, dict), "sample_params must be a dict or None."
-        pred_data = self.model.sample(data, **sample_params)
-        pred_data = self.post_process(pred_data)
-        return pred_data
+        return total_results
 
     def sample_by_num_atoms(self, num_atoms, save_path=None, sample_params=None):
         assert isinstance(num_atoms, int), "num_atoms must be an integer."
@@ -249,7 +257,12 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--mode",
         type=str,
-        choices=["by_chemical_formula", "by_num_atoms", "compute_metric"],
+        choices=[
+            "by_chemical_formula",
+            "by_num_atoms",
+            "by_dataloader",
+            "compute_metric",
+        ],
         default="by_chemical_formula",
     )
 
@@ -273,6 +286,10 @@ if __name__ == "__main__":
     elif args.mode == "by_num_atoms":
         result = sampler.sample_by_num_atoms(
             num_atoms=args.num_atoms,
+            save_path=args.save_path,
+        )
+    elif args.mode == "by_dataloader":
+        result = sampler.sample_by_dataloader(
             save_path=args.save_path,
         )
     else:
