@@ -77,10 +77,10 @@ def build_model(cfg: Dict):
     if cfg is None:
         return None
     cfg = copy.deepcopy(cfg)
-    class_name = cfg.pop("__class_name__")  # 要实例化的类名
-    init_params = cfg.pop("__init_params__")  # 要实例化的类参数
-    model = eval(class_name)(**init_params)  # 实例化类
-    logger.debug(str(model))  # 打印模型结构
+    class_name = cfg.pop("__class_name__")  
+    init_params = cfg.pop("__init_params__")  
+    model = eval(class_name)(**init_params)  
+    logger.debug(str(model))  
 
     return model
 
