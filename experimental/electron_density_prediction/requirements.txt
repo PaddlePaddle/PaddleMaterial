@@ -1,0 +1,19 @@
+# inference, uncomment for running the Jupyter notebooks
+jupyterlab==3.5.2
+kaleido==0.2.1
+lz4==4.0.2
+matplotlib==3.6.2
+
+# scientific
+numpy==1.23.4
+# all codes are run with Python 3.9 and CUDA 11.8
+# ML
+paddlepaddle-gpu==3.0.0rc1
+Pillow==9.3.0
+plotly==5.11.0
+PyYAML==6.0
+scipy==1.9.3
+tensorboard==2.11.0
+
+# utils
+tqdm==4.64.1

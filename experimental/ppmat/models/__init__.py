@@ -22,6 +22,7 @@ from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -33,6 +34,7 @@ __all__ = [
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",
+    "InfGCN",
 ]
 
 
@@ -75,10 +77,10 @@ def build_model(cfg: Dict):
     if cfg is None:
         return None
     cfg = copy.deepcopy(cfg)
-    class_name = cfg.pop("__class_name__")
-    init_params = cfg.pop("__init_params__")
-    model = eval(class_name)(**init_params)
-    logger.debug(str(model))
+    class_name = cfg.pop("__class_name__")  # 要实例化的类名
+    init_params = cfg.pop("__init_params__")  # 要实例化的类参数
+    model = eval(class_name)(**init_params)  # 实例化类
+    logger.debug(str(model))  # 打印模型结构
 
     return model
 
