@@ -17,7 +17,7 @@ import random
 import numpy as np
 import paddle
 
-from ppmat.models.infgcn.paddle_utils import *
+from ppmat.models.infgcn.paddle_utils import * # noqa: F403
 
 from .paddle_geometric_data import Batch
 
