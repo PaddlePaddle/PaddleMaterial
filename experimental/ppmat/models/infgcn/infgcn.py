@@ -339,7 +339,6 @@ class InfGCN(paddle.nn.Layer):
         :return: predicted value at each grid point of (G, K)
         """
         cell = paddle.stack(x=[info["cell"] for info in infos], axis=0).to(batch.place)
-        # print("batch.place", batch.place)
         feat = self.embedding(atom_types)
         edge_index = radius_graph(atom_coord, self.cutoff, batch, loop=False)
         src, dst = edge_index

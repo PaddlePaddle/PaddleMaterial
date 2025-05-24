@@ -17,7 +17,6 @@ import time
 
 import paddle
 from omegaconf import OmegaConf
-
 from ppmat.datasets import DensityCollator
 from ppmat.datasets import DensityVoxelCollator
 from ppmat.datasets import build_dataloader
@@ -124,7 +123,7 @@ class InfGCNTrainer(BaseTrainer):
 
         return time_info, loss_info, metric_info
 
-    # eval_batch acually, for keep consistance
+    # test_batch acually, for keep consistance
     def test_epoch(self, dataloader, num_infer=None, num_vis=2, inf_samples=None):
         self.model.eval()
         loss_info = {}
@@ -225,172 +224,6 @@ class InfGCNTrainer(BaseTrainer):
             reader_tic = time.time()
 
         return time_info, loss_info, metric_info
-
-    def train_epoch(self, dataloader):
-        self.model.train()
-        loss_info = {}
-        metric_info = {}
-        time_info = {
-            "reader_cost": misc.AverageMeter(name="reader_cost", postfix="s"),
-            "batch_cost": misc.AverageMeter(name="batch_cost", postfix="s"),
-        }
-
-        self.state.max_steps_in_train_epoch = len(dataloader)
-        self.state.step_in_train_epoch = 0
-
-        reader_tic = time.time()
-        batch_tic = time.time()
-        device = paddle.get_device()
-        for iter_id, batch_data in enumerate(dataloader):
-            reader_cost = time.time() - reader_tic
-            time_info["reader_cost"].update(reader_cost)
-
-            batch_size = self.guess_batch_size(batch_data, dataloader)
-
-            g, density, grid_coord, infos = batch_data
-
-            device = paddle.get_device()
-            print(
-                "device",
-            )
-            g = g.to(device)
-            density, grid_coord = density.to(device), grid_coord.to(device)
-            for i, info in enumerate(infos):
-                if "cell" in info and hasattr(info["cell"], "to"):
-                    infos[i]["cell"] = info["cell"].to(device)
-
-            pred = self.model(g.x, g.pos, grid_coord, g.batch, infos)
-
-            if self.use_voxel:
-                mask = (density > 0).astype(dtype="float32")
-                pred = pred * mask
-                density = density * mask
-
-            loss = self.criterion(pred, density)
-            mae = paddle.abs(pred - density).sum() / density.sum()
-            loss.backward()
-
-            self.optimizer.step()
-            self.optimizer.clear_grad()
-
-            self.state.step_in_train_epoch += 1
-            self.state.global_step += 1
-
-            if "loss" not in loss_info:
-                loss_info["loss"] = misc.AverageMeter("loss")
-            loss_info["loss"].update(float(loss), batch_size)
-
-            if "mae" not in loss_info:
-                loss_info["mae"] = misc.AverageMeter("mae")
-            loss_info["mae"].update(float(mae), batch_size)
-
-            if (
-                self.compute_metric_during_train
-                and self.compute_metric_func_dict is not None
-            ):
-                for key, compute_metric_func in self.compute_metric_func_dict.items():
-                    metric = compute_metric_func(pred, density)
-                    if key not in metric_info:
-                        metric_info[key] = misc.AverageMeter(key)
-                    metric_info[key].update(float(metric), batch_size)
-
-            batch_cost = time.time() - batch_tic
-            time_info["batch_cost"].update(batch_cost)
-
-            if (
-                self.state.step_in_train_epoch % self.config["log_freq"] == 0
-                or self.state.step_in_train_epoch == self.state.max_steps_in_train_epoch
-                or self.state.step_in_train_epoch == 1
-            ):
-                logs = {}
-                logs["lr"] = self.optimizer.get_lr()
-                for name, average_meter in time_info.items():
-                    logs[name] = average_meter.val
-                for name, average_meter in loss_info.items():
-                    logs[name] = average_meter.val
-                for name, average_meter in metric_info.items():
-                    logs[name] = average_meter.val
-
-                msg = f"Train: Epoch [{self.state.epoch}/{self.config['max_epochs']}]"
-                msg += f" | Step: [{self.state.step_in_train_epoch}/{self.state.max_steps_in_train_epoch}]"
-                if logs:
-                    for key, val in logs.items():
-                        msg += f" | {key}: {val:.6f}"
-                logger.info(msg)
-
-            batch_tic = time.time()
-            reader_tic = time.time()
-
-        return time_info, loss_info, metric_info
-
-    def forward(self, batch_data):
-        g, density, grid_coord, infos = batch_data
-
-        device = paddle.get_device()
-        g = g.to(device)
-        density, grid_coord = density.to(device), grid_coord.to(device)
-        for i, info in enumerate(infos):
-            if "cell" in info and hasattr(info["cell"], "to"):
-                infos[i]["cell"] = info["cell"].to(device)
-
-        pred = self.model(g.x, g.pos, grid_coord, g.batch, infos)
-
-        if self.use_voxel:
-            mask = (density > 0).astype(dtype="float32")
-            pred = pred * mask
-            density = density * mask
-
-        loss = self.criterion(pred, density)
-        mae = paddle.abs(pred - density).sum() / density.sum()
-
-        return {
-            "loss_dict": {"loss": loss, "mae": mae},
-            "pred_dict": {"density_mae": pred},
-        }
-
-    def train_step(self, batch_data):
-        g, density, grid_coord, infos = batch_data
-
-        device = paddle.get_device()
-        g = g.to(device)
-        density, grid_coord = density.to(device), grid_coord.to(device)
-        for i, info in enumerate(infos):
-            if "cell" in info and hasattr(info["cell"], "to"):
-                infos[i]["cell"] = info["cell"].to(device)
-
-        pred = self.model(g.x, g.pos, grid_coord, g.batch, infos)
-
-        if self.use_voxel:
-            mask = (density > 0).astype(dtype="float32")
-            pred = pred * mask
-            density = density * mask
-
-        loss = self.criterion(pred, density)
-        mae = paddle.abs(pred - density).sum() / density.sum()
-
-        return {"loss": loss, "mae": mae}
-
-    def eval_step(self, batch_data):
-        g, density, grid_coord, infos = batch_data
-
-        device = paddle.get_device()
-        g = g.to(device)
-        density, grid_coord = density.to(device), grid_coord.to(device)
-        for i, info in enumerate(infos):
-            if "cell" in info and hasattr(info["cell"], "to"):
-                infos[i]["cell"] = info["cell"].to(device)
-
-        pred = self.model(g.x, g.pos, grid_coord, g.batch, infos)
-
-        if self.use_voxel:
-            mask = (density > 0).astype(dtype="float32")
-            pred = pred * mask
-            density = density * mask
-
-        loss = self.criterion(pred, density)
-        mae = paddle.abs(pred - density).sum() / density.sum()
-
-        return {"loss": loss, "mae": mae, "pred": pred, "density": density}
 
     def train(self):
         max_iter = self.config.get("max_iter", None)
