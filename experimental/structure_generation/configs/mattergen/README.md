@@ -14,6 +14,7 @@ The design of functional materials with desired properties is essential in drivi
         <tr>
             <th  nowrap="nowrap">Model</th>
             <th  nowrap="nowrap">Dataset</th>
+            <th  nowrap="nowrap">Val(loss)</th>
             <th  nowrap="nowrap">Config</th>
             <th  nowrap="nowrap">Checkpoint | Log</th>
         </tr>
@@ -22,20 +23,37 @@ The design of functional materials with desired properties is essential in drivi
         <tr>
             <td  nowrap="nowrap">MatterGen</td>
             <td  nowrap="nowrap">mp20</td>
+            <td  nowrap="nowrap">0.3721</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20.yaml">mattergen_mp20</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
             <td  nowrap="nowrap">MatterGen</td>
             <td  nowrap="nowrap">mp20</td>
+            <td  nowrap="nowrap">0.3121</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_chemical_system.yaml">mattergen_mp20_chemical_system</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_chemical_system.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
             <td  nowrap="nowrap">MatterGen</td>
             <td  nowrap="nowrap">mp20</td>
+            <td  nowrap="nowrap">0.3575</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_dft_band_gap.yaml">mattergen_mp20_dft_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_band_gap.zip">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mp20</td>
+            <td  nowrap="nowrap">0.2942</td>
+            <td  nowrap="nowrap"><a href="mattergen_mp20_dft_bulk_modulus.yaml">mattergen_mp20_dft_bulk_modulus</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_bulk_modulus.zip">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mp20</td>
+            <td  nowrap="nowrap">0.3620</td>
+            <td  nowrap="nowrap"><a href="mattergen_mp20_dft_mag_density.yaml">mattergen_mp20_dft_mag_density</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_mag_density.zip">checkpoint | log</a></td>
         </tr>  
     </body>
 </table>
@@ -60,6 +78,16 @@ python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generatio
 # single-gpu training
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml
 
+# mp20 dataset, with dft_bulk_modulus constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+# multi-gpu training, we use 8 gpus here
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml
+# single-gpu training
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml
+
+# mp20 dataset, with dft_mag_density constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
+# single-gpu training
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
 ```
 
 ### Validation
@@ -76,6 +104,11 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 # mp20 dataset, with dft_band_gap constraints
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 
+# mp20 dataset, with dft_bulk_modulus constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+
+# mp20 dataset, with dft_mag_density constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
 
 ### Testing
@@ -90,6 +123,12 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 
 # mp20 dataset, with dft_band_gap constraints
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=False Global.do_train=False Global.do_test=True
+
+# mp20 dataset, with dft_bulk_modulus constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=False Global.do_train=False Global.do_test=True
+
+# mp20 dataset, with dft_mag_density constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=False Global.do_train=False Global.do_test=True
 ```
 
 ### Sample
@@ -129,6 +168,22 @@ python structure_generation/sample.py --model_name='mattergen_mp20_dft_band_gap'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
+
+# mp20 dataset, with dft_bulk_modulus constraints
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python structure_generation/sample.py --model_name='mattergen_mp20_dft_bulk_modulus' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+
+# mp20 dataset, with dft_mag_density constraints
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python structure_generation/sample.py --model_name='mattergen_mp20_dft_mag_density' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
 ```
 
 ## Citation
