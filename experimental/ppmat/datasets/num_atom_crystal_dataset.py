@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import numbers
+
 import numpy as np
 import paddle
 
@@ -44,7 +46,6 @@ class NumAtomsCrystalDataset(paddle.io.Dataset):
             distribution = NUM_ATOMS_DISTRIBUTIONS.get(dist_name)
             self.distribution = distribution
 
-            np.random.seed(42)
             self.num_atoms = np.random.choice(
                 list(self.distribution.keys()),
                 size=total_num,
@@ -87,5 +88,8 @@ class NumAtomsCrystalDataset(paddle.io.Dataset):
 
         if self.prop_flag:
             for prop_name, prop_value in zip(self.prop_names, self.prop_values):
-                data[prop_name] = np.array([prop_value]).astype("float32")
+                if isinstance(prop_value, numbers.Number):
+                    data[prop_name] = np.array([prop_value]).astype("float32")
+                else:
+                    data[prop_name] = prop_value
         return data
