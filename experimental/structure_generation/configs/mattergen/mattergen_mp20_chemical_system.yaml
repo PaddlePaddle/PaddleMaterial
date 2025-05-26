@@ -27,7 +27,7 @@ Trainer:
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
-  log_freq: 1 # log frequency [step]
+  log_freq: 10 # log frequency [step]
 
   # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
   start_eval_epoch: 1
