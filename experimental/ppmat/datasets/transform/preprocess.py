@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Optional
 from typing import Tuple
-from typing import Union
+from typing import Union, Dict, Sequence
 
 import numpy as np
 import paddle
@@ -126,3 +126,17 @@ class LatticePolarDecomposition:
         P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
         symm_lattice_matrix = P_prime
         return symm_lattice_matrix
+
+
+
+class SetProperty:
+    def __init__(self, property_name: str, value: (float | Sequence[str])):
+        self.property_name = property_name
+        self.value = (
+            paddle.to_tensor(data=value, dtype="float32")
+            if isinstance(value, float) or isinstance(value, int)
+            else value
+        )
+
+    def __call__(self, data: Dict):
+        return data.update(**{self.property_name: self.value})
