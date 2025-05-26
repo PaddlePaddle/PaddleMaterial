@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import math
 from collections import defaultdict
 from functools import lru_cache
 from typing import Dict
@@ -362,16 +363,10 @@ class StandardScalerPaddle(paddle.nn.Layer):
             else paddle.ones(shape=stats_dim),  # noqa
         )
 
-    @property
-    def device(self) -> (paddle.CPUPlace, paddle.CUDAPlace, str):
-        return self.means.place
-
     def fit(self, X: paddle.Tensor):
-        means: paddle.Tensor = paddle.atleast_1d(
-            paddle.nanmean(x=X, axis=0).to(self.device)
-        )  # noqa
+        means: paddle.Tensor = paddle.atleast_1d(paddle.nanmean(x=X, axis=0))  # noqa
         stds: paddle.Tensor = paddle.atleast_1d(
-            paddle_nanstd(X, dim=0, unbiased=False).to(self.device) + 1e-5
+            paddle_nanstd(X, dim=0, unbiased=False) + 1e-5
         )
         assert tuple(means.shape) == tuple(
             self.means.shape
@@ -389,12 +384,6 @@ class StandardScalerPaddle(paddle.nn.Layer):
     def inverse_transform(self, X: paddle.Tensor) -> paddle.Tensor:
         assert self.means is not None and self.stds is not None
         return X * self.stds + self.means
-
-    def match_device(self, X: paddle.Tensor) -> paddle.Tensor:
-        assert self.means.size > 0 and self.stds.size > 0
-        if self.means.place != X.place:
-            self.means = self.means.to(X.place)
-            self.stds = self.stds.to(X.place)
 
     def copy(self) -> "StandardScalerPaddle":
         return StandardScalerPaddle(
@@ -430,6 +419,10 @@ class PropertyEmbedding(paddle.nn.Layer):
 
         if conditional_embedding_module_name == "ChemicalSystemMultiHotEmbedding":
             self.conditional_embedding_module = ChemicalSystemMultiHotEmbedding(
+                **conditional_embedding_module_cfg
+            )
+        elif conditional_embedding_module_name == "NoiseLevelEncoding":
+            self.conditional_embedding_module = NoiseLevelEncoding(
                 **conditional_embedding_module_cfg
             )
         elif conditional_embedding_module_name == "SpaceGroupEmbeddingVector":
@@ -540,14 +533,13 @@ class SetPropertyScalers:
     ):
         property_values = defaultdict(list)
         property_names = [
-            p.name
-            for p in property_embeddings.values()
+            name
+            for name, p in property_embeddings.items()
             if not isinstance(p.scaler, paddle.nn.Identity)
         ]
         if len(property_names) == 0:
             return
         for batch in tqdm(train_dataloader, desc="Fitting property scalers"):
-            batch = batch["data"]
             for property_name in property_names:
                 property_values[property_name].append(batch[property_name])
         for property_name in property_names:
@@ -572,3 +564,25 @@ class SetPropertyScalers:
                 train_dataloader=train_dataloader,
                 property_embeddings=model.property_embeddings_adapt,
             )
+
+
+class NoiseLevelEncoding(paddle.nn.Layer):
+    def __init__(self, d_model: int, dropout: float = 0.0):
+        super().__init__()
+        self.dropout = paddle.nn.Dropout(p=dropout)
+        self.d_model = d_model
+        div_term = paddle.exp(
+            x=paddle.arange(start=0, end=d_model, step=2)
+            * (-math.log(10000.0) / d_model)
+        )
+        self.register_buffer(name="div_term", tensor=div_term)
+
+    def forward(self, t: paddle.Tensor) -> paddle.Tensor:
+        """
+        Args:
+            t: Tensor, shape [batch_size]
+        """
+        x = paddle.zeros(shape=(tuple(t.shape)[0], self.d_model))
+        x[:, 0::2] = paddle.sin(x=t[:, None] * self.div_term[None])
+        x[:, 1::2] = paddle.cos(x=t[:, None] * self.div_term[None])
+        return self.dropout(x)

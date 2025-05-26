@@ -15,6 +15,7 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import math
 import os
 import os.path as osp
 import pickle
@@ -313,7 +314,7 @@ class MP20Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if data_item is not None:
+                if data_item is not None and not math.isnan(data_item):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [
