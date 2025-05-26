@@ -419,3 +419,13 @@ class MP20MatterGenDataset(MP20Dataset):
     name = "mp_20_mattergen"
     url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20_chemical_system.zip"
     md5 = "605e2aa2a7363f98ac90c8e6a448fb31"
+
+
+class AlexMP20MatterGenDataset(MP20Dataset):
+    """This class is a subclass of MP20Dataset that is specifically designed for
+    the mp20 dataset used for mattergen.
+    """
+
+    name = "mp_20_mattergen"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/alex_mp_20/alex_mp_20.zip"
+    md5 = "624361c17259cc3af63a00b29fffe9cd"
