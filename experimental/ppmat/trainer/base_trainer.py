@@ -592,11 +592,18 @@ class BaseTrainer:
                 self.train_dataloader is not None
             ), "train_dataloader is None, please set it or pass to the constructor."
             train_dataloader = self.train_dataloader
+        else:
+            self.train_dataloader = train_dataloader
         if val_dataloader is None:
             assert (
                 self.val_dataloader is not None
             ), "val_dataloader is None, please set it or pass to the constructor."
             val_dataloader = self.val_dataloader
+        else:
+            self.val_dataloader = val_dataloader
+        
+        if hasattr(self.model, 'before_train'):
+            self.model.before_train(self)
 
         self.state = TrainerState()
         # load model checkpoint, usually used for resume training
