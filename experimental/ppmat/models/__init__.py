@@ -22,6 +22,8 @@ from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.mattergen.mattergen import MatterGen
+from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -33,6 +35,8 @@ __all__ = [
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",
+    "MatterGen",
+    "MatterGenWithCondition",
 ]
 
 
@@ -43,6 +47,8 @@ MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_K.zip",
     "megnet_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_e_form.zip",
     "diffcsp_mp20": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/diffcsp/diffcsp_mp20.zip",
+    "mattergen_mp20": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20.zip",
+    "mattergen_mp20_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_chemical_system.zip",
 }
 
 

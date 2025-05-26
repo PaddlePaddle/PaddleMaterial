@@ -338,7 +338,9 @@ class MP20Dataset(Dataset):
             data (Dict): Data that contains the property data.
             property_names (list[str]): Property names.
         """
-        property_data = {data[property_name] for property_name in property_names}
+        property_data = {
+            property_name: data[property_name] for property_name in property_names
+        }
         return property_data
 
     def save_to_cache(self, cache_path: str, data: Any):
@@ -388,9 +390,12 @@ class MP20Dataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
         for property_name in self.property_names:
             if property_name in self.property_data:
-                data[property_name] = np.array(
-                    [self.property_data[property_name][idx]]
-                ).astype("float32")
+                if isinstance(self.property_data[property_name][idx], str):
+                    data[property_name] = self.property_data[property_name][idx]
+                else:
+                    data[property_name] = np.array(
+                        [self.property_data[property_name][idx]]
+                    ).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
@@ -403,3 +408,13 @@ class MP20Dataset(Dataset):
 
     def __len__(self):
         return self.num_samples
+
+
+class MP20MatterGenDataset(MP20Dataset):
+    """This class is a subclass of MP20Dataset that is specifically designed for
+    the mp20 dataset used for mattergen.
+    """
+
+    name = "mp_20_mattergen"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20_chemical_system.zip"
+    md5 = "605e2aa2a7363f98ac90c8e6a448fb31"

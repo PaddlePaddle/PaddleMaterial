@@ -402,7 +402,7 @@ class DiffCSP(paddle.nn.Layer):
 
         time_emb = self.time_embedding(times)
 
-        if hasattr(structure_array, "lattice"):
+        if "lattice" in structure_array.keys():
             lattices = structure_array["lattice"]
         else:
             lattices = lattice_params_to_matrix_paddle(
