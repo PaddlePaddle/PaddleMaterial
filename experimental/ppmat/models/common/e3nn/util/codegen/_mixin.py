@@ -2,10 +2,8 @@
 
 
 class CodeGenMixin:
-    """简化版的 Mixin 类，移除 JIT 相关功能"""
 
     def _codegen_register(self, funcs):
-        """简化版的注册函数"""
         if not hasattr(self, "__codegen__"):
             self.__codegen__ = []
         self.__codegen__.extend(funcs.keys())

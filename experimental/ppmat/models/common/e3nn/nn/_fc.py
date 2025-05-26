@@ -35,18 +35,12 @@ class _Layer(paddle.nn.Layer):
     def forward(self, x: paddle.Tensor):
         if self.act is not None:
             w = self.weight / (self.h_in * self.var_in) ** 0.5
-            # print(f"[PaddlePaddle] 权重缩放后: {w.numpy()}")
             x = x @ w
-            # print(f"[PaddlePaddle] 矩阵乘法后: {x.numpy()}")
             x = self.act(x)
-            # print(f"[PaddlePaddle] 激活后: {x.numpy()}")
             x = x * self.var_out**0.5
-            # print(f"[PaddlePaddle] 方差缩放后: {x.numpy()}")
         else:
             w = self.weight / (self.h_in * self.var_in / self.var_out) ** 0.5
-            # print(f"[PaddlePaddle] 输出层权重缩放后: {w.numpy()}")
             x = x @ w
-            # print(f"[PaddlePaddle] 输出层结果: {x.numpy()}")
         return x
 
 

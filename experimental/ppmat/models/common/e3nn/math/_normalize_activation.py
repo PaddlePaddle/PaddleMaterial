@@ -40,7 +40,7 @@ class normalize2mom(paddle.nn.Layer):
         else:
             return self.f(x).multiply(
                 paddle.to_tensor(self.cst)
-            )  # modified in 2025-03-03 after paconvert
+            )  
 
     @staticmethod
     def _make_tracing_inputs(n: int):

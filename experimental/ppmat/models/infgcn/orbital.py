@@ -3,7 +3,7 @@ import math
 import paddle
 
 from ppmat.models.common.e3nn import o3
-from ppmat.models.infgcn.paddle_utils import *
+from ppmat.models.infgcn.paddle_utils import * # noqa: F403
 
 from .utils import BroadcastGTOTensor
 

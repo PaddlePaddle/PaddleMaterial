@@ -85,10 +85,9 @@ class SphericalHarmonics(paddle.nn.Layer):
                 x=[sh[..., l * l : (l + 1) * (l + 1)] for l in self._ls_list], axis=-1
             )
         if self.normalization == "integral":
-            # torch 版本： sh.div_(math.sqrt(4 * math.pi))
-            sh = sh / paddle.to_tensor(math.sqrt(4 * math.pi))  # paconvert 之后需要转换
+            sh = sh / paddle.to_tensor(math.sqrt(4 * math.pi))  
         elif self.normalization == "norm":
-            sh = sh / paddle.to_tensor(  # 同样修改了 in 2025 0312
+            sh = sh / paddle.to_tensor(  
                 paddle.concat(
                     x=[
                         (

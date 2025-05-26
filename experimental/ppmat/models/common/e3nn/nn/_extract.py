@@ -37,41 +37,25 @@ class Extract(paddle.nn.Layer):
 
         out = []
         for irreps in self.irreps_outs:
-            # PyTorch的 x.new_zeros 在Paddle中使用 paddle.zeros，并指定与x相同的dtype
-            # print(x.shape[:-1] + (irreps.dim,))
-            # print(x.shape[:-1]) # []
-            # print(x) # 1
-            # print((irreps.dim,)) # 1
-            # print(out)
-            # fixed in 2025 0311
             out.append(paddle.zeros(list(x.shape[:-1]) + [irreps.dim], dtype=x.dtype))
-            # print(out)
-            # print(len())
         for i, (irreps_out, ins) in enumerate(zip(self.irreps_outs, self.instructions)):
             if ins == tuple(range(len(self.irreps_in))):
-                # PyTorch的 copy_ 在Paddle中使用 paddle.assign
                 out[i] = paddle.assign(x)
             else:
                 for s_out, i_in in zip(irreps_out.slices(), ins):
                     i_start = self.irreps_in[:i_in].dim
                     i_len = self.irreps_in[i_in].dim
-                    # PyTorch: x.narrow(-1, i_start, i_len) -> out[i].narrow(-1, s_out.start, s_out.stop - s_out.start).copy_(...)
-                    # Paddle: 使用slice直接获取和赋值对应区域的数据
                     x_slice = x.slice([-1], [i_start], [i_start + i_len])
                     if len(out[i].shape) == 1:
-                        # For 1D tensor
                         out[i][s_out.start : s_out.stop] = x_slice
                     else:
-                        # For N-D tensors, we need to handle all dimensions
-                        # Create a tuple of slices: [:, :, ..., s_out.start:s_out.stop]
                         idx = [slice(None)] * (
                             len(out[i].shape) - 1
-                        )  # [:, :, ...] for all but last dim
+                        )  
                         idx.append(
                             slice(s_out.start, s_out.stop)
-                        )  # [start:stop] for last dim
+                        )  
                         out[i][tuple(idx)] = x_slice
-                    # out[i][:, s_out.start:s_out.stop] = x.slice([-1], [i_start], [i_start + i_len])
 
         if self.squeeze_out and len(out) == 1:
             return out[0]

@@ -6,7 +6,7 @@ from ppmat.models.common.e3nn.math import soft_one_hot_linspace
 from ppmat.models.common.e3nn.nn import Activation
 from ppmat.models.common.e3nn.nn import Extract
 from ppmat.models.common.e3nn.nn import FullyConnectedNet
-from ppmat.models.infgcn.paddle_utils import *
+from ppmat.models.infgcn.paddle_utils import * # noqa: F403
 
 from .orbital import GaussianOrbital
 from .paddle_radius import radius
@@ -148,10 +148,6 @@ class GCNLayer(paddle.nn.Layer):
         self.radial_hidden_size = radial_hidden_size
         self.is_fc = is_fc
         self.use_sc = use_sc
-        # print("irreps_in", irreps_in)
-        # print("self.irreps_in", self.irreps_in)
-        # print("irreps_out", irreps_out)
-        # print("self.irreps_out", self.irreps_out)
 
         if self.is_fc:
             self.tp = o3.FullyConnectedTensorProduct(
@@ -193,22 +189,10 @@ class GCNLayer(paddle.nn.Layer):
 
     def forward(self, edge_index, node_feat, edge_feat, edge_embed, dim_size=None):
         src, dst = edge_index
-        # print(f"src shape: {src.shape}")
-        # print(f"dst shape: {dst.shape}")
         weight = self.fc(edge_embed)
-        # print(f"node_feat[src]: {node_feat[src].shape}")
-        # print(f"edge_feat: {edge_feat.shape}")
-        # print(f"weight: {weight.shape}")
-        out = self.tp(node_feat[src], edge_feat, weight=weight)  # 确实很可能是tp的原因
-        # print(f"out shape after tp: {out.shape}")
+        out = self.tp(node_feat[src], edge_feat, weight=weight)  
         out = scatter(out, dst, dim=0, dim_size=dim_size, reduce="sum")
-        # print(f"out shape after scatter: {out.shape}")
-        # print(f"out shape: {out.shape}")
-        # print(f"self.sc(node_feat) shape: {self.sc(node_feat).shape}")
         if self.use_sc:
-            # print(f"out shape: {out.shape}")
-            # print(f"self.sc(node_feat) shape: {self.sc(node_feat).shape}")
-
             out = out + self.sc(node_feat)
         return out
 
