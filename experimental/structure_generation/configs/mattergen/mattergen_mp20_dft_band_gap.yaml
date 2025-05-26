@@ -6,16 +6,16 @@ Global:
   # Number of training timesteps for diffusion scheduler
   num_train_timesteps: 1000
 
-  condition_names: ['chemical_system']
+  condition_names: ['dft_band_gap']
   property_embeddings_adapt_cfg:
-    chemical_system:
-      conditional_embedding_module_name: 'ChemicalSystemMultiHotEmbedding'
+    dft_band_gap:
+      conditional_embedding_module_name: 'NoiseLevelEncoding'
       conditional_embedding_module_cfg:
-        hidden_dim: 512
+        d_model: 512
       unconditional_embedding_module_name: ZerosEmbedding
       unconditional_embedding_module_cfg:
         hidden_dim: 512
-      scaler_name: Identity
+      scaler_name: StandardScalerPaddle
       scaler_cfg: {}
 Trainer:
   # Max epochs to train
@@ -23,11 +23,11 @@ Trainer:
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/mattergen_mp20_chemical_system
+  output_dir: ./output/mattergen_mp20_dft_band_gap
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
-  log_freq: 1 # log frequency [step]
+  log_freq: 10 # log frequency [step]
 
   # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
   start_eval_epoch: 1
@@ -199,7 +199,7 @@ Sample:
       __init_params__:
         total_num: 16
         prop_names: ${Global.condition_names}
-        prop_values: ['Mo-Si']
+        prop_values: [0.897]
     sampler:
       __class_name__: BatchSampler
       __init_params__:
