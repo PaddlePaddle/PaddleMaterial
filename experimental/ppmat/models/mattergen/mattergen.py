@@ -18,6 +18,8 @@ import os
 import sys
 from collections.abc import Callable
 from typing import Any
+from typing import Dict
+from typing import List
 from typing import Literal
 from typing import Optional
 from typing import Tuple
@@ -35,6 +37,14 @@ from ppmat.models.common.scatter import scatter
 from ppmat.models.common.spherical_basis import CircularBasisLayer
 from ppmat.models.common.time_embedding import NoiseLevelEncoding
 from ppmat.models.common.time_embedding import UniformTimestepSampler
+from ppmat.models.mattergen.globals import _USE_UNCONDITIONAL_EMBEDDING
+from ppmat.models.mattergen.globals import MAX_ATOMIC_NUM
+from ppmat.models.mattergen.property_embeddings import PropertyEmbedding
+from ppmat.models.mattergen.property_embeddings import SetConditionalEmbeddingType
+from ppmat.models.mattergen.property_embeddings import SetEmbeddingType
+from ppmat.models.mattergen.property_embeddings import SetPropertyScalers
+from ppmat.models.mattergen.property_embeddings import SetUnconditionalEmbeddingType
+from ppmat.models.mattergen.property_embeddings import get_use_unconditional_embedding
 from ppmat.utils import logger
 from ppmat.utils import paddle_aux  # noqa
 from ppmat.utils.crystal import frac_to_cart_coords_with_lattice
@@ -46,8 +56,6 @@ from ppmat.utils.misc import make_noise_symmetric_preserve_variance
 from ppmat.utils.misc import ragged_range
 from ppmat.utils.misc import repeat_blocks
 from ppmat.utils.paddle_aux import dim2perm
-
-MAX_ATOMIC_NUM = 100
 
 
 def inner_product_normalized(x: paddle.Tensor, y: paddle.Tensor) -> paddle.Tensor:
@@ -1682,6 +1690,154 @@ class GemNetT(paddle.nn.Layer):
         return h, F_t, lattice_update
 
 
+class GemNetTCtrl(GemNetT):
+    def __init__(self, condition_on_adapt: List[str], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.condition_on_adapt = condition_on_adapt
+        self.cond_adapt_layers = paddle.nn.LayerDict()
+        self.cond_mixin_layers = paddle.nn.LayerDict()
+        self.emb_size_atom = (
+            kwargs["emb_size_atom"] if "emb_size_atom" in kwargs else 512
+        )
+        for cond in condition_on_adapt:
+            adapt_layers = []
+            mixin_layers = []
+            for _ in range(self.num_blocks):
+                adapt_layers.append(
+                    paddle.nn.Sequential(
+                        paddle.nn.Linear(
+                            in_features=self.emb_size_atom * 2,
+                            out_features=self.emb_size_atom,
+                        ),
+                        paddle.nn.ReLU(),
+                        paddle.nn.Linear(
+                            in_features=self.emb_size_atom,
+                            out_features=self.emb_size_atom,
+                        ),
+                    )
+                )
+                mixin_layers.append(
+                    paddle.nn.Linear(
+                        in_features=self.emb_size_atom,
+                        out_features=self.emb_size_atom,
+                        bias_attr=False,
+                    )
+                )
+                init_Constant = paddle.nn.initializer.Constant(value=0.0)
+                init_Constant(mixin_layers[-1].weight)
+            self.cond_adapt_layers[cond] = paddle.nn.LayerList(sublayers=adapt_layers)
+            self.cond_mixin_layers[cond] = paddle.nn.LayerList(sublayers=mixin_layers)
+
+    def forward(
+        self,
+        z: paddle.Tensor,
+        frac_coords: paddle.Tensor,
+        atom_types: paddle.Tensor,
+        num_atoms: paddle.Tensor,
+        batch: paddle.Tensor,
+        lattice: paddle.Tensor,
+        cond_adapt: Optional[Dict[str, paddle.Tensor]] = None,
+        cond_adapt_mask: Optional[Dict[str, paddle.Tensor]] = None,
+    ):
+        assert lattice is not None
+        distorted_lattice = lattice
+        pos = frac_to_cart_coords_with_lattice(
+            frac_coords, num_atoms, lattice=distorted_lattice
+        )
+        atomic_numbers = atom_types.cast(dtype="int64")
+        (
+            edge_index,
+            neighbors,
+            D_st,
+            V_st,
+            id_swap,
+            id3_ba,
+            id3_ca,
+            id3_ragged_idx,
+            to_jimages,
+        ) = self.generate_interaction_graph(pos, distorted_lattice, num_atoms)
+        idx_s, idx_t = edge_index
+        cosφ_cab = inner_product_normalized(V_st[id3_ca], V_st[id3_ba])
+        rad_cbf3, cbf3 = self.cbf_basis3(D_st, cosφ_cab, id3_ca)
+        rbf = self.radial_basis(D_st)
+        h = self.atom_emb(atomic_numbers)
+        if z is not None:
+            z_per_atom = z[batch]
+            h = paddle.concat(x=[h, z_per_atom], axis=1)
+            h = self.atom_latent_emb(h)
+        m = self.edge_emb(h, rbf, idx_s, idx_t)
+        batch_edge = batch[edge_index[0]]
+        cosines = paddle.nn.functional.cosine_similarity(
+            x1=V_st[:, None], x2=distorted_lattice[batch_edge], axis=-1
+        )
+        m = paddle.concat(x=[m, cosines], axis=-1)
+        m = self.angle_edge_emb(m)
+        rbf3 = self.mlp_rbf3(rbf)
+        cbf3 = self.mlp_cbf3(rad_cbf3, cbf3, id3_ca, id3_ragged_idx)
+        rbf_h = self.mlp_rbf_h(rbf)
+        rbf_out = self.mlp_rbf_out(rbf)
+        E_t, F_st = self.out_blocks[0](h, m, rbf_out, idx_t)
+        distance_vec = V_st * D_st[:, None]
+        lattice_update = None
+        rbf_lattice = self.mlp_rbf_lattice(rbf)
+        lattice_update = self.lattice_out_blocks[0](
+            edge_emb=m,
+            edge_index=edge_index,
+            distance_vec=distance_vec,
+            lattice=distorted_lattice,
+            batch=batch,
+            rbf=rbf_lattice,
+            normalize_score=True,
+        )
+        if cond_adapt is not None and cond_adapt_mask is not None:
+            cond_adapt_per_atom = {}
+            cond_adapt_mask_per_atom = {}
+            for cond in self.condition_on_adapt:
+                cond_adapt_per_atom[cond] = cond_adapt[cond][batch]
+                cond_adapt_mask_per_atom[cond] = 1.0 - cond_adapt_mask[cond][
+                    batch
+                ].astype(dtype="float32")
+        for i in range(self.num_blocks):
+            h_adapt = paddle.zeros_like(x=h)
+            for cond in self.condition_on_adapt:
+                h_adapt_cond = self.cond_adapt_layers[cond][i](
+                    paddle.concat(x=[h, cond_adapt_per_atom[cond]], axis=-1)
+                )
+                h_adapt_cond = self.cond_mixin_layers[cond][i](h_adapt_cond)
+                h_adapt += cond_adapt_mask_per_atom[cond] * h_adapt_cond
+            h = h + h_adapt
+            h, m = self.int_blocks[i](
+                h=h,
+                m=m,
+                rbf3=rbf3,
+                cbf3=cbf3,
+                id3_ragged_idx=id3_ragged_idx,
+                id_swap=id_swap,
+                id3_ba=id3_ba,
+                id3_ca=id3_ca,
+                rbf_h=rbf_h,
+                idx_s=idx_s,
+                idx_t=idx_t,
+            )
+            E, F = self.out_blocks[i + 1](h, m, rbf_out, idx_t)
+            F_st += F
+            E_t += E
+            rbf_lattice = self.mlp_rbf_lattice(rbf)
+            lattice_update += self.lattice_out_blocks[i + 1](
+                edge_emb=m,
+                edge_index=edge_index,
+                distance_vec=distance_vec,
+                lattice=distorted_lattice,
+                batch=batch,
+                rbf=rbf_lattice,
+                normalize_score=True,
+            )
+        F_st_vec = F_st[:, :, None] * V_st[:, None, :]
+        F_t = scatter(F_st_vec, idx_t, dim=0, dim_size=num_atoms.sum(), reduce="add")
+        F_t = F_t.squeeze(axis=1)
+        return h, F_t, lattice_update
+
+
 def get_property_embeddings(
     batch, property_embeddings: paddle.nn.LayerDict
 ) -> paddle.Tensor:
@@ -1751,6 +1907,8 @@ class GemNetTDenoiser(paddle.nn.Layer):
 
     Args:
         gemnet_cfg (dict): configuration for the GemNet
+        gemnet_type (str, optional): Type of GemNet to use, either 'GemNetT' or
+            'GemNetTCtrl'. Defaults to 'GemNetT'.
         hidden_dim (int, optional): Number of hidden dimensions in the GemNet.
             Defaults to 512.
         denoise_atom_types (bool, optional): Whether to denoise the atom  types.
@@ -1764,16 +1922,24 @@ class GemNetTDenoiser(paddle.nn.Layer):
     def __init__(
         self,
         gemnet_cfg: dict,
+        gemnet_type: str = "GemNetT",
         hidden_dim: int = 512,
         denoise_atom_types: bool = True,
         atom_type_diffusion: str = ["mask", "uniform"][0],
         property_embeddings: (paddle.nn.LayerDict | None) = None,
-        # property_embeddings_adapt: (paddle.nn.LayerDict | None) = None, # todo
+        property_embeddings_adapt_cfg: (Dict | None) = None,  # todo
         # element_mask_func: (Callable | None) = None, # todo
     ):
 
         super(GemNetTDenoiser, self).__init__()
-        self.gemnet = GemNetT(**gemnet_cfg)
+        if gemnet_type == "GemNetT":
+            self.gemnet = GemNetT(**gemnet_cfg)
+        elif gemnet_type == "GemNetTCtrl":
+            self.gemnet = GemNetTCtrl(**gemnet_cfg)
+        else:
+            raise NotImplementedError(f"{gemnet_type} not implemented.")
+        self.gemnet_cfg = gemnet_cfg
+        self.gemnet_type = gemnet_type
 
         self.noise_level_encoding = NoiseLevelEncoding(hidden_dim)
         self.hidden_dim = hidden_dim
@@ -1786,6 +1952,14 @@ class GemNetTDenoiser(paddle.nn.Layer):
         self.fc_atom = paddle.nn.Linear(
             in_features=hidden_dim, out_features=MAX_ATOMIC_NUM + int(with_mask_type)
         )
+        self.property_embeddings_adapt_cfg = property_embeddings_adapt_cfg
+        if property_embeddings_adapt_cfg is not None:
+            self.property_embeddings_adapt = paddle.nn.LayerDict()
+            for key, config in property_embeddings_adapt_cfg.items():
+                property_embedding_layer = PropertyEmbedding(**config)
+                self.property_embeddings_adapt[key] = property_embedding_layer
+        else:
+            self.property_embeddings_adapt = None
         # self.element_mask_func = element_mask_func
 
     def forward(self, x, t: paddle.Tensor):
@@ -1821,15 +1995,44 @@ class GemNetTDenoiser(paddle.nn.Layer):
             z_per_crystal = paddle.concat(
                 x=[z_per_crystal, property_embedding_values], axis=-1
             )
-        node_embeddings, pred_cart_pos_eps, pred_lattice_eps = self.gemnet(
-            z=z_per_crystal,
-            frac_coords=frac_coords,
-            atom_types=atom_types,
-            num_atoms=num_atoms,
-            batch=batch,
-            lattice=lattice,
-        )
+        if self.property_embeddings_adapt is not None:
+            conditions_adapt_dict = {}
+            conditions_adapt_mask_dict = {}
+            for (
+                cond_field,
+                property_embedding,
+            ) in self.property_embeddings_adapt.items():
+                conditions_adapt_mask_dict[
+                    cond_field
+                ] = get_use_unconditional_embedding(batch=x, cond_field=cond_field)
+
+                conditions_adapt_dict[cond_field] = property_embedding.forward(
+                    data=x[cond_field],
+                    use_unconditional_embedding=conditions_adapt_mask_dict[cond_field],
+                )
+            node_embeddings, pred_cart_pos_eps, pred_lattice_eps = self.gemnet(
+                z=z_per_crystal,
+                frac_coords=frac_coords,
+                atom_types=atom_types,
+                num_atoms=num_atoms,
+                batch=batch,
+                lattice=lattice,
+                cond_adapt=conditions_adapt_dict,
+                cond_adapt_mask=conditions_adapt_mask_dict,
+            )
+
+        else:
+            node_embeddings, pred_cart_pos_eps, pred_lattice_eps = self.gemnet(
+                z=z_per_crystal,
+                frac_coords=frac_coords,
+                atom_types=atom_types,
+                num_atoms=num_atoms,
+                batch=batch,
+                lattice=lattice,
+            )
+
         pred_atom_types = self.fc_atom(node_embeddings)
+
         return get_chemgraph_from_denoiser_output(
             pred_atom_types=pred_atom_types,
             pred_lattice_eps=pred_lattice_eps,
@@ -2027,7 +2230,7 @@ class MatterGen(paddle.nn.Layer):
         times = self.timestep_sampler(batch_size)
 
         # coord noise
-        frac_coords = structure_array["frac_coords"]
+        frac_coords = structure_array["frac_coords"] % 1.0
         rand_x = paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
 
         input_frac_coords = self.coord_scheduler.add_noise(
@@ -2235,6 +2438,426 @@ class MatterGen(paddle.nn.Layer):
                     structure_array["lattice"], t=t, num_atoms=num_atoms
                 )[1]
             )
+
+            frac_coords, frac_coords_mean = self.coord_scheduler.step_pred(
+                frac_coords,
+                t=t,
+                dt=dt,
+                batch_idx=batch_idx,
+                score=score_out["frac_coords"],
+                num_atoms=num_atoms,
+            )
+
+            cell, cell_mean = self.lattice_scheduler.step_pred(
+                cell,
+                t=t,
+                dt=dt,
+                batch_idx=None,
+                score=score_out["lattice"],
+                num_atoms=num_atoms,
+            )
+            atom_type, atom_type_mean = self.atom_scheduler.step(
+                x=structure_array["atom_types"] - 1,
+                t=t,
+                batch_idx=batch_idx,
+                score=score_out["atom_types"],
+            )
+            atom_type += 1
+            atom_type_mean += 1
+
+            structure_array.update(
+                {"frac_coords": frac_coords, "lattice": cell, "atom_types": atom_type}
+            )
+            structure_array_mean = {
+                "frac_coords": frac_coords_mean,
+                "lattice": cell_mean,
+                "atom_types": atom_type_mean,
+                "num_atoms": num_atoms,
+            }
+
+        start_idx = 0
+        result = []
+        for i in range(batch_size):
+            end_idx = start_idx + num_atoms[i]
+            # for mattertgen, we need to use the mean value of the predicted structure
+            result.append(
+                {
+                    "num_atoms": num_atoms[i].tolist(),
+                    "atom_types": structure_array_mean["atom_types"][
+                        start_idx:end_idx
+                    ].tolist(),
+                    "frac_coords": structure_array_mean["frac_coords"][
+                        start_idx:end_idx
+                    ].tolist(),
+                    "lattice": structure_array_mean["lattice"][i].tolist(),
+                }
+            )
+            # result.append(
+            #     {
+            #         "num_atoms": num_atoms[i].tolist(),
+            #         "atom_types": structure_array["atom_types"][
+            #             start_idx:end_idx
+            #         ].tolist(),
+            #         "frac_coords": structure_array["frac_coords"][
+            #             start_idx:end_idx
+            #         ].tolist(),
+            #         "lattice": structure_array["lattice"][i].tolist(),
+            #     }
+            # )
+            start_idx += num_atoms[i]
+
+        return {"result": result}
+
+
+class MatterGenWithCondition(paddle.nn.Layer):
+    """MatterGenWithCondition: A generative model for inorganic materials design.
+    https://www.nature.com/articles/s41586-025-08628-5
+
+    Args:
+        set_embedding_type_cfg (dict): SetEmbeddingType configuration.
+        condition_names (list): Attribute name as a conditional constraint.
+        decoder_cfg (dict): Decoder configuration.
+        lattice_noise_scheduler_cfg (dict): Lattice noise scheduler configuration.
+        coord_noise_scheduler_cfg (dict): Coordinate noise scheduler configuration.
+        atom_noise_scheduler_cfg (dict): Atom type noise scheduler configuration.
+        num_train_timesteps (int, optional): Number of training steps for diffusion.
+            Defaults to 1000.
+        max_t (float, optional): Maximum diffusion time. Defaults to 1.0.
+        time_dim (int, optional): Time dimension. Defaults to 256.
+        lattice_loss_weight (float, optional): Lattice loss weight. Defaults to 1.0.
+        coord_loss_weight (float, optional): Coordinate loss weight. Defaults to 0.1.
+        atom_loss_weight (float, optional): Atom type loss weight. Defaults to 1.0.
+        d3pm_hybrid_lambda (float, optional): D3PM hybrid lambda. Defaults to 0.01.
+    """
+
+    def __init__(
+        self,
+        set_embedding_type_cfg: dict,
+        condition_names: list,
+        decoder_cfg: dict,
+        lattice_noise_scheduler_cfg: dict,
+        coord_noise_scheduler_cfg: dict,
+        atom_noise_scheduler_cfg: dict,
+        num_train_timesteps: int = 1000,
+        max_t: float = 1.0,
+        time_dim: int = 256,
+        lattice_loss_weight: float = 1.0,
+        coord_loss_weight: float = 0.1,
+        atom_loss_weight: float = 1.0,
+        d3pm_hybrid_lambda: float = 0.01,
+    ) -> None:
+        super().__init__()
+        self.set_embedding_type_cfg = set_embedding_type_cfg
+        self.condition_names = condition_names
+
+        self.set_embedding_type = SetEmbeddingType(**set_embedding_type_cfg)
+
+        self.model = GemNetTDenoiser(**decoder_cfg)
+
+        self.lattice_scheduler = build_scheduler(lattice_noise_scheduler_cfg)
+        self.coord_scheduler = build_scheduler(coord_noise_scheduler_cfg)
+        self.atom_scheduler = build_scheduler(atom_noise_scheduler_cfg)
+
+        self.num_train_timesteps = num_train_timesteps
+        self.max_t = max_t
+        self.time_dim = time_dim
+        self.lattice_loss_weight = lattice_loss_weight
+        self.coord_loss_weight = coord_loss_weight
+        self.atom_loss_weight = atom_loss_weight
+        self.d3pm_hybrid_lambda = d3pm_hybrid_lambda
+
+        self.timestep_sampler = UniformTimestepSampler(min_t=1e-05, max_t=max_t)
+
+    def before_train(self, trainer):
+        # This function serves as a pre-training hook, designed to execute
+        # initialization/setup operations before the training pipeline begins. It
+        # follows a dependency injection pattern - the Trainer instance must be fully
+        # initialized before this hook is injected as a callback parameter into the
+        # training workflow.
+        set_property_scalers = SetPropertyScalers()
+        set_property_scalers.on_fit_start(
+            train_dataloader=trainer.train_dataloader, model=self
+        )
+
+    def forward(self, batch) -> Any:
+        structure_array = batch["structure_array"]
+        use_unconditional_embedding = self.set_embedding_type(
+            batch, self.condition_names
+        )
+
+        num_atoms = structure_array["num_atoms"]
+        batch_size = structure_array["num_atoms"].shape[0]
+        batch_idx = paddle.repeat_interleave(
+            paddle.arange(batch_size), repeats=structure_array["num_atoms"]
+        )
+        times = self.timestep_sampler(batch_size)
+
+        # coord noise
+        frac_coords = structure_array["frac_coords"] % 1.0
+        rand_x = paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
+
+        input_frac_coords = self.coord_scheduler.add_noise(
+            frac_coords,
+            rand_x,
+            timesteps=times,
+            batch_idx=batch_idx,
+            num_atoms=num_atoms,
+        )
+
+        # lattice noise
+        if "lattice" in structure_array.keys():
+            lattices = structure_array["lattice"]
+        else:
+            lattices = lattice_params_to_matrix_paddle(
+                structure_array["lengths"], structure_array["angles"]
+            )
+
+        rand_l = paddle.randn(shape=lattices.shape, dtype=lattices.dtype)
+        rand_l = make_noise_symmetric_preserve_variance(rand_l)
+
+        input_lattice = self.lattice_scheduler.add_noise(
+            lattices,
+            rand_l,
+            timesteps=times,
+            num_atoms=structure_array["num_atoms"],
+        )
+
+        # atom noise
+        atom_type = structure_array["atom_types"]
+        atom_type_zero_based = atom_type - 1
+
+        input_atom_type_zero_based = self.atom_scheduler.add_noise(
+            atom_type_zero_based,
+            timesteps=times,
+            batch_idx=batch_idx,
+        )
+        input_atom_type = input_atom_type_zero_based + 1
+
+        noise_batch = {
+            "frac_coords": input_frac_coords,
+            "lattice": input_lattice,
+            "atom_types": input_atom_type,
+            "num_atoms": structure_array["num_atoms"],
+            "batch": batch_idx,
+            _USE_UNCONDITIONAL_EMBEDDING: use_unconditional_embedding,
+        }
+        for condition_name in self.condition_names:
+            noise_batch[condition_name] = batch[condition_name]
+
+        score_model_output = self.model(noise_batch, times)
+
+        # coord loss
+        loss_coord = wrapped_normal_loss(
+            corruption=self.coord_scheduler,
+            score_model_output=score_model_output["frac_coords"],
+            t=times,
+            batch_idx=batch_idx,
+            batch_size=batch_size,
+            x=frac_coords,
+            noisy_x=input_frac_coords,
+            reduce="sum",
+            batch=structure_array,
+        )
+
+        # lattice loss
+        loss_lattice = (score_model_output["lattice"] + rand_l).square()
+        loss_lattice = loss_lattice.mean(axis=[1, 2])
+
+        # atom type loss
+        (
+            loss_atom_type,
+            base_loss_atom_type,
+            cross_entropy_atom_type,
+        ) = self.atom_scheduler.compute_loss(
+            score_model_output=score_model_output["atom_types"],
+            t=times,
+            batch_idx=batch_idx,
+            batch_size=batch_size,
+            x=atom_type_zero_based,
+            noisy_x=input_atom_type_zero_based,
+            reduce="sum",
+            d3pm_hybrid_lambda=self.d3pm_hybrid_lambda,
+        )
+
+        loss_coord = loss_coord.mean()
+        loss_lattice = loss_lattice.mean()
+        loss_atom_type = loss_atom_type.mean()
+        base_loss_atom_type = base_loss_atom_type.mean()
+        cross_entropy_atom_type = cross_entropy_atom_type.mean()
+
+        loss = (
+            self.coord_loss_weight * loss_coord
+            + self.lattice_loss_weight * loss_lattice
+            + self.atom_loss_weight * loss_atom_type
+        )
+        return {
+            "loss_dict": {
+                "loss": loss,
+                "loss_coord": loss_coord,
+                "loss_lattice": loss_lattice,
+                "loss_atom_type": loss_atom_type,
+                "base_loss_atom_type": base_loss_atom_type,
+                "cross_entropy_atom_type": cross_entropy_atom_type,
+            }
+        }
+
+    @paddle.no_grad()
+    def _score_fn(
+        self,
+        structure_array,
+        t,
+        batch_idx,
+        num_atoms,
+        guidance_scale: float = 2.0,
+    ):
+        if not hasattr(self, "set_conditional_embedding_type"):
+            self.set_conditional_embedding_type = SetConditionalEmbeddingType()
+        if not hasattr(self, "set_unconditional_embedding_type"):
+            self.set_unconditional_embedding_type = SetUnconditionalEmbeddingType()
+
+        conditional_embedding = self.set_conditional_embedding_type(
+            structure_array, self.condition_names
+        )
+        uunconditional_embedding = self.set_unconditional_embedding_type(
+            structure_array, self.condition_names
+        )
+
+        structure_array[_USE_UNCONDITIONAL_EMBEDDING] = conditional_embedding
+        score_out_cond = self.model(structure_array, t)
+
+        score_out_cond["frac_coords"] = (
+            score_out_cond["frac_coords"]
+            / self.coord_scheduler.marginal_prob(
+                structure_array["frac_coords"],
+                t=t,
+                batch_idx=batch_idx,
+                num_atoms=num_atoms,
+            )[1]
+        )
+        score_out_cond["lattice"] = (
+            score_out_cond["lattice"]
+            / self.lattice_scheduler.marginal_prob(
+                structure_array["lattice"], t=t, num_atoms=num_atoms
+            )[1]
+        )
+
+        structure_array[_USE_UNCONDITIONAL_EMBEDDING] = uunconditional_embedding
+        score_out_uncond = self.model(structure_array, t)
+
+        score_out_uncond["frac_coords"] = (
+            score_out_uncond["frac_coords"]
+            / self.coord_scheduler.marginal_prob(
+                structure_array["frac_coords"],
+                t=t,
+                batch_idx=batch_idx,
+                num_atoms=num_atoms,
+            )[1]
+        )
+        score_out_uncond["lattice"] = (
+            score_out_uncond["lattice"]
+            / self.lattice_scheduler.marginal_prob(
+                structure_array["lattice"], t=t, num_atoms=num_atoms
+            )[1]
+        )
+
+        score_out_uncond.update(
+            {
+                "frac_coords": paddle.lerp(
+                    x=score_out_uncond["frac_coords"],
+                    y=score_out_cond["frac_coords"],
+                    weight=guidance_scale,
+                ),
+                "lattice": paddle.lerp(
+                    x=score_out_uncond["lattice"],
+                    y=score_out_cond["lattice"],
+                    weight=guidance_scale,
+                ),
+                "atom_types": paddle.lerp(
+                    x=score_out_uncond["atom_types"],
+                    y=score_out_cond["atom_types"],
+                    weight=guidance_scale,
+                ),
+            }
+        )
+        return score_out_uncond
+
+    @paddle.no_grad()
+    def sample(
+        self,
+        batch_data,
+        num_inference_steps=1000,
+        _eps_t=0.001,
+        n_step_corrector: int = 1,
+        record: bool = False,
+        guidance_scale: float = 2.0,
+    ):
+        structure_array = batch_data["structure_array"]
+        num_atoms = structure_array["num_atoms"]
+        batch_size = num_atoms.shape[0]
+        batch_idx = paddle.repeat_interleave(
+            paddle.arange(batch_size), repeats=num_atoms
+        )
+
+        # get the initial noise
+        lattice = self.lattice_scheduler.prior_sampling(
+            shape=(batch_size, 3, 3), num_atoms=num_atoms
+        )
+        frac_coords = self.coord_scheduler.prior_sampling(
+            shape=(num_atoms.sum(), 3), num_atoms=num_atoms, batch_idx=batch_idx
+        )
+        atom_types_zero_based = self.atom_scheduler.prior_sampling(
+            shape=(num_atoms.sum(),)
+        )
+        atom_types = atom_types_zero_based + 1
+
+        # update the structure_array with the initial noise
+        structure_array.update(
+            {
+                "frac_coords": frac_coords,
+                "lattice": lattice,
+                "atom_types": atom_types,
+            }
+        )
+        structure_array["batch"] = batch_idx
+        for condition_name in self.condition_names:
+            structure_array[condition_name] = batch_data[condition_name]
+
+        timesteps = paddle.linspace(self.max_t, stop=_eps_t, num=num_inference_steps)
+        dt = -paddle.to_tensor(data=(self.max_t - _eps_t) / (num_inference_steps - 1))
+        recorded_samples = []
+        for i in tqdm(range(num_inference_steps), desc="Sampling..."):
+            t = paddle.full(shape=(batch_size,), fill_value=timesteps[i])
+            for _ in range(n_step_corrector):
+                score_out = self._score_fn(
+                    structure_array, t, batch_idx, num_atoms, guidance_scale
+                )
+
+                if record:
+                    recorded_samples.append(structure_array)
+                frac_coords, _ = self.coord_scheduler.step_correct(
+                    model_output=score_out["frac_coords"],
+                    timestep=t,
+                    sample=structure_array["frac_coords"],
+                    batch_idx=batch_idx,
+                )
+                cell, _ = self.lattice_scheduler.step_correct(
+                    structure_array["lattice"],
+                    batch_idx=None,
+                    score=score_out["lattice"],
+                    t=t,
+                )
+                structure_array.update(
+                    {
+                        "frac_coords": frac_coords,
+                        "lattice": cell,
+                    }
+                )
+            score_out = self._score_fn(
+                structure_array, t, batch_idx, num_atoms, guidance_scale
+            )
+
+            if record:
+                recorded_samples.append(structure_array)
 
             frac_coords, frac_coords_mean = self.coord_scheduler.step_pred(
                 frac_coords,
