@@ -69,6 +69,13 @@ The design of functional materials with desired properties is essential in drivi
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_dft_band_gap.yaml">mattergen_alex_mp20_dft_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_band_gap.zip">checkpoint | log</a></td>
         </tr>  
+        <tr>
+            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">alex_mp20</td>
+            <td  nowrap="nowrap">0.3044</td>
+            <td  nowrap="nowrap"><a href="mattergen_alex_mp20_chemical_system.yaml">mattergen_alex_mp20_chemical_system</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system.zip">checkpoint | log</a></td>
+        </tr>  
     </body>
 </table>
 
@@ -115,6 +122,12 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml
 # single-gpu training
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml
+
+# alex_mp20 dataset, with chemical system constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+# multi-gpu training, we use 8 gpus here
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml
+# single-gpu training
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml
 ```
 
 ### Validation
@@ -142,6 +155,9 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 
 # alex_mp20 dataset, with dft_band_gap constraints
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+
+# alex_mp20 dataset, with chemical system constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
 
 ### Testing
@@ -233,6 +249,14 @@ python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_band
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
+
+# alex_mp20 dataset, with chemical_system constraints
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
 ```
 
 ## Citation
