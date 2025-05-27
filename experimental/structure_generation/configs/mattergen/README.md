@@ -65,14 +65,14 @@ The design of functional materials with desired properties is essential in drivi
         <tr>
             <td  nowrap="nowrap">MatterGen</td>
             <td  nowrap="nowrap">alex_mp20</td>
-            <td  nowrap="nowrap">0.3411</td>
+            <td  nowrap="nowrap">0.3101</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_dft_band_gap.yaml">mattergen_alex_mp20_dft_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_band_gap.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
             <td  nowrap="nowrap">MatterGen</td>
             <td  nowrap="nowrap">alex_mp20</td>
-            <td  nowrap="nowrap">0.3044</td>
+            <td  nowrap="nowrap">0.2289</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_chemical_system.yaml">mattergen_alex_mp20_chemical_system</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system.zip">checkpoint | log</a></td>
         </tr>  

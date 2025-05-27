@@ -127,16 +127,16 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: MP20MatterGenDataset
+      __class_name__: AlexMP20MatterGenDataset
       __init_params__:
-        path: "./data/mp_20_chemical_system/train.csv"
+        path: "./data/alex_mp_20/train.csv"
         property_names: ${Global.condition_names}
         build_structure_cfg:
           format: cif_str
           primitive: True
           niggli: True
           num_cpus: 10
-        cache_path: "./data/mp_20_chemical_system_cache/train"
+        cache_path: "./data/alex_mp_20_chemical_system_cache/train"
         transforms:
           - __class_name__: LatticePolarDecomposition
             __init_params__: {}
@@ -151,42 +151,21 @@ Dataset:
         batch_size: 16 # for 8 gpu, total batch size = 16 * 8 gpus = 128
   val:
     dataset:
-      __class_name__: MP20MatterGenDataset
+      __class_name__: AlexMP20MatterGenDataset
       __init_params__:
-        path: "./data/mp_20_chemical_system/val.csv"
+        path: "./data/alex_mp_20/val.csv"
         property_names: ${Global.condition_names}
         build_structure_cfg:
           format: cif_str
           primitive: True
           niggli: True
           num_cpus: 10
-        cache_path: "./data/mp_20_chemical_system_cache/val"
+        cache_path: "./data/alex_mp_20_chemical_system_cache/val"
         transforms:
           - __class_name__: LatticePolarDecomposition
             __init_params__: {}
     sampler:
       __class_name__: BatchSampler
-      __init_params__:
-        shuffle: False
-        drop_last: False
-        batch_size: 32
-  test:
-    dataset:
-      __class_name__: MP20MatterGenDataset
-      __init_params__:
-        path: "./data/mp_20_chemical_system/test.csv"
-        property_names: ${Global.condition_names}
-        build_structure_cfg:
-          format: cif_str
-          primitive: True
-          niggli: True
-          num_cpus: 10
-        cache_path: "./data/mp_20_chemical_system_cache/test"
-        transforms:
-          - __class_name__: LatticePolarDecomposition
-            __init_params__: {}
-    sampler:
-      __class_name__: DistributedBatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
