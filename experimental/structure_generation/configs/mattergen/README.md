@@ -55,6 +55,13 @@ The design of functional materials with desired properties is essential in drivi
             <td  nowrap="nowrap"><a href="mattergen_mp20_dft_mag_density.yaml">mattergen_mp20_dft_mag_density</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_mag_density.zip">checkpoint | log</a></td>
         </tr>  
+        <tr>
+            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">alex_mp20</td>
+            <td  nowrap="nowrap">0.2960</td>
+            <td  nowrap="nowrap"><a href="mattergen_alex_mp20.yaml">mattergen_alex_mp20</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20.zip">checkpoint | log</a></td>
+        </tr>  
     </body>
 </table>
 
@@ -88,6 +95,13 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
 # single-gpu training
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
+
+
+# alex_mp20 dataset, without conditional constraints
+# multi-gpu training, we use 8 gpus here
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml
+# single-gpu training
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml
 ```
 
 ### Validation
@@ -109,6 +123,9 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 
 # mp20 dataset, with dft_mag_density constraints
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+
+# alex_mp20 dataset, without conditional constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
 
 ### Testing
@@ -129,6 +146,9 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 
 # mp20 dataset, with dft_mag_density constraints
 python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=False Global.do_train=False Global.do_test=True
+
+# alex_mp20 dataset, without conditional constraints
+python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml Global.do_eval=False Global.do_train=False Global.do_test=True
 ```
 
 ### Sample
@@ -184,6 +204,14 @@ python structure_generation/sample.py --model_name='mattergen_mp20_dft_mag_densi
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+
+# alex_mp20 dataset, without conditional constraints
+
+# Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+python structure_generation/sample.py --model_name='mattergen_alex_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
+
+# Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
 ```
 
 ## Citation
