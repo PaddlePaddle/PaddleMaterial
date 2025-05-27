@@ -314,7 +314,7 @@ class MP20Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if data_item is not None and not math.isnan(data_item):
+                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [
