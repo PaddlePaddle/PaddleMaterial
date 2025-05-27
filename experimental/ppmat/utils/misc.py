@@ -31,10 +31,10 @@ from typing import Union
 import numpy as np
 import paddle
 from paddle import distributed as dist
-from paddle_scatter import scatter
 
 from ppmat.utils import logger
 from ppmat.utils.paddle_aux import dim2perm
+from ppmat.utils.scatter import scatter
 
 __all__ = [
     "AverageMeter",

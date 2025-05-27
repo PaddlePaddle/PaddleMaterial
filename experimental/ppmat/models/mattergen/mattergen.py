@@ -33,7 +33,6 @@ from ppmat.models.common.activation import ScaledSiLU
 from ppmat.models.common.activation import SiQU
 from ppmat.models.common.initializer import he_orthogonal_init
 from ppmat.models.common.radial_basis import RadialBasis
-from ppmat.models.common.scatter import scatter
 from ppmat.models.common.spherical_basis import CircularBasisLayer
 from ppmat.models.common.time_embedding import NoiseLevelEncoding
 from ppmat.models.common.time_embedding import UniformTimestepSampler
@@ -56,6 +55,7 @@ from ppmat.utils.misc import make_noise_symmetric_preserve_variance
 from ppmat.utils.misc import ragged_range
 from ppmat.utils.misc import repeat_blocks
 from ppmat.utils.paddle_aux import dim2perm
+from ppmat.utils.scatter import scatter
 
 
 def inner_product_normalized(x: paddle.Tensor, y: paddle.Tensor) -> paddle.Tensor:
