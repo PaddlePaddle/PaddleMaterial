@@ -1,6 +1,6 @@
 # MatterGen
 
-[A generative model for inorganic materials design](https://arxiv.org/abs/2309.04475)
+[A generative model for inorganic materials design](https://www.nature.com/articles/s41586-025-08628-5)
 
 ## Abstract
 
