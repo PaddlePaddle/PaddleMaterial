@@ -17,10 +17,10 @@ from typing import Optional
 from typing import Tuple
 
 import paddle
-from paddle_scatter import scatter_add
 
 from ppmat.utils import logger
 from ppmat.utils.misc import maybe_expand
+from ppmat.utils.scatter import scatter
 
 
 def wrap_at_boundary(x: paddle.Tensor, wrapping_boundary: float) -> paddle.Tensor:
@@ -181,10 +181,10 @@ class NumAtomsVarianceAdjustedWrappedVESDE:
             noise_norm = noise_norm_square.sqrt().mean()
         else:
             grad_norm = paddle.sqrt(
-                x=scatter_add(grad_norm_square, dim=-1, index=batch_idx)
+                x=scatter(grad_norm_square, dim=-1, index=batch_idx, reduce="add")
             ).mean()
             noise_norm = paddle.sqrt(
-                x=scatter_add(noise_norm_square, dim=-1, index=batch_idx)
+                x=scatter(noise_norm_square, dim=-1, index=batch_idx, reduce="add")
             ).mean()
         step_size = (snr * noise_norm / grad_norm) ** 2 * 2 * alpha
         step_size = paddle.minimum(
