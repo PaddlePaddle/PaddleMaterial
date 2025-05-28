@@ -332,7 +332,7 @@ class TrainerDiffGraphFormer:
         self.model.eval()
         epoch_id = 0
 
-        eval_loss_dict, metric_dict = self.eval_epoch(self.val_dataloader, epoch_id)
+        eval_loss_dict, metric_dict = self.eval_epoch(self.test_dataloader, epoch_id)
 
         # log eval epoch loss & metric info
         msg = f"Test: Epoch [{epoch_id+1}/1]"
@@ -351,7 +351,7 @@ class TrainerDiffGraphFormer:
         logger.info(msg)
 
         data_length = len(self.test_dataloader)
-        logger.message(f"Start to sample ... | total rest batches: {data_length}")
+        logger.message(f"Start to sample ... | Total Batches: {data_length}")
         start = time.time()
 
         # sample epoch
@@ -562,17 +562,21 @@ class TrainerDiffGraphFormer:
                 batch_graph.graph_node_id,
             )
             dense_data = dense_data.mask(node_mask)
-            
+
             batch_atomCount = other_data["atom_count"]
             batch_y = other_data["y"]
             batch_X, batch_E = dense_data.X, dense_data.E
             bs = len(batch_y)
-            
+
             batch_length = batch_graph.num_graph
             condition_H1nmr = other_data["conditionVec"]["H_nmr"]
-            condition_H1nmr = condition_H1nmr.reshape(batch_length, self.model.seq_len_H1, -1)
+            condition_H1nmr = condition_H1nmr.reshape(
+                batch_length, self.model.seq_len_H1, -1
+            )
             condition_C13nmr = other_data["conditionVec"]["C_nmr"]
-            condition_C13nmr = condition_C13nmr.reshape(batch_length, self.model.seq_len_C13)
+            condition_C13nmr = condition_C13nmr.reshape(
+                batch_length, self.model.seq_len_C13
+            )
             num_H_peak = other_data["conditionVec"]["num_H_peak"]
             num_C_peak = other_data["conditionVec"]["num_C_peak"]
             batch_nmr = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]

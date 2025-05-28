@@ -152,7 +152,7 @@ class MolecularGraphTransformer(nn.Layer):
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
-        
+
         self.seq_len_H1 = config["seq_len_H1"]  # TODO remove later
         self.seq_len_C13 = config["seq_len_C13"]  # TODO remove later
 
@@ -867,7 +867,7 @@ class MultiModalDecoder(nn.Layer):
             timesteps=self.T,
         )
 
-        self.add_condition = True # TODO revise it later
+        self.add_condition = True  # TODO revise it later
 
         # set nmr encoder model
         self.encoder = NMR_encoder(
@@ -1010,7 +1010,7 @@ class MultiModalDecoder(nn.Layer):
 
         self.train_metrics = train_metrics
         self.sampling_metrics = sampling_metrics
-        
+
         self.seq_len_H1 = config["nmr_encoder"]["seq_len_H1"]  # TODO remove later
         self.seq_len_C13 = config["nmr_encoder"]["seq_len_C13"]  # TODO remove later
         self.tem = 2  # TODO remove later
@@ -1040,7 +1040,7 @@ class MultiModalDecoder(nn.Layer):
         input_y = paddle.hstack(
             [noisy_data["y_t"].astype("float32"), extra_data.y]
         ).astype(dtype="float32")
-        
+
         batch_length = batch_graph.num_graph
         condition_H1nmr = other_data["conditionVec"]["H_nmr"]
         condition_H1nmr = condition_H1nmr.reshape(batch_length, self.seq_len_H1, -1)
@@ -1050,19 +1050,28 @@ class MultiModalDecoder(nn.Layer):
         num_C_peak = other_data["conditionVec"]["num_C_peak"]
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
 
-        return dense_data, noisy_data, node_mask, extra_data, input_X, input_E, input_y, conditionAll
+        return (
+            dense_data,
+            noisy_data,
+            node_mask,
+            extra_data,
+            input_X,
+            input_E,
+            input_y,
+            conditionAll,
+        )
 
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
         return src_mask
 
-    def forward_MultiModalModel(self, X, E, y, node_mask, conditionVec):
+    def forward_MultiModalModel(self, X, E, y, node_mask, condition):
         if self.connector_flag is True:
             with paddle.no_grad():
-                conditionVec = self.connector.sample(conditionVec)#, srcMask)
+                conditionVec = self.connector.sample(condition)  # , srcMask)
         else:
-            conditionVec = self.encoder(conditionVec)#, srcMask)
-            conditionVec = conditionVec.reshape([conditionVec.shape[0], -1])
+            conditionVec = self.encoder(condition)  # , srcMask)
+            # conditionVec = conditionVec.reshape([conditionVec.shape[0], -1])
 
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
 
@@ -1133,8 +1142,8 @@ class MultiModalDecoder(nn.Layer):
                 dense_data.E,
                 other_data["y"],
                 node_mask,
-                condition = conditionVec,
-                test = False,
+                condition=conditionVec,
+                test=False,
             )
             loss["nll"] = nll
 

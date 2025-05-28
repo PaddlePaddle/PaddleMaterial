@@ -135,7 +135,7 @@ class EigenFeatures:
         A = paddle.sum(E_t[..., 1:], axis=-1).astype("float32")  # (bs, n, n)
         A = A * paddle.unsqueeze(mask, axis=1) * paddle.unsqueeze(mask, axis=2)
 
-        L = compute_laplacian(A, normalize=False)
+        L = compute_laplacian(A, normalize=True)
 
         # 添加正则化项以防止计算失败
         n_ = L.shape[-1]
@@ -288,86 +288,42 @@ def batch_gather_2d(data, index):
 
 def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     """
-    vectors: (bs, n, n) => eigenvectors (in columns)
+    vectors (bs, n, n) : eigenvectors of Laplacian IN COLUMNS
     returns:
-      not_lcc_indicator: (bs, n, 1)
-      k_lowest_eigvec:   (bs, n, k)
+        not_lcc_indicator : indicator vectors of largest connected component (lcc) for 
+            each graph  -- (bs, n, 1)
+        k_lowest_eigvec : k first eigenvectors for the largest connected component   
+            -- (bs, n, k)
     """
     bs, n = vectors.shape[0], vectors.shape[1]
+    first_ev = paddle.round(vectors[:, :, 0] * 10**3) * node_mask
+    random = paddle.randn(shape=[bs, n]) * (~node_mask.astype("bool")).astype("float32")
+    first_ev = first_ev + random * 10**3
+    most_common = paddle.mode(x=first_ev, axis=1)[0]  # TODO
+    mask = ~(first_ev == most_common.unsqueeze(axis=1))
+    not_lcc_indicator = (
+        (mask * node_mask.astype("bool")).unsqueeze(axis=-1).astype(dtype="float32")
+    )
 
-    first_ev = vectors[:, :, 0]
-    # round to 3 decimals
-    first_ev = round_to_decimals(first_ev, decimals=3)
-    # Multiply with node_mask
-    first_ev = first_ev * node_mask
-
-    # Add some random numbers to the mask to prevent 0 from becoming the mode
-    # random => paddle.randn([bs,n]) * (1 - node_mask)  (if node_mask is float 0/1)
-    random_part = paddle.randn([bs, n], dtype=first_ev.dtype)
-    random_part = random_part * (1.0 - node_mask)
-    first_ev = first_ev + random_part
-
-    # Calculate the mode of each row
-    most_common = paddle_mode(first_ev, axis=1)  # (bs,)
-
-    mc_expanded = paddle.unsqueeze(most_common, axis=1)  # (bs,1)
-    eq_mask = paddle.equal(first_ev, mc_expanded)
-    mask = paddle.logical_not(eq_mask)
-
-    node_mask_bool = node_mask > 0.5
-    combined_mask = paddle.logical_and(mask, node_mask_bool)  # (bs,n)
-    not_lcc_indicator = paddle.unsqueeze(combined_mask.astype("float32"), axis=-1)
-
-    to_extend = int(max(n_connected)) + k - n
+    # Get the eigenvectors corresponding to the first nonzero eigenvalues
+    to_extend = max(n_connected) + k - n
     if to_extend > 0:
-        extension = paddle.zeros(shape=[bs, n, to_extend], dtype=vectors.dtype)
-        vectors = paddle.concat([vectors, extension], axis=2)  # (bs, n, n+to_extend)
-
-    # indices => shape (bs, 1, k)
-    range_k = paddle.arange(k, dtype="int64")  # (k,)
-    range_k = paddle.unsqueeze(range_k, axis=[0, 1])  # (1,1,k)
-    n_connected_i64 = paddle.unsqueeze(n_connected.astype("int64"), axis=2)  # (bs,1,1)
-    # broadcast => (bs,1,k)
-    range_k = paddle.expand(range_k, [n_connected_i64.shape[0], 1, k])
-    indices = range_k + n_connected_i64  # (bs,1,k)
-    # expand to (bs,n,k)
-    indices = paddle.expand(indices, [bs, n, k])  # (bs,n,k)
-
-    # gather => need batch gather
-    # vectors shape (bs,n,n+to_extend)
-    # indices shape (bs,n,k)
-    # at last dimension gather => axis=2
-    k_lowest_eigvec = batch_gather_3d(vectors, indices)  # (bs,n,k)
-
-    # multiply by node_mask
-    k_lowest_eigvec = k_lowest_eigvec * paddle.unsqueeze(node_mask, axis=2)  # (bs,n,k)
-    return not_lcc_indicator, k_lowest_eigvec
-
-
-def batch_gather_3d(data, index):
-    """
-    data:   (bs,n,m)
-    index:  (bs,n,k), each element in [0, m-1]
-    output: (bs,n,k)
-    """
-    bs, n, m = data.shape
-    _, _, k = index.shape
-
-    # make (bs,n,k) flat into => (bs*n*k)
-    data_flat = paddle.reshape(data, [bs * n, m])  # (bs*n, m)
-    index_flat = paddle.reshape(index, [bs * n, k])  # (bs*n, k)
-
-    # Construct row numbers: 0 to bs*n-1
-    row_idx = paddle.arange(0, bs * n, dtype="int64")
-    row_idx = paddle.unsqueeze(row_idx, axis=-1)  # (bs*n, 1)
-    row_idx = paddle.expand(row_idx, [bs * n, k])  # (bs*n, k)
-
-    gather_idx = paddle.stack(
-        [row_idx.flatten(), index_flat.flatten()], axis=1
-    )  # (bs*n*k, 2)
-    out_flat = paddle.gather_nd(data_flat, gather_idx)  # (bs*n*k,)
-    out = paddle.reshape(out_flat, [bs, n, k])  # (bs,n,k)
-    return out
+        vectors = paddle.concat(
+            x=(
+                vectors,
+                paddle.zeros(shape=[bs, n, to_extend]).astype(dtype=vectors.dtype),
+            ),
+            axis=2,
+        )
+    indices = paddle.arange(end=k).astype(dtype=vectors.dtype).astype(
+        dtype="int64"
+    ).unsqueeze(axis=0).unsqueeze(axis=0) + n_connected.unsqueeze(axis=2)
+    indices = indices.expand(shape=[-1, n, -1])
+    first_k_ev = paddle.take_along_axis(
+        arr=vectors, axis=2, indices=indices, broadcast=False
+    )
+    first_k_ev = first_k_ev * node_mask.unsqueeze(axis=2)
+    return not_lcc_indicator, first_k_ev
 
 
 # ======================================

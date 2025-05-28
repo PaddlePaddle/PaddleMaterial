@@ -431,9 +431,19 @@ Please refer to the following command to split the dataset into train/val/test s
     # parallel training & large dataset
     PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1" molecule_generation/train.py -c molecule_generation/configs/DeNMR_CLIP_CHnmr_large.yaml --step 2 --mode=train
 
+### step 4: multi-modal decoder
+#### Train:
+    # single gpu & small dataset
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_MultiModalDecoder_noPrior_CHnmr.yaml --step 4 --mode=train
+    # parallel training & small dataset
+    PYTHONPATH=$PWD python -m paddle.distributed.launch --gpus="0,1,2,3" molecule_generation/train.py -c molecule_generation/configs/DeNMR_MultiModalDecoder_noPrior_CHnmr.yaml --step 4 --mode=train
+#### Test
+    PYTHONPATH=$PWD python molecule_generation/train.py -c molecule_generation/configs/DeNMR_MultiModalDecoder_noPrior_CHnmr.yaml  --step 4 --mode=test
+
 # Install
 
 Please refer to the installation [document](install.md) for environment configuration.
+Notice: Please use PaddlePaddle-3.0.0 formal version
 
 
 # Acknowledgements

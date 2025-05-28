@@ -1,14 +1,12 @@
-import pandas as pd
-from collections import defaultdict
 import json
+from collections import defaultdict
+
+import pandas as pd
 
 
 def analyze_c13_peaks(csv_path):
     # 读取CSV并自动转换JSON字段
-    df = pd.read_csv(
-        csv_path,
-        converters={"tokenized_input": lambda x: json.loads(x)}
-    )
+    df = pd.read_csv(csv_path, converters={"tokenized_input": lambda x: json.loads(x)})
 
     # 初始化统计容器
     c13_stats = defaultdict(int)
@@ -37,15 +35,19 @@ def analyze_c13_peaks(csv_path):
     # 转换为排序后的DataFrame
     result_df = pd.DataFrame(
         sorted(c13_stats.items(), key=lambda x: x[0]),
-        columns=["Chemical_Shift", "Count"]
+        columns=["Chemical_Shift", "Count"],
     )
     # 保存结果
     result_df.to_csv("c13_shift_distribution.csv", index=False)
 
-    length_result = [['Max_length', max(length_records)],
-                     ['Min_length', min(length_records)]]
+    length_result = [
+        ["Max_length", max(length_records)],
+        ["Min_length", min(length_records)],
+    ]
 
-    pd.DataFrame(length_result).to_csv('c13_length_statistics.csv', index=False, header=None)
+    pd.DataFrame(length_result).to_csv(
+        "c13_length_statistics.csv", index=False, header=None
+    )
 
     print(ccc)
 
@@ -55,7 +57,5 @@ def analyze_c13_peaks(csv_path):
 if __name__ == "__main__":
     # df,_ = analyze_c13_peaks("tokenized_dataset_N_new.csv")
 
-    df, _ = analyze_c13_peaks('../tokenized_dataset_N_new20.csv')
+    df, _ = analyze_c13_peaks("../tokenized_dataset_N_new20.csv")
     print()
-
-

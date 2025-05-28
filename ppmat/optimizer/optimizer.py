@@ -423,6 +423,7 @@ class AdamW:
         ] = None,
         no_weight_decay_name: Optional[str] = None,
         one_dim_param_no_weight_decay: bool = False,
+        multi_precision: bool = False,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -436,6 +437,7 @@ class AdamW:
             no_weight_decay_name.split() if no_weight_decay_name else []
         )
         self.one_dim_param_no_weight_decay = one_dim_param_no_weight_decay
+        self.multi_precision = multi_precision
 
     def __call__(self, model_list: Union[nn.Layer, Tuple[nn.Layer, ...]]):
         # model_list is None in static graph
@@ -490,6 +492,7 @@ class AdamW:
             amsgrad=self.amsgrad,
             grad_clip=self.grad_clip,
             apply_decay_param_fun=self._apply_decay_param_fun,
+            multi_precision=self.multi_precision,
         )
         return opt
 

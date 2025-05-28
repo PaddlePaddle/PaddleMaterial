@@ -12,6 +12,7 @@ Trainer:
     beta2: 0.999
     weight_decay: 1e-12
     amsgrad: True
+    epsilon: 1e-8
     lr: 0.0002
       # __name__: ReduceOnPlateau
       # learning_rate: 0.0002

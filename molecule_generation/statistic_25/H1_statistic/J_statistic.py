@@ -1,6 +1,7 @@
-import pandas as pd
 import json
 from collections import defaultdict
+
+import pandas as pd
 
 
 def j_statistics(nmr_dicts):
@@ -27,13 +28,13 @@ def j_statistics(nmr_dicts):
     # 转换长度统计为排序后的DataFrame
     df_length = pd.DataFrame(
         sorted(j_length_counter.items(), key=lambda x: x[0]),
-        columns=["Coupling_Constants_Count", "Peak_Count"]
+        columns=["Coupling_Constants_Count", "Peak_Count"],
     )
 
     # 转换值统计为排序后的DataFrame
     df_value = pd.DataFrame(
         sorted(j_value_counter.items(), key=lambda x: x[0]),
-        columns=["J_Value", "Count"]
+        columns=["J_Value", "Count"],
     )
 
     return df_length, df_value
@@ -41,7 +42,7 @@ def j_statistics(nmr_dicts):
 
 # 使用示例
 if __name__ == "__main__":
-    df = pd.read_csv('../tokenized_dataset_N_new25.csv')
+    df = pd.read_csv("../tokenized_dataset_N_new25.csv")
     nmrdict = df["tokenized_input"].apply(json.loads)
     df_length, df_value = j_statistics(nmrdict)
 

@@ -3,20 +3,24 @@ Trainer:
   seed: 42
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
-  clip_grad: null
-  ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: "/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" # "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
+  clip_grad: 1.0 #null
+  ema_decay: 0.999 # 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
+  pretrained_model_path: #"/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" # "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
     beta2: 0.999
-    lr: 0.001
-    weight_decay: 1e-12
+    lr: #0.001
+      __name__: Cosine
+      learning_rate: 1e-3
+      eta_min: 1e-5
+      by_epoch: True
+    weight_decay: 1e-4
 Tracker:
   log:
     log_freq: 1 # log frequency [step]
   save:
-    output_dir: ./output/DeNMR_CHnmr/CLIP
+    output_dir: ./output/DeNMR_CHnmr/CLIP/shuffle
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
@@ -47,7 +51,7 @@ Model:
     ffn_hidden: 512
     n_head: 8
     n_layers: 3
-    drop_prob: 0.0
+    drop_prob: 0.1 # 0.0
     seq_len_H1: 20
     seq_len_C13: 75
     peakwidthemb_num: 70
@@ -73,7 +77,7 @@ Dataset:
       use_shared_memory: False
     sampler:
       __name__: DistributedBatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
       batch_size: 512
   val:
@@ -89,7 +93,7 @@ Dataset:
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
       batch_size: 512
   test:
@@ -105,6 +109,6 @@ Dataset:
       seq_len_C13: 75
     sampler:
       __name__: BatchSampler
-      shuffle: False
+      shuffle: True
       drop_last: False
       batch_size: 512

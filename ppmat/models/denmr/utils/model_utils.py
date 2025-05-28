@@ -22,7 +22,7 @@ def apply_noise(model, X, E, y, node_mask):
     ).astype("float32")
     s_int = t_int - 1
 
-    t_float = t_int / model.T
+    t_float = t_int / model.T  # nomarlize for stablizing training diffusion model
     s_float = s_int / model.T
 
     beta_t = model.noise_schedule(t_normalized=t_float)
@@ -242,20 +242,27 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
     # E => broadcast
     probE0 = paddle.matmul(E, Q0.E.unsqueeze(1))
 
-    sampled0 = diffusion_utils.sample_discrete_features(probX0, probE0, node_mask)
+    sampled0 = diffusion_utils.sample_discrete_features(
+        probX0, probE0, node_mask
+    )  # TODO
     X0 = F.one_hot(sampled0.X, num_classes=model.Xdim_output)
     E0 = F.one_hot(sampled0.E, num_classes=model.Edim_output)
     y0 = sampled0.y
     assert (X.shape == X0.shape) and (E.shape == E0.shape)
 
+    sampled_0 = utils.PlaceHolder(X=X0, E=E0, y=y0).mask(
+        node_mask
+    )  # TODO new add for step4
+
     # noisy_data
     noisy_data = {
-        "X_t": X0,
-        "E_t": E0,
-        "y_t": y0,
+        "X_t": sampled_0.X,
+        "E_t": sampled_0.E,
+        "y_t": sampled_0.y,
         "node_mask": node_mask,
-        "t": paddle.zeros([X0.shape[0], 1]).astype("float32"),
+        "t": paddle.zeros([X0.shape[0], 1]).astype(y0.dtype),
     }
+
     extra_data = compute_extra_data(model, noisy_data)
 
     # input_X
@@ -525,7 +532,7 @@ def sample_p_zs_given_zt(
 
     from ppmat.models.denmr.base_model import MultiModalDecoder
 
-    if model.__class__ == MultiModalDecoder: 
+    if model.__class__ == MultiModalDecoder:
         pred = model.forward_MultiModalModel(
             input_X, input_E, input_y, node_mask, conditionVec
         )
