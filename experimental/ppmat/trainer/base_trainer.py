@@ -595,12 +595,13 @@ class BaseTrainer:
         else:
             self.train_dataloader = train_dataloader
         if val_dataloader is None:
-            assert (
-                self.val_dataloader is not None
-            ), "val_dataloader is None, please set it or pass to the constructor."
             val_dataloader = self.val_dataloader
         else:
             self.val_dataloader = val_dataloader
+        if val_dataloader is None:
+            logger.warning(
+                "No validation dataset provided, evaluation during training will be skipped."
+            )
         
         if hasattr(self.model, 'before_train'):
             self.model.before_train(self)
@@ -689,9 +690,9 @@ class BaseTrainer:
 
             # evaluate model when epoch is divisible by eval_freq
             if (
-                self.state.epoch % self.config["eval_freq"] == 0
+                (self.state.epoch % self.config["eval_freq"] == 0
                 or self.state.epoch == self.config["max_epochs"]
-                or self.state.epoch == 1
+                or self.state.epoch == 1) and val_dataloader is not None
             ):
 
                 eval_time_info, eval_loss_info, eval_metric_info = self.eval_epoch(
@@ -721,7 +722,8 @@ class BaseTrainer:
                     # wandb_writer=self.wandb_writer,
                     tensorboard_writer=self.tensorboard_writer,
                 )
-
+            else:
+                eval_loss_info, eval_metric_info = None, None
             # save best model when best_metric is better than previous best_metric
             save_best_flag = self._determine_best_metric(
                 train_loss_info, train_metric_info, eval_loss_info, eval_metric_info
@@ -781,10 +783,22 @@ class BaseTrainer:
             self.state.cur_metric = train_loss_info[name_for_best_metric].avg
         elif best_metric_indicator == "train_metric":
             self.state.cur_metric = train_metric_info[name_for_best_metric].avg
-        elif best_metric_indicator == "eval_loss" and eval_loss_info is not None:
-            self.state.cur_metric = eval_loss_info[name_for_best_metric].avg
-        elif best_metric_indicator == "eval_metric" and eval_metric_info is not None:
-            self.state.cur_metric = eval_metric_info[name_for_best_metric].avg
+        elif best_metric_indicator == "eval_loss": 
+            if eval_loss_info is not None:
+                self.state.cur_metric = eval_loss_info[name_for_best_metric].avg
+            else:
+                logger.warning(
+                    "No eval_loss info found, skip saving best model."
+                )
+                return False
+        elif best_metric_indicator == "eval_metric":
+            if eval_metric_info is not None:
+                self.state.cur_metric = eval_metric_info[name_for_best_metric].avg
+            else:
+                logger.warning(
+                    "No eval_metric info found, skip saving best model."
+                )
+                return False
         else:
             raise ValueError(
                 f"Unsupported best_metric_indicator: {best_metric_indicator}"
