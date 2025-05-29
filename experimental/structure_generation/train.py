@@ -81,12 +81,13 @@ if __name__ == "__main__":
     else:
         train_loader = None
 
-    if config["Global"].get("do_eval", False):
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
         val_data_cfg = config["Dataset"].get("val")
-        assert (
-            val_data_cfg is not None
-        ), "val_data_cfg must be defined, when do_eval is true"
-        val_loader = build_dataloader(val_data_cfg)
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
     else:
         val_loader = None
 
