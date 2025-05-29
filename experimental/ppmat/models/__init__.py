@@ -58,6 +58,8 @@ MODEL_REGISTRY = {
     "mattergen_alex_mp20_dft_mag_density": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density.zip",
     "mattergen_alex_mp20_ml_bulk_modulus": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_ml_bulk_modulus.zip",
     "mattergen_alex_mp20_space_group": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_space_group.zip",
+    "mattergen_alex_mp20_chemical_system_energy_above_hull": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.zip",
+    "mattergen_alex_mp20_dft_mag_density_hhi_score": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.zip",
 }
 
 
