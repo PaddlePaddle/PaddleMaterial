@@ -36,7 +36,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
     </head>
     <body>
         <tr>
-            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">MegNet</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
             <th  nowrap="nowrap">Form. Energy(eV/atom)</th>
             <td  nowrap="nowrap">0.0283 / 0.0265</td>

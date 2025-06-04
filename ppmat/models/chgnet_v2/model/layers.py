@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import paddle
 
-from ppmat.models.chgnet.model.functions import MLP
-from ppmat.models.chgnet.model.functions import GatedMLP
-from ppmat.models.chgnet.model.functions import aggregate
-from ppmat.models.chgnet.model.functions import find_activation
-from ppmat.models.chgnet.model.functions import find_normalization
+from ppmat.models.chgnet_v2.model.functions import MLP
+from ppmat.models.chgnet_v2.model.functions import GatedMLP
+from ppmat.models.chgnet_v2.model.functions import aggregate
+from ppmat.models.chgnet_v2.model.functions import find_activation
+from ppmat.models.chgnet_v2.model.functions import find_normalization
 
 
 class AtomConv(paddle.nn.Layer):

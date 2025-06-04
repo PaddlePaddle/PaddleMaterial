@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import os.path as osp
 from typing import Dict
@@ -18,6 +19,8 @@ from typing import Optional
 
 from omegaconf import OmegaConf
 
+from ppmat.models.chgnet.chgnet import CHGNet
+from ppmat.models.chgnet.chgnet_graph_converter import CHGNetGraphConverter
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import FindPointsInSpheres
@@ -37,6 +40,8 @@ __all__ = [
     "MEGNetPlus",
     "MatterGen",
     "MatterGenWithCondition",
+    "CHGNetGraphConverter",
+    "CHGNet",
 ]
 
 

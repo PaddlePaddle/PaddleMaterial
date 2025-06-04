@@ -7,14 +7,14 @@ import numpy as np
 import paddle
 from pymatgen.core import Structure
 
-from ppmat.models.chgnet.model.functions import GatedMLP
-from ppmat.models.chgnet.model.functions import find_activation
+from ppmat.models.chgnet_v2.model.functions import GatedMLP
+from ppmat.models.chgnet_v2.model.functions import find_activation
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from ppmat.models.chgnet.graph.crystalgraph import CrystalGraph
+    from ppmat.models.chgnet_v2.graph.crystalgraph import CrystalGraph
 
 
 class CompositionModel(paddle.nn.Layer):

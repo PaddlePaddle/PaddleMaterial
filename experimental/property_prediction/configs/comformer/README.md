@@ -48,7 +48,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">Band GP(eV)</td>
+            <td  nowrap="nowrap">Band Gap(eV)</td>
             <td  nowrap="nowrap">0.223 / 0.209</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~12 hours</td>
