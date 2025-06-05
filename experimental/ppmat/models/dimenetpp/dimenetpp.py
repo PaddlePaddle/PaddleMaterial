@@ -271,8 +271,52 @@ class OutputPPBlock(paddle.nn.Layer):
 
 class DimeNetPlusPlus(paddle.nn.Layer):
     """
-    Unified DimeNet++: integrates base architecture and data wrapping.
-    Supports both direct tensor inputs or data dict with on-the-fly graph.
+    Fast and Uncertainty-Aware Directional Message Passing for
+    Non-Equilibrium Molecules, https://arxiv.org/abs/2011.14115
+    
+    Args:
+        out_channels (int): The number of output channels for the final prediction.
+        hidden_channels (int, optional): The dimensionality of hidden feature 
+            vectors in each convolutional layer. Defaults to 128.
+        num_blocks (int, optional): The number of interaction blocks to stack. 
+            Defaults to 4.
+        int_emb_size (int, optional): The size of the embedding vector 
+            for each atom index. Defaults to 64.
+        basis_emb_size (int, optional): The size of the basis embedding used 
+            in the interaction layers. Defaults to 8.
+        out_emb_channels (int, optional): The number of channels after the final 
+            embedding layer before readout. Defaults to 256.
+        num_spherical (int, optional): The number of spherical basis functions to use. 
+            Defaults to 7.
+        num_embeddings (int, optional): The number of distinct atom types to embed. 
+            Defaults to 95.
+        num_radial (int, optional): The number of radial basis functions to use. 
+            Defaults to 6.
+        otf_graph (bool, optional): Whether to construct the interaction graph 
+            on-the-fly during training. Defaults to False.
+        cutoff (float, optional): The cutoff distance (in Å) for neighbor interactions. 
+            Defaults to 10.0.
+        max_num_neighbors (int, optional): The maximum number of neighbors to consider 
+            for each atom. Defaults to 20.
+        envelope_exponent (int, optional): The exponent used in the cutoff envelope 
+            function to control smooth decay. Defaults to 5.
+        num_before_skip (int, optional): The number of convolutional layers 
+            before each skip connection. Defaults to 1.
+        num_after_skip (int, optional): The number of convolutional layers 
+            after each skip connection. Defaults to 2.
+        num_output_layers (int, optional): The number of fully connected layers 
+            used to produce the final output. Defaults to 3.
+        readout (str, optional): The method for aggregating atom features into 
+            a graph-level feature (“mean” or “sum”). Defaults to "mean".
+        property_names (Optional[str], optional): A comma-separated list of 
+            target property names to predict. Defaults to "formation_energy_per_atom".
+        data_norm_mean (float, optional): The mean used for normalizing target values. 
+            Defaults to 0.0.
+        data_norm_std (float, optional): The standard deviation used for 
+            normalizing target values. Defaults to 1.0.
+        loss_type (str, optional): Loss type, can be 'mse_loss' or 'l1_loss'. 
+            Defaults to "l1_loss".
+        act (_type_, optional): The activation function. Defaults to swish.
     """
 
     def __init__(
@@ -297,7 +341,6 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         property_names: Optional[str] = "formation_energy_per_atom",
         data_norm_mean: float = 0.0,
         data_norm_std: float = 1.0,
-        data_clip_min: float = -6.0,
         loss_type: str = "l1_loss",
         act=swish,
     ):
@@ -318,9 +361,6 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         )
         self.register_buffer(
             tensor=paddle.to_tensor(data_norm_std), name="data_norm_std"
-        )
-        self.register_buffer(
-            tensor=paddle.to_tensor(data_clip_min), name="data_clip_min"
         )
 
         # basis layers

@@ -91,7 +91,6 @@ Model:
     # data preprocess parameters
     data_norm_mean: 1.3462
     data_norm_std: 1.6214
-    data_clip_min: -6.0
     # loss
     loss_type: 'l1_loss'
 

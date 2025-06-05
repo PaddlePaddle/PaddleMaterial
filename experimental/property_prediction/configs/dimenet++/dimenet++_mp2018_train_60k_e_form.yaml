@@ -4,7 +4,7 @@ Global:
   # "band_gap",
   # "G",
   # "K"
-  label_names: ["band_gap"]
+  label_names: ["formation_energy_per_atom"]
   do_train: True
   do_eval: False
   do_test: False
@@ -21,7 +21,7 @@ Trainer:
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/dimenetpp_mp2018_train_60k_band_gap
+  output_dir: ./output/dimenetpp_mp2018_train_60k_e_form
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -92,7 +92,6 @@ Model:
     # data preprocess parameters
     data_norm_mean: -1.6519
     data_norm_std: 1.0694
-    dada_clip_min: -6.0
     # loss
     loss_type: 'l1_loss'
 
