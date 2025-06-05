@@ -20,10 +20,13 @@ from typing import Optional
 import numpy as np
 import pgl
 from p_tqdm import p_map
+from pymatgen.analysis import local_env
+from pymatgen.analysis.graphs import StructureGraph
 from pymatgen.core.structure import Structure
 from pymatgen.optimization.neighbors import find_points_in_spheres
 
 from ppmat.utils import logger
+from ppmat.utils.crystal import lattice_params_to_matrix
 
 
 class FindPointsInSpheres:
@@ -119,6 +122,150 @@ class FindPointsInSpheres:
                 f"No edges found within cutoff {cutoff:.5f}. Please increase the "
                 "cutoff."
             )
+
+        graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
+        return graph
+
+    def build_pgl_graph(
+        self,
+        structure: Structure,
+        edge_indices,
+        to_jimages,
+        node_features=None,
+        edge_features=None,
+    ):
+        assert node_features is None or isinstance(node_features, dict)
+        assert edge_features is None or isinstance(edge_features, dict)
+
+        # get atom types
+        atom_types = np.array([site.specie.Z for site in structure])
+
+        # get lattice parameters and matrix
+        lattice_parameters = structure.lattice.parameters
+        lengths = np.array(lattice_parameters[:3], dtype="float32").reshape(1, 3)
+        angles = np.array(lattice_parameters[3:], dtype="float32").reshape(1, 3)
+        lattice = structure.lattice.matrix.astype("float32")
+
+        # convert to numpy array
+        edge_indices = np.array(edge_indices)
+        if to_jimages is not None:
+            to_jimages = np.array(to_jimages)
+        num_atoms = tuple(atom_types.shape)[0]
+
+        # After multiple graph batch operations by the dataloader,
+        # graph.num_nodes remains an integer, which is the sum of the number of
+        # nodes in all graphs
+        graph = pgl.Graph(edge_indices, num_nodes=num_atoms)
+        # node features: frac_coords, cart_coords, atom_types
+        graph.node_feat["frac_coords"] = structure.frac_coords.astype("float32")
+        graph.node_feat["cart_coords"] = structure.cart_coords.astype("float32")
+        graph.node_feat["atom_types"] = atom_types
+
+        # graph features: lengths, angles, lattice, num_atoms
+        # Due to the inability of pgl.graph to store graph level features,
+        # we will store these features under node_feat
+        graph.node_feat["lengths"] = lengths
+        graph.node_feat["angles"] = angles
+        graph.node_feat["lattice"] = lattice.reshape(1, 3, 3)
+        # graph.node_feat['num_atoms'] is different from graph.num_nodes
+        # After multiple graph batch operations by the dataloader,
+        # graph.node_feat['num_atoms'] is a tensor of shape (batch_size),
+        # where each value is the number of atoms in the corresponding graph.
+        graph.node_feat["num_atoms"] = np.array([num_atoms])
+        # edge features: pbc_offset, bond_vec, bond_dist
+        if to_jimages is not None:
+            graph.edge_feat["pbc_offset"] = to_jimages
+            offset = np.matmul(to_jimages, lattice)
+            dst_pos = graph.node_feat["cart_coords"][graph.edges[:, 1]] + offset
+            src_pos = graph.node_feat["cart_coords"][graph.edges[:, 0]]
+            bond_vec = dst_pos - src_pos
+            bond_dist = np.linalg.norm(bond_vec, axis=1)
+            graph.edge_feat["bond_vec"] = bond_vec.astype("float32")
+            graph.edge_feat["bond_dist"] = bond_dist.astype("float32")
+        graph.edge_feat["num_edges"] = np.array([edge_indices.shape[0]])
+
+        if node_features is not None:
+            graph.node_feat.update(node_features)
+        if edge_features is not None:
+            graph.edge_feat.update(edge_features)
+        return graph
+
+
+class CrystalNN:
+    def __init__(
+        self,
+        cutoff: float = 5.0,
+        pbc: tuple[int, int, int] = (1, 1, 1),
+        num_cpus: Optional[int] = None,
+        eps: float = 1e-8,
+    ):
+        self.cutoff = cutoff
+        self.pbc = np.array(pbc, dtype=int)
+        self.num_cpus = num_cpus
+        self.eps = eps
+
+    def __call__(self, structure: Structure):
+        if isinstance(structure, Structure):
+            graph = self.get_graph_by_crystalnn(structure)
+        elif isinstance(structure, list):
+            graph = p_map(
+                self.get_graph_by_crystalnn, structure, num_cpus=self.num_cpus
+            )
+            # the following code is equivalent to the above line, it is slower,
+            # but easier to debug.
+            # graph = [self.get_graph_by_crystalnn(struc) for struc in structure]
+        else:
+            raise TypeError("The input must be a pymatgen.Structure or a list of them.")
+        return graph
+
+    def get_graph_by_crystalnn(self, structure: Structure):
+
+        try:
+            structure_graph = StructureGraph.with_local_env_strategy(
+                structure, self.CrystalNN
+            )
+        except Exception:
+            search_cutoff = 10
+            while True:
+                try:
+                    crystalNN_tmp = local_env.CrystalNN(
+                        distance_cutoffs=None,
+                        x_diff_weight=-1,
+                        porous_adjustment=False,
+                        search_cutoff=search_cutoff,
+                    )
+                    structure_graph = StructureGraph.from_local_env_strategy(
+                        structure, crystalNN_tmp
+                    )
+                    logger.info(
+                        "Successfully generated graph by CrystalNN with "
+                        f"search_cutoff={search_cutoff}."
+                    )
+                    break
+                except Exception:
+                    search_cutoff += 2
+                    logger.info(f"Searching for new search_cutoff{search_cutoff}...")
+                    if search_cutoff > 40:
+                        logger.info(
+                            "Failed to generate graph by CrystalNN with "
+                            f"search_cutoff={search_cutoff}. "
+                        )
+                        break
+
+        # atom_types = np.array(structure.atomic_numbers)
+        lattice_parameters = structure.lattice.parameters
+        lengths = lattice_parameters[:3]
+        angles = lattice_parameters[3:]
+        assert np.allclose(
+            structure.lattice.matrix, lattice_params_to_matrix(*lengths, *angles)
+        )
+
+        edge_indices, to_jimages = [], []
+        for i, j, to_jimage in structure_graph.graph.edges(data="to_jimage"):
+            edge_indices.append([j, i])
+            to_jimages.append(to_jimage)
+            edge_indices.append([i, j])
+            to_jimages.append(tuple(-tj for tj in to_jimage))
 
         graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
         return graph
