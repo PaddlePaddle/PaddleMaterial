@@ -290,9 +290,9 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     """
     vectors (bs, n, n) : eigenvectors of Laplacian IN COLUMNS
     returns:
-        not_lcc_indicator : indicator vectors of largest connected component (lcc) for 
+        not_lcc_indicator : indicator vectors of largest connected component (lcc) for
             each graph  -- (bs, n, 1)
-        k_lowest_eigvec : k first eigenvectors for the largest connected component   
+        k_lowest_eigvec : k first eigenvectors for the largest connected component
             -- (bs, n, k)
     """
     bs, n = vectors.shape[0], vectors.shape[1]

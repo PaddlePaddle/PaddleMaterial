@@ -1,11 +1,11 @@
 Trainer:
   epochs: 2000
-  seed: 42
+  seed: 100
   start_eval_epoch: 1
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: "./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/v5/checkpoints/epoch_1700.pdparams" #"./output/step4_noprior_best_v1.pdparams" #null # set your pretrained model path here
+  pretrained_model_path: "./output/step4_noprior_best_v1.pdparams" # "./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/v5/checkpoints/epoch_1700.pdparams" #"./output/step4_noprior_best_v1.pdparams" #null # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -36,7 +36,7 @@ Tracker:
     flag_eval_step: False
     flag_sample_metric: True # decidet output tanimot similarity calculationg process or not
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/test_v1/
+    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/test_v4/
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
@@ -111,7 +111,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 128
+      batch_size: 512
   val:
     dataset:
       __name__: CHnmrDataset
