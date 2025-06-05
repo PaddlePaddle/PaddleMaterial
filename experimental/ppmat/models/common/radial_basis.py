@@ -187,7 +187,9 @@ class RadialBasis(paddle.nn.Layer):
         envelope: dict = {"name": "polynomial", "exponent": 5},
     ):
         super().__init__()
+        self.num_radial = num_radial
         self.inv_cutoff = 1 / cutoff
+
         env_name = envelope["name"].lower()
         env_hparams = envelope.copy()
         del env_hparams["name"]
