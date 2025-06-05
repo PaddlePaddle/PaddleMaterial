@@ -42,20 +42,11 @@ __all__ = [
     "MEGNetPlus",
     "MatterGen",
     "MatterGenWithCondition",
-<<<<<<< HEAD
-<<<<<<< HEAD
     "DimeNetPlusPlus",
     "CrystalNN",
-=======
     "CHGNetGraphConverter",
     "CHGNet",
->>>>>>> bb7772e... feat: add chgnet model, fix some bugs (#145)
-=======
-    "CHGNetGraphConverter",
-    "CHGNet",
->>>>>>> bb7772e1c4d8ec81e4bd21e3826c6f9d730e95b8
 ]
-
 
 MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
