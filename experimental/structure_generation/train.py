@@ -72,28 +72,36 @@ if __name__ == "__main__":
 
     # build dataloader from config
     set_signal_handlers()
-    train_data_cfg = config["Dataset"].get("train")
-    if train_data_cfg is None:
-        logger.warning("train dataset is not defined in config.")
-        train_loader = None
-    else:
+    if config["Global"].get("do_train", True):
+        train_data_cfg = config["Dataset"].get("train")
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined, when do_train is true"
         train_loader = build_dataloader(train_data_cfg)
+    else:
+        train_loader = None
 
-    val_data_cfg = config["Dataset"].get("val")
-    if val_data_cfg is None:
-        logger.warning("val dataset is not defined in config.")
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
+        val_data_cfg = config["Dataset"].get("val")
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
+    else:
         val_loader = None
-    else:
-        val_loader = build_dataloader(val_data_cfg)
-    test_data_cfg = config["Dataset"].get("test")
-    if test_data_cfg is None:
-        logger.warning("test dataset is not defined in config.")
-        test_loader = None
-    else:
+
+    if config["Global"].get("do_test", False):
+        test_data_cfg = config["Dataset"].get("test")
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined, when do_test is true"
         test_loader = build_dataloader(test_data_cfg)
+    else:
+        test_loader = None
 
     # build optimizer and learning rate scheduler from config
-    if config.get("Optimizer") is not None:
+    if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
         assert (
             train_loader is not None
         ), "train_loader must be defined when optimizer is defined."

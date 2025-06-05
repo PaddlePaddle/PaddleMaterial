@@ -27,7 +27,9 @@ from typing import Optional
 import numpy as np
 import paddle.distributed as dist
 import pandas as pd
+from p_tqdm import p_map
 from paddle.io import Dataset
+from pymatgen.symmetry.groups import SpaceGroup
 
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
@@ -314,7 +316,9 @@ class MP20Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
+                ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [
@@ -342,7 +346,19 @@ class MP20Dataset(Dataset):
         property_data = {
             property_name: data[property_name] for property_name in property_names
         }
+        if "space_group" in property_names:
+            property_data["space_group"] = self.space_group_to_int(
+                property_data["space_group"]
+            )
         return property_data
+
+    def space_group_to_int(self, space_groups):
+        def space_group_to_int_single(space_group):
+            return SpaceGroup(space_group).int_number
+
+        space_groups_int = p_map(space_group_to_int_single, space_groups)
+
+        return space_groups_int
 
     def save_to_cache(self, cache_path: str, data: Any):
         with open(cache_path, "wb") as f:
