@@ -32,9 +32,9 @@ Trainer:
   # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
-  pretrained_model_path: output/dimenetpp_mp2018_train_60k_G/checkpoints/ # nullnull
+  pretrained_model_path: null
   # Pretrained weight name, will be used when pretrained_model_path is a directory
-  pretrained_weight_name: 'best.pdparams' # null #'latest.pdparams'
+  pretrained_weight_name: null #'latest.pdparams'
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
