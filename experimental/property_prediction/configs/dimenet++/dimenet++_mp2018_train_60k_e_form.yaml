@@ -54,7 +54,7 @@ Trainer:
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
   # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "band_gap"
+  name_for_best_metric: "formation_energy_per_atom"
   # The metric whether is better when it is greater
   greater_is_better: False
 
@@ -71,6 +71,7 @@ Model:
   __class_name__: DimeNetPlusPlus
   __init_params__:
     # layer parameters
+    out_channels: 1
     hidden_channels: 128
     num_blocks: 4
     int_emb_size: 64
@@ -90,13 +91,13 @@ Model:
     # predict value name
     property_names: ${Global.label_names}
     # data preprocess parameters
-    data_norm_mean: -1.6519
-    data_norm_std: 1.0694
+    data_norm_mean: 1.3462
+    data_norm_std: 1.6214
     # loss
     loss_type: 'l1_loss'
 
 Metric:
-  band_gap:
+  formation_energy_per_atom:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 

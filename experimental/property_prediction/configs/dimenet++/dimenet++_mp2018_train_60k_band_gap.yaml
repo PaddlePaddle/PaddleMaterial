@@ -80,7 +80,9 @@ Model:
     num_spherical: 7
     num_embeddings: 95
     num_radial: 6
+    otf_graph: false
     cutoff: 7.0
+    max_num_neighbors: 20
     envelope_exponent: 5
     num_before_skip: 1
     num_after_skip: 2
@@ -114,7 +116,7 @@ Dataset:
     dataset:
       __class_name__: MP2018Dataset
       __init_params__:
-        path: "../data/mp2018_train_60k/mp.2018.6.1_train.json"
+        path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: cif_str
@@ -122,24 +124,22 @@ Dataset:
         build_graph_cfg: ${Global.graph_converter}
       num_workers: 4
       use_shared_memory: False
-      cache_path: None
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: False
+        shuffle: True
         drop_last: True
         batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
   val:
     dataset:
       __class_name__: MP2018Dataset
       __init_params__:
-        path: "../data/mp2018_train_60k/mp.2018.6.1_val.json"
+        path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: cif_str
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-        cache_path: None
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -150,13 +150,12 @@ Dataset:
     dataset:
       __class_name__: MP2018Dataset
       __init_params__:
-        path: "../data/mp2018_train_60k/mp.2018.6.1_test.json"
+        path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: cif_str
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-        cache_path: None
     sampler:
       __class_name__: BatchSampler
       __init_params__:

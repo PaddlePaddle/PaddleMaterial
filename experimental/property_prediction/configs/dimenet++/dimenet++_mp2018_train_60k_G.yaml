@@ -32,9 +32,9 @@ Trainer:
   # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
-  pretrained_model_path: null
+  pretrained_model_path: output/dimenetpp_mp2018_train_60k_G/checkpoints/ # null
   # Pretrained weight name, will be used when pretrained_model_path is a directory
-  pretrained_weight_name: null #'latest.pdparams'
+  pretrained_weight_name: 'best.pdparams' #null #'latest.pdparams'
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
@@ -54,7 +54,7 @@ Trainer:
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
   # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "band_gap"
+  name_for_best_metric: "G"
   # The metric whether is better when it is greater
   greater_is_better: False
 
@@ -71,6 +71,7 @@ Model:
   __class_name__: DimeNetPlusPlus
   __init_params__:
     # layer parameters
+    out_channels: 1
     hidden_channels: 128
     num_blocks: 4
     int_emb_size: 64
@@ -88,16 +89,15 @@ Model:
     num_output_layers: 3
     readout: mean
     # predict value name
-    # predict value name
     property_names: ${Global.label_names}
     # data preprocess parameters
-    data_norm_mean: 0.0
-    data_norm_std: 1.0
+    data_norm_mean: 1.3462
+    data_norm_std: 1.6214
     # loss
     loss_type: 'l1_loss'
 
 Metric:
-  band_gap:
+  G:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 

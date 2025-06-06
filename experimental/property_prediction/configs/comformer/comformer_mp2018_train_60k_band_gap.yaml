@@ -42,7 +42,7 @@ Trainer:
   # automatic mixed precision level
   amp_level: 'O1'
   # whether run a model on no_grad mode during evaluation, useful for saving memory
-  # If the model contains higher-order derivatives in the forward, it should be set to 
+  # If the model contains higher-order derivatives in the forward, it should be set to
   # False
   eval_with_no_grad: True
   # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
@@ -86,7 +86,7 @@ Model:
     loss_type: 'l1_loss'
 
 Metric:
-  band_gap:
+  formation_energy_per_atom:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 

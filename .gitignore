@@ -148,3 +148,6 @@ log/*
 output/*
 experimental/output/*
 experimental/output
+experimental/data
+experimental/log/
+experimental/log2/
