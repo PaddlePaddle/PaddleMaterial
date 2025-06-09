@@ -30,6 +30,7 @@ from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
+from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -41,6 +42,7 @@ __all__ = [
     "AlexMP20MatterGenDataset",
     "NumAtomsCrystalDataset",
     "set_signal_handlers",
+    "MPTrjDataset",
 ]
 
 

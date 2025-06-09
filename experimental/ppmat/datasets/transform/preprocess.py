@@ -14,9 +14,11 @@
 
 from __future__ import annotations
 
+from typing import Dict
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
-from typing import Union, Dict, Sequence
+from typing import Union
 
 import numpy as np
 import paddle
@@ -80,6 +82,58 @@ class Log10:
         return data
 
 
+class Scale:
+    """Calculates the base-10 logarithm of the data, element-wise."""
+
+    def __init__(
+        self,
+        scale: float,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
+            )
+        else:
+            self.apply_keys = None
+        self.scale = scale
+
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            data[key] = data[key] * self.scale
+        return data
+
+
+class Abs:
+    def __init__(
+        self,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
+            )
+        else:
+            self.apply_keys = None
+
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            data[key] = np.abs(data[key])
+        return data
+
+
 class LatticePolarDecomposition:
     """Lattice Polar Decomposition"""
 
@@ -126,7 +180,6 @@ class LatticePolarDecomposition:
         P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
         symm_lattice_matrix = P_prime
         return symm_lattice_matrix
-
 
 
 class SetProperty:

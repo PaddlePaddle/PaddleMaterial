@@ -26,6 +26,7 @@ import paddle
 import pgl
 
 from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 
 
 class DefaultCollator(object):
@@ -46,6 +47,9 @@ class DefaultCollator(object):
         sample = batch[0]
         if sample is None:
             return None
+        elif isinstance(sample, ConcatNumpyWarper):
+            batch = np.concatenate(batch, axis=0)
+            return batch
         elif isinstance(sample, np.ndarray):
             batch = np.stack(batch, axis=0)
             return batch

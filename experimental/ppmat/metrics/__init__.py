@@ -21,6 +21,23 @@ from ppmat.metrics.csp_metric import CSPMetric
 __all__ = ["build_metric", "CSPMetric"]
 
 
+class IgnoreNanMetricWrapper:
+    def __init__(self, **metric_cfg):
+        self._metric_cfg = metric_cfg
+        self._metric = build_metric(self._metric_cfg)
+
+    def __call__(self, pred, label):
+
+        valid_value_indices = ~paddle.isnan(label)
+        valid_label = label[valid_value_indices]
+        valid_pred = pred[valid_value_indices]
+        if valid_label.numel() > 0:
+            metric_value = self._metric(valid_pred, valid_label)
+        else:
+            metric_value = paddle.nan
+        return metric_value
+
+
 def build_metric(cfg):
     """Build metric.
 

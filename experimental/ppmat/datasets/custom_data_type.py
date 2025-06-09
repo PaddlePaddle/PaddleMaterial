@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import numpy as np
 
 
@@ -36,3 +37,11 @@ class ConcatData(object):
 
     def __repr__(self):
         return str(self.__dict__)
+
+
+class ConcatNumpyWarper(np.ndarray):
+    """This class is used to wrap numpy data when grouping batches."""
+
+    def __new__(cls, input_array, *args, **kwargs):
+        obj = np.asarray(input_array).view(cls)
+        return obj

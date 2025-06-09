@@ -267,7 +267,7 @@ class AtomRef(paddle.nn.Layer):
         Returns:
             prediction associated with each composition [batchsize].
         """
-        return self.fc(composition_feas).flatten()
+        return self.fc(composition_feas)  # .flatten()
 
     def fit(
         self,
@@ -1145,6 +1145,9 @@ class CHGNet(paddle.nn.Layer):
         return_site_energies: bool = False,
         return_atom_feas: bool = False,
         return_crystal_feas: bool = False,
+        loss_type: str = "mse_loss",
+        huber_loss_delta: float = 0.1,
+        loss_weights_dict: dict | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -1154,16 +1157,27 @@ class CHGNet(paddle.nn.Layer):
         self.n_conv = n_conv
         self.is_freeze = is_freeze
 
-        self.property_names = (
-            property_names if property_names is not None else ["e", "f", "s", "m"]
-        )
-        for property_name in self.property_names:
-            assert property_name in [
-                "e",
-                "f",
-                "s",
-                "m",
-            ], f"{property_name} is not supported, please choose from e, f, s, m."
+        support_property_names = ["energy_per_atom", "force", "stress", "magmom"]
+        support_loss_weights_dict = {
+            "energy_per_atom": 1.0,
+            "force": 1.0,
+            "stress": 0.1,
+            "magmom": 0.1,
+        }
+        if property_names is None:
+            property_names = support_property_names
+        else:
+            for property_name in property_names:
+                assert (
+                    property_name in support_property_names
+                ), f"{property_name} is not supported, please choose from "
+                f"{support_property_names}"
+        self.property_names = property_names
+        if loss_weights_dict is None:
+            loss_weights_dict = {
+                key: support_loss_weights_dict[key] for key in property_names
+            }
+        self.loss_weights_dict = loss_weights_dict
 
         self.return_site_energies = return_site_energies
         self.return_atom_feas = return_atom_feas
@@ -1288,6 +1302,17 @@ class CHGNet(paddle.nn.Layer):
             self.freeze_weights()
             logger.info("Some weights are frozen.")
 
+        self.loss_type = loss_type
+        if loss_type == "mse_loss":
+            self.loss_fn = paddle.nn.MSELoss()
+        elif loss_type == "smooth_l1_loss" or loss_type == "huber_loss":
+            self.loss_fn = paddle.nn.SmoothL1Loss(delta=huber_loss_delta)
+            self.huber_loss_delta = huber_loss_delta
+        elif loss_type == "l1_loss":
+            self.loss_fn = paddle.nn.L1Loss()
+        else:
+            raise ValueError(f"Unknown loss type {loss_type}.")
+
     def freeze_weights(self) -> None:
         for layer in [
             self.atom_embedding,
@@ -1316,26 +1341,40 @@ class CHGNet(paddle.nn.Layer):
             crystal_feas,
         ) = self._forward(data)
 
+        pred_dict = {
+            "energy_per_atom": energy,
+            "force": force,
+            "stress": stress,
+            "magmom": magmom,
+        }
+
         loss_dict = {}
-        # if return_loss:
-        #     label = data[self.property_name]
-        #     label = self.normalize(label)
-        #     loss = self.loss_fn(
-        #         input=pred,
-        #         label=label,
-        #     )
-        #     loss_dict["loss"] = loss
+        if return_loss:
+            loss = 0.0
+            for property_name in self.property_names:
+                label = data[property_name]
+                pred = pred_dict[property_name]
+
+                valid_value_indices = ~paddle.isnan(label)
+                valid_label = label[valid_value_indices]
+                valid_pred = pred[valid_value_indices]
+
+                if valid_label.numel() > 0:
+                    loss_property = self.loss_fn(
+                        input=valid_pred,
+                        label=valid_label,
+                    )
+
+                    loss_dict[property_name] = loss_property
+                    loss += loss_property * self.loss_weights_dict[property_name]
+                # else:
+                #     loss_dict[property_name] = 0.0
+            loss_dict["loss"] = loss
 
         prediction = {}
         if return_prediction:
-            if "e" in self.property_names:
-                prediction["e"] = energy
-            if "f" in self.property_names:
-                prediction["f"] = force
-            if "s" in self.property_names:
-                prediction["s"] = stress
-            if "m" in self.property_names:
-                prediction["m"] = magmom
+            for property_name in self.property_names:
+                prediction[property_name] = pred_dict[property_name]
             if self.return_site_energies:
                 prediction["site_energies"] = site_energies
             if self.return_atom_feas:
@@ -1373,7 +1412,7 @@ class CHGNet(paddle.nn.Layer):
         lattice = graphs.node_feat["lattice"]
         lattice.stop_gradient = False
 
-        if "s" not in self.property_names:
+        if "stress" not in self.property_names:
             strains = None
             volumes = None
         else:
@@ -1389,7 +1428,7 @@ class CHGNet(paddle.nn.Layer):
             )
             volumes.stop_gradient = True
 
-        if "s" not in self.property_names:
+        if "stress" not in self.property_names:
             # 使用einsum 与 @ 计算矩阵乘法有误差
             atom_positions = frac_to_cart_coords(
                 frac_coords,
@@ -1424,7 +1463,7 @@ class CHGNet(paddle.nn.Layer):
         neighbor = atom_positions[atom_graph[:, 1]]
         image = graphs.edge_feat["image"]
 
-        if "s" not in self.property_names:
+        if "stress" not in self.property_names:
             lattice_edges = paddle.repeat_interleave(
                 x=lattice, repeats=num_edges, axis=0
             )
@@ -1616,14 +1655,14 @@ class CHGNet(paddle.nn.Layer):
                     atom_feas = paddle.split(
                         x=atom_feas, num_or_sections=atoms_per_graph.tolist()
                     )
-                if "m" in self.property_names:
+                if "magmom" in self.property_names:
                     magmom = paddle.abs(x=self.site_wise(atom_feas))
-                    magmom = list(
-                        paddle.split(
-                            x=magmom.reshape([-1]),
-                            num_or_sections=atoms_per_graph.tolist(),
-                        )
-                    )
+                    # magmom = list(
+                    #     paddle.split(
+                    #         x=magmom.reshape([-1]),
+                    #         num_or_sections=atoms_per_graph.tolist(),
+                    #     )
+                    # )
                 else:
                     magmom = None
         atom_feas = self.atom_conv_layers[-1](
@@ -1635,9 +1674,10 @@ class CHGNet(paddle.nn.Layer):
         )
         if self.readout_norm is not None:
             atom_feas = self.readout_norm(atom_feas)
+
         if self.mlp_first:
             energies = self.mlp(atom_feas)
-            energy = self.pooling(energies, atom_owners).reshape([-1])
+            energy = self.pooling(energies, atom_owners)  # .reshape([-1])
             if self.return_site_energies:
                 site_energies = paddle.split(
                     x=energies.squeeze(axis=1), num_or_sections=atoms_per_graph.tolist()
@@ -1646,11 +1686,11 @@ class CHGNet(paddle.nn.Layer):
                 crystal_feas = self.pooling(atom_feas, atom_owners)
         else:
             crystal_feas = self.pooling(atom_feas, atom_owners)
-            energy = self.mlp(crystal_feas).reshape([-1]) * atoms_per_graph
+            energy = self.mlp(crystal_feas) * atoms_per_graph  # .reshape([-1])
             if self.return_crystal_feas:
                 crystal_feas = crystal_feas
 
-        if "f" in self.property_names:
+        if "force" in self.property_names:
             force = paddle.grad(
                 outputs=energy.sum(),
                 inputs=atom_positions,
@@ -1661,7 +1701,7 @@ class CHGNet(paddle.nn.Layer):
                 force = force[0]
             force = -1 * force
 
-        if "s" in self.property_names:
+        if "stress" in self.property_names:
             stress = paddle.grad(
                 outputs=energy.sum(),
                 inputs=strains,
@@ -1674,7 +1714,7 @@ class CHGNet(paddle.nn.Layer):
             stress = stress * scale[:, None, None]
 
         if self.is_intensive:
-            energy /= atoms_per_graph.cast("float32")
+            energy /= atoms_per_graph.unsqueeze(-1).cast("float32")
         return energy, force, stress, magmom, site_energies, atom_feas, crystal_feas
 
     def _prediction_to_numpy(self, prediction):
@@ -1685,11 +1725,11 @@ class CHGNet(paddle.nn.Layer):
                 ]
             else:
                 prediction[key] = prediction[key].numpy()
-            if key == "s" and len(prediction["s"].shape) == 3:
+            if key == "stress" and len(prediction["stress"].shape) == 3:
                 prediction[key] = prediction[key][0]
-            if key == "m" and isinstance(prediction[key], list):
+            if key == "magmom" and isinstance(prediction[key], list):
                 prediction[key] = prediction[key][0]
-            if key == "e" and isinstance(prediction[key], np.ndarray):
+            if key == "energy_pre_atom" and isinstance(prediction[key], np.ndarray):
                 prediction[key] = prediction[key][0]
         return prediction
 
@@ -1713,7 +1753,11 @@ class CHGNet(paddle.nn.Layer):
             data = {
                 "graph": graphs,
             }
-            result = self.forward(data)
+            result = self.forward(
+                data,
+                return_loss=False,
+                return_prediction=True,
+            )
             prediction = result["pred_dict"]
             prediction = self._prediction_to_numpy(prediction)
             return prediction
