@@ -789,3 +789,58 @@ def make_noise_symmetric_preserve_variance(noise: paddle.Tensor) -> paddle.Tenso
         * (noise + noise.transpose(perm=dim2perm(noise.ndim, 1, 2)))
         + paddle.eye(num_rows=3)[None] * noise
     )
+
+
+def is_equal(dict1, dict2):
+    """Recursively compares two potentially nested structures for deep equality
+
+    This function performs a thorough comparison of dictionaries, lists, tuples,
+    and other basic data types, handling nested structures at any depth. It supports:
+
+    - Dictionary comparison (order-insensitive for keys)
+    - List/tuple comparison (order-sensitive)
+    - Type-sensitive comparisons (e.g., int vs float, list vs tuple)
+    - Mixed structure comparisons (dicts containing lists containing dicts, etc.)
+
+    Args:
+        dict1 (dict/list/tuple/any): First structure to compare
+        dict2 (dict/list/tuple/any): Second structure to compare
+
+    Returns:
+        bool: True if structures are deeply equal, False otherwise
+
+    Notes:
+        - For dictionaries: Key order doesn't matter, but key-value pairs must match
+        - For sequences: Element order matters (lists/tuples are order-sensitive)
+        - Basic types (int, str, etc.) are compared using normal equality
+        - Different container types are considered unequal (e.g., list vs tuple)
+        - Recursive structures (circular references) will cause infinite recursion
+    """
+
+    # type check
+    if type(dict1) != type(dict2):
+        return False
+
+    # compare dicts
+    if isinstance(dict1, dict):
+        if len(dict1) != len(dict2):
+            return False
+        for key in dict1:
+            if key not in dict2:
+                return False
+            if not is_equal(dict1[key], dict2[key]):
+                return False
+        return True
+
+    # compare lists/tuples
+    elif isinstance(dict1, (list, tuple)):
+        if len(dict1) != len(dict2):
+            return False
+        for i in range(len(dict1)):
+            if not is_equal(dict1[i], dict2[i]):
+                return False
+        return True
+
+    # compare basic types
+    else:
+        return dict1 == dict2
