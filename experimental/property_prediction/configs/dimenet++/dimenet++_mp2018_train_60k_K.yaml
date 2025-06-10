@@ -12,12 +12,11 @@ Global:
   graph_converter:
     __class_name__: CrystalNN
     __init_params__:
-        cutoff: 4.0
         num_cpus: 10
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 2000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
@@ -91,8 +90,8 @@ Model:
     # predict value name
     property_names: ${Global.label_names}
     # data preprocess parameters
-    data_norm_mean: 1.3462
-    data_norm_std: 1.6214
+    data_norm_mean: 0.0
+    data_norm_std: 1.0
     # loss
     loss_type: 'l1_loss'
 
@@ -105,11 +104,10 @@ Optimizer:
   __class_name__: Adam
   __init_params__:
     lr:
-      __class_name__: Linear
+      __class_name__: Cosine
       __init_params__:
-        learning_rate: 0.0005
-        end_lr: 1.0e-05
-        by_epoch: false
+        learning_rate: 0.001
+        by_epoch: True
 
 Dataset:
   train:
@@ -129,7 +127,7 @@ Dataset:
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+        batch_size: 32 # 32 for 4 GPUs, total batch size = 32 * 4 = 128
   val:
     dataset:
       __class_name__: MP2018Dataset
@@ -146,7 +144,7 @@ Dataset:
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 32
+        batch_size: 128
   test:
     dataset:
       __class_name__: MP2018Dataset
@@ -163,7 +161,7 @@ Dataset:
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 64
+        batch_size: 128
 
 
 Predict:
