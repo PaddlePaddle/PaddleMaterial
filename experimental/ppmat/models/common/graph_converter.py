@@ -192,6 +192,35 @@ class FindPointsInSpheres:
 
 
 class CrystalNN:
+    """Convert crystal structure to graph representation using
+    CrystalNN-based graph generator method.
+
+    This class uses pymatgen's CrystalNN local environment strategy to
+    convert a pymatgen Structure into a PGL graph (pgl.Graph),
+    capturing atomic connectivity under periodic boundary conditions.
+
+    Core methods:
+      - __init__: Configure neighbor search parameters and parallelism.
+      - __call__:  Accepts a single Structure or a list and returns
+                   a graph or list of graphs.
+      - get_graph_by_crystalnn: Converts one Structure into a PGL graph.
+      - build_pgl_graph: Assembles node/edge features into a PGL graph.
+
+    Args:
+        cutoff (float):
+            Maximum neighbor search distance (in Å). Atom pairs farther
+            apart than this are not considered bonded.
+        pbc (tuple[int, int, int]):
+            Periodic boundary flags along (a, b, c) axes.
+            1 enables periodicity, 0 disables it.
+        num_cpus (Optional[int]):
+            Number of CPU cores to use when processing a list of structures
+            in parallel. If None, processes sequentially.
+        eps (float):
+            Small constant for numerical stability (e.g., to avoid division
+            by zero).
+    """
+
     def __init__(
         self,
         cutoff: float = 5.0,
