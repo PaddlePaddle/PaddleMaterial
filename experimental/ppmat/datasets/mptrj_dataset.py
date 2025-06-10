@@ -31,6 +31,7 @@ from paddle.io import Dataset
 
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -38,74 +39,82 @@ from ppmat.utils.io import read_json
 from ppmat.utils.misc import is_equal
 
 
-class MP2018Dataset(Dataset):
-    """MP2018.6.1 Dataset Handler
+class MPTrjDataset(Dataset):
+    """Dataset class for loading and processing the Materials Project Trajectory (MPtrj)
+    dataset used in CHGNet.
 
-    This class provides utilities for loading and processing the MP2018.6.1 materials
-    science dataset. The dataset contains computed properties of inorganic materials.
-    The implementation supports both standard dataset loading and custom data
-    processing when adhering to the MP2018.6.1 schema.
+    https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842?file=41619375
 
-    **Dataset Overview**
-    - **Source**: Original data available at https://figshare.com/ndownloader/files/15087992
-    - **Preprocessed Version**:
-    ```
-    ┌───────────────────┬─────────┬─────────┬─────────┐
-    │ Dataset Partition │ Train   │ Val     │ Test    │
-    ├───────────────────┼─────────┼─────────┼─────────┤
-    │ Sample Count      │ 60,000  │ 5,000   │ 4,239   │
-    └───────────────────┴─────────┴─────────┴─────────┘
-    ```
-    Download preprocessed data: https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip
+    This dataset contains 1,580,395 structures with corresponding:
+    - 1,580,395 energies
+    - 7,944,833 magnetic moments
+    - 49,295,660 forces
+    - 14,223,555 stresses
 
-    **Data Format**
-    The dataset is stored in JSON format with the following structure:
+    All data originates from GGA/GGA+U static/relaxation trajectories in the 2022.9
+    Materials Project release. The dataset employs a selection protocol that excludes
+    incompatible calculations and duplicate structures.
 
-    ```json
+    Data Structure:
+    The JSON file follows this hierarchical structure:
     {
-    "structure": {
-        "0": "<CIF string>",    // Crystal structure in CIF format
-        "1": "<CIF string>",
-        // ...
-    },
-    "material_id": {
-        "0": "mvc-8139",        // Unique material identifier
-        "1": "mvc-600",
-        // ...
-    },
-    "formation_energy_per_atom": {  // Formation energy (eV/atom)
-        "0": -1.8169,
-        "1": -1.8948,
-        // ...
-    },
-    "band_gap": {              // Electronic band gap (eV)
-        "0": 0.0149,
-        "1": 0.0,
-        // ...
-    },
-    "G": {                     // Shear modulus (GPa)
-        "0": 45.0,
-        "1": null,               // Missing value indicator
-        // ...
-    },
-    "K": {                     // Bulk modulus (GPa)
-        "0": 91.0,
-        "1": null,               // Missing value indicator
-        // ...
-    }
-    }
-    ```
+        "mp-id-0": {
+            "frame-id-0": {
+                "structure": <pymatgen.Structure dict>,
+                "uncorrected_total_energy": float,  # Raw VASP output [eV]
+                "corrected_total_energy": float,    # VASP total energy after MP2020
+                                                    # compatibility [eV]
+                "energy_per_atom": float,           # Corrected energy per atom, this
+                                                    # is the energy label used to train
+                                                    # CHGNet [eV/atom]
+                "ef_per_atom": float,               # Formation energy [eV/atom]
+                "e_per_atom_relaxed": float,        # Corrected energy per atom of the
+                                                    # relaxed structure, this is the
+                                                    # energy you can find for the mp-id
+                                                    # on materials project website
+                                                    #[eV/atom]
+                "ef_per_atom_relaxed": float,       # Relaxed formation energy [eV/atom]
+                "force": List[float],               # Atomic forces [eV/Å]
+                "stress": List[float],              # Stress tensor [kBar]
+                "magmom": List[float] or None,      # Magmom on the atoms [μB]
+                "bandgap": float                    # Bandgap [eV]
+            },
+            "frame-id-1": {...},
+            ...
+        },
+        "mp-id-1": {...},
+        ...
 
-    **Notes**
-    - Missing values are represented as `null` in JSON and converted to `NaN` during
-        loading
-    - CIF parsing requires additional dependencies (e.g., pymatgen)
-    - For custom data, ensure index consistency across all fields
+    }
+
+    Notes:
+    1. Frame ID Format:
+       'task_id-calc_id-ionic_step' where:
+       - calc_id: 0 (second relaxation) or 1 (first relaxation) in double relaxation
+       workflows
+
+    2. Energy Compatibility:
+       MP2020 corrections are applied to unify GGA/GGA+U energy scales.
+       The 'energy_per_atom' field contains these corrected values used for CHGNet
+       training. See pymatgen compatibility documentation:
+       https://pymatgen.org/pymatgen.entries.html#pymatgen.entries.compatibility.Compatibility
+
+    3. Magnetic Moment Handling:
+       Missing MAGMOM values are represented as None (not zero).
+       CHGNet uses absolute DFT magmom values directly from this dataset.
+       Unit conversion is handled automatically when using the provided dataset loader.
+       Reference implementation:
+       https://github.com/CederGroupHub/chgnet/blob/main/chgnet/data/dataset.py
+
+    4. Stress Units:
+       VASP raw stress values (kBar) are converted to GPa for CHGNet using:
+       stress_gpa = -0.1 * vasp_stress_kbar
+       This conversion is automatically applied when loading the dataset.
 
 
     Args:
         path (str, optional): The path of the dataset, if path is not exists, it will
-            be downloaded. Defaults to "./data/mp18/mp.2018.6.1.json".
+            be downloaded.
         property_names (Optional[list[str]], optional): Property names you want to use,
             for mp2018.6.1, the property_names should be selected from
             ["formation_energy_per_atom", "band_gap", "G", "K"]. Defaults to None.
@@ -126,13 +135,13 @@ class MP2018Dataset(Dataset):
             to True.
     """
 
-    name = "mp2018_train_60k"
-    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip"
-    md5 = "216202f16a5081358798e15c060facee"
+    name = "MPtrj_2022.9_full"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip"
+    md5 = "949069910f4ce1f1ed8c49a8d6ae5c5e"
 
     def __init__(
         self,
-        path: str = "./data/mp18/mp.2018.6.1.json",
+        path: str,
         property_names: Optional[list[str]] = None,
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
@@ -155,9 +164,9 @@ class MP2018Dataset(Dataset):
 
         if build_structure_cfg is None:
             build_structure_cfg = {
-                "format": "cif_str",
+                "format": "dict",
                 "primitive": False,
-                "niggli": True,
+                "niggli": False,
                 "num_cpus": 1,
             }
             logger.message(
@@ -174,8 +183,8 @@ class MP2018Dataset(Dataset):
             self.cache_path = cache_path
         else:
             # for example:
-            # path = ./data/mp2018_train_60k/mp2018_train_60k_train.json
-            # cache_path = ./data/mp2018_train_60k_cache/mp2018_train_60k_train
+            # path = ./data/MPtrj_2022.9_full/train.json
+            # cache_path = ./data/MPtrj_2022.9_full/train
             self.cache_path = osp.join(
                 osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
             )
@@ -185,9 +194,14 @@ class MP2018Dataset(Dataset):
         self.filter_unvalid = filter_unvalid
 
         self.cache_exists = True if osp.exists(self.cache_path) else False
-        self.row_data, self.num_samples = self.read_data(path)
+        self.row_data = self.read_data(path)
+        self.keys = [
+            (mp_id, graph_id)
+            for mp_id, dct in self.row_data.items()
+            for graph_id in dct
+        ]
+        self.num_samples = len(self.keys)
         logger.info(f"Load {self.num_samples} samples from {path}")
-        self.property_data = self.read_property_data(self.row_data, self.property_names)
 
         if self.cache_exists and not overwrite:
             logger.warning(
@@ -246,7 +260,6 @@ class MP2018Dataset(Dataset):
                             "current settings."
                         )
                         overwrite = True
-
                 except Exception as e:
                     logger.warning(e)
                     logger.warning(
@@ -271,14 +284,15 @@ class MP2018Dataset(Dataset):
                     osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert strucutes
-                structures = BuildStructure(**build_structure_cfg)(
-                    self.row_data["structure"]
-                )
+                structure_str = []
+                for mp_id, graph_ids in self.keys:
+                    structure_str.append(self.row_data[mp_id][graph_ids]["structure"])
+                structures = BuildStructure(**build_structure_cfg)(structure_str)
                 # save structures to cache file
                 os.makedirs(structure_cache_path, exist_ok=True)
-                for i in range(self.num_samples):
+                for i, (mp_id, graph_ids) in enumerate(self.keys):
                     self.save_to_cache(
-                        osp.join(structure_cache_path, f"{i:010d}.pkl"),
+                        osp.join(structure_cache_path, f"{mp_id}_{graph_ids}.pkl"),
                         structures[i],
                     )
                 logger.info(
@@ -290,33 +304,29 @@ class MP2018Dataset(Dataset):
                     graphs = converter(structures)
                     # save graphs to cache file
                     os.makedirs(graph_cache_path, exist_ok=True)
-                    for i in range(self.num_samples):
+                    for i, (mp_id, graph_ids) in enumerate(self.keys):
                         self.save_to_cache(
-                            osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
+                            osp.join(graph_cache_path, f"{mp_id}_{graph_ids}.pkl"),
+                            graphs[i],
                         )
                     logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
 
             # sync all processes
             if dist.is_initialized():
                 dist.barrier()
-        self.structures = [
-            osp.join(structure_cache_path, f"{i:010d}.pkl")
-            for i in range(self.num_samples)
-        ]
+        self.structures = defaultdict(dict)
+        for i, (mp_id, graph_ids) in enumerate(self.keys):
+            self.structures[mp_id][graph_ids] = osp.join(
+                structure_cache_path, f"{mp_id}_{graph_ids}.pkl"
+            )
         if build_graph_cfg is not None:
-            self.graphs = [
-                osp.join(graph_cache_path, f"{i:010d}.pkl")
-                for i in range(self.num_samples)
-            ]
+            self.graphs = defaultdict(dict)
+            for mp_id, graph_ids in self.keys:
+                self.graphs[mp_id][graph_ids] = osp.join(
+                    graph_cache_path, f"{mp_id}_{graph_ids}.pkl"
+                )
         else:
             self.graphs = None
-
-        assert (
-            len(self.structures) == self.num_samples
-        ), "The number of structures must be equal to the number of samples."
-        assert (
-            self.graphs is None or len(self.graphs) == self.num_samples
-        ), "The number of graphs must be equal to the number of samples."
 
         # filter by property data, since some samples may have no valid properties
         if filter_unvalid:
@@ -329,37 +339,33 @@ class MP2018Dataset(Dataset):
             path (str): Path to the data.
         """
         json_data = read_json(path)
-        num_samples = len(json_data["structure"])
-
-        idxs = list(json_data["structure"])
-        data = defaultdict(list)
-        for key in json_data.keys():
-            for idx in idxs:
-                data[key].append(json_data[key][idx])
-
-        return data, num_samples
+        return json_data
 
     def filter_unvalid_by_property(self):
         for property_name in self.property_names:
-            data = self.property_data[property_name]
             reserve_idx = []
-            for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
+            delete_id = []
+            for i, (mp_id, graph_ids) in enumerate(self.keys):
+                property_value = self.row_data[mp_id][graph_ids][property_name]
+                if isinstance(property_value, str) or (
+                    property_value is not None and not math.isnan(property_value)
+                ):
                     reserve_idx.append(i)
-            for key in self.property_data.keys():
-                self.property_data[key] = [
-                    self.property_data[key][i] for i in reserve_idx
-                ]
+                else:
+                    delete_id.append([mp_id, graph_ids])
 
-            self.row_data = [self.row_data[i] for i in reserve_idx]
-            self.structures = [self.structures[i] for i in reserve_idx]
-            if self.graphs is not None:
-                self.graphs = [self.graphs[i] for i in reserve_idx]
+            self.keys = [self.keys[i] for i in reserve_idx]
+            for mp_id, graph_ids in delete_id:
+                del self.row_data[mp_id][graph_ids]
+
+                del self.structures[mp_id][graph_ids]
+                if self.graphs is not None:
+                    del self.graphs[mp_id][graph_ids]
             logger.warning(
                 f"Filter out {len(reserve_idx)} samples with valid properties: "
                 f"{property_name}"
             )
-        self.num_samples = len(self.row_data)
+        self.num_samples = len(self.keys)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
     def read_property_data(self, data: Dict, property_names: list[str]):
@@ -411,29 +417,52 @@ class MP2018Dataset(Dataset):
 
     def __getitem__(self, idx: int):
         """Get item at index idx."""
+        mp_id, graph_id = self.keys[idx]
         data = {}
         # get graph
         if self.graphs is not None:
-            graph = self.graphs[idx]
+            graph = self.graphs[mp_id][graph_id]
             if isinstance(graph, str):
                 graph = self.load_from_cache(graph)
             data["graph"] = graph
         else:
-            structure = self.structures[idx]
+            structure = self.structures[mp_id][graph_id]
             if isinstance(structure, str):
                 structure = self.load_from_cache(structure)
             data["structure_array"] = self.get_structure_array(structure)
+
+        row_data = self.row_data[mp_id][graph_id]
         for property_name in self.property_names:
-            if property_name in self.property_data:
-                data[property_name] = np.array(
-                    [self.property_data[property_name][idx]]
-                ).astype("float32")
+            if property_name in row_data.keys():
+                value = row_data[property_name]
+                if isinstance(value, str):
+                    data[property_name] = value
+                elif property_name in ["force", "stress", "magmom"]:
+                    num_atoms = (
+                        data["graph"].node_feat["num_atoms"]
+                        if "graph" in data.keys()
+                        else data["structure_array"]["num_atoms"].data
+                    )
+                    num_atoms = num_atoms[0]
+                    if value is None:
+                        if property_name == "force":
+                            value = np.full((num_atoms, 3), np.nan)
+                        elif property_name == "stress":
+                            value = np.full((3, 3), np.nan)
+                        elif property_name == "magmom":
+                            value = np.full((num_atoms,), np.nan)
+
+                    if property_name == "stress":
+                        value = [value]
+                    elif property_name == "magmom":
+                        value = np.abs(np.array(value).reshape([-1, 1]))
+                    data[property_name] = ConcatNumpyWarper(value).astype("float32")
+                else:
+                    data[property_name] = np.array([value]).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
-        data["id"] = (
-            self.property_data["id"][idx] if "id" in self.property_data else idx
-        )
+        data["id"] = idx
         data = self.transforms(data) if self.transforms is not None else data
 
         return data
