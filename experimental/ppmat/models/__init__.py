@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import os.path as osp
 from typing import Dict
@@ -18,10 +19,14 @@ from typing import Optional
 
 from omegaconf import OmegaConf
 
+from ppmat.models.chgnet.chgnet import CHGNet
+from ppmat.models.chgnet.chgnet_graph_converter import CHGNetGraphConverter
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.mattergen.mattergen import MatterGen
+from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -33,6 +38,10 @@ __all__ = [
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",
+    "MatterGen",
+    "MatterGenWithCondition",
+    "CHGNetGraphConverter",
+    "CHGNet",
 ]
 
 
@@ -43,6 +52,20 @@ MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_K.zip",
     "megnet_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_e_form.zip",
     "diffcsp_mp20": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/diffcsp/diffcsp_mp20.zip",
+    "mattergen_mp20": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20.zip",
+    "mattergen_mp20_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_chemical_system.zip",
+    "mattergen_mp20_dft_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_band_gap.zip",
+    "mattergen_mp20_dft_bulk_modulus": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_bulk_modulus.zip",
+    "mattergen_mp20_dft_mag_density": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_mag_density.zip",
+    "mattergen_alex_mp20": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20.zip",
+    "mattergen_alex_mp20_dft_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_band_gap.zip",
+    "mattergen_alex_mp20_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system.zip",
+    "mattergen_alex_mp20_dft_mag_density": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density.zip",
+    "mattergen_alex_mp20_ml_bulk_modulus": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_ml_bulk_modulus.zip",
+    "mattergen_alex_mp20_space_group": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_space_group.zip",
+    "mattergen_alex_mp20_chemical_system_energy_above_hull": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.zip",
+    "mattergen_alex_mp20_dft_mag_density_hhi_score": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.zip",
+    "chgnet_mptrj": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip",
 }
 
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import paddle
 
-from ppmat.models.chgnet.model.basis import Fourier
-from ppmat.models.chgnet.model.basis import RadialBessel
+from ppmat.models.chgnet_v2.model.basis import Fourier
+from ppmat.models.chgnet_v2.model.basis import RadialBessel
 
 
 class AtomEmbedding(paddle.nn.Layer):

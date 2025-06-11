@@ -15,6 +15,7 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import math
 import os
 import os.path as osp
 import pickle
@@ -34,6 +35,7 @@ from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils.io import read_json
+from ppmat.utils.misc import is_equal
 
 
 class MP2018Dataset(Dataset):
@@ -197,25 +199,23 @@ class MP2018Dataset(Dataset):
                 build_structure_cfg_cache = self.load_from_cache(
                     osp.join(self.cache_path, "build_structure_cfg.pkl")
                 )
-                if len(build_structure_cfg_cache.keys()) != len(
-                    build_structure_cfg.keys()
-                ):
+                if is_equal(build_structure_cfg_cache, build_structure_cfg):
+                    logger.info(
+                        "The cached build_structure_cfg configuration matches "
+                        "the current settings. Reusing previously generated"
+                        " structural data to optimize performance."
+                    )
+                else:
                     logger.warning(
-                        "build_structure_cfg_cache has different keys than the original"
-                        " build_structure_cfg. Will rebuild the structures and graphs."
+                        "build_structure_cfg is different from "
+                        "build_structure_cfg_cache. Will rebuild the structures and "
+                        "graphs."
+                    )
+                    logger.warning(
+                        "If you want to use the cached structures and graphs, please "
+                        "ensure that the settings used in match your current settings."
                     )
                     overwrite = True
-                else:
-                    for key in build_structure_cfg_cache.keys():
-                        if build_structure_cfg_cache[key] != build_structure_cfg[key]:
-                            logger.warning(
-                                f"build_structure_cfg[{key}](build_structure_cfg[{key}])"
-                                f" is different from build_structure_cfg_cache[{key}]"
-                                f"(build_structure_cfg_cache[{key}]). Will rebuild the "
-                                "structures and graphs."
-                            )
-                            overwrite = True
-                            break
             except Exception as e:
                 logger.warning(e)
                 logger.warning(
@@ -229,23 +229,23 @@ class MP2018Dataset(Dataset):
                     build_graph_cfg_cache = self.load_from_cache(
                         osp.join(self.cache_path, "build_graph_cfg.pkl")
                     )
-                    if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                    if is_equal(build_graph_cfg_cache, build_graph_cfg):
+                        logger.info(
+                            "The cached build_structure_cfg configuration "
+                            "matches the current settings. Reusing previously "
+                            "generated structural data to optimize performance."
+                        )
+                    else:
                         logger.warning(
-                            "build_graph_cfg_cache has different keys than the original"
-                            " build_graph_cfg. Will rebuild the graphs."
+                            "build_graph_cfg is different from build_graph_cfg_cache"
+                            ". Will rebuild the graphs."
+                        )
+                        logger.warning(
+                            "If you want to use the cached structures and graphs, "
+                            "please ensure that the settings used in match your "
+                            "current settings."
                         )
                         overwrite = True
-                    else:
-                        for key in build_graph_cfg_cache.keys():
-                            if build_graph_cfg_cache[key] != build_graph_cfg[key]:
-                                logger.warning(
-                                    f"build_graph_cfg[{key}](build_graph_cfg[{key}]) is"
-                                    f" different from build_graph_cfg_cache[{key}]"
-                                    f"(build_graph_cfg_cache[{key}]). Will rebuild the "
-                                    "graphs."
-                                )
-                                overwrite = True
-                                break
 
                 except Exception as e:
                     logger.warning(e)
@@ -344,7 +344,7 @@ class MP2018Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if data_item is not None:
+                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [

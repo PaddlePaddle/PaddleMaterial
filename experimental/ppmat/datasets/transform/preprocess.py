@@ -14,11 +14,16 @@
 
 from __future__ import annotations
 
+from typing import Dict
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 from typing import Union
 
 import numpy as np
+import paddle
+
+from ppmat.utils.paddle_aux import dim2perm
 
 
 class Normalize:
@@ -77,19 +82,79 @@ class Log10:
         return data
 
 
+class Scale:
+    """Calculates the base-10 logarithm of the data, element-wise."""
+
+    def __init__(
+        self,
+        scale: float,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
+            )
+        else:
+            self.apply_keys = None
+        self.scale = scale
+
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            data[key] = data[key] * self.scale
+        return data
+
+
+class Abs:
+    def __init__(
+        self,
+        apply_keys: Optional[Tuple[str, ...]] = None,
+    ):
+        if apply_keys is not None:
+            self.apply_keys = (
+                [apply_keys] if isinstance(apply_keys, str) else apply_keys
+            )
+        else:
+            self.apply_keys = None
+
+    def __call__(self, data):
+        if self.apply_keys is None:
+            apply_keys = data.keys()
+        else:
+            apply_keys = self.apply_keys
+        for key in apply_keys:
+            if key not in data:
+                continue
+            data[key] = np.abs(data[key])
+        return data
+
+
 class LatticePolarDecomposition:
     """Lattice Polar Decomposition"""
 
-    def __init__(self):
-        pass
+    def __init__(self, by_numpy_or_paddle="paddle"):
+
+        assert by_numpy_or_paddle in ["numpy", "paddle"]
+        self.by_numpy_or_paddle = by_numpy_or_paddle
 
     def __call__(self, data):
-        lattice = data["structure_array"]["lattice"]
-        lattice_symm = self.compute_lattice_polar_decomposition(lattice)
-        data["structure_array"]["lattice"] = lattice_symm
+        lattice = data["structure_array"]["lattice"].data
+
+        if self.by_numpy_or_paddle == "numpy":
+            lattice_symm = self.compute_lattice_polar_decomposition_np(lattice)
+        else:
+            lattice = paddle.to_tensor(lattice)
+            lattice_symm = self.compute_lattice_polar_decomposition_paddle(lattice)
+            lattice_symm = lattice_symm.numpy()
+        data["structure_array"]["lattice"].data = lattice_symm
         return data
 
-    def compute_lattice_polar_decomposition(
+    def compute_lattice_polar_decomposition_np(
         self, lattice_matrix: np.ndarray
     ) -> np.ndarray:
 
@@ -103,3 +168,28 @@ class LatticePolarDecomposition:
         P_prime = U @ P @ U.transpose(0, 2, 1)
 
         return P_prime
+
+    def compute_lattice_polar_decomposition_paddle(
+        self, lattice_matrix: paddle.Tensor
+    ) -> paddle.Tensor:
+        W, S, V_transp = paddle.linalg.svd(full_matrices=True, x=lattice_matrix)
+        S_square = paddle.diag_embed(input=S)
+        V = V_transp.transpose(perm=dim2perm(V_transp.ndim, 1, 2))
+        U = W @ V_transp
+        P = V @ S_square @ V_transp
+        P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
+        symm_lattice_matrix = P_prime
+        return symm_lattice_matrix
+
+
+class SetProperty:
+    def __init__(self, property_name: str, value: (float | Sequence[str])):
+        self.property_name = property_name
+        self.value = (
+            paddle.to_tensor(data=value, dtype="float32")
+            if isinstance(value, float) or isinstance(value, int)
+            else value
+        )
+
+    def __call__(self, data: Dict):
+        return data.update(**{self.property_name: self.value})

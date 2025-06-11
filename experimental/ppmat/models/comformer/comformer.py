@@ -24,7 +24,7 @@ import paddle
 import paddle.nn as nn
 
 from ppmat.models.common.message_passing.message_passing import MessagePassing
-from ppmat.models.common.scatter import scatter
+from ppmat.utils.scatter import scatter
 
 
 class RBFExpansion(paddle.nn.Layer):
