@@ -14,8 +14,33 @@
 
 import hashlib
 import json
+import ast
 
 import numpy as np
+
+
+def read_json_lines(path):
+    """
+    Read all lines from a line-delimited Python-dict-like file,
+    extracting all properties into a dictionary of lists.
+    """
+    property_data = {}
+    
+    with open(path, "r") as f:
+        for idx, line in enumerate(f):
+            content = ast.literal_eval(line.strip())
+
+            if idx == 0:
+                all_property_names = list(content.keys())
+                # print("all_property_names:", all_property_names)
+                property_data = {name: [] for name in all_property_names}
+
+            for property_name in all_property_names:
+                if property_name not in content:
+                    raise ValueError(f"'{property_name}' not found in line {idx + 1} of file")
+                property_data[property_name].append(content[property_name])    
+    return property_data
+
 
 
 def read_json(path):
