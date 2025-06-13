@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import os.path as osp
 import pickle
+import math
 from collections import defaultdict
 from typing import Any
 from typing import Callable
@@ -273,7 +274,7 @@ class MP2024Dataset(Dataset):
 
         if build_structure_cfg is None:
             build_structure_cfg = {
-                "format": "cif_str",
+                "format": "dict",
                 "primitive": False,
                 "niggli": True,
                 "num_cpus": 1,
@@ -486,7 +487,7 @@ class MP2024Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if data_item is not None:
+                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [

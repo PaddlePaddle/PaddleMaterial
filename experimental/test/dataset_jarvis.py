@@ -24,20 +24,21 @@ if __name__ == "__main__":
             "__class_name__": "JarvisDataset",
             "__init_params__": {
                 "path": osp.join(sys.path[0], "data/jarvis"),
-                "jarvis_data_name": "dft_3d",
+                "jarvis_data_name": "dft_2d",
                 "property_names": "formation_energy_peratom",  # 这里改成你实际需要的标签名
-                # "build_structure_cfg": {
-                #     "format": "dict",
-                #     "num_cpus": 10,
-                # },
-                # "build_graph_cfg": {
-                #     "__class_name__": "FindPointsInSpheres",
-                #     "__init_params__": {
-                #         "cutoff": 4.0,
-                #         "num_cpus": 10,
-                #     },
-                # },
-                # "cache_path": osp.join(sys.path[0], "data/jarvis/mp2024_train_130k_cache_find_points_in_spheres_cutoff_4/mp2024_train"),
+                "build_structure_cfg": {
+                    "format": "jarvis",
+                    "num_cpus": 10,
+                },
+                "build_graph_cfg": {
+                    "__class_name__": "FindPointsInSpheres",
+                    "__init_params__": {
+                        "cutoff": 4.0,
+                        "num_cpus": 10,
+                    },
+                },
+                "cache_path": osp.join(sys.path[0], "data/jarvis"),
+                # "overwrite": True,
             },
             "num_workers": 4,
             "use_shared_memory": False,
