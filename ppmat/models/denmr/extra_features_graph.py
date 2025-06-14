@@ -135,7 +135,7 @@ class EigenFeatures:
         A = paddle.sum(E_t[..., 1:], axis=-1).astype("float32")  # (bs, n, n)
         A = A * paddle.unsqueeze(mask, axis=1) * paddle.unsqueeze(mask, axis=2)
 
-        L = compute_laplacian(A, normalize=True)
+        L = compute_laplacian(A, normalize=False)
 
         # 添加正则化项以防止计算失败
         n_ = L.shape[-1]
