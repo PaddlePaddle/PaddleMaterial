@@ -21,6 +21,7 @@ from ppmat.utils import save_load
 from .graph_transformer import GraphTransformer
 from .graph_transformer import MolecularEncoder
 from .nmr_encoder import NMR_encoder
+from .nmr_encoder_onlyH import NMR_encoder_H
 from .noise_schedule import DiscreteUniformTransition
 from .noise_schedule import MarginalUniformTransition
 from .noise_schedule import PredefinedNoiseScheduleDiscrete
@@ -313,18 +314,34 @@ class ContrastiveModel(nn.Layer):
             param.stop_gradient = True
         self.graph_encoder.eval()
 
-        self.text_encoder = NMR_encoder(
-            dim_H=nmr_encoder["dim_enc_H"],
-            dimff_H=nmr_encoder["dimff_enc_H"],
-            dim_C=nmr_encoder["dim_enc_C"],
-            dimff_C=nmr_encoder["dimff_enc_C"],
-            hidden_dim=nmr_encoder["ffn_hidden"],
-            n_head=nmr_encoder["n_head"],
-            num_layers=nmr_encoder["n_layers"],
-            drop_prob=nmr_encoder["drop_prob"],
-            peakwidthemb_num=nmr_encoder["peakwidthemb_num"],
-            integralemb_num=nmr_encoder["integralemb_num"],
-        )
+        if kwargs.get("onlyH", True):
+            self.flag_onlyH = True
+            self.text_encoder = NMR_encoder_H(
+                dim_H=nmr_encoder["dim_enc_H"],
+                dimff_H=nmr_encoder["dimff_enc_H"],
+                dim_C=nmr_encoder["dim_enc_C"],
+                dimff_C=nmr_encoder["dimff_enc_C"],
+                hidden_dim=nmr_encoder["ffn_hidden"],
+                n_head=nmr_encoder["n_head"],
+                num_layers=nmr_encoder["n_layers"],
+                drop_prob=nmr_encoder["drop_prob"],
+                peakwidthemb_num=nmr_encoder["peakwidthemb_num"],
+                integralemb_num=nmr_encoder["integralemb_num"],
+            )
+        else:
+            self.flag_onlyH = False
+            self.text_encoder = NMR_encoder(
+                dim_H=nmr_encoder["dim_enc_H"],
+                dimff_H=nmr_encoder["dimff_enc_H"],
+                dim_C=nmr_encoder["dim_enc_C"],
+                dimff_C=nmr_encoder["dimff_enc_C"],
+                hidden_dim=nmr_encoder["ffn_hidden"],
+                n_head=nmr_encoder["n_head"],
+                num_layers=nmr_encoder["n_layers"],
+                drop_prob=nmr_encoder["drop_prob"],
+                peakwidthemb_num=nmr_encoder["peakwidthemb_num"],
+                integralemb_num=nmr_encoder["integralemb_num"],
+            )
         # for init model weights
         self.text_encoder.apply(self._init_weights)
 
@@ -373,7 +390,11 @@ class ContrastiveModel(nn.Layer):
         num_H_peak = other_data["conditionVec"]["num_H_peak"]
         num_C_peak = other_data["conditionVec"]["num_C_peak"]
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
-        condition_nmr = self.text_encoder(conditionAll)
+        if self.flag_onlyH == True:
+            global_H, global_C = self.text_encoder(conditionAll)
+            condition_nmr = global_H
+        else:
+            condition_nmr = self.text_encoder(conditionAll)
 
         # get graph embedded vector
         # prepare the extra feature for encoder input without noisy
@@ -870,18 +891,35 @@ class MultiModalDecoder(nn.Layer):
         self.add_condition = True  # TODO revise it later
 
         # set nmr encoder model
-        self.encoder = NMR_encoder(
-            dim_H=config["nmr_encoder"]["dim_enc_H"],
-            dimff_H=config["nmr_encoder"]["dimff_enc_H"],
-            dim_C=config["nmr_encoder"]["dim_enc_C"],
-            dimff_C=config["nmr_encoder"]["dimff_enc_C"],
-            hidden_dim=config["nmr_encoder"]["ffn_hidden"],
-            n_head=config["nmr_encoder"]["n_head"],
-            num_layers=config["nmr_encoder"]["n_layers"],
-            drop_prob=config["nmr_encoder"]["drop_prob"],
-            peakwidthemb_num=config["nmr_encoder"]["peakwidthemb_num"],
-            integralemb_num=config["nmr_encoder"]["integralemb_num"],
-        )
+        if config.get("onlyH", True):
+            self.flag_onlyH = True
+            self.encoder = NMR_encoder_H(
+                dim_H=config["nmr_encoder"]["dim_enc_H"],
+                dimff_H=config["nmr_encoder"]["dimff_enc_H"],
+                dim_C=config["nmr_encoder"]["dim_enc_C"],
+                dimff_C=config["nmr_encoder"]["dimff_enc_C"],
+                hidden_dim=config["nmr_encoder"]["ffn_hidden"],
+                n_head=config["nmr_encoder"]["n_head"],
+                num_layers=config["nmr_encoder"]["n_layers"],
+                drop_prob=config["nmr_encoder"]["drop_prob"],
+                peakwidthemb_num=config["nmr_encoder"]["peakwidthemb_num"],
+                integralemb_num=config["nmr_encoder"]["integralemb_num"],
+            )
+        else:
+            self.flag_onlyH = False
+            self.encoder = NMR_encoder(
+                dim_H=config["nmr_encoder"]["dim_enc_H"],
+                dimff_H=config["nmr_encoder"]["dimff_enc_H"],
+                dim_C=config["nmr_encoder"]["dim_enc_C"],
+                dimff_C=config["nmr_encoder"]["dimff_enc_C"],
+                hidden_dim=config["nmr_encoder"]["ffn_hidden"],
+                n_head=config["nmr_encoder"]["n_head"],
+                num_layers=config["nmr_encoder"]["n_layers"],
+                drop_prob=config["nmr_encoder"]["drop_prob"],
+                peakwidthemb_num=config["nmr_encoder"]["peakwidthemb_num"],
+                integralemb_num=config["nmr_encoder"]["integralemb_num"],
+            )
+        
         # load nmr encoder model from pretrained model
         state_dict = paddle.load(config["nmr_encoder"]["pretrained_path"])
         encoder_state_dict = {
@@ -1070,7 +1108,11 @@ class MultiModalDecoder(nn.Layer):
             with paddle.no_grad():
                 conditionVec = self.connector.sample(condition)  # , srcMask)
         else:
-            conditionVec = self.encoder(condition)  # , srcMask)
+            if self.flag_onlyH == True:
+                global_H, global_C = self.encoder(condition)
+                conditionVec = global_H
+            else:
+                conditionVec = self.encoder(condition)
             # conditionVec = conditionVec.reshape([conditionVec.shape[0], -1])
 
         y = paddle.concat([y, conditionVec], axis=1).astype("float32")
