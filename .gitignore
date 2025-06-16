@@ -145,9 +145,14 @@ structure_prediction/checkpoints/*
 
 data/*
 log/*
+
 output/*
 experimental/output/*
 experimental/output
 experimental/data
 experimental/log/
 experimental/log2/
+
+output/*experimental/data/
+experimental/output/
+
