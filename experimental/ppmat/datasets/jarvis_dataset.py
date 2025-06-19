@@ -544,10 +544,10 @@ class JarvisDataset(Dataset):
 
         # Test, only load part of data
         # for idx, item in enumerate(raw_data):
-        #     if idx == 100:
+        #     if idx == 301:
         #         break
         #     for key, value in item.items():
-        #             property_data[key].append(value)
+        #         property_data[key].append(value)
         # num_samples = len(property_data[key])
         
         for item in raw_data:

@@ -30,6 +30,7 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.datasets.transform import *
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -65,40 +66,39 @@ if __name__ == "__main__":
     seed = config["Trainer"].get("seed", 42)
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
-
-    # build model from config
-    model_cfg = config["Model"]
-    model = build_model(model_cfg)
-
+ 
     # build dataloader from config
     set_signal_handlers()
-    if config["Global"].get("do_train", True):
-        train_data_cfg = config["Dataset"].get("train")
-        assert (
-            train_data_cfg is not None
-        ), "train_data_cfg must be defined, when do_train is true"
-        train_loader = build_dataloader(train_data_cfg)
+    if config["Dataset"].get("split_dataset_ratio") is not None:
+        # Split the dataset into train/val/test and build corresponding dataloaders
+        loader = build_dataloader(config["Dataset"])
+        train_loader = loader.get("train", None)
+        val_loader = loader.get("val", None)
+        test_loader = loader.get("test", None)
     else:
-        train_loader = None
+        # Use pre-split (independent) train/val/test datasets and build dataloaders
+        read_independent_dataloader_config(config)
 
-    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
-        val_data_cfg = config["Dataset"].get("val")
-        if val_data_cfg is not None:
-            val_loader = build_dataloader(val_data_cfg)
-        else:
-            logger.info("No validation dataset defined.")
-            val_loader = None
-    else:
-        val_loader = None
 
-    if config["Global"].get("do_test", False):
-        test_data_cfg = config["Dataset"].get("test")
-        assert (
-            test_data_cfg is not None
-        ), "test_data_cfg must be defined, when do_test is true"
-        test_loader = build_dataloader(test_data_cfg)
+    # scaling dataset
+    dataset_trans_cfg = config["Dataset"].get("transform")
+    if dataset_trans_cfg is not None:
+        trans_func = dataset_trans_cfg.pop("__class_name__")
+        trans_parms = dataset_trans_cfg.pop("__init_params__")
+        logger.info(f"Using transform function: {trans_func}")
     else:
-        test_loader = None
+        trans_func = "no_scaling"
+        trans_parms = {}
+        logger.warning("No transform specified, using 'no_scaling' instead.")
+    data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
+    logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
+    
+    # build model from config
+    model_cfg = config["Model"]
+    model_cfg['__init_params__']['data_mean'] = data_mean
+    model_cfg['__init_params__']['data_std'] = data_std
+
+    model = build_model(model_cfg)
 
     # build optimizer and learning rate scheduler from config
     if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
@@ -136,10 +136,44 @@ if __name__ == "__main__":
     )
 
     if config["Global"].get("do_train", True):
-        trainer.train()
+         trainer.train()
     if config["Global"].get("do_eval", False):
         logger.info("Evaluating on validation set")
         time_info, loss_info, metric_info = trainer.eval(val_loader)
     if config["Global"].get("do_test", False):
         logger.info("Evaluating on test set")
         time_info, loss_info, metric_info = trainer.eval(test_loader)
+
+
+def read_independent_dataloader_config(config):
+    '''
+    Args:
+        config (dict): config dict
+    ''' 
+    if config["Global"].get("do_train", True):
+        train_data_cfg = config["Dataset"].get("train")
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined, when do_train is true"
+        train_loader = build_dataloader(train_data_cfg)
+    else:
+        train_loader = None
+
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
+        val_data_cfg = config["Dataset"].get("val")
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
+    else:
+        val_loader = None
+
+    if config["Global"].get("do_test", False):
+        test_data_cfg = config["Dataset"].get("test")
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined, when do_test is true"
+        test_loader = build_dataloader(test_data_cfg)
+    else:
+        test_loader = None
