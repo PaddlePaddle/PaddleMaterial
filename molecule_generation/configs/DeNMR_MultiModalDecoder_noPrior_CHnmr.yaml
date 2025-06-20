@@ -5,7 +5,7 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: "./output/step4_noprior_best_v1.pdparams" # "./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/v5/checkpoints/epoch_1700.pdparams" #"./output/step4_noprior_best_v1.pdparams" #null # set your pretrained model path here
+  pretrained_model_path: "./pretrained/step4_noprior_best_v1.pdparams" # "./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/v5/checkpoints/epoch_1700.pdparams" #"./output/step4_noprior_best_v1.pdparams" #null # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -42,7 +42,7 @@ Tracker:
 Model:
   __name__: MultiModalDecoder
   nmr_encoder:
-    pretrained_path: "./output/step2_best.pdparams" #"/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" #"./output/step2_best.pdparams"
+    pretrained_path: "./pretrained/step2_best.pdparams" #"/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" #"./output/step2_best.pdparams"
     dim_enc_H: 1024
     dimff_enc_H: 2048
     dim_enc_C: 256
@@ -57,7 +57,7 @@ Model:
     integralemb_num: 26
   graph_decoder:
     __name__: DiffGraphFormer
-    pretrained_path: "./output/step1_best.pdparams" #"./output/step1_best_v1.pdparams"  #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_200.pdparams"
+    pretrained_path: "./pretrained/step1_best.pdparams" #"./output/step1_best_v1.pdparams"  #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_200.pdparams"
     hidden_mlp_dims: {
       'X': 256,
       'E': 128,

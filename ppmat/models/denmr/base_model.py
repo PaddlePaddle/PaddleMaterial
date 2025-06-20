@@ -891,7 +891,7 @@ class MultiModalDecoder(nn.Layer):
         self.add_condition = True  # TODO revise it later
 
         # set nmr encoder model
-        if config.get("onlyH", True):
+        if config.get("onlyH", False):
             self.flag_onlyH = True
             self.encoder = NMR_encoder_H(
                 dim_H=config["nmr_encoder"]["dim_enc_H"],
