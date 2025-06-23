@@ -21,7 +21,7 @@ Sampler:
   chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
   sample_batch_iters: 1 # Number of sample batches
-  enable_CLIP: true
+  enable_CLIP: false
   CLIP:
     __name__: ContrastiveModel
     nmr_encoder:
