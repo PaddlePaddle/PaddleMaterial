@@ -21,6 +21,43 @@ Sampler:
   chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
   sample_batch_iters: 1 # Number of sample batches
+  enable_CLIP: true
+  CLIP:
+    __name__: ContrastiveModel
+    nmr_encoder:
+      pretrained_model_path: "./pretrained/step2_best.pdparams"
+      dim_enc_H: 1024
+      dimff_enc_H: 2048
+      dim_enc_C: 256
+      dimff_enc_C: 512
+      ffn_hidden: 512
+      n_head: 8
+      n_layers: 3
+      drop_prob: 0.1 # 0.0
+      seq_len_H1: 20
+      seq_len_C13: 75
+      peakwidthemb_num: 70
+      integralemb_num: 26
+    graph_encoder:
+      pretrained_model_path: "./pretrained/step1_best.pdparams"
+      n_layers_GT: 5
+      hidden_mlp_dims: {
+        "X": 256,
+        "E": 128,
+        "y": 256,
+      }
+      hidden_dims: {
+        'dx': 256, 
+        'de': 64, 
+        'dy': 256, 
+        'n_head': 8, 
+        'dim_ffX': 256, 
+        'dim_ffE': 128, 
+        'dim_ffy': 256,
+      }
+    diffusion_model: # to be deleted
+      extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+      conditdim: 512
 Tracker:
   log:
     log_freq: 1 # log frequency [step]
@@ -36,7 +73,7 @@ Tracker:
     flag_eval_step: False
     flag_sample_metric: True # decidet output tanimot similarity calculationg process or not
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/test_v4/
+    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/last/
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
@@ -111,7 +148,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 128 # 128*4
   val:
     dataset:
       __name__: CHnmrDataset

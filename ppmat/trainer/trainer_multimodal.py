@@ -14,7 +14,7 @@
 
 import time
 from collections import defaultdict
-from typing import Callable
+from typing import Callable, Dict, Union
 from typing import Optional
 
 import paddle
@@ -186,6 +186,9 @@ class TrainerDiffGraphFormer:
 
         # other
         self.vocabDim = self.config["Trainer"]["vocab_dim"]
+        self.flag_use_formula = self.config["Trainer"].get("flag_use_formula", False)
+        self.flag_keep_onehot = self.config["Trainer"].get("flag_keep_onehot", False)
+        self.num_candidate: int = self.config["Trainer"].get("num_candidate", 1)
 
     def train(self) -> None:
         """Training."""
@@ -356,7 +359,11 @@ class TrainerDiffGraphFormer:
 
         # sample epoch
         metric_dict = self.sample_epoch(
-            self.test_dataloader, epoch_id, flag_sample=True
+            self.test_dataloader, 
+            epoch_id, 
+            flag_sample=True, 
+            keep_onehot=self.flag_keep_onehot, 
+            num_candidate=self.num_candidate
         )
 
         # log eval sample metric info
@@ -537,95 +544,182 @@ class TrainerDiffGraphFormer:
         return total_loss_avg, total_metric_avg
 
     @paddle.no_grad()
-    def sample_epoch(self, dataloader, epoch_id: int, flag_sample=False):
+    def sample_epoch(
+        self, 
+        dataloader: paddle.io.DataLoader, 
+        epoch_id: int, 
+        num_candidate: int = 1,
+        keep_onehot: bool = False,
+        flag_sample:bool = False
+    ):
+        """Run **one full sampling pass** over ``dataloader`` and collect metrics.
+
+        This wrapper repeatedly calls :func:`sample_batch` to generate *multiple*  
+        candidate molecules for every ground‑truth graph in the batch. The first  
+        candidate of each batch is treated as the *default prediction* used for  
+        classical metrics (validity, novelty, etc.). All *num_candidate* variants  
+        can optionally be forwarded to *retrieval‑based* metrics that compare  
+        `molVec` embeddings against an NMR‑condition embedding.
+
+        Parameters
+        ----------
+        self : TrainerLike
+            Trainer / Runner object that holds the diffusion ``model``, runtime
+            configs, logging utilities, etc.
+        dataloader : paddle.io.DataLoader
+            Yields tuples ``(graph, aux_data)`` where `graph` is a *pgl* style
+            MiniBatchGraph and `aux_data` is a dict containing scalar labels,
+            condition vectors and atom counts. TODO: recheck details.
+        epoch_id : int
+            Current epoch index – propagated to the metric logger so that saved
+            artefacts (csv / images) are grouped by epoch.
+        flag_sample : bool, default ``False``
+            *True*  – run through the *entire* dataloader regardless of
+            ``self.sample_batch_iters`` (used for final sampling).
+            *False* – stop early after ``self.sample_batch_iters`` iterations.
+        num_candidate : int, default 1
+            How many independent candidate graphs to sample **per ground‑truth**
+            (first one is *pred*, remained serve retrieval evaluation).
+        keep_onehot : bool, default ``True``
+            If *True* each candidate also returns padded one‑hot tensors
+            ``X_hot / E_hot`` that are later required by the `molVec` encoder. If
+            retrieval metrics are disabled you can set this to *False* to save
+            memory.
+
+        Returns
+        -------
+        dict
+            A flattened dictionary of scalar metrics produced by
+            :class:`SamplingMolecularMetrics` (top‑k accuracy, RDKit validity,
+            histogram MAE, etc.).
+
+        Workflow
+        --------
+        1. Initialise an empty ``samples`` dict – this will be the *single* payload
+        passed to :pyclass:`SamplingMolecularMetrics`.
+        2. Iterate over the dataloader
+        • convert sparse PGL graph → dense tensors (node/edge one‑hot).
+        • build four‑branch NMR condition vector.
+        • call :func:`sample_batch` ``num_candidate`` times.
+        • aggregate predictions, ground‑truth and (optionally) one‑hot tensors.
+        3. Early‑exit when ``iters_left`` hits zero (unless *flag_sample* forces a
+        full pass).
+        4. Call the metric layer *once* – avoids repeated RDKit initialisation and
+        keeps logging atomic.
+        """
+        # Put the model in eval‑mode so layers like dropout / batch‑norm are frozen
         self.model.eval()
-        iters = self.sample_batch_iters  # TODO: use iterdataset for sampling
+        
+        # used for early‑stopping a long dataloader when we only need a subset.
+        # When `flag_sample=True` the entire dataloader will be exhausted regardless
+        # of this limit.
+        max_iters: int = self.sample_batch_iters
 
-        # init samples dict for transfer into calculate metrics
-        samples = dict()
-        samples["pred"] = list()
-        samples["true"] = list()
-        samples["n_all"] = 0
-        if isinstance(self.model, DP):
-            samples["dict"] = self.model._layers.dataset_info.atom_decoder
-        else:
-            samples["dict"] = self.model.dataset_info.atom_decoder
+        # 1. pre‑allocate the data structure that SamplingMolecularMetrics expects
+        samples: Dict[str, Union[list, int]] = {
+            "pred"  : [],   # first candidate of each ground‑truth
+            "true"  : [],   # ground‑truth graphs
+            "n_all" : 0,    # total number of GT molecules processed
+            "dict"  : (
+                self.model._layers if isinstance(self.model, paddle.DataParallel)
+                else self.model
+            ).dataset_info.atom_decoder,   # id → element symbol
+        }
+        if keep_onehot:
+            # For retrieval metrics we need to keep *all* candidates & their one‑hot
+            samples["candidates"]   = [[] for _ in range(num_candidate)]
+            samples["candidates_X"] = [[] for _ in range(num_candidate)]
+            samples["candidates_E"] = [[] for _ in range(num_candidate)]
 
-        for iter_id, batch_data in enumerate(dataloader):
-
-            # prepare the batch data
-            batch_graph, other_data = batch_data
+        # 2. main loop over DataLoader
+        for iter_id, (batch_graph, aux) in enumerate(dataloader):
+            # 2.a convert sparse graph to dense (one‑hot padded) representation
             dense_data, node_mask = utils.to_dense(
                 batch_graph.node_feat["feat"],
                 batch_graph.edges.T,
                 batch_graph.edge_feat["feat"],
                 batch_graph.graph_node_id,
             )
-            dense_data = dense_data.mask(node_mask)
+            dense_data = dense_data.mask(node_mask) # remove padding rows
 
-            batch_atomCount = other_data["atom_count"]
-            batch_y = other_data["y"]
-            batch_X, batch_E = dense_data.X, dense_data.E
-            bs = len(batch_y)
+            # basic batch tensors
+            batch_atomCount = aux["atom_count"]           # [B] number of atoms
+            batch_y = aux["y"]                            # labels (unused here)
+            batch_X, batch_E = dense_data.X, dense_data.E # one‑hot Node / Edge
+            bs = len(batch_y)                             # batch size
 
-            batch_length = batch_graph.num_graph
-            condition_H1nmr = other_data["conditionVec"]["H_nmr"]
-            condition_H1nmr = condition_H1nmr.reshape(
-                batch_length, self.model.seq_len_H1, -1
-            )
-            condition_C13nmr = other_data["conditionVec"]["C_nmr"]
-            condition_C13nmr = condition_C13nmr.reshape(
-                batch_length, self.model.seq_len_C13
-            )
-            num_H_peak = other_data["conditionVec"]["num_H_peak"]
-            num_C_peak = other_data["conditionVec"]["num_C_peak"]
-            batch_nmr = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
+            # 2.b build four‑branch NMR condition tensor list
+            cond_H = aux["conditionVec"]["H_nmr"].reshape(bs, self.model.seq_len_H1, -1)
+            cond_C = aux["conditionVec"]["C_nmr"].reshape(bs, self.model.seq_len_C13)
+            num_H_peak = aux["conditionVec"]["num_H_peak"]
+            num_C_peak = aux["conditionVec"]["num_C_peak"]
+            batch_nmr = [cond_H, num_H_peak, cond_C, num_C_peak]
 
-            # sample from the model
-            molecule_list, molecule_list_True = m_utils.sample_batch(
-                self.model._layers if isinstance(self.model, DP) else self.model,
-                batch_id=iter_id,
-                num_nodes=batch_atomCount,
-                batch_condition=batch_nmr,
-                batch_X=batch_X,
-                batch_E=batch_E,
-                batch_y=batch_y,
-                batch_size=bs,
-                visual_num=self.visual_num,
-                keep_chain=self.chains_left_to_save,
-                number_chain_steps=self.number_chain_steps,
-            )
+            # 2.c call `sample_batch` `num_candidate` times
+            for c_idx in range(num_candidate):
+                res = m_utils.sample_batch(
+                    self.model._layers if isinstance(self.model, DP) else self.model,
+                    batch_id=iter_id,
+                    num_nodes=batch_atomCount,
+                    batch_condition=batch_nmr,
+                    batch_X=batch_X,
+                    batch_E=batch_E,
+                    batch_y=batch_y,
+                    batch_size=bs,
+                    visual_num=self.visual_num,
+                    keep_chain=self.chains_left_to_save,
+                    number_chain_steps=self.number_chain_steps,
+                    return_onehot=keep_onehot,
+                    flag_useformula=self.flag_use_formula,
+                )
+                
+                if keep_onehot:
+                    mol_pred, mol_true, X_hot, E_hot= res
+                    samples["candidates"  ][c_idx].extend(mol_pred)
+                    samples["candidates_X"][c_idx].append(X_hot)
+                    samples["candidates_E"][c_idx].append(E_hot)
+                else:
+                    mol_pred, mol_true = res  # only discrete tensors
 
-            # save the samples for calculate metrics
-            samples["pred"].extend(molecule_list)
-            samples["true"].extend(molecule_list_True)
-            samples["n_all"] += len(batch_y)
+                # first candidate → default prediction for classical metrics
+                if c_idx == 0:
+                    samples["pred"].extend(mol_pred)
+                    samples["true"].extend(mol_true)
+                # samples["n_all"] += len(batch_y) # TODO right?
 
-            # contral iters
-            iters -= 1
-            if iters == 0 and flag_sample is False:
+            # 2.d concat one‑hot across mini‑batches so shape matches `n_all` ----
+            if keep_onehot:
+                for c_idx in range(num_candidate):
+                    samples["candidates_X"][c_idx] = paddle.concat(samples["candidates_X"][c_idx], axis=0)
+                    samples["candidates_E"][c_idx] = paddle.concat(samples["candidates_E"][c_idx], axis=0)
+
+            # 2‑e) meta‑info used by retrieval metrics
+            samples["batch_condition"] = [t.detach() for t in batch_nmr]
+            samples["node_mask_meta"]  = batch_atomCount
+            samples["n_all"]          += bs # TODO right?
+
+            # 2‑f) Early‑stop check
+            # We exit the loop once the number of processed mini‑batches reaches
+            # `max_iters`, unless the caller has explicitly set `flag_sample=True`
+            # to force a full‑dataset sweep.
+            if (not flag_sample) and (iter_id + 1 >= max_iters):
                 break
 
-        # sampled molecules to compute metrics
-        if isinstance(self.model, DP):
-            metric_dict = self.model._layers.sampling_metrics.forward(
-                samples,
-                epoch_id,
-                val_counter=-1,
-                test=True,
-                local_rank=self.rank,
-                output_dir=self.output_dir,
-            )
-        else:
-            metric_dict = self.model.sampling_metrics.forward(
-                samples,
-                epoch_id,
-                val_counter=-1,
-                test=True,
-                local_rank=self.rank,
-                output_dir=self.output_dir,
-                flag_sample_metric=self.flag_sample_metric,
-            )
+        # 3. Pass everything to SamplingMolecularMetrics (single call)
+        metric_layer = (
+            self.model._layers if isinstance(self.model, paddle.DataParallel)
+            else self.model
+        ).sampling_metrics
+
+        metric_dict = metric_layer(
+            samples,
+            current_epoch = epoch_id,
+            val_counter = -1, # no validation counter in sampling TODO: check it
+            local_rank = self.rank,
+            output_dir = self.output_dir,
+            test = True, # enable file saving
+            flag_sample_metric = self.flag_sample_metric, # TODO
+        )
         return metric_dict
 
     def log_paddle_version(self):

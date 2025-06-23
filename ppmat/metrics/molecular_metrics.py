@@ -1,8 +1,11 @@
 import os
-from typing import List
-from typing import Union
+from typing import List, Union, Any, Dict, Optional
+from pathlib import Path
+import pandas as pd
 
 import paddle
+import paddle.nn.functional as F
+
 from rdkit import Chem
 from rdkit.Chem import DataStructs
 from rdkit.Chem import RDKFingerprint
@@ -128,191 +131,300 @@ class MetricCollection:
 
 ##############################################################
 
-
 class SamplingMolecularMetrics(paddle.nn.Layer):
-    def __init__(self, dataset_infos, train_smiles):
+    """Evaluate a batch (or full epoch) of sampled molecules.
+    
+    This helper layer centralises **all** post‑generation evaluation logic, namely
+    1.  **Structural one‑to‑one accuracy**  — does the generated graph match the
+        ground‑truth graph *exactly* (SMILES level)
+    2.  **RDKit quality metrics**           — Valid / Unique / Novel / ConnComp &
+        common physicochemical statistics.
+    3.  **Histogram MAE** on *n‑nodes / atom‑types / bond‑types / valency*.
+    4.  **Retrieval metrics** (optional)    — embed molecules with *molVec*, embed
+        NMR conditions with *nmrVec*, compute cosine‑similarity, then measure
+        **top‑1 / top‑5 / top‑10** hit rate and output a CSV of fingerprint
+        similarities.
+    
+    Parameters
+    ----------
+    dataset_infos : Any
+        Object that contains meta information of the training set. Must expose
+        the following attributes used inside the layer::
+
+            max_n_nodes          – Maximum #nodes in any molecule.
+            n_nodes              – 1‑D array, histogram of node counts.
+            node_types           – 1‑D array, histogram of atom types.
+            edge_types           – 1‑D array, histogram of bond types.
+            valency_distribution – 1‑D array, histogram of valencies.
+            atom_decoder         – List[str], maps atom type ID → element symbol.
+    train_smiles : List[str]
+        All canonical SMILES strings in the training set. Used for *Novelty*
+        metric.
+    nmr_encoder / mol_encoder : paddle.nn.Layer
+        Pre‑initialised encoders that embed (i) the four‑branch NMR condition
+        vector and (ii) the one‑hot molecular graph into a shared latent space.
+        If you do **not** need retrieval metrics, you may safely pass
+        ``None`` for both arguments.
+    num_candidate : int, default=20
+        How many candidate molecules were generated **per ground‑truth graph**
+        upstream. Needed only for retrieval metrics.
+    """
+
+    def __init__(
+        self, 
+        dataset_infos: Any, 
+        train_smiles: List[str],
+        clip: Optional[paddle.nn.Layer] = None,
+        num_candidate: int = 1,
+    ):
         super().__init__()
-        di = dataset_infos
+        # save external handles
+        self.di = di = dataset_infos
+        if clip:
+            self.nmrVec = clip.text_encoder
+            self.molVec = clip.graph_encoder
+        self.num_candidate = num_candidate
+        self.atom_decoder = di.atom_decoder # Alias for convenience
+        
+        # 1. Reference histograms  (registered as *buffers*)
+        self.register_buffer(
+            name="n_target_dist", 
+            tensor=self._normalise(di.n_nodes)
+        )
+        self.register_buffer(
+            name="node_target_dist", 
+            tensor=self._normalise(di.node_types)
+        )
+        self.register_buffer(
+            "edge_target_dist",self._normalise(di.edge_types)
+        )
+        self.register_buffer(
+            "valency_target_dist",
+            self._normalise(di.valency_distribution)
+        )
+        
+        # 2. Online histogram accumulators for generated molecules
         self.generated_n_dist = GeneratedNDistribution(di.max_n_nodes)
         self.generated_node_dist = GeneratedNodesDistribution(di.output_dims["X"])
         self.generated_edge_dist = GeneratedEdgesDistribution(di.output_dims["E"])
         self.generated_valency_dist = ValencyDistribution(di.max_n_nodes)
 
-        n_target_dist = di.n_nodes.astype(self.generated_n_dist.n_dist.dtype)
-        n_target_dist = n_target_dist / paddle.sum(x=n_target_dist)
-        self.register_buffer(name="n_target_dist", tensor=n_target_dist)
+        # 3. Metric objects (MAE = mean absolute error between two PDFs)
+        self.n_dist_mae = HistogramsMAE(self.n_target_dist)
+        self.node_dist_mae = HistogramsMAE(self.node_target_dist)
+        self.edge_dist_mae = HistogramsMAE(self.edge_target_dist)
+        self.valency_dist_mae = HistogramsMAE(self.valency_target_dist)
 
-        node_target_dist = di.node_types.astype(
-            self.generated_node_dist.node_dist.dtype
-        )
-        node_target_dist = node_target_dist / paddle.sum(x=node_target_dist)
-        self.register_buffer(name="node_target_dist", tensor=node_target_dist)
-
-        edge_target_dist = di.edge_types.astype(
-            self.generated_edge_dist.edge_dist.dtype
-        )
-        edge_target_dist = edge_target_dist / paddle.sum(x=edge_target_dist)
-        self.register_buffer(name="edge_target_dist", tensor=edge_target_dist)
-
-        valency_target_dist = di.valency_distribution.astype(
-            self.generated_valency_dist.edgepernode_dist.dtype
-        )
-        valency_target_dist = valency_target_dist / paddle.sum(x=valency_target_dist)
-        self.register_buffer(name="valency_target_dist", tensor=valency_target_dist)
-
-        self.n_dist_mae = HistogramsMAE(n_target_dist)
-        self.node_dist_mae = HistogramsMAE(node_target_dist)
-        self.edge_dist_mae = HistogramsMAE(edge_target_dist)
-        self.valency_dist_mae = HistogramsMAE(valency_target_dist)
-
+        # Training set SMILES: used only for Novelty metric
         self.train_smiles = train_smiles
-        self.dataset_info = di
 
     def forward(
         self,
-        samples: list,
-        current_epoch,
-        val_counter,
-        local_rank,
-        output_dir,
-        test=False,
+        samples: Dict[str, Any],
+        current_epoch: int,
+        val_counter: int,
+        local_rank: int,
+        output_dir: str,
+        flag_test=False,
         flag_sample_metric=True,
-    ):
-        # init
-        to_log = {}
-        molecule_list = samples["pred"]
-        molecule_list_True = samples["true"]
-        atom_decoder = samples["dict"]
+        log_each_molecule: bool = False,
+    ) -> Dict[str, Any]:
+        """Aggregate **all** evaluation metrics into a single dict.
+
+        Expected structure of ``samples``
+        ----------------------------------
+        Mandatory keys
+        ^^^^^^^^^^^^^^
+        ``pred``  : ``List[B]`` – generated molecules, each item is
+                     ``[atom_idx (n,), edge_idx (n,n)]``.
+        ``true``  : ``List[B]`` – ground‑truth molecules, identical format.
+        ``dict``  : ``List[str]`` – atom decoder.
+        ``n_all`` : ``int``      – total #molecules evaluated.
+
+        Optional keys (required only if retrieval metrics are desired)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ``candidates``      : ``List[num_candidate][B]`` – list of candidate
+                              molecule lists.
+        ``candidates_X/E``  : parallel list of one‑hot tensors fed to molVec.
+        ``batch_condition`` : list(4) of Paddle tensors (NMR encoding).
+        ``node_mask_meta``  : Paddle int tensor of shape ``[B]`` (n_nodes per
+                              molecule).
+        """
+        # contariners
+        to_log: Dict[str, Any] = {}
+        
+        # 1. exact match accuracy
+        mol_pred = samples["pred"]
+        mol_true = samples["true"]
         total_num = samples["n_all"]
-        right_num = 0
+        hit_exact = 0
+        for p, t in zip(mol_pred, mol_true):
+            m_gen  = m_utils.mol_from_graphs(self.atom_decoder, *p)
+            m_true = m_utils.mol_from_graphs(self.atom_decoder, *t)
+            if Chem.MolToSmiles(m_gen, True) == Chem.MolToSmiles(m_true, True):
+                hit_exact += 1
+        to_log.update({
+            "Accuracy":       hit_exact / total_num,
+            "Right Number":   hit_exact,
+            "Total Number":   total_num,
+        })
 
-        for i in range(len(molecule_list)):
-            mol = m_utils.mol_from_graphs(
-                atom_decoder,
-                molecule_list[i][0],
-                molecule_list[i][1],
-            )
-            mol_true = m_utils.mol_from_graphs(
-                atom_decoder,
-                molecule_list_True[i][0],
-                molecule_list_True[i][1],
-            )
-
-            smiles_gen = Chem.MolToSmiles(mol, isomericSmiles=True)
-            smiles_true = Chem.MolToSmiles(mol_true, isomericSmiles=True)
-
-            try:
-                fp1 = RDKFingerprint(mol)
-                fp2 = RDKFingerprint(mol_true)
-                # Calculate Tanimoto Similarity
-                similarity = DataStructs.FingerprintSimilarity(fp1, fp2)
-                # log output result
-                msg = f" | Generated SMILES: {smiles_gen}"
-                msg += f" | True SMILES: {smiles_true}"
-                msg += f" | Tanimoto Similarity: {similarity}"
-
-                if similarity == 1 and smiles_gen != smiles_true:
-                    msg += f" | different_index:{i}"
-                if smiles_gen == smiles_true:
-                    right_num += 1
-                    msg += f" | same_index:{i}"
-            except Exception as e:
-                msg = f" Error processing molecule at index {i}: {e}."
-                msg += f" | Generated SMILES {smiles_gen} | True SMILES {smiles_true}"
-            msg = f"Sampling Metric Calculating: {i+1}/{len(molecule_list)}" + msg
-            if flag_sample_metric is True:
-                logger.info(msg)
-
-        to_log["Accuracy"] = right_num / total_num
-        to_log["Right Number"] = right_num
-        to_log["Total Number"] = total_num
-
-        # compute molecular metrics
+        # 2. RDKit global metris
         stability, rdkit_metrics, all_smiles = compute_molecular_metrics(
-            molecule_list, self.train_smiles, self.dataset_info
-        )
+            mol_pred, self.train_smiles, self.di)
         if local_rank == 0:
-            valid_unique_molecules = rdkit_metrics[1]
-            textfile = open(
-                f"{output_dir}/graph/valid_unique_molecules_e{current_epoch}_b{val_counter}.txt",
-                "w",
-            )
-            textfile.writelines(valid_unique_molecules)
-            textfile.close()
-            for k, v in stability.items():
-                to_log[k] = v
-            to_log["Validity"] = rdkit_metrics[0][0]
-            to_log["Uniqueness"] = rdkit_metrics[0][1]
-            to_log["Novelty"] = rdkit_metrics[0][2]
-            to_log["Connected Components"] = rdkit_metrics[0][3]
-            for k, v in rdkit_metrics[2].items():
+            to_log.update(stability)  # Valid/Unique/Novel/ConnComp inside
+            val, uniq, nov, conn = rdkit_metrics[0]
+            to_log.update({
+                "Validity": val, "Uniqueness": uniq,
+                "Novelty": nov, "Connected Components": conn,
+            })
+            for k, v in rdkit_metrics[2].items(): #TODO need it?
                 to_log[k] = v
 
-        if test and local_rank == 0:
-            file_path = f"{output_dir}/graphs/final_smiles_e_{current_epoch}.txt"
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)  # 确保目录存在
-            with open(file_path, "w") as fp:
-                for smiles in all_smiles:
-                    fp.write("%s\n" % smiles)
-            msg = "Sampling Metric Calculation:"
-            msg += " All smiles saved"
-            logger.message(msg)
+        # 3. histogram MAE
+        for dist_obj, mae_obj, tag in [
+            (self.generated_n_dist,       self.n_dist_mae,      "n"),
+            (self.generated_node_dist,    self.node_dist_mae,   "node"),
+            (self.generated_edge_dist,    self.edge_dist_mae,   "edge"),
+            (self.generated_valency_dist, self.valency_dist_mae,"valency"),
+        ]:
+            dist_obj(mol_pred)           # accumulate new batch
+            g_dist = dist_obj.accumulate()
+            mae_obj(g_dist)
+            if local_rank == 0:
+                to_log[f"Gen {tag} distribution"]   = g_dist
+                to_log[f"basic_metrics/{tag}_mae"] = mae_obj.accumulate()
 
-        # compute generated distributions metrics
-        self.generated_n_dist(molecule_list)
-        generated_n_dist = self.generated_n_dist.accumulate()
-        self.n_dist_mae(generated_n_dist)
-        self.generated_node_dist(molecule_list)
-        generated_node_dist = self.generated_node_dist.accumulate()
-        self.node_dist_mae(generated_node_dist)
-        self.generated_edge_dist(molecule_list)
-        generated_edge_dist = self.generated_edge_dist.accumulate()
-        self.edge_dist_mae(generated_edge_dist)
-        self.generated_valency_dist(molecule_list)
-        generated_valency_dist = self.generated_valency_dist.accumulate()
-        self.valency_dist_mae(generated_valency_dist)
-        if local_rank == 0:
-            to_log["Gen n distribution"] = generated_n_dist
-            to_log["Gen node distribution"] = generated_node_dist
-            to_log["Gen edge distribution"] = generated_edge_dist
-            to_log["Gen valency distribution"] = generated_valency_dist
-
-        # compute MAE for distributions
-        n_mae = self.n_dist_mae.accumulate()
-        node_mae = self.node_dist_mae.accumulate()
-        edge_mae = self.edge_dist_mae.accumulate()
-        valency_mae = self.valency_dist_mae.accumulate()
-        if local_rank == 0:
-            to_log["basic_metrics/n_mae"] = (n_mae,)
-            to_log["basic_metrics/node_mae"] = (node_mae,)
-            to_log["basic_metrics/edge_mae"] = (edge_mae,)
-            to_log["basic_metrics/valency_mae"] = valency_mae
-
-        # compute metrics for atom and bond types
-        for i, atom_type in enumerate(self.dataset_info.atom_decoder):
-            generated_probability = generated_node_dist[i]
-            target_probability = self.node_target_dist[i]
+        # 4. compute metrics for atom and bond types distrubution
+        for i, atom_type in enumerate(self.atom_decoder):
             to_log[f"molecular_metrics/{atom_type}_dist"] = (
-                generated_probability - target_probability
+                self.generated_node_dist[i] - self.node_target_dist[i]
             ).item()
         for j, bond_type in enumerate(
             ["No bond", "Single", "Double", "Triple", "Aromatic"]
         ):
-            generated_probability = generated_edge_dist[j]
-            target_probability = self.edge_target_dist[j]
             to_log[f"molecular_metrics/bond_{bond_type}_dist"] = (
-                generated_probability - target_probability
+                self.generated_edge_dist[j] - self.edge_target_dist[j]
             ).item()
         for valency in range(6):
-            generated_probability = generated_valency_dist[valency]
-            target_probability = self.valency_target_dist[valency]
             to_log[f"molecular_metrics/valency_{valency}_dist"] = (
-                generated_probability - target_probability
+                self.generated_valency_dist[valency] - self.valency_target_dist[valency]
             ).item()
+
+        # 5. retrieval metrics
+        if "candidates" in samples:
+            to_log.update(
+                self._retrieval_metrics(
+                    samples, 
+                    output_dir, 
+                    current_epoch, 
+                    local_rank, 
+                    verbose=log_each_molecule
+                )
+            )
+
+        # 6. dump all SMILES
+        if flag_test and local_rank == 0:
+            file = Path(output_dir) / "graphs" / f"final_smiles_e_{current_epoch}.txt"
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("\n".join(all_smiles))
 
         return to_log
 
+    # ====================================================================
+    # Internal helpers
+    # ====================================================================
+    @staticmethod
+    def _normalise(arr: Any) -> paddle.tensor:
+        """Convert *array‑like* to FP32 Tensor and L1‑normalise it."""
+        arr_fp32 = paddle.to_tensor(arr, dtype="float32")
+        return arr_fp32 / paddle.sum(arr_fp32)
+    # --------------------------------------------------------------------
+    
+    def _retrieval_metrics(
+        self,
+        samples: Dict[str, Any],
+        output_dir: str,
+        epoch: int,
+        local_rank: int,
+        *,
+        verbose: bool = False,
+    ) -> Dict[str, float]:
+        """Compute molVec‑nmrVec retrieval scores & dump similarity CSV."""
+        # unpack
+        cand_lists  = samples["candidates"]
+        cand_X      = samples["candidates_X"]
+        cand_E      = samples["candidates_E"]
+        cond_y      = samples["batch_condition"]
+        atom_counts = samples["node_mask_meta"]
+        true_list   = samples["true"]
+        B, C        = len(true_list), len(cand_lists)
+
+        # 1) Build node mask ------------------------------------------------
+        n_max = int(paddle.max(atom_counts).item())
+        arange = paddle.arange(n_max, dtype="int64")
+        node_mask = arange.unsqueeze(0).expand([B, n_max]) < atom_counts.unsqueeze(1)
+
+        # 2) Embeddings -----------------------------------------------------
+        with paddle.no_grad():
+            nmr_emb = self.nmrVec(cond_y)                     # [B, d]
+            mol_embs = paddle.stack([
+                self.molVec(node_mask, x_hot, e_hot) for x_hot, e_hot in zip(cand_X, cand_E)
+            ], axis=0)                                        # [C, B, d]
+
+        # 3) Cosine similarity --------------------------------------------
+        sims = F.cosine_similarity(
+            nmr_emb.unsqueeze(0).expand([C, -1, -1]), mol_embs, axis=-1)  # [C,B]
+        max_idx   = paddle.argmax(sims, axis=0)             # top‑1 index per GT
+        top5_idx  = paddle.topk(sims, k=5,  axis=0).indices  # [5,B]
+        top10_idx = paddle.topk(sims, k=10, axis=0).indices  # [10,B]
+
+        hit1 = hit5 = hit10 = 0
+        csv_records: List[Dict[str, str]] = []
+
+        # 4) Loop over ground‑truth molecules ------------------------------
+        for i in range(B):
+            m_true = m_utils.mol_from_graphs(self.atom_decoder, *true_list[i])
+            s_true = Chem.MolToSmiles(m_true, True)
+
+            # ---- top‑1 ----
+            sel = int(max_idx[i])
+            m_pred = m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i])
+            s_pred = Chem.MolToSmiles(m_pred, True)
+            if s_pred == s_true:
+                hit1 += 1
+
+            # ---- top‑5 / top‑10 ----
+            for sel in top5_idx[:, i].astype("int64").tolist():
+                if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
+                    hit5 += 1; break
+            for sel in top10_idx[:, i].astype("int64").tolist():
+                if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
+                    hit10 += 1; break
+
+            # ---- fingerprint similarity (top‑1 vs GT) ----
+            try:
+                sim = DataStructs.FingerprintSimilarity(RDKFingerprint(m_pred), RDKFingerprint(m_true))
+            except Exception:
+                sim = 0.0
+            csv_records.append({"SMILES": s_true, "Similarity": f"{sim:.4f}"})
+            if verbose:
+                print(f"[GT {i+1}/{B}] top1={'OK' if s_pred==s_true else 'NO'} sim={sim:.3f}")
+
+        # 5) Dump CSV -------------------------------------------------------
+        if local_rank == 0:
+            csv_path = Path(output_dir) / f"similarity_results_e{epoch}.csv"
+            pd.DataFrame(csv_records).to_csv(csv_path, index=False)
+
+        return {
+            "retrieval_top1":  hit1  / B,
+            "retrieval_top5":  hit5  / B,
+            "retrieval_top10": hit10 / B,
+        }
+
     def reset(self):
+        """Clear all running statistics (called at epoch boundaries)."""
         for metric in [
             self.n_dist_mae,
             self.node_dist_mae,

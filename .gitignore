@@ -159,3 +159,5 @@ molecule_generation/epoch-35.ckpt
 nohup.out
 log2
 log3
+log_step2
+log_step3

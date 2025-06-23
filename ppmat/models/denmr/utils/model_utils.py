@@ -3,6 +3,8 @@ import rdkit
 from paddle.nn import functional as F
 from rdkit import Chem
 from tqdm import tqdm
+import copy
+from typing import List, Dict, Tuple, Union
 
 from ppmat.utils import logger
 
@@ -342,149 +344,215 @@ def reconstruction_logp(model, t, X, E, node_mask, condition):
 # sample => sample_batch
 # -------------------------
 
+################################################################################
+# Helper function:  reverse‑diffusion sampling for **one** batch               #
+################################################################################
 
 @paddle.no_grad()
 def sample_batch(
     model,
     batch_id: int,
     batch_size: int,
-    batch_condition,
+    batch_condition: List[paddle.Tensor],
     number_chain_steps: int,
     keep_chain: int,
     visual_num: int,
-    batch_X,
-    batch_E,
-    batch_y,
-    num_nodes=None,
-):
+    batch_X: paddle.Tensor,
+    batch_E: paddle.Tensor,
+    batch_y: paddle.Tensor,
+    num_nodes: Union[int, paddle.Tensor] = None,
+    flag_useformula: bool = False,
+    return_onehot: bool = False,
+) -> Union[
+    Tuple[List, List],
+    Tuple[List, List, paddle.Tensor, paddle.Tensor],
+]:
+    """Reverse–diffusion sampling in **Paddle dynamic graph**.
+
+    Parameters
+    ----------
+    model : DiffusionModelLike
+        The generator. Must expose attributes `T`, `node_dist`, `limit_dist`,
+        and method `sample_p_zs_given_zt`.
+    batch_id : int
+        Index of the current batch – used only for logging / visualisation.
+    batch_size : int
+        Number of graphs to sample in this call.
+    batch_condition : list[paddle.Tensor]
+        Four‑branch conditioning vector (¹H‑NMR, ¹H peaks, ¹³C‑NMR, ¹³C peaks).
+    number_chain_steps : int
+        How many intermediate frames to keep for visualisation.
+    keep_chain : int
+        Number of graph chains to retain (B‑dim truncation).
+    visual_num : int
+        Number of final samples to render via `visualization_tools`.
+    batch_X / batch_E : paddle.Tensor
+        One‑hot ground‑truth node / edge feature tensors (used for guidance or
+        as *oracle formula* when ``flag_useformula`` is True).
+    batch_y : paddle.Tensor
+        Additional labels (if any) required by the model.
+    num_nodes : int | paddle.Tensor | None
+        Number of nodes per graph. When *None* the model samples from its own
+        learned distribution.
+    flag_useformula : bool
+        If *True* force the sampled node features to exactly equal the
+        provided one‑hot `batch_X` (for strict formula reconstruction).
+    return_onehot : bool
+        Whether to return the *padded* one‑hot tensors (`X_hot`, `E_hot`) in
+        addition to discrete index lists – required by molVec retrieval.
+
+    Returns
+    -------
+    If ``return_onehot`` is **False** (default):
+        (molecule_list, molecule_list_true)
+    If ``return_onehot`` is **True**:
+        (molecule_list, molecule_list_true, X_hot, E_hot)
+
+    Where
+    ``molecule_list[i] == [atom_index_vector, bond_matrix]`` and
+    ``molecule_list_true`` follows the same structure for ground‑truth.
     """
-    sample: reverse diffusion
-    """
+    
+    # 1. Determine node counts and create a boolean mask for padded positions
     if num_nodes is None:
+        # Sample number of nodes from the model's learned distribution
         n_nodes = model.node_dist.sample_n(batch_size)
     elif isinstance(num_nodes, int):
         n_nodes = paddle.full([batch_size], num_nodes, dtype="int64")
     else:
         n_nodes = paddle.to_tensor(num_nodes)  # assume Tensor
-    n_max = int(paddle.max(n_nodes).item())
 
-    # build masks
+    n_max: int = int(paddle.max(n_nodes).item()) # ***largest graph size***
+
+    # `node_mask[b, i] == True` if node *i* is real for graph *b*
     arange = paddle.arange(n_max).unsqueeze(0).expand([batch_size, n_max])
     node_mask = arange < n_nodes.unsqueeze(1)
 
-    # sample noise -- z hase saize (n_samples, n_nodes, n_features)
+    # 2. Initialise z_T with (categorical) noise and prepare trajectory buffers
+    # z(n_samples, n_nodes, n_features)
     z_T = diffusion_utils.sample_discrete_feature_noise(
         limit_dist=model.limit_dist, node_mask=node_mask
     )
-    X, E, y = z_T.X, z_T.E, z_T.y
+    X_t, E_t, y_t = z_T.X, z_T.E, z_T.y
 
-    assert number_chain_steps < model.T
-    chain_X = paddle.zeros([number_chain_steps, keep_chain, X.shape[1]], dtype="int64")
+    chain_X = paddle.zeros([number_chain_steps, keep_chain, n_max], dtype="int64")
     chain_E = paddle.zeros(
-        [number_chain_steps, keep_chain, E.shape[1], E.shape[2]], dtype="int64"
+        [number_chain_steps, keep_chain, n_max, n_max], dtype="int64"
     )
 
-    # Iterate sample p(z_s | z_t) over diffusion steps, t = 1, ..., T, with s = t - 1
+    # 3. Main reverse‑diffusion loop: t = T → 1 (s = t‑1)
     for s_int in tqdm(
-        reversed(range(model.T)),
-        desc=f"Batch iteration_{batch_id} with {model.T} diffusion steps sampling: ",
-        unit=" time step",
+        range(model.T - 1, -1, -1),
+        desc=f"Batch {batch_id} sampling {model.T}→0",
+        unit="step",
     ):
-        s_array = paddle.full([batch_size, 1], float(s_int))
-        t_array = s_array + 1.0
-        s_norm = s_array / model.T
-        t_norm = t_array / model.T
+        s_arr = paddle.full([batch_size, 1], float(s_int))
+        t_arr = s_arr + 1.0
+        s_norm, t_norm = s_arr / model.T, t_arr / model.T
 
-        # Sample z_s
+        # One reverse‑diffusion step
         sampled_s, discrete_sampled_s = sample_p_zs_given_zt(
             model,
             s=s_norm,
             t=t_norm,
-            X_t=X,
-            E_t=E,
-            y_t=y,
+            X_t=X_t,
+            E_t=E_t,
+            y_t=y_t,
             node_mask=node_mask,
             conditionVec=batch_condition,
             batch_X=batch_X,
             batch_E=batch_E,
             batch_y=batch_y,
         )
-        X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+        X_t, E_t, y_t = sampled_s.X, sampled_s.E, sampled_s.y
+        if flag_useformula == True:
+            # Force atom types to match the provided formula (oracle guidance)
+            X_t = batch_X
 
-        # save the first keep_chain graphs
+        # save intermediate frames for the first `keep_chain` graphs
         write_index = (s_int * number_chain_steps) // model.T
         chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
         chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
 
-    # sample results of last diffusion step
-    sampled_s = sampled_s.mask(node_mask, collapse=True)
-    X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
+    # 4. Collapse padding → obtain discrete indices; optionally keep one‑hot 
+    # Make a *clone* of `sampled_s` so that collapsing will not overwrite the
+    # one‑hot information we still need for molVec retrieval.
+    sampled_copy = copy.deepcopy(sampled_s)
+    
+    # 4‑a. Get discrete indices from the cloned tensor (padding removed)
+    sampled_collapse = sampled_copy.mask(node_mask, collapse=True)
+    X_idx, E_idx = sampled_collapse.X, sampled_collapse.E                # [B, …]
+    if flag_useformula:
+        # Ensure indices follow the oracle molecular formula when required
+        X_idx = paddle.argmax(batch_X, axis=-1)
 
-    # log sample result info
-    msg = f"Sampling: {len(batch_X)} molecules with {model.T} diffusion steps generated"
-    logger.message(msg)
+    # 4‑b. Optionally obtain **un‑collapsed** one‑hot tensors for retrieval.
+    if return_onehot:
+        # Call mask *without* collapse on the ORIGINAL `sampled_s`, which still
+        # contains one‑hot embeddings; shape stays [B, n_max, feat]
+        X_hot, E_hot, _ = sampled_s.mask(node_mask).X, sampled_s.mask(node_mask).E, _
+        if flag_useformula:
+            # When formula guidance is enabled, the node one‑hot should exactly
+            # match the provided ground‑truth.
+            X_hot = batch_X
+    else:
+        X_hot = E_hot = None
 
-    # Prepare the chain for visualization and saving
-    if keep_chain > 0:
-        final_X_chain = X[:keep_chain]
-        final_E_chain = E[:keep_chain]
-
-        chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
-        chain_E[0] = final_E_chain
-
-        chain_X = diffusion_utils.reverse_tensor(chain_X)
-        chain_E = diffusion_utils.reverse_tensor(chain_E)
-
-        # Repeat last frame to see final sample better
-        chain_X = paddle.concat([chain_X, chain_X[-1:].tile([10, 1, 1])], axis=0)
-        chain_E = paddle.concat([chain_E, chain_E[-1:].tile([10, 1, 1, 1])], axis=0)
-        assert chain_X.shape[0] == (number_chain_steps + 10)
-
-    batch_X = paddle.argmax(batch_X, axis=-1)
-    batch_E = paddle.argmax(batch_E, axis=-1)
-
-    # Prepare the samples for visualization and saving
-    molecule_list = []
-    molecule_list_True = []
+    # 5. Assemble Python lists for downstream RDKit / metrics 
+    mol_list, mol_true = [], []
     n_nodes_np = n_nodes.numpy()
+    batch_X_idx = paddle.argmax(batch_X, axis=-1).numpy()
+    batch_E_idx = paddle.argmax(batch_E, axis=-1).numpy()
     for i in range(batch_size):
         n = n_nodes_np[i]
-        atom_types = X[i, :n].numpy()
-        edge_types = E[i, :n, :n].numpy()
+        mol_list.append([
+            X_idx[i, :n].numpy(),
+            E_idx[i, :n, :n].numpy(),
+        ])
+        mol_true.append([
+            batch_X_idx[i, :n],
+            batch_E_idx[i, :n, :n],
+        ])
 
-        atom_types_true = batch_X[i, :n].numpy()
-        edge_types_true = batch_E[i, :n, :n].numpy()
-
-        molecule_list.append([atom_types, edge_types])
-        molecule_list_True.append([atom_types_true, edge_types_true])
-
-    # visualization # TODO: move it in sample_epoch
+    # 6. Optional visualisation via model.visualization_tools
     if model.visualization_tools is not None:
-        num_molecules = chain_X.shape[1]
-        for i in range(num_molecules):
+        # 6.a Prepare the chain for visualization and saving
+        if keep_chain > 0:
+            # pick the last frame of the chain add the top index of chain_X/E(index 0)
+            final_X_chain = X_t[:keep_chain]
+            final_E_chain = E_t[:keep_chain]
+            chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
+            chain_E[0] = final_E_chain
+
+            # revers time sequence for visualization
+            chain_X = diffusion_utils.reverse_tensor(chain_X)
+            chain_E = diffusion_utils.reverse_tensor(chain_E)
+
+            # Repeat last frame to see final sample better
+            chain_X = paddle.concat([chain_X, chain_X[-1:].tile([10, 1, 1])], axis=0)
+            chain_E = paddle.concat([chain_E, chain_E[-1:].tile([10, 1, 1, 1])], axis=0)
+            assert chain_X.shape[0] == (number_chain_steps + 10)
+
+        # 6.b use visulize tools
+        num_mols = chain_X.shape[1]
+        # draw animation of diffusion process of generated molecules
+        for i in range(num_mols):
             chain_X_np = chain_X[:, i, :].numpy()
             chain_E_np = chain_E[:, i, :, :].numpy()
-
             model.visualization_tools.visualize_chain(
                 batch_id, i, chain_X_np, chain_E_np
             )
-        msg = "Sampling:"
-        msg += f" {num_molecules} of {batch_size} generated molecules"
-        msg += " visualization complete"
-        logger.message(msg)
-
+        # draw picture of predicted and true molecules
         model.visualization_tools.visualizeNmr(
             batch_id,
-            molecule_list,
-            molecule_list_True,
+            mol_list,
+            mol_true,
             visual_num,
         )
-        msg = "Sampling:"
-        msg += f" {visual_num} of {batch_size} generated and true molecules"
-        msg += " visualization complete"
-        logger.message(msg)
-
-    return molecule_list, molecule_list_True
+    
+    if return_onehot:
+        return mol_list, mol_true, X_hot, E_hot
+    return mol_list, mol_true
 
 
 @paddle.no_grad()

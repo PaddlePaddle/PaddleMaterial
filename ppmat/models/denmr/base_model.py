@@ -314,7 +314,7 @@ class ContrastiveModel(nn.Layer):
             param.stop_gradient = True
         self.graph_encoder.eval()
 
-        if kwargs.get("onlyH", True):
+        if kwargs.get("onlyH", False):
             self.flag_onlyH = True
             self.text_encoder = NMR_encoder_H(
                 dim_H=nmr_encoder["dim_enc_H"],
@@ -355,7 +355,7 @@ class ContrastiveModel(nn.Layer):
             and nmr_encoder["pretrained_model_path"] is not None
         ):
             save_load.load_pretrain(
-                self.NMR_encoder, nmr_encoder["pretrained_model_path"]
+                self.text_encoder, nmr_encoder["pretrained_model_path"]
             )
 
     def _init_weights(self, m):
@@ -922,10 +922,12 @@ class MultiModalDecoder(nn.Layer):
         
         # load nmr encoder model from pretrained model
         state_dict = paddle.load(config["nmr_encoder"]["pretrained_path"])
+        prefixes = ("text_encoder.", "encoder.")
         encoder_state_dict = {
-            k[len("text_encoder.") :]: v
+            k[len(pref):]: v
             for k, v in state_dict.items()
-            if k.startswith("text_encoder.")
+            for pref in prefixes
+            if k.startswith(pref)
         }
         self.encoder.set_state_dict(encoder_state_dict)
 

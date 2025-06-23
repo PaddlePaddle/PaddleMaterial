@@ -118,7 +118,23 @@ if __name__ == "__main__":
     # custom training metrics
     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
     # custom sampling metrics
-    sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
+    enable_CLIP = config.get("Sampler",  {}).get("enable_CLIP", False)
+    if enable_CLIP:
+        CLIP = ContrastiveModel(
+            dataset_infos = dataset_infos, 
+            extra_features = extra_features, 
+            domain_features = domain_features,
+            **config["Sampler"]["CLIP"], 
+        )
+        for param in CLIP.graph_encoder.parameters():
+            param.stop_gradient = True
+        CLIP.graph_encoder.eval()
+        for param in CLIP.text_encoder.parameters():
+            param.stop_gradient = True
+        CLIP.text_encoder.eval()
+        sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles, CLIP)
+    else:
+        sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
     # visualization tools
     visualization_tools = MolecularVisualization(
         config["Dataset"]["train"]["dataset"]["remove_h"],

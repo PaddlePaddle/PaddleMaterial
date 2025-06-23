@@ -26,7 +26,7 @@ Tracker:
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
+    pretrained_model_path: "./output/step1_best.pdparams" #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
     n_layers_GT: 5
     hidden_mlp_dims: {
       "X": 256,
@@ -80,7 +80,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 256 # 256*2
   val:
     dataset:
       __name__: CHnmrDataset
