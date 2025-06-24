@@ -126,22 +126,24 @@ if __name__ == "__main__":
 
 
     # scaling dataset
-    dataset_trans_cfg = config["Dataset"].get("transform")
-    if dataset_trans_cfg is not None:
-        trans_func = dataset_trans_cfg.pop("__class_name__")
-        trans_parms = dataset_trans_cfg.pop("__init_params__")
-        logger.info(f"Using transform function: {trans_func}")
-    else:
-        trans_func = "no_scaling"
-        trans_parms = {}
-        logger.warning("No transform specified, using 'no_scaling' instead.")
-    data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
-    logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
-    
-    # build model from config
-    model_cfg = config["Model"]
-    model_cfg['__init_params__']['data_mean'] = data_mean
-    model_cfg['__init_params__']['data_std'] = data_std
+    if "transform" in config["Dataset"]:
+        dataset_trans_cfg = config["Dataset"].get("transform")
+        if dataset_trans_cfg is not None:
+            trans_func = dataset_trans_cfg.pop("__class_name__")
+            trans_parms = dataset_trans_cfg.pop("__init_params__")
+            logger.info(f"Using transform function: {trans_func}")
+        else:
+            trans_func = "no_scaling"
+            trans_parms = {}
+            logger.warning("No transform specified, using 'no_scaling' instead.")
+        data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
+        logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
+        
+        # build model from config
+        model_cfg = config["Model"]
+        model_cfg['__init_params__']['data_mean'] = data_mean
+        model_cfg['__init_params__']['data_std'] = data_std
+
 
     model = build_model(model_cfg)
 
