@@ -29,6 +29,8 @@ from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
+from ppmat.models.mattersim.m3gnet import M3GNet
+from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -46,6 +48,8 @@ __all__ = [
     "CrystalNN",
     "CHGNetGraphConverter",
     "CHGNet",
+    "M3GNetGraphConvertor",
+    "M3GNet",
 ]
 
 MODEL_REGISTRY = {
@@ -73,6 +77,8 @@ MODEL_REGISTRY = {
     "dimenetpp_mp2018_train_60k_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_band_gap.zip",
     "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
     "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_G.zipp",
+    "mattersim_1M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_1M.zip",
+    "mattersim_5M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_5M.zip",
 }
 
 
