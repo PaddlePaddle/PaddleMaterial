@@ -3,6 +3,18 @@ import os
 import random
 
 
+def none_to_zero(value):
+    if value is None:
+        return 0.0
+    if isinstance(value, str):
+        if value.lower() == 'none':
+            return 0.0
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f"Invalid numeric value: {value}")
+    return value
+    
 def split_dataset_by_mpid(
     input_json: str,
     output_dir: str,
