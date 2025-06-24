@@ -19,6 +19,7 @@ import os
 import os.path as osp
 import pickle
 import math
+import re
 from collections import defaultdict
 from typing import Any
 from typing import Callable
@@ -34,8 +35,8 @@ from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils.io import read_json_lines
-
+from ppmat.utils.io import read_json_lines, count_samples_json_lines
+from ppmat.utils.misc import is_equal
 
 class MP2024Dataset(Dataset):
     """MP2024 Dataset Handler
@@ -295,155 +296,235 @@ class MP2024Dataset(Dataset):
             # for example:
             # path = ./data/mp2024_train_130k/mp2024_train.txt
             # cache_path = ./data/mp2024_train_130k_cache_find_points_in_spheres_cutoff_4/mp2024_train
-            self.cache_path = osp.join(
-                osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
+            graph_converter_name = re.sub(r'(?<!^)([A-Z])', r'_\1', build_graph_cfg['__class_name__']).lower()
+            cutoff_name = str( int(build_graph_cfg['__init_params__']['cutoff']) ) 
+            self.cache_path = osp.join( osp.split(path)[0] + "_cache_" + graph_converter_name + "_cutoff_" + cutoff_name,
+                 osp.splitext(osp.basename(path))[0]
             )
         logger.info(f"Cache path: {self.cache_path}")
+        os.makedirs(self.cache_path, exist_ok=True)
 
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
 
-        self.cache_exists = True if osp.exists(self.cache_path) else False
-        self.row_data, self.num_samples = self.read_data(path)
-        logger.info(f"Load {self.num_samples} samples from {path}")
-        self.property_data = self.read_property_data(self.row_data, self.property_names)        
+        # compute number of samples of raw file
+        if osp.exists(self.path):
+            num_samples_raw_file = count_samples_json_lines(self.path)
+            logger.info(f"The raw file has {num_samples_raw_file} samples.")
+        else:
+            num_samples_raw_file = 0
+            logger.warning("The raw file is not found.")
 
-        if self.cache_exists and not overwrite:
-            logger.warning(
-                "Cache enabled. If a cache file exists, it will be automatically "
-                "read and current settings will be ignored. Please ensure that the "
-                "settings used in match your current settings."
-            )
+        # check if properties have been cached
+        property_cache_path = osp.join(self.cache_path, "properties")
+        if osp.exists(property_cache_path):
             try:
-                build_structure_cfg_cache = self.load_from_cache(
-                    osp.join(self.cache_path, "build_structure_cfg.pkl")
-                )
-                if is_equal(build_structure_cfg_cache, build_structure_cfg):
-                    logger.info(
-                        "The cached build_structure_cfg configuration matches "
-                        "the current settings. Reusing previously generated"
-                        " structural data to optimize performance."
+                for property_name in self.property_names:
+                    data = self.load_from_cache(
+                        osp.join(property_cache_path, f"{property_name}.pkl"), 
                     )
-                else:
-                    logger.warning(
-                        "build_structure_cfg is different from "
-                        "build_structure_cfg_cache. Will rebuild the structures and "
-                        "graphs."
-                    )
-                    logger.warning(
-                        "If you want to use the cached structures and graphs, please "
-                        "ensure that the settings used in match your current settings."
-                    )
-                    overwrite = True
+                    logger.info(f"Load {len(data)} {property_name} values from {property_cache_path}")
+                    if len(data) != num_samples_raw_file:
+                        logger.warning(
+                            f"The number of {property_name} ({len(data)}) " 
+                            f"does not match the number of raw samples ({num_samples_raw_file}). "
+                            f"Please check if overwrite is needed."
+                        )
+                logger.info("Property cache is found. Will load properties from cache.")
             except Exception as e:
                 logger.warning(e)
                 logger.warning(
-                    "Failed to load builded_structure_cfg.pkl from cache. "
-                    "Will rebuild the structures and graphs(if need)."
+                    f"Failed to load {property_name}.pkl from cache. "
+                    "Will rebuild properties."
                 )
                 overwrite = True
+        else:
+            logger.info("Property cache is not found. Will build properties.")
+            overwrite = True
 
-            if build_graph_cfg is not None and not overwrite:
-                try:
-                    build_graph_cfg_cache = self.load_from_cache(
-                        osp.join(self.cache_path, "build_graph_cfg.pkl")
-                    )
-                    if is_equal(build_graph_cfg_cache, build_graph_cfg):
-                        logger.info(
-                            "The cached build_structure_cfg configuration "
-                            "matches the current settings. Reusing previously "
-                            "generated structural data to optimize performance."
-                        )
-                    else:
-                        logger.warning(
-                            "build_graph_cfg is different from build_graph_cfg_cache"
-                            ". Will rebuild the graphs."
-                        )
-                        logger.warning(
-                            "If you want to use the cached structures and graphs, "
-                            "please ensure that the settings used in match your "
-                            "current settings."
-                        )
-                        overwrite = True
-
-                except Exception as e:
-                    logger.warning(e)
-                    logger.warning(
-                        "Failed to load builded_graph_cfg.pkl from cache. "
-                        "Will rebuild the graphs."
-                    )
-                    overwrite = True
-        
+        # check if all raw structures have been built to crystal structure
         structure_cache_path = osp.join(self.cache_path, "structures")
-        graph_cache_path = osp.join(self.cache_path, "graphs")
-
-        if overwrite or not self.cache_exists:
-            # convert strucutes and graphs
+        if osp.exists(structure_cache_path) and not overwrite:
+            logger.info("The cache file of built crystal structure is found. Will load structures from cache.")
+            
+            # compute number of cached structures
+            files_structure = [f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")]
+            num_cached_structures = len(files_structure)
+            if num_samples_raw_file == num_cached_structures:
+                logger.info(f"All raw files have been built to crystal structures, and the number of structures are {num_cached_structures}.")
+            else:
+                logger.warning( 
+                    f"The number of cached structures ({num_cached_structures}) does not match "
+                    f"the number of raw samples ({num_samples_raw_file}). "
+                    f"Please check if overwrite is needed." 
+                )
+        else:
+            logger.info("Structure cache is not found. Will build structures.")
+            os.makedirs(structure_cache_path, exist_ok=True)
+            os.makedirs(property_cache_path, exist_ok=True)
+            self.row_data, self.num_samples = self.read_data(path)
+            logger.info(f"Load {self.num_samples} samples from {path}")
+            self.property_data = self.read_property_data(self.row_data, self.property_names) 
+            
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save build_structure_cfg and build_graph_cfg to cache file
-                os.makedirs(self.cache_path, exist_ok=True)
+                # save build_structure_cfg to cache file
                 self.save_to_cache(
                     osp.join(self.cache_path, "build_structure_cfg.pkl"),
                     build_structure_cfg,
-                )
-                self.save_to_cache(
-                    osp.join(self.cache_path, "build_graph_cfg.pkl"), 
-                    build_graph_cfg
                 )
                 # convert strucutes
                 structures = BuildStructure(**build_structure_cfg)(
                     self.row_data["structure"]
                 )
                 # save structures to cache file
-                os.makedirs(structure_cache_path, exist_ok=True)
                 for i in range(self.num_samples):
                     self.save_to_cache(
                         osp.join(structure_cache_path, f"{i:010d}.pkl"),
                         structures[i],
                     )
-                logger.info(
-                    f"Save {self.num_samples} structures to {structure_cache_path}"
-                )
-
-                if build_graph_cfg is not None:
-                    converter = build_graph_converter(build_graph_cfg)
-                    graphs = converter(structures)
-                    # save graphs to cache file
-                    os.makedirs(graph_cache_path, exist_ok=True)
-                    for i in range(self.num_samples):
-                        self.save_to_cache(
-                            osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
-                        )
-                    logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
-
+                logger.info( f"Save {self.num_samples} structures to {structure_cache_path}" )
+                # save property data to cache file
+                for property_name in self.property_names:
+                    data = self.property_data[property_name]
+                    self.save_to_cache(
+                        osp.join(property_cache_path, f"{property_name}.pkl"), 
+                        data,
+                    )
+                    logger.info( f"Save {self.num_samples} {property_name} to {property_cache_path}" )
             # sync all processes
             if dist.is_initialized():
                 dist.barrier()
+
+        # check if generate graph infomation
+        graph_cache_path = osp.join(self.cache_path, "graphs")
+        graph_cache_exists = build_graph_cfg is not None and osp.exists(graph_cache_path)
+        # check if create graph configures is same with cache.
+        if graph_cache_exists and not overwrite:
+            try:
+                build_graph_cfg_cache = self.load_from_cache(
+                    osp.join(self.cache_path, "build_graph_cfg.pkl")
+                )
+                if is_equal(build_graph_cfg_cache, build_graph_cfg):
+                    logger.info(
+                        "The cached build_structure_cfg configuration "
+                        "matches the current settings. Reusing previously "
+                        "generated structural data to optimize performance."
+                    )
+                else:
+                    logger.warning(
+                        "build_graph_cfg is different from build_graph_cfg_cache"
+                        ". Will rebuild the graphs."
+                    )
+                    logger.warning(
+                        "If you want to use the cached structures and graphs, "
+                        "please ensure that the settings used in match your "
+                        "current settings."
+                    )
+                    overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                logger.warning(
+                    "Failed to load builded_graph_cfg.pkl from cache. "
+                    "Will rebuild the graphs."
+                )
+                overwrite = True
+
+        # check if all structures are built into the graph
+        if osp.exists(graph_cache_path) and not overwrite:
+            logger.info("The cache file of built crystal structure is found. Will load structures from cache.")
+            # compute number of cached graph
+            files_graph = [f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")]
+            num_cached_graphs = len(files_graph)
+            if num_cached_structures == num_cached_graphs:
+                logger.info(f"All cached structures have been built graphs, and the number of graphes are {num_cached_graphs}.")
+            else:
+                logger.warning( 
+                    f"The number of cached structures ({num_cached_structures}) does not match "
+                    f"the number of cached graphs ({num_cached_graphs}). "
+                    f"Please check if overwrite is needed." 
+                )
+        else:
+            logger.info("Graph cache is not found. Will build graphs.")
+            os.makedirs(graph_cache_path, exist_ok=True)
+            # convert graphs
+            # only rank 0 process do the conversion
+            if dist.get_rank() == 0:
+                # save build_graph_cfg to cache file
+                self.save_to_cache(
+                    osp.join(self.cache_path, "build_graph_cfg.pkl"), 
+                    build_graph_cfg
+                )
+                # convert graph
+                converter = build_graph_converter(build_graph_cfg)
+                graphs = converter(structures)
+                # save graphs to cache file
+                for i in range(self.num_samples):
+                    self.save_to_cache(
+                        osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
+                    )
+                logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
+            # sync all processes
+            if dist.is_initialized():
+                dist.barrier()
+
+        # Obtain finial properies, structures and graphs
+        self.property_data = {property_name: self.load_from_cache(osp.join(property_cache_path, f"{property_name}.pkl")) for property_name in self.property_names}
+        
         self.structures = [
-            osp.join(structure_cache_path, f"{i:010d}.pkl")
-            for i in range(self.num_samples)
+            osp.join(structure_cache_path, f) 
+            for f in sorted(
+                os.listdir(structure_cache_path),
+                key=lambda x: int(x.replace(".pkl", ""))
+            )
         ]
+        
         if build_graph_cfg is not None:
             self.graphs = [
-                osp.join(graph_cache_path, f"{i:010d}.pkl")
-                for i in range(self.num_samples)
+                osp.join(graph_cache_path, f) 
+                for f in sorted(
+                    os.listdir(graph_cache_path),
+                    key=lambda x: int(x.replace(".pkl", ""))
+                )
             ]
         else:
             self.graphs = None
 
-        assert (
-            len(self.structures) == self.num_samples
-        ), "The number of structures must be equal to the number of samples."
-        assert (
-            self.graphs is None or len(self.graphs) == self.num_samples
-        ), "The number of graphs must be equal to the number of samples."
-
         # filter by property data, since some samples may have no valid properties
         if filter_unvalid:
             self.filter_unvalid_by_property()
+        
+        # filter by graph data, as some samples may not have edges and need to be removed
+        if self.graphs is not None:
+            self.filter_unvalid_by_graph()
+        
+        # assert (
+        #     self.graphs is None or len(self.graphs) == self.num_samples
+        # ), "The number of graphs must be equal to the number of samples."
 
+        # # filter by property data, since some samples may have no valid properties
+        # if filter_unvalid:
+        #     self.filter_unvalid_by_property()
 
+    def filter_unvalid_by_graph(self):
+        reserve_idx = []
+        for i, g in enumerate(self.graphs):
+            data = self.load_from_cache(g)
+            if data is not None:
+                reserve_idx.append(i)
+            
+        for key in self.property_data.keys():
+            self.property_data[key] = [
+                self.property_data[key][i] for i in reserve_idx
+            ]
+        self.structures = [self.structures[i] for i in reserve_idx]
+        self.graphs = [self.graphs[i] for i in reserve_idx]
+        logger.warning(
+            f"Filter out {len(reserve_idx)} samples with valid graphs."
+        )
+
+        self.num_samples = len(self.structures)
+        logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
     def read_data(self, path: str):
         """Read the data from the given dataset file.
@@ -494,7 +575,6 @@ class MP2024Dataset(Dataset):
                     self.property_data[key][i] for i in reserve_idx
                 ]
 
-            self.row_data = { k: [v[i] for i in reserve_idx] for k, v in self.row_data.items() }
             self.structures = [self.structures[i] for i in reserve_idx]
             if self.graphs is not None:
                 self.graphs = [self.graphs[i] for i in reserve_idx]

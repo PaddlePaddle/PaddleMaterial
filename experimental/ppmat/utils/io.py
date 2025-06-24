@@ -18,10 +18,15 @@ import ast
 
 import numpy as np
 
+def count_samples_json_lines(path: str):
+    """Fast count of samples in a line-delimited JSON file."""
+    with open(path, "r") as f:
+        return sum(1 for _ in f)
+
 
 def read_json_lines(path):
     """
-    Read all lines from a line-delimited Python-dict-like file,
+    Read all lines from a line-delimited JSON file,
     extracting all properties into a dictionary of lists.
     """
     property_data = {}
@@ -29,7 +34,8 @@ def read_json_lines(path):
     with open(path, "r") as f:
         for idx, line in enumerate(f):
             content = ast.literal_eval(line.strip())
-
+            # if idx == 301:
+            #     break
             if idx == 0:
                 all_property_names = list(content.keys())
                 # print("all_property_names:", all_property_names)

@@ -14,7 +14,6 @@ def none_to_zero(value):
         except ValueError:
             raise ValueError(f"Invalid numeric value: {value}")
     return value
-
     
 def split_dataset_by_mpid(
     input_json: str,

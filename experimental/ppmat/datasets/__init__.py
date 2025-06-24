@@ -31,7 +31,7 @@ from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
 from ppmat.datasets.mp2024_dataset import MP2024Dataset
-from ppmat.datasets.jarvis_dataset import JarvisDataset
+from ppmat.datasets.jarvis_dataset_modify import JarvisDataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.transform import build_transforms
@@ -156,7 +156,8 @@ def build_dataloader(cfg: Dict):
             train_nums = int(total_nums * ratio_dict["train"])
             val_nums = int(total_nums * ratio_dict["val"])
             test_nums = total_nums - train_nums - val_nums
-
+        logger.info( f"Number of train, val and test dataset are {train_nums}, {val_nums} and {test_nums}." )
+        
         train_dataset, val_dataset, test_dataset = io.random_split(dataset, [train_nums, val_nums, test_nums])
         dataset_dict = {
             "train": train_dataset if len(train_dataset) != 0 else None,
@@ -187,7 +188,7 @@ def build_dataloader(cfg: Dict):
 
     else:
         sampler_cfg = cfg.get("sampler", None)
-        batch_sampler = set_build_sample(sampler_cfg, world_size)
+        batch_sampler = set_build_sample(sampler_cfg, world_size, dataset)
 
         data_loader = DataLoader(
             dataset=dataset,
