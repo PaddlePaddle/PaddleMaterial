@@ -372,7 +372,7 @@ class Structure2Graph:
                 f"No edges found within cutoff {cutoff:.5f}. Please increase the "
                 "cutoff."
             )
-
+            
         graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
         return graph
 

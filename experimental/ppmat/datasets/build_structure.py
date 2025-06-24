@@ -20,6 +20,8 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifParser
 
+from jarvis.core.atoms import Atoms as jAtoms
+
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
 
@@ -44,7 +46,7 @@ class BuildStructure:
 
     def __init__(
         self,
-        format: Literal["cif_str", "array", "cif_file", "dict"],
+        format: Literal["cif_str", "array", "cif_file", "dict", "cif_str_by_CifParser", "jarvis"],
         primitive: bool = False,
         niggli: bool = True,
         num_cpus: Optional[int] = None,
@@ -92,6 +94,8 @@ class BuildStructure:
             crystal = CifParser.from_str(crystal_data).parse_structures(
                 primitive=True, on_error="ignore"
             )[0]
+        elif format == "jarvis":
+            crystal = jAtoms.from_dict(crystal_data).pymatgen_converter()
         else:
             raise ValueError(f"Invalid format specified: {format}")
 

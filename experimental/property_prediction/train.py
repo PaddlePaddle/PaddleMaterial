@@ -15,6 +15,7 @@ import argparse
 import os
 import os.path as osp
 import sys
+import datetime
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
 sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
@@ -30,48 +31,14 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.datasets.transform import *
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-c",
-        "--config",
-        type=str,
-        default="./property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml",
-        help="Path to config file",
-    )
 
-    args, dynamic_args = parser.parse_known_args()
-
-    # load config and merge with cli args
-    config = OmegaConf.load(args.config)
-    cli_config = OmegaConf.from_dotlist(dynamic_args)
-    config = OmegaConf.merge(config, cli_config)
-
-    # save config to output_dir, only rank 0 process will do this
-    if dist.get_rank() == 0:
-        os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
-        config_name = os.path.basename(args.config)
-        OmegaConf.save(config, osp.join(config["Trainer"]["output_dir"], config_name))
-    # convert to dict
-    config = OmegaConf.to_container(config, resolve=True)
-
-    # init logger
-    logger_path = osp.join(config["Trainer"]["output_dir"], "run.log")
-    logger.init_logger(log_file=logger_path)
-    logger.info(f"Logger saved to {logger_path}")
-
-    # set random seed
-    seed = config["Trainer"].get("seed", 42)
-    misc.set_random_seed(seed)
-    logger.info(f"Set random seed to {seed}")
-
-    # build model from config
-    model_cfg = config["Model"]
-    model = build_model(model_cfg)
-
-    # build dataloader from config
-    set_signal_handlers()
+def read_independent_dataloader_config(config):
+    '''
+    Args:
+        config (dict): config dict
+    ''' 
     if config["Global"].get("do_train", True):
         train_data_cfg = config["Dataset"].get("train")
         assert (
@@ -99,6 +66,86 @@ if __name__ == "__main__":
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
+        
+    return train_loader, val_loader, test_loader
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default="./property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml",
+        help="Path to config file",
+    )
+
+    args, dynamic_args = parser.parse_known_args()
+
+    # load config and merge with cli args
+    config = OmegaConf.load(args.config)
+    cli_config = OmegaConf.from_dotlist(dynamic_args)
+    config = OmegaConf.merge(config, cli_config)
+
+    # set random seed
+    seed = config["Trainer"].get("seed", 42)
+    misc.set_random_seed(seed)
+    logger.info(f"Set random seed to {seed}")
+
+    # add timestamp to output_dir
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_output_dir = config["Trainer"]["output_dir"]
+    config["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+
+    # save config to output_dir, only rank 0 process will do this
+    if dist.get_rank() == 0:
+        os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
+        config_name = os.path.basename(args.config)
+        OmegaConf.save(config, osp.join(config["Trainer"]["output_dir"], config_name))
+    # convert to dict
+    config = OmegaConf.to_container(config, resolve=True)
+
+    # init logger
+    logger_path = osp.join(config["Trainer"]["output_dir"], "run.log")
+    logger.init_logger(log_file=logger_path)
+    logger.info(f"Logger saved to {logger_path}")
+
+
+ 
+    # build dataloader from config
+    set_signal_handlers()
+    if config["Dataset"].get("split_dataset_ratio") is not None:
+        # Split the dataset into train/val/test and build corresponding dataloaders
+        loader = build_dataloader(config["Dataset"])
+        train_loader = loader.get("train", None)
+        val_loader = loader.get("val", None)
+        test_loader = loader.get("test", None)
+    else:
+        # Use pre-split (independent) train/val/test datasets and build dataloaders
+        train_loader, val_loader, test_loader = read_independent_dataloader_config(config)
+
+
+    # scaling dataset
+    if "transform" in config["Dataset"]:
+        dataset_trans_cfg = config["Dataset"].get("transform")
+        if dataset_trans_cfg is not None:
+            trans_func = dataset_trans_cfg.pop("__class_name__")
+            trans_parms = dataset_trans_cfg.pop("__init_params__")
+            logger.info(f"Using transform function: {trans_func}")
+        else:
+            trans_func = "no_scaling"
+            trans_parms = {}
+            logger.warning("No transform specified, using 'no_scaling' instead.")
+        data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
+        logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
+        
+        # build model from config
+        model_cfg = config["Model"]
+        model_cfg['__init_params__']['data_mean'] = data_mean
+        model_cfg['__init_params__']['data_std'] = data_std
+
+
+    model = build_model(model_cfg)
 
     # build optimizer and learning rate scheduler from config
     if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
@@ -136,10 +183,12 @@ if __name__ == "__main__":
     )
 
     if config["Global"].get("do_train", True):
-        trainer.train()
+         trainer.train()
     if config["Global"].get("do_eval", False):
         logger.info("Evaluating on validation set")
         time_info, loss_info, metric_info = trainer.eval(val_loader)
     if config["Global"].get("do_test", False):
         logger.info("Evaluating on test set")
         time_info, loss_info, metric_info = trainer.eval(test_loader)
+
+
