@@ -308,6 +308,7 @@ class JarvisDataset(Dataset):
 
         # Handle graph_cfg
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         # if build_graph_cfg is None:
         #     build_graph_cfg = {
@@ -320,6 +321,8 @@ class JarvisDataset(Dataset):
         #         f"configs: {build_graph_cfg}"
         #     )
 >>>>>>> Add Jarvis dataset support.
+=======
+>>>>>>> modify train loop logic
         self.build_graph_cfg = build_graph_cfg
 
         # Determine cache directory

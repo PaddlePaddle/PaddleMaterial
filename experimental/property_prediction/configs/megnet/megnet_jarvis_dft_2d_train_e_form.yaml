@@ -1,91 +1,71 @@
 Global:
-  # for mp2024 dataset, the property names are:
-  # "formation_energy_per_atom",
-  # "band_gap",
-  # "G",
-  # "K"
-  label_names: ["formation_energy_per_atom"]
-  do_train: True
-  do_eval: False
-  do_test: False
+  # for jarvis dataset, the property name is:
+  # "formation_energy_peratom"
+
+  label_names: ["formation_energy_peratom"]
 
   graph_converter:
-    __class_name__: ComformerGraphConverter
+    __class_name__: FindPointsInSpheres
     __init_params__:
         cutoff: 4.0
         num_cpus: 10
 
-
 Dataset:
-  train:
-    dataset:
-      __class_name__: MP2024Dataset
-      __init_params__:
-        path: "./data/mp2024_train_130k/mp2024_train.txt"
-        property_names: ${Global.label_names}
-        build_structure_cfg:
-          format: dict
-          num_cpus: 10
-        build_graph_cfg: ${Global.graph_converter}
-      num_workers: 4
-      use_shared_memory: False
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        shuffle: True
-        drop_last: True
-        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
-  val:
-    dataset:
-      __class_name__: MP2024Dataset
-      __init_params__:
-        path: "./data/mp2024_train_130k/mp2024_val.txt"
-        property_names: ${Global.label_names}
-        build_structure_cfg:
-          format: dict
-          num_cpus: 10
-        build_graph_cfg: ${Global.graph_converter}
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        shuffle: False
-        drop_last: False
-        batch_size: 32
-  test:
-    dataset:
-      __class_name__: MP2024Dataset
-      __init_params__:
-        path: "./data/mp2024_train_130k/mp2024_test.txt"
-        property_names: ${Global.label_names}
-        build_structure_cfg:
-          format: dict
-          num_cpus: 10
-        build_graph_cfg: ${Global.graph_converter}
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        shuffle: False
-        drop_last: False
-        batch_size: 32
-
-  transform:
+  dataset:
+    __class_name__: JarvisDataset
+    __init_params__:
+      path: "./data/jarvis"
+      jarvis_data_name: "dft_2d"
+      property_names: ${Global.label_names}
+      build_structure_cfg:
+        format: jarvis
+        num_cpus: 10
+      build_graph_cfg: ${Global.graph_converter}
+      cache_path: "./data/jarvis"
+    num_workers: 4
+    use_shared_memory: False
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+  transform: 
     __class_name__: mean_std_scaling
     __init_params__: {}
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 128 # 128 for 1 GPUs, total batch size = 128 * 1 = 128
+  val_sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 128 # 128 for 1 GPUs, total batch size = 128 * 1 = 128
+  test_sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 128 # 128 for 1 GPUs, total batch size = 128 * 1 = 128
 
 
 Model:
-  __class_name__: iComformer
+  __class_name__: MEGNetPlus
   __init_params__:
-    conv_layers: 4
-    edge_layers: 1
-    atom_input_features: 92
-    edge_features: 256
-    triplet_input_features: 256
-    node_features: 256
-    fc_features: 256
-    output_features: 1
-    node_layer_head: 1
-    edge_layer_head: 1
+    dim_node_embedding: 16
+    dim_edge_embedding: 100
+    dim_state_embedding: 2
+    nblocks: 3
+    nlayers_set2set: 1
+    niters_set2set: 2
+    bond_expansion_cfg:
+      rbf_type: "Gaussian"
+      initial: 0.0
+      final: 5.0
+      num_centers: 100
+      width: 0.5
     property_name: ${Global.label_names}
     # data_mean: -1.6519
     # data_std: 1.0694
@@ -93,11 +73,11 @@ Model:
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 2000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/comformer_mp2024_train_130k_e_form
+  output_dir: ./output/megnet_jarvis_dft_2d_e_form
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -130,7 +110,7 @@ Trainer:
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
   # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "formation_energy_per_atom"
+  name_for_best_metric: "formation_energy_peratom"
   # The metric whether is better when it is greater
   greater_is_better: False
 
@@ -145,17 +125,20 @@ Trainer:
 
 
 Optimizer:
-  __class_name__: AdamW
+  __class_name__: Adam
   __init_params__:
+    beta1: 0.9
+    beta2: 0.999
     lr:
-      __class_name__: OneCycleLR
+      __class_name__: Cosine
       __init_params__:
-        max_learning_rate: 0.001
+        learning_rate: 0.001
+        eta_min: 0.0001
         by_epoch: True
 
 
 Metric:
-  formation_energy_per_atom:
+  formation_energy_peratom:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 

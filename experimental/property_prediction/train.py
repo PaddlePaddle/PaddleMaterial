@@ -64,7 +64,6 @@ def read_independent_dataloader_config(config):
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
-
     return train_loader, val_loader, test_loader
 
 
@@ -198,35 +197,3 @@ if __name__ == "__main__":
         time_info, loss_info, metric_info = trainer.eval(test_loader)
 
 
-def read_independent_dataloader_config(config):
-    '''
-    Args:
-        config (dict): config dict
-    ''' 
-    if config["Global"].get("do_train", True):
-        train_data_cfg = config["Dataset"].get("train")
-        assert (
-            train_data_cfg is not None
-        ), "train_data_cfg must be defined, when do_train is true"
-        train_loader = build_dataloader(train_data_cfg)
-    else:
-        train_loader = None
-
-    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
-        val_data_cfg = config["Dataset"].get("val")
-        if val_data_cfg is not None:
-            val_loader = build_dataloader(val_data_cfg)
-        else:
-            logger.info("No validation dataset defined.")
-            val_loader = None
-    else:
-        val_loader = None
-
-    if config["Global"].get("do_test", False):
-        test_data_cfg = config["Dataset"].get("test")
-        assert (
-            test_data_cfg is not None
-        ), "test_data_cfg must be defined, when do_test is true"
-        test_loader = build_dataloader(test_data_cfg)
-    else:
-        test_loader = None
