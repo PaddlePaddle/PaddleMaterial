@@ -5,7 +5,7 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: 1.0 #null
   ema_decay: 0.999 # 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: #"/home/liuxuwei01/PaddleMaterial/output/step2_init_weight.pdparams" # "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
+  pretrained_model_path: # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -20,13 +20,13 @@ Tracker:
   log:
     log_freq: 1 # log frequency [step]
   save:
-    output_dir: ./output/DeNMR_CHnmr/CLIP_onlyH/v1
+    output_dir: ./output/DiffNMR/CLIP_onlyH/train
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
   __name__: ContrastiveModel
   graph_encoder:
-    pretrained_model_path: "./output/step1_best.pdparams" #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
+    pretrained_model_path: "./pretrained/step1_best.pdparams" #"./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
     n_layers_GT: 5
     hidden_mlp_dims: {
       "X": 256,
@@ -80,7 +80,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 256 # 256*2
+      batch_size: 1024
   val:
     dataset:
       __name__: CHnmrDataset
@@ -96,7 +96,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 1024
   test:
     dataset:
       __name__: CHnmrDataset
@@ -112,4 +112,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 512
+      batch_size: 1024

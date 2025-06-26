@@ -1,0 +1,110 @@
+Trainer:
+  epochs: 500
+  seed: 42
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  clip_grad: null
+  ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
+  pretrained_model_path: "/home/liuxuwei01/PaddleMaterial/output/step2_init_weight_large.pdparams" # "/home/liuxuwei01/PaddleMaterial/output/step2_best.pdparams" # set your pretrained model path here
+  Optimizer:
+    __name__: AdamW
+    beta1: 0.9
+    beta2: 0.999
+    lr: 0.001
+    weight_decay: 1e-12
+Tracker:
+  log:
+    log_freq: 1 # log frequency [step]
+  save:
+    output_dir: ./output/DeNMR_CHnmr/CLIP
+    save_freq: 100 # set 0 to disable saving during training
+    is_save_traj: False
+Model:
+  __name__: ContrastiveModel
+  graph_encoder:
+    pretrained_model_path: "./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams" #latest.pdparams
+    n_layers_GT: 5
+    hidden_mlp_dims: {
+      "X": 256,
+      "E": 128,
+      "y": 256,
+    }
+    hidden_dims: {
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
+      'dim_ffy': 256,
+    }
+  nmr_encoder:
+    pretrained_model_path: null
+    dim_enc_H: 1024
+    dimff_enc_H: 2048
+    dim_enc_C: 256
+    dimff_enc_C: 512
+    ffn_hidden: 512
+    n_head: 8
+    n_layers: 3
+    drop_prob: 0.0
+    seq_len_H1: 25
+    seq_len_C13: 75
+    peakwidthemb_num: 85
+    integralemb_num: 50
+  diffusion_model: # to be deleted
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    conditdim: 512
+Dataset:
+  train:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr_large/train.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
+      datadir: "./data/CHnmr"
+      cache: True
+      remove_h: True
+      data_flag: "large"
+      seq_len_H1: 25
+      seq_len_C13: 75
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 1024
+  val:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr_large/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "large"
+      seq_len_H1: 25
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 1024
+  test:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr_large/test.csv"
+      vocab_peakwidth_path: "./molecule_generation/stat_large/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/stat_large/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "large"
+      seq_len_H1: 25
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 1024

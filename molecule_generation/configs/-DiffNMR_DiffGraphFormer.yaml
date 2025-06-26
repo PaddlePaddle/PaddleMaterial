@@ -1,0 +1,165 @@
+Trainer:
+  epochs: 2000
+  seed: 42
+  start_eval_epoch: 1
+  eval_freq: 1 # set 0 to disable evaluation during training
+  clip_grad: null
+  ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
+  pretrained_model_path: #./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_2000.pdparams #./output/DeNMR_CHnmr/DiffGraphFormer/checkpoints/epoch_1300.pdparams #./output/init_lxw_step1.pdparams #./output/step1_best.pdparams # please set your pretrained model path here when run trainer.test
+  Optimizer:
+    __name__: AdamW
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 1e-12
+    amsgrad: True
+    epsilon: 1e-8
+    lr: 0.0002
+      # __name__: ReduceOnPlateau
+      # learning_rate: 0.0002
+      # factor: 0.6
+      # by_epoch: True
+      # patience: 30
+      # min_lr: 0.0001
+      # indicator: "train_loss"
+  vocab_dim: 256
+Sampler:
+  sample_every_val: 1000
+  visual_num: 10 # number of visualize molecules in the sample
+  chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
+  number_chain_steps: 10 # Number of frames in each gif
+  sample_batch_iters: 1 # Number of sample batches
+Tracker:
+  log:
+    log_freq: 100 # log frequency [step]
+    out_dict: # none is default, it output all loss and metrics, empty dict means no output
+      loss:
+        train: {"train_loss",}
+        eval: {"train_loss", "nll"}
+      metric:
+        train: {}
+        eval: {"val_nll"}
+        sample: {"Accuracy",}
+    flag_train_step: True # decidet output training batch iteration process or not
+    flag_eval_step: False
+    flag_sample_metric: True # decidet output tanimot similarity calculationg process or not
+  save:
+    output_dir: ./output/DeNMR_CHnmr/DiffGraphFormer
+    save_freq: 100 # set 0 to disable saving during training
+    is_save_traj: False
+Model:
+  __name__: MolecularGraphTransformer
+  encoder:
+    hidden_mlp_dims: {
+      'X': 256,
+      'E': 128,
+      'y': 256
+    }
+    hidden_dims: {
+      'dx': 256,  # The dimensions should satisfy dx % n_head == 0
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
+      'dim_ffy': 256
+    }
+    num_layers: 5
+  decoder:
+    hidden_mlp_dims: {
+      'X': 256,
+      'E': 128,
+      'y': 256
+    }
+    hidden_dims: {
+      'dx': 256,
+      'de': 64,
+      'dy': 256,
+      'n_head': 8,
+      'dim_ffX': 256,
+      'dim_ffE': 128,
+      'dim_ffy': 256
+    }
+    num_layers: 5
+  vocab_dim: 256
+  diffusion_model:
+    type: 'discrete_condition'
+    transition: 'marginal' # uniform or marginal
+    model: 'graph_tf'
+    diffusion_steps: 500
+    diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    lambda_train: [5, 0]
+    conditdim: 512
+  model_dtype: 'float32'
+  log_every_steps: 1 #500
+  seq_len_H1: 20
+  seq_len_C13: 75
+Dataset:
+  train:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/train.csv"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      datadir: "./data/CHnmr"
+      cache: True
+      remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __name__: DistributedBatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 1024
+  val:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 1024
+  sample:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/val.csv"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: False
+      drop_last: False
+      batch_size: 1024
+  test:
+    dataset:
+      __name__: CHnmrDataset
+      path: "./data/CHnmr/test.csv"
+      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
+      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
+      cache: True
+      remove_h: True
+      data_flag: "small" # "large"
+      seq_len_H1: 20
+      seq_len_C13: 75
+    sampler:
+      __name__: BatchSampler
+      shuffle: True
+      drop_last: False
+      batch_size: 1024
