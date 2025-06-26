@@ -268,7 +268,7 @@ class TrainerDiffGraphFormer:
                 start = time.time()
 
                 # eval sample epoch
-                metric_dict = self.sample_epoch(self.sample_dataloader, epoch_id)
+                metric_dict = self.sample_epoch(self.val_dataloader, epoch_id)
 
                 # log eval sample metric info
                 msg = f"Sample: Epoch [{epoch_id}/{self.epochs}] "
@@ -489,9 +489,9 @@ class TrainerDiffGraphFormer:
             reader_tic = time.perf_counter()
 
         # epoch-average
-        total_loss_avg = {k: sum(v) / len(v) for k, v in loss_sum.items()}
+        loss_avg = {k: v / total_samples for k, v in loss_sum.items()}
 
-        return total_loss_avg
+        return loss_avg
 
     @paddle.no_grad()
     def eval_epoch(self, dataloader, epoch_id: int):

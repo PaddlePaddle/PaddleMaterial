@@ -5,7 +5,7 @@ Trainer:
   eval_freq: 1 # set 0 to disable evaluation during training
   clip_grad: null
   ema_decay: 0      # 'Amount of EMA decay, 0 means off. A reasonable value  is 0.999.'
-  pretrained_model_path: "./pretrained/step4_noprior_best_v1.pdparams" # "./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/v5/checkpoints/epoch_1700.pdparams" #"./output/step4_noprior_best_v1.pdparams" #null # set your pretrained model path here
+  pretrained_model_path: "./pretrained/step4_noprior_best_v1.pdparams" # set your pretrained model path here
   Optimizer:
     __name__: AdamW
     beta1: 0.9
@@ -19,7 +19,7 @@ Trainer:
   flag_keep_onehot: True
   num_candidate: 20 # TODO：must >= 10
 Sampler:
-  sample_every_val: 2000
+  sample_every_val: 500
   visual_num: 10 # number of visualize molecules in the sample
   chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
@@ -75,7 +75,7 @@ Tracker:
     flag_train_step: True # decidet output training batch iteration process or not
     flag_eval_step: False
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/new/
+    output_dir: ./output/DiffNMR/MultiModalDecoder/test_retrival/
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
@@ -150,7 +150,7 @@ Dataset:
       __name__: DistributedBatchSampler
       shuffle: True
       drop_last: False
-      batch_size: 128 # 128*4
+      batch_size: 1024
   val:
     dataset:
       __name__: CHnmrDataset
@@ -166,23 +166,7 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
-  sample:
-    dataset:
-      __name__: CHnmrDataset
-      path: "./data/CHnmr/val.csv"
-      vocab_peakwidth_path: "./molecule_generation/H1_statistic/delta_distribution.csv"
-      vocab_split_path: "./molecule_generation/H1_statistic/split_type_distribution.csv"
-      cache: True
-      remove_h: True
-      data_flag: "small" # "large"
-      seq_len_H1: 20
-      seq_len_C13: 75
-    sampler:
-      __name__: BatchSampler
-      shuffle: False
-      drop_last: False
-      batch_size: 512
+      batch_size: 1024
   test:
     dataset:
       __name__: CHnmrDataset
