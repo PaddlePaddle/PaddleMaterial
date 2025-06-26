@@ -2,6 +2,7 @@ import os
 from typing import List, Union, Any, Dict, Optional
 from pathlib import Path
 import pandas as pd
+import copy
 
 import paddle
 import paddle.nn.functional as F
@@ -13,6 +14,7 @@ from rdkit.Chem import RDKFingerprint
 from ppmat.datasets.ext_rdkit import compute_molecular_metrics
 from ppmat.models.denmr.utils import model_utils as m_utils
 from ppmat.utils import logger
+from ppmat.models.denmr.utils import diffgraphformer_utils as utils
 
 
 class Metric(paddle.metric.Metric):
@@ -181,6 +183,7 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         # save external handles
         self.di = di = dataset_infos
         if clip:
+            self.clip = clip
             self.nmrVec = clip.text_encoder
             self.molVec = clip.graph_encoder
         self.num_candidate = num_candidate
@@ -222,11 +225,9 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         self,
         samples: Dict[str, Any],
         current_epoch: int,
-        val_counter: int,
         local_rank: int,
         output_dir: str,
         flag_test=False,
-        flag_sample_metric=True,
         log_each_molecule: bool = False,
     ) -> Dict[str, Any]:
         """Aggregate **all** evaluation metrics into a single dict.
@@ -328,7 +329,7 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         if flag_test and local_rank == 0:
             file = Path(output_dir) / "graphs" / f"final_smiles_e_{current_epoch}.txt"
             file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_text("\n".join(all_smiles))
+            file.write_text("\n".join(s if s is not None else "" for s in all_smiles))
 
         return to_log
 
@@ -360,30 +361,66 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
         atom_counts = samples["node_mask_meta"]
         true_list   = samples["true"]
         B, C        = len(true_list), len(cand_lists)
+        if isinstance(cand_X, list):
+            cand_X = [paddle.to_tensor(x) for x in cand_X]
+            cand_X = paddle.stack(cand_X, axis=0)    # -> [C, B, n_max, d_x]
+            cand_E = [paddle.to_tensor(x) for x in cand_E]
+            cand_E = paddle.stack(cand_E, axis=0)    # -> [C, B, n_max, n_max, d_e]
 
-        # 1) Build node mask ------------------------------------------------
-        n_max = int(paddle.max(atom_counts).item())
+        # 1) Build node mask
+        n_max = int(paddle.max(paddle.stack(atom_counts)).item())
         arange = paddle.arange(n_max, dtype="int64")
-        node_mask = arange.unsqueeze(0).expand([B, n_max]) < atom_counts.unsqueeze(1)
+        node_mask = arange.unsqueeze(0).expand([B, n_max]) < paddle.stack(atom_counts).unsqueeze(1)
 
-        # 2) Embeddings -----------------------------------------------------
+        # 2) Embeddings 
         with paddle.no_grad():
+            # A. compute NMR embedding vector once 
             nmr_emb = self.nmrVec(cond_y)                     # [B, d]
-            mol_embs = paddle.stack([
-                self.molVec(node_mask, x_hot, e_hot) for x_hot, e_hot in zip(cand_X, cand_E)
-            ], axis=0)                                        # [C, B, d]
+            
+            # B. merge candidate dimension C into batch dimension
+            X_flat = cand_X.reshape([C * B, *cand_X.shape[2:]])   # [C·B, n_max, d_x]
+            E_flat = cand_E.reshape([C * B, *cand_E.shape[2:]])   # [C·B, n_max, n_max, d_e]
+            node_mask_flat = node_mask.tile([C, 1])               # [C·B, n_max] – repeat mask per candidate
+            
+            # C zerolength y-placeholder requiered by graph encoder
+            y_flat = paddle.zeros([C * B, 0], dtype=X_flat.dtype) # [C·B, 0]
 
-        # 3) Cosine similarity --------------------------------------------
+            # D. remove padding (PlaceHolder.mask) -> z_t.{X,E,y}
+            z_t = (
+                utils.PlaceHolder(X=X_flat, E=E_flat, y=y_flat)
+                    .type_as(X_flat)            # match dtype
+                    .mask(node_mask_flat)       # drop padded rows/cols
+            )
+            
+            # E. compute extra features for all C*B graphs
+            extra = m_utils.compute_extra_data(
+                self.clip,
+                {"X_t": z_t.X, "E_t": z_t.E, "y_t": z_t.y, "node_mask": node_mask_flat},
+                isPure=True,                                # flag preserved from legacy
+            )
+            
+            # F. prepare the input data by concatenating extra features
+            X_in = paddle.concat([z_t.X.astype("float32"), extra.X], axis=2)         # [C·B, n_max, d_x']
+            E_in = paddle.concat([z_t.E.astype("float32"), extra.E], axis=3)         # [C·B, n_max, n_max, d_e']
+            y_in = paddle.concat([z_t.y.astype("float32"), extra.y], axis=1)         # [C·B, d_y']
+
+            # G. compute graph embeddings vector once
+            mol_flat: paddle.Tensor = self.molVec(X_in, E_in, y_in, node_mask_flat)   # [C·B, d_embed]
+
+            # H.  Reshape back  →  [C, B, d_embed]  for later cosine-similarity
+            mol_embs = mol_flat.reshape([C, B, -1])                                  # final shape
+
+        # 3) Cosine similarity 
         sims = F.cosine_similarity(
             nmr_emb.unsqueeze(0).expand([C, -1, -1]), mol_embs, axis=-1)  # [C,B]
         max_idx   = paddle.argmax(sims, axis=0)             # top‑1 index per GT
-        top5_idx  = paddle.topk(sims, k=5,  axis=0).indices  # [5,B]
-        top10_idx = paddle.topk(sims, k=10, axis=0).indices  # [10,B]
+        top5_idx  = paddle.topk(sims, k=5,  axis=0)[1]  # [5,B]
+        top10_idx = paddle.topk(sims, k=10, axis=0)[1]  # [10,B]
 
         hit1 = hit5 = hit10 = 0
         csv_records: List[Dict[str, str]] = []
 
-        # 4) Loop over ground‑truth molecules ------------------------------
+        # 4) Loop over ground‑truth molecules 
         for i in range(B):
             m_true = m_utils.mol_from_graphs(self.atom_decoder, *true_list[i])
             s_true = Chem.MolToSmiles(m_true, True)
@@ -396,12 +433,14 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
                 hit1 += 1
 
             # ---- top‑5 / top‑10 ----
-            for sel in top5_idx[:, i].astype("int64").tolist():
-                if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
-                    hit5 += 1; break
-            for sel in top10_idx[:, i].astype("int64").tolist():
-                if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
-                    hit10 += 1; break
+            if C >= 5:
+                for sel in top5_idx[:, i].astype("int64").tolist():
+                    if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
+                        hit5 += 1; break
+            if C >= 10:
+                for sel in top10_idx[:, i].astype("int64").tolist():
+                    if Chem.MolToSmiles(m_utils.mol_from_graphs(self.atom_decoder, *cand_lists[sel][i]), True) == s_true:
+                        hit10 += 1; break
 
             # ---- fingerprint similarity (top‑1 vs GT) ----
             try:
@@ -412,16 +451,20 @@ class SamplingMolecularMetrics(paddle.nn.Layer):
             if verbose:
                 print(f"[GT {i+1}/{B}] top1={'OK' if s_pred==s_true else 'NO'} sim={sim:.3f}")
 
-        # 5) Dump CSV -------------------------------------------------------
+        # 5) Dump CSV
         if local_rank == 0:
             csv_path = Path(output_dir) / f"similarity_results_e{epoch}.csv"
             pd.DataFrame(csv_records).to_csv(csv_path, index=False)
 
-        return {
-            "retrieval_top1":  hit1  / B,
-            "retrieval_top5":  hit5  / B,
-            "retrieval_top10": hit10 / B,
-        }
+        # 6) Prepare metrics
+        ks      = (1, 5, 10)          # k-values we care about
+        hits    = (hit1, hit5, hit10) # corresponding correct-hit counters
+
+        metrics = {f"retrieval_top{k}": h / B
+                for k, h in zip(ks, hits)
+                if C >= k}          # keep entry only when C ≥ k
+
+        return metrics
 
     def reset(self):
         """Clear all running statistics (called at epoch boundaries)."""
@@ -457,6 +500,9 @@ class GeneratedNDistribution(Metric):
 
     def accumulate(self):
         return self.n_dist / paddle.sum(x=self.n_dist)
+    
+    def __getitem__(self, idx):
+        return self.n_dist[idx]
 
 
 class GeneratedNodesDistribution(Metric):
@@ -487,6 +533,9 @@ class GeneratedNodesDistribution(Metric):
     def __call__(self, molecules):
         self.update(molecules)
         return self.accumulate()
+    
+    def __getitem__(self, idx):
+        return self.node_dist[idx]
 
 
 class GeneratedEdgesDistribution(Metric):
@@ -518,6 +567,9 @@ class GeneratedEdgesDistribution(Metric):
         self.reset()
         self.update(molecules)
         return self.accumulate()
+    
+    def __getitem__(self, idx):
+        return self.edge_dist[idx]
 
 
 class MeanNumberEdge(Metric):
@@ -572,6 +624,9 @@ class ValencyDistribution(Metric):
         self.reset()
         self.update(molecules)
         return self.accumulate()
+    
+    def __getitem__(self, idx):
+        return self.edgepernode_dist[idx]
 
 
 class HistogramsMAE(MeanAbsoluteError):

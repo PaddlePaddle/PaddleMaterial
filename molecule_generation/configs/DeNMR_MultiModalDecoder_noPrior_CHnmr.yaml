@@ -15,13 +15,16 @@ Trainer:
     epsilon: 1e-8
     amsgrad: True
   vocab_dim: 256
+  flag_use_formula: False
+  flag_keep_onehot: True
+  num_candidate: 20 # TODO：must >= 10
 Sampler:
   sample_every_val: 2000
   visual_num: 10 # number of visualize molecules in the sample
   chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
   sample_batch_iters: 1 # Number of sample batches
-  enable_CLIP: false
+  enable_CLIP: true
   CLIP:
     __name__: ContrastiveModel
     nmr_encoder:
@@ -68,12 +71,11 @@ Tracker:
       metric:
         train: {}
         eval: {"val_nll"}
-        sample: {"Accuracy",}
+        # sample: {"Accuracy",}
     flag_train_step: True # decidet output training batch iteration process or not
     flag_eval_step: False
-    flag_sample_metric: True # decidet output tanimot similarity calculationg process or not
   save:
-    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/last/
+    output_dir: ./output/DeNMR_CHnmr/MultiModalDecoder_noPrior/new/
     save_freq: 100 # set 0 to disable saving during training
     is_save_traj: False
 Model:
@@ -196,4 +198,4 @@ Dataset:
       __name__: BatchSampler
       shuffle: False
       drop_last: False
-      batch_size: 512
+      batch_size: 1024

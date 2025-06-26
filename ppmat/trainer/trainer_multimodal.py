@@ -16,6 +16,7 @@ import time
 from collections import defaultdict
 from typing import Callable, Dict, Union
 from typing import Optional
+import numpy as np
 
 import paddle
 import paddle.distributed as dist
@@ -114,7 +115,6 @@ class TrainerDiffGraphFormer:
         )
         self.flag_train_step = config["Tracker"]["log"]["flag_train_step"]
         self.flag_eval_step = config["Tracker"]["log"]["flag_eval_step"]
-        self.flag_sample_metric = config["Tracker"]["log"]["flag_sample_metric"]
 
         self.iters_per_epoch = len(self.train_dataloader)
 
@@ -373,7 +373,7 @@ class TrainerDiffGraphFormer:
             for k, v in metric_dict.items():
                 if isinstance(v, paddle.Tensor):
                     v = v.item() if v.numel() == 1 else v.tolist()
-                if k in self.metric_dict_sample or self.metric_dict_sample is None:
+                if self.metric_dict_sample is None or k in self.metric_dict_sample:
                     msg += (
                         f" | {k}(metric): {', '.join(f'{x:.5f}' for x in v)}"
                         if isinstance(v, (list, tuple))
@@ -382,39 +382,58 @@ class TrainerDiffGraphFormer:
             logger.info(msg)
 
     def train_epoch(self, dataloader, epoch_id: int):
-        """Train program for one epoch.
+        """Train one epoch (sample-weighted averaging).
 
         Args:
             epoch_id (int): Epoch id.
+        Returns
+        -------
+        dict
+            {loss_name: epoch_average}
         """
-        reader_cost = 0.0
-        batch_cost = 0.0
-        reader_tic = time.perf_counter()
-        batch_tic = time.perf_counter()
+        reader_tic = batch_tic = time.perf_counter()
+
         self.model.train()
-        total_loss = defaultdict(list)
+
+        # accumlators
+        loss_sum = defaultdict(float)    # Σ (batch_mean × batch_size)
+        total_samples = 0   # Σ batch_size
 
         data_length = len(dataloader)
+
+        # ---------------------------------------------------
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="train")
 
             loss = loss_dict["train_loss"]
             loss.backward()
+
             if self.scale_grad:
                 scale_shared_grads(self.model)
 
             self.optimizer.step()
             self.optimizer.clear_grad()
 
-            for key, value in loss_dict.items():
-                if isinstance(value, paddle.Tensor):
-                    value = value.item()
-                total_loss[key].append(value)
+            # sample-weightd accumulate
+            batch_graph, _ = batch_data
+            bs = batch_graph.num_graph
+            if isinstance(bs, paddle.Tensor):        # 0-dim Tensor → int
+                bs = int(bs.item())
+            elif isinstance(bs, (list, tuple)):      # list → get length
+                bs = len(bs)
+            else:                                    # already int
+                bs = int(bs)
 
+            for k, v in loss_dict.items():
+                v = v.item() if isinstance(v, paddle.Tensor) else float(v)
+                loss_sum[k] += v * bs
+
+            total_samples += bs
+
+            # distributed grad all-reduce
             if self.world_size > 1:
                 fleet.utils.hybrid_parallel_util.fused_allreduce_gradients(
                     list(self.model.parameters()), None
@@ -436,84 +455,92 @@ class TrainerDiffGraphFormer:
                 else:
                     self.lr_scheduler.step()
 
-            batch_cost = time.perf_counter() - batch_tic
-
             # update and log training information
+            batch_cost = time.perf_counter() - batch_tic
             self.global_step += 1
+
             if (
                 paddle.distributed.get_rank() == 0
                 and (iter_id % self.log_freq == 0 or iter_id == data_length - 1)
                 and self.flag_train_step is True
             ):
-                lr = self.optimizer._learning_rate
-                if isinstance(lr, float):
-                    lr = lr
-                else:
-                    lr = lr()
+                lr_val = self.optimizer._learning_rate
+                lr_val = lr_val() if callable(lr_val) else lr_val
                 msg = f"Train: Epoch [{epoch_id}/{self.epochs}]"
                 msg += f" | Step: [{iter_id+1}/{data_length}]"
-                msg += f" | lr: {lr:.6f}".rstrip("0")
+                msg += f" | lr: {lr_val:.6f}".rstrip("0")
                 msg += f" | reader cost: {reader_cost:.5f}s"
                 msg += f" | batch cost: {batch_cost:.5f}s"
+
                 for k, v in loss_dict.items():
-                    if isinstance(v, paddle.Tensor):
-                        v = v.item()
-                    if k in self.loss_dict_train or self.loss_dict_train is None:
-                        msg += (
-                            f" | {k}: {v:.5f}"
-                            if k == "loss"
-                            else f" | {k}(loss): {v:.5f}"
-                        )
+                    v = v.item() if isinstance(v, paddle.Tensor) else v
+                    if self.loss_dict_train is None or k in self.loss_dict_train:
+                        tag = k if k == "loss" else f"{k}(loss)"
+                        msg += f" | {tag}: {v:.5f}"
                 for k, v in metric_dict.items():
-                    if isinstance(v, paddle.Tensor):
-                        v = v.item()
-                    if k in self.metric_dict_train or self.metric_dict_train is None:
-                        msg += (
-                            f" | {k}: {v:.5f}"
-                            if k == "metric"
-                            else f" | {k}(metric): {v:.5f}"
-                        )
+                    v = v.item() if isinstance(v, paddle.Tensor) else v
+                    if self.metric_dict_train is None or k in self.metric_dict_train:
+                        tag = k if k == "metric" else f"{k}(metric)"
+                        msg += f" | {tag}: {v:.5f}"
+
                 logger.info(msg)
 
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
 
-        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
+        # epoch-average
+        total_loss_avg = {k: sum(v) / len(v) for k, v in loss_sum.items()}
 
         return total_loss_avg
 
     @paddle.no_grad()
     def eval_epoch(self, dataloader, epoch_id: int):
-        """Eval program for one epoch.
+        """Run one validation/test epoch and return averaged metrics.
 
-        Args:
-            epoch_id (int): Epoch id.
+        The averaging is **sample-weighted**, so the final result is correct
+        even when the last mini-batch is smaller than others.
         """
-        reader_cost = 0.0
-        batch_cost = 0.0
-        reader_tic = time.perf_counter()
-        batch_tic = time.perf_counter()
+
+        reader_tic = batch_tic = time.perf_counter()
+
         self.model.eval()
-        total_loss = defaultdict(list)
-        total_metric = defaultdict(list)
+    
+        # Accumulators (sum over all samples, not over batches)
+        loss_sum = defaultdict(float)
+        metric_sum = defaultdict(float)
+        total_samples = 0 # record total samples processed
 
         data_length = len(dataloader)
+
         for iter_id, batch_data in enumerate(dataloader):
-            # if iter_id == 1:  # TODO: for debug
-            #     break
+
             reader_cost = time.perf_counter() - reader_tic
 
             loss_dict, metric_dict = self.model(batch_data, mode="eval")
 
-            for key, value in loss_dict.items():
-                if isinstance(value, paddle.Tensor):
-                    value = value.item()
-                total_loss[key].append(value)
-            for key, value in metric_dict.items():
-                if isinstance(value, paddle.Tensor):
-                    value = value.item()
-                total_metric[key].append(value)
+            batch_graph, _ = batch_data
+            bs = batch_graph.num_graph
+            if isinstance(bs, paddle.Tensor):        # 0-dim Tensor → int
+                bs = int(bs.item())
+            elif isinstance(bs, (list, tuple)):      # list → get length
+                bs = len(bs)
+            else:                                    # already int
+                bs = int(bs)
 
+            # sample-weighted accumulate
+            for k, v in loss_dict.items():
+                if isinstance(v, paddle.Tensor):
+                    v = v.item()
+                    loss_sum[k] += v * bs
+
+            for k, v in metric_dict.items():
+                if isinstance(v, paddle.Tensor):
+                    v = v.item()
+                metric_sum[k] += v * bs
+            
+            total_samples += bs
+
+            # ----------------------------------------------------------
             batch_cost = time.perf_counter() - batch_tic
             if (
                 paddle.distributed.get_rank() == 0
@@ -524,6 +551,8 @@ class TrainerDiffGraphFormer:
                 msg += f" | Step: [{iter_id+1}/{data_length}]"
                 msg += f" | reader cost: {reader_cost:.5f}s"
                 msg += f" | batch cost: {batch_cost:.5f}s"
+                
+                # print desired loss and metric
                 for k, v in loss_dict.items():
                     if isinstance(v, paddle.Tensor):
                         v = v.item()
@@ -538,10 +567,10 @@ class TrainerDiffGraphFormer:
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
 
-        total_loss_avg = {k: sum(v) / len(v) for k, v in total_loss.items()}
-        total_metric_avg = {k: sum(v) / len(v) for k, v in total_metric.items()}
+        loss_avg = {k: v / total_samples for k, v in loss_sum.items()}
+        metric_avg = {k: v / total_samples for k, v in metric_sum.items()}
 
-        return total_loss_avg, total_metric_avg
+        return loss_avg, metric_avg
 
     @paddle.no_grad()
     def sample_epoch(
@@ -620,6 +649,8 @@ class TrainerDiffGraphFormer:
             "pred"  : [],   # first candidate of each ground‑truth
             "true"  : [],   # ground‑truth graphs
             "n_all" : 0,    # total number of GT molecules processed
+            "node_mask_meta": [], # node mask metadata for each batch
+            "batch_condition": [ None for _ in range(4) ], # 4‑branch NMR condition
             "dict"  : (
                 self.model._layers if isinstance(self.model, paddle.DataParallel)
                 else self.model
@@ -671,13 +702,14 @@ class TrainerDiffGraphFormer:
                     number_chain_steps=self.number_chain_steps,
                     return_onehot=keep_onehot,
                     flag_useformula=self.flag_use_formula,
+                    iter_idx = c_idx,
                 )
                 
                 if keep_onehot:
                     mol_pred, mol_true, X_hot, E_hot= res
                     samples["candidates"  ][c_idx].extend(mol_pred)
-                    samples["candidates_X"][c_idx].append(X_hot)
-                    samples["candidates_E"][c_idx].append(E_hot)
+                    samples["candidates_X"][c_idx].extend(X_hot)
+                    samples["candidates_E"][c_idx].extend(E_hot)
                 else:
                     mol_pred, mol_true = res  # only discrete tensors
 
@@ -687,18 +719,18 @@ class TrainerDiffGraphFormer:
                     samples["true"].extend(mol_true)
                 # samples["n_all"] += len(batch_y) # TODO right?
 
-            # 2.d concat one‑hot across mini‑batches so shape matches `n_all` ----
-            if keep_onehot:
-                for c_idx in range(num_candidate):
-                    samples["candidates_X"][c_idx] = paddle.concat(samples["candidates_X"][c_idx], axis=0)
-                    samples["candidates_E"][c_idx] = paddle.concat(samples["candidates_E"][c_idx], axis=0)
+            # 2‑d) meta‑info used by retrieval metrics
+            for i, t in enumerate(batch_nmr):
+                if samples["batch_condition"][i] is None:
+                    samples["batch_condition"][i] = paddle.to_tensor(t)
+                else:
+                    samples["batch_condition"][i] = paddle.concat(
+                        [samples["batch_condition"][i], paddle.to_tensor(t)], axis=0
+                    )
+            samples["node_mask_meta"].extend(batch_atomCount)
+            samples["n_all"] += bs
 
-            # 2‑e) meta‑info used by retrieval metrics
-            samples["batch_condition"] = [t.detach() for t in batch_nmr]
-            samples["node_mask_meta"]  = batch_atomCount
-            samples["n_all"]          += bs # TODO right?
-
-            # 2‑f) Early‑stop check
+            # 2‑e) Early‑stop check
             # We exit the loop once the number of processed mini‑batches reaches
             # `max_iters`, unless the caller has explicitly set `flag_sample=True`
             # to force a full‑dataset sweep.
@@ -714,11 +746,9 @@ class TrainerDiffGraphFormer:
         metric_dict = metric_layer(
             samples,
             current_epoch = epoch_id,
-            val_counter = -1, # no validation counter in sampling TODO: check it
             local_rank = self.rank,
             output_dir = self.output_dir,
-            test = True, # enable file saving
-            flag_sample_metric = self.flag_sample_metric, # TODO
+            flag_test = True, # enable file saving
         )
         return metric_dict
 

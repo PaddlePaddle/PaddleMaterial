@@ -157,7 +157,6 @@ def compute_val_loss(
     prob0 = reconstruction_logp(model, t, X, E, node_mask, condition)
     loss_term_0_x = X * paddle.log(prob0.X + 1e-10)  # avoid log(0)
     loss_term_0_e = E * paddle.log(prob0.E + 1e-10)
-
     # sum val_X_logp and val_E_logp
     loss_term_0 = model.val_X_logp(loss_term_0_x) + model.val_E_logp(loss_term_0_e)
 
@@ -360,6 +359,7 @@ def sample_batch(
     batch_X: paddle.Tensor,
     batch_E: paddle.Tensor,
     batch_y: paddle.Tensor,
+    iter_idx: int,
     num_nodes: Union[int, paddle.Tensor] = None,
     flag_useformula: bool = False,
     return_onehot: bool = False,
@@ -391,6 +391,8 @@ def sample_batch(
         as *oracle formula* when ``flag_useformula`` is True).
     batch_y : paddle.Tensor
         Additional labels (if any) required by the model.
+    iter_idx : int
+        Current iteration index for obtain candidates for retrival.
     num_nodes : int | paddle.Tensor | None
         Number of nodes per graph. When *None* the model samples from its own
         learned distribution.
@@ -443,7 +445,7 @@ def sample_batch(
     # 3. Main reverse‑diffusion loop: t = T → 1 (s = t‑1)
     for s_int in tqdm(
         range(model.T - 1, -1, -1),
-        desc=f"Batch {batch_id} sampling {model.T}→0",
+        desc=f"Batch {batch_id} RepeatIter {iter_idx} sampling {model.T}→0",
         unit="step",
     ):
         s_arr = paddle.full([batch_size, 1], float(s_int))
@@ -490,11 +492,14 @@ def sample_batch(
     if return_onehot:
         # Call mask *without* collapse on the ORIGINAL `sampled_s`, which still
         # contains one‑hot embeddings; shape stays [B, n_max, feat]
-        X_hot, E_hot, _ = sampled_s.mask(node_mask).X, sampled_s.mask(node_mask).E, _
+        X_hot = sampled_s.mask(node_mask).X.numpy()
+        E_hot = sampled_s.mask(node_mask).E.numpy()
         if flag_useformula:
             # When formula guidance is enabled, the node one‑hot should exactly
             # match the provided ground‑truth.
-            X_hot = batch_X
+            X_hot = batch_X.numpy()
+        X_hot = [X_hot[i] for i in range(X_hot.shape[0])]
+        E_hot = [E_hot[i] for i in range(E_hot.shape[0])]
     else:
         X_hot = E_hot = None
 
@@ -519,8 +524,8 @@ def sample_batch(
         # 6.a Prepare the chain for visualization and saving
         if keep_chain > 0:
             # pick the last frame of the chain add the top index of chain_X/E(index 0)
-            final_X_chain = X_t[:keep_chain]
-            final_E_chain = E_t[:keep_chain]
+            final_X_chain = X_idx[:keep_chain]
+            final_E_chain = E_idx[:keep_chain]
             chain_X[0] = final_X_chain  # Overwrite last frame with the resulting X, E
             chain_E[0] = final_E_chain
 
