@@ -46,6 +46,7 @@ def main(
     record_trajectories: bool = True,
     diffusion_guidance_factor: (float | None) = None,
     strict_checkpoint_loading: bool = True,
+    num_atoms_distribution: str = "ALEX_MP_20",
 ):
     """
     Evaluate diffusion model against molecular metrics.
@@ -106,6 +107,7 @@ def main(
         sampling_config_path=_sampling_config_path,
         sampling_config_overrides=sampling_config_overrides,
         record_trajectories=record_trajectories,
+        num_atoms_distribution=num_atoms_distribution,
         diffusion_guidance_factor=diffusion_guidance_factor
         if diffusion_guidance_factor is not None
         else 0.0,
