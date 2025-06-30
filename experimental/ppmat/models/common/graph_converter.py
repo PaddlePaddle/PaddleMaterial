@@ -232,6 +232,9 @@ class CrystalNN:
         self.pbc = np.array(pbc, dtype=int)
         self.num_cpus = num_cpus
         self.eps = eps
+        self.CrystalNN = local_env.CrystalNN(
+                distance_cutoffs=None, x_diff_weight=-1, porous_adjustment=False
+            )
 
     def __call__(self, structure: Structure):
         if isinstance(structure, Structure):
