@@ -23,8 +23,10 @@ from ppmat.models.chgnet.chgnet import CHGNet
 from ppmat.models.chgnet.chgnet_graph_converter import CHGNetGraphConverter
 from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
+from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.megnet.megnet import MEGNetPlus
@@ -40,10 +42,11 @@ __all__ = [
     "MEGNetPlus",
     "MatterGen",
     "MatterGenWithCondition",
+    "DimeNetPlusPlus",
+    "CrystalNN",
     "CHGNetGraphConverter",
     "CHGNet",
 ]
-
 
 MODEL_REGISTRY = {
     "comformer_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2018_train_60k_e_form.zip",
@@ -66,6 +69,10 @@ MODEL_REGISTRY = {
     "mattergen_alex_mp20_chemical_system_energy_above_hull": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.zip",
     "mattergen_alex_mp20_dft_mag_density_hhi_score": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.zip",
     "chgnet_mptrj": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip",
+    "dimenetpp_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_e_form.zip",
+    "dimenetpp_mp2018_train_60k_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_band_gap.zip",
+    "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
+    "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_G.zipp",
 }
 
 

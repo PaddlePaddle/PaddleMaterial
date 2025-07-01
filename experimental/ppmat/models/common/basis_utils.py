@@ -147,8 +147,11 @@ def associated_legendre_polynomials(
             zero_m_only is True else L^2 many).
     """
     z = sym.symbols("z")
-    P_l_m = [([0] * (2 * l_degree + 1)) for l_degree in range(L_maxdegree)]
-    P_l_m[0][0] = 1
+    P_l_m = [
+        [sym.Integer(0) for _ in range(2 * l_degree + 1)]
+        for l_degree in range(L_maxdegree)
+    ]
+    P_l_m[0][0] = sym.Integer(1)
     if L_maxdegree > 0:
         if zero_m_only:
             P_l_m[1][0] = z
