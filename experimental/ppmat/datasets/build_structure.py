@@ -40,6 +40,8 @@ class BuildStructure:
             unit cell. Defaults to False.
         niggli (bool, optional): Whether to reduce the lattice using Niggli's
             algorithm. Defaults to True.
+        canocial (bool, optional): Whether to constrcut a canonical Structure. Defaults
+            to True.
         num_cpus (Optional[int], optional): Number of CPUs to use for parallel
             processing. Defaults to None.
     """
@@ -49,16 +51,18 @@ class BuildStructure:
         format: Literal["cif_str", "array", "cif_file", "dict", "cif_str_by_CifParser", "jarvis"],
         primitive: bool = False,
         niggli: bool = True,
+        canocial: bool = True,
         num_cpus: Optional[int] = None,
     ):
 
         self.format = format
         self.niggli = niggli
         self.primitive = primitive
+        self.canocial = canocial
         self.num_cpus = num_cpus if num_cpus is not None else 1
 
     @staticmethod
-    def build_one(crystal_data, format, primitive=False, niggli=True):
+    def build_one(crystal_data, format, primitive=False, niggli=True, canocial=True):
         if format == "cif_str":
             crystal = Structure.from_str(crystal_data, fmt="cif")
         elif format == "array":
@@ -103,13 +107,13 @@ class BuildStructure:
             crystal = crystal.get_primitive_structure()
         if niggli:
             crystal = crystal.get_reduced_structure()
-        # canonical_crystal = crystal
-        # canonical_crystal = Structure(
-        #     lattice=Lattice.from_parameters(*crystal.lattice.parameters),
-        #     species=crystal.species,
-        #     coords=crystal.frac_coords,
-        #     coords_are_cartesian=False,
-        # )
+        if canocial:
+            crystal = Structure(
+                lattice=Lattice.from_parameters(*crystal.lattice.parameters),
+                species=crystal.species,
+                coords=crystal.frac_coords,
+                coords_are_cartesian=False,
+            )
         return crystal
 
     def __call__(self, crystals_data):
@@ -120,6 +124,7 @@ class BuildStructure:
                 [self.format] * len(crystals_data),
                 [self.primitive] * len(crystals_data),
                 [self.niggli] * len(crystals_data),
+                [self.canocial] * len(crystals_data),
                 num_cpus=self.num_cpus,
             )
             return canonical_crystal
@@ -129,5 +134,6 @@ class BuildStructure:
                 self.format,
                 self.primitive,
                 self.niggli,
+                self.canocial,
                 num_cpus=self.num_cpus,
             )

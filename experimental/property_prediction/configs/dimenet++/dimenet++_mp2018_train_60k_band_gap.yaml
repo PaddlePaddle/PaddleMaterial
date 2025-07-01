@@ -10,18 +10,17 @@ Global:
   do_test: False
 
   graph_converter:
-    __class_name__: ComformerGraphConverter
+    __class_name__: CrystalNN
     __init_params__:
-        cutoff: 4.0
         num_cpus: 10
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 2000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/comformer_mp2018_train_60k_band_gap
+  output_dir: ./output/dimenetpp_mp2018_train_60k_band_gap
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -68,25 +67,36 @@ Trainer:
   use_tensorboard: False
 
 Model:
-  __class_name__: iComformer
+  __class_name__: DimeNetPlusPlus
   __init_params__:
-    conv_layers: 4
-    edge_layers: 1
-    atom_input_features: 92
-    edge_features: 256
-    triplet_input_features: 256
-    node_features: 256
-    fc_features: 256
-    output_features: 1
-    node_layer_head: 1
-    edge_layer_head: 1
-    property_name: ${Global.label_names}
-    data_mean: 1.3462
-    data_std: 1.6214
+    # layer parameters
+    out_channels: 1
+    hidden_channels: 128
+    num_blocks: 4
+    int_emb_size: 64
+    basis_emb_size: 8
+    out_emb_channels: 256
+    num_spherical: 7
+    num_embeddings: 95
+    num_radial: 6
+    otf_graph: false
+    cutoff: 7.0
+    max_num_neighbors: 20
+    envelope_exponent: 5
+    num_before_skip: 1
+    num_after_skip: 2
+    num_output_layers: 3
+    readout: mean
+    # predict value name
+    property_names: ${Global.label_names}
+    # data preprocess parameters
+    data_norm_mean: 1.3462
+    data_norm_std: 1.6214
+    # loss
     loss_type: 'l1_loss'
 
 Metric:
-  formation_energy_per_atom:
+  band_gap:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 
@@ -94,11 +104,10 @@ Optimizer:
   __class_name__: Adam
   __init_params__:
     lr:
-      __class_name__: Linear
+      __class_name__: Cosine
       __init_params__:
-        learning_rate: 0.0005
-        end_lr: 1.0e-05
-        by_epoch: false
+        learning_rate: 0.001
+        by_epoch: True
 
 Dataset:
   train:
@@ -118,7 +127,7 @@ Dataset:
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+        batch_size: 32 # 32 for 4 GPUs, total batch size = 32 * 4 = 128
   val:
     dataset:
       __class_name__: MP2018Dataset
@@ -129,13 +138,12 @@ Dataset:
           format: cif_str
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 32
+        batch_size: 128
   test:
     dataset:
       __class_name__: MP2018Dataset
@@ -146,13 +154,12 @@ Dataset:
           format: cif_str
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 64
+        batch_size: 128
 
 
 Predict:
