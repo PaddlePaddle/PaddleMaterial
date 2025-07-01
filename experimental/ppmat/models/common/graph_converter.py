@@ -118,12 +118,12 @@ class FindPointsInSpheres:
             else:
                 break
         if len(edge_indices) == 0:
-            raise RuntimeError(
-                f"No edges found within cutoff {cutoff:.5f}. Please increase the "
-                "cutoff."
+            logger.warning(
+                f"No edges found within cutoff {cutoff:.5f}. Set graph is None."
             )
-
-        graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
+            graph = None
+        else:
+            graph = self.build_pgl_graph(structure, edge_indices, to_jimages)
         return graph
 
     def build_pgl_graph(
