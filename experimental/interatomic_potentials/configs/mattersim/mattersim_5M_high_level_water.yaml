@@ -1,38 +1,41 @@
 Global:
-  # for mp2018 dataset, the property names are:
-  # "formation_energy_per_atom",
-  # "band_gap",
-  # "G",
-  # "K"
-  label_names: ["band_gap"]
   do_train: True
   do_eval: False
   do_test: False
 
+  label_names: ['energy', 'force']
+
+  energy_key: 'energy'
+  force_key: 'force'
+  stress_key: null # 'stress' # high level water data not support stress
+
+
   graph_converter:
-    __class_name__: ComformerGraphConverter
-    __init_params__:
-        cutoff: 4.0
-        num_cpus: 10
+    __class_name__: M3GNetGraphConvertor
+    __init_params__: {}
+
+  prim_eager_enabled: True
+  prim_backward_white_list: ['stack_grad', 'assign_grad']
+
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 20
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/comformer_mp2018_train_60k_band_gap
+  output_dir: ./output/mattersim_5M_high_level_water
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
-  save_freq: 100 # set 0 to disable saving during training
+  save_freq: 5 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
-  log_freq: 20 # log frequency [step]
+  log_freq: 1 # log frequency [step]
 
   # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
   start_eval_epoch: 1
   # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
-  pretrained_model_path: null
+  pretrained_model_path: mattersim-v1.0.0-5M_model.pdparams
   # Pretrained weight name, will be used when pretrained_model_path is a directory
   pretrained_weight_name: null #'latest.pdparams'
   # Resume from checkpoint path, useful for resuming training
@@ -44,7 +47,7 @@ Trainer:
   # whether run a model on no_grad mode during evaluation, useful for saving memory
   # If the model contains higher-order derivatives in the forward, it should be set to
   # False
-  eval_with_no_grad: True
+  eval_with_no_grad: False
   # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
   # gradient accumulation every 2 forward steps
   # Note:
@@ -54,7 +57,7 @@ Trainer:
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
   # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "band_gap"
+  name_for_best_metric: "energy"
   # The metric whether is better when it is greater
   greater_is_better: False
 
@@ -67,94 +70,123 @@ Trainer:
   use_wandb: False
   use_tensorboard: False
 
-Model:
-  __class_name__: iComformer
-  __init_params__:
-    conv_layers: 4
-    edge_layers: 1
-    atom_input_features: 92
-    edge_features: 256
-    triplet_input_features: 256
-    node_features: 256
-    fc_features: 256
-    output_features: 1
-    node_layer_head: 1
-    edge_layer_head: 1
-    property_name: ${Global.label_names}
-    data_mean: 1.3462
-    data_std: 1.6214
-    loss_type: 'l1_loss'
 
-Metric:
-  formation_energy_per_atom:
-    __class_name__: paddle.nn.L1Loss #MAEMetric
-    __init_params__: {}
+Model:
+  __class_name__: M3GNet
+  __init_params__:
+    num_blocks: 4
+    units: 256
+    max_l:  4
+    max_n: 4
+    cutoff: 5.0
+    max_z:  94
+    threebody_cutoff:  4.0
+    energy_key: ${Global.energy_key}
+    force_key: ${Global.force_key}
+    stress_key: ${Global.stress_key}
+    loss_type: 'smooth_l1_loss'
+    huber_loss_delta: 0.01
+    loss_weights_dict:
+      energy: 1.0
+      force: 1.0
+      stress: 0.1
 
 Optimizer:
   __class_name__: Adam
   __init_params__:
     lr:
-      __class_name__: Linear
+      __class_name__: Step
       __init_params__:
-        learning_rate: 0.0005
-        end_lr: 1.0e-05
-        by_epoch: false
+        learning_rate: 2e-4
+        step_size: 10
+        gamma: 0.95
+        by_epoch: True
+
+
+Metric:
+  energy:
+    __class_name__: IgnoreNanMetricWrapper #MAEMetric
+    __init_params__:
+      __class_name__: paddle.nn.L1Loss
+      __init_params__: {}
+  force:
+    __class_name__: IgnoreNanMetricWrapper #MAEMetric
+    __init_params__:
+      __class_name__: paddle.nn.L1Loss
+      __init_params__: {}
 
 Dataset:
   train:
     dataset:
-      __class_name__: MP2018Dataset
+      __class_name__: HighLevelWaterDataset
       __init_params__:
-        path: "./data/mp2018_train_60k/mp.2018.6.1_train.json"
-        property_names: ${Global.label_names}
+        path: "./data/high_level_water/high_level_water.xyz"
+        energy_key: ${Global.energy_key}
+        force_key: ${Global.force_key}
+        stress_key: ${Global.stress_key}
         build_structure_cfg:
-          format: cif_str
+          format: ase_atoms
+          primitive: False
+          niggli: False
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-      num_workers: 4
+        filter_unvalid: False
+      num_workers: 0
       use_shared_memory: False
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+        batch_size: 2
   val:
     dataset:
-      __class_name__: MP2018Dataset
+      __class_name__: HighLevelWaterDataset
       __init_params__:
-        path: "./data/mp2018_train_60k/mp.2018.6.1_val.json"
-        property_names: ${Global.label_names}
+        path: "./data/high_level_water/high_level_water.xyz"
+        energy_key: ${Global.energy_key}
+        force_key: ${Global.force_key}
+        stress_key: ${Global.stress_key}
         build_structure_cfg:
-          format: cif_str
+          format: ase_atoms
+          primitive: False
+          niggli: False
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-
+        filter_unvalid: False
+      num_workers: 0
+      use_shared_memory: False
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 32
+        batch_size: 16
   test:
     dataset:
-      __class_name__: MP2018Dataset
+      __class_name__: HighLevelWaterDataset
       __init_params__:
-        path: "./data/mp2018_train_60k/mp.2018.6.1_test.json"
-        property_names: ${Global.label_names}
+        path: "./data/high_level_water/high_level_water.xyz"
+        energy_key: ${Global.energy_key}
+        force_key: ${Global.force_key}
+        stress_key: ${Global.stress_key}
         build_structure_cfg:
-          format: cif_str
+          format: ase_atoms
+          primitive: False
+          niggli: False
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
-
+        filter_unvalid: False
+      num_workers: 0
+      use_shared_memory: False
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 64
+        batch_size: 16
 
 
 Predict:
   graph_converter: ${Global.graph_converter}
-  eval_with_no_grad: True
+  eval_with_no_grad: False

@@ -58,7 +58,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">Bulk Moduli( log(GPa) )</td>
+            <td  nowrap="nowrap">Bulk Modulus( log(GPa) )</td>
             <td  nowrap="nowrap">0.0346 / 0.0416</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~0.5 hours</td>
@@ -68,7 +68,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">Shear Moduli( log(GPa) )</td>
+            <td  nowrap="nowrap">Shear Modulus( log(GPa) )</td>
             <td  nowrap="nowrap">0.0615 / 0.0651</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~0.5 hours</td>
@@ -102,13 +102,13 @@ python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.p
 # single-gpu training
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml
 
-# bulk moduli
+# bulk modulus
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
 # single-gpu training
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
 
-# shear moduli
+# shear modulus
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml
 # single-gpu training
@@ -126,10 +126,10 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 # band gap
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 
-# bulk moduli
+# bulk modulus
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 
-# shear moduli
+# shear modulus
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
 ```
 
@@ -143,10 +143,10 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 # band gap
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
 
-# bulk moduli
+# bulk modulus
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
 
-# shear moduli
+# shear modulus
 python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
 ```
 
@@ -174,21 +174,21 @@ python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_b
 # Mode2: Use a custom configuration file and checkpoint for crystal band gap prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
-# bulk moduli
+# bulk modulus
 
-# Mode 1: Leverage a pre-trained machine learning model for crystal bulk moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+# Mode 1: Leverage a pre-trained machine learning model for crystal bulk modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
 python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_K' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
-# Mode2: Use a custom configuration file and checkpoint for crystal bulk moduli prediction. This approach allows for more flexibility and customization.
+# Mode2: Use a custom configuration file and checkpoint for crystal bulk modulus prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
 
-# shear moduli
+# shear modulus
 
-# Mode 1: Leverage a pre-trained machine learning model for crystal shear moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+# Mode 1: Leverage a pre-trained machine learning model for crystal shear modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
 python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_G' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
-# Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
+# Mode2: Use a custom configuration file and checkpoint for crystal shear modulus prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 ```
 
