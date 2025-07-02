@@ -31,7 +31,6 @@ from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.datasets.transform import *
 
-
 def read_independent_dataloader_config(config):
     """
     Args:
@@ -68,9 +67,6 @@ def read_independent_dataloader_config(config):
 
 
 if __name__ == "__main__":
-    if dist.get_world_size() > 1:
-        fleet.init(is_collective=True)
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
