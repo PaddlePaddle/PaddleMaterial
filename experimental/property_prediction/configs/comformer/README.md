@@ -79,12 +79,42 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">mp2024_train_130k</td>
             <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
-            <td  nowrap="nowrap"> / </td>
+            <td  nowrap="nowrap"> 28.475 / 28.331</td>
             <td  nowrap="nowrap">1</td>
-            <td  nowrap="nowrap">~ hours</td>
+            <td  nowrap="nowrap">~88 hours</td>
             <td  nowrap="nowrap"><a href="comformer_mp2024_train_130k_e_form.yaml">comformer_mp2024_train_130k_e_form</a></td>
             <td  nowrap="nowrap">Waiting</td>
-        </tr>    
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">Jarvis_dft_2d</td>
+            <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
+            <td  nowrap="nowrap"> 225.444 / 191.876</td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~0.2 hours</td>
+            <td  nowrap="nowrap"><a href="comformer_jarvis_dft_2d_train_e_form.yaml">comformer_jarvis_dft_2d_train_e_form</a></td>
+            <td  nowrap="nowrap">Waiting</td>
+        </tr> 
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">Jarvis_dft_3d</td>
+            <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
+            <td  nowrap="nowrap"> 35.101 / 35.496 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~12 hours</td>
+            <td  nowrap="nowrap"><a href="comformer_jarvis_dft_3d_train_e_form.yaml">comformer_jarvis_dft_3d_train_e_form</a></td>
+            <td  nowrap="nowrap">Waiting</td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">Comformer</td>
+            <td  nowrap="nowrap">Alex_pbe_2d_all</td>
+            <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
+            <td  nowrap="nowrap"> 29.164 / 28.991  </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~20 hours</td>
+            <td  nowrap="nowrap"><a href="comformer_jarvis_alex_pbe_2d_train_e_form.yaml">comformer_jarvis_alex_pbe_2d_train_e_form</a></td>
+            <td  nowrap="nowrap">Waiting</td>
+        </tr>
     </body>
 </table>
 
