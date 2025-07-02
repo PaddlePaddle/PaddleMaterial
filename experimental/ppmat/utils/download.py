@@ -118,6 +118,8 @@ def get_path_from_url(url, root_dir, md5sum=None, check_exist=True, decompress=T
         with misc.RankZeroOnly(rank_id_curr_node) as is_master:
             if is_master:
                 fullpath = _decompress(fullpath)
+            else:
+                fullpath = _get_extract_dir(fullpath)
 
     return fullpath
 
