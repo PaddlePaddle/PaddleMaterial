@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import hashlib
 import json
-import ast
+import os
 
 import numpy as np
 
@@ -30,7 +31,7 @@ def read_json_lines(path):
     extracting all properties into a dictionary of lists.
     """
     property_data = {}
-    
+
     with open(path, "r") as f:
         for idx, line in enumerate(f):
             content = ast.literal_eval(line.strip())
@@ -43,10 +44,11 @@ def read_json_lines(path):
 
             for property_name in all_property_names:
                 if property_name not in content:
-                    raise ValueError(f"'{property_name}' not found in line {idx + 1} of file")
-                property_data[property_name].append(content[property_name])    
+                    raise ValueError(
+                        f"'{property_name}' not found in line {idx + 1} of file"
+                    )
+                property_data[property_name].append(content[property_name])
     return property_data
-
 
 
 def read_json(path):
@@ -100,6 +102,7 @@ def read_value_json(path, key):
 
 def calc_md5(fullname):
     md5 = hashlib.md5()
+    fullname = os.path.expanduser(fullname)
     with open(fullname, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             md5.update(chunk)

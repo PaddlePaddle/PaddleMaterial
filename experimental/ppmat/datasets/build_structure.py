@@ -18,6 +18,7 @@ import numpy as np
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.cif import CifParser
 
 from jarvis.core.atoms import Atoms as jAtoms
@@ -100,6 +101,8 @@ class BuildStructure:
             )[0]
         elif format == "jarvis":
             crystal = jAtoms.from_dict(crystal_data).pymatgen_converter()
+        elif format == "ase_atoms":
+            crystal = AseAtomsAdaptor.get_structure(crystal_data)
         else:
             raise ValueError(f"Invalid format specified: {format}")
 

@@ -97,3 +97,23 @@ def scatter(
         return _scatter_mean(src, index, dim, out, dim_size)
     else:
         raise ValueError("Only support add or mean")
+
+
+def scatter_mean(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+):
+    return _scatter_mean(src, index, dim, out, dim_size)
+
+
+def scatter_sum(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+):
+    return _scatter_sum(src, index, dim, out, dim_size)

@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+import datetime
 import os
 import os.path as osp
 import sys
-import datetime
 
 __dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
 sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
@@ -25,20 +25,20 @@ from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
+from ppmat.datasets.transform import *
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
-from ppmat.datasets.transform import *
 
 
 def read_independent_dataloader_config(config):
-    '''
+    """
     Args:
         config (dict): config dict
-    ''' 
+    """
     if config["Global"].get("do_train", True):
         train_data_cfg = config["Dataset"].get("train")
         assert (
@@ -66,7 +66,7 @@ def read_independent_dataloader_config(config):
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
-        
+
     return train_loader, val_loader, test_loader
 
 
@@ -110,8 +110,6 @@ if __name__ == "__main__":
     logger.init_logger(log_file=logger_path)
     logger.info(f"Logger saved to {logger_path}")
 
-
- 
     # build dataloader from config
     set_signal_handlers()
     if config["Dataset"].get("split_dataset_ratio") is not None:
@@ -122,8 +120,9 @@ if __name__ == "__main__":
         test_loader = loader.get("test", None)
     else:
         # Use pre-split (independent) train/val/test datasets and build dataloaders
-        train_loader, val_loader, test_loader = read_independent_dataloader_config(config)
-
+        train_loader, val_loader, test_loader = read_independent_dataloader_config(
+            config
+        )
 
     # scaling dataset
     if "transform" in config["Dataset"]:
@@ -136,14 +135,19 @@ if __name__ == "__main__":
             trans_func = "no_scaling"
             trans_parms = {}
             logger.warning("No transform specified, using 'no_scaling' instead.")
-        data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
-        logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
-        
+        data_mean, data_std = eval(trans_func)(
+            train_loader, config["Global"]["label_names"], **trans_parms
+        )
+        logger.info(
+            f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}"
+        )
+
         # build model from config
         model_cfg = config["Model"]
-        model_cfg['__init_params__']['data_mean'] = data_mean
-        model_cfg['__init_params__']['data_std'] = data_std
-
+        model_cfg["__init_params__"]["data_mean"] = data_mean
+        model_cfg["__init_params__"]["data_std"] = data_std
+    else:
+        model_cfg = config["Model"]
 
     model = build_model(model_cfg)
 
@@ -183,12 +187,10 @@ if __name__ == "__main__":
     )
 
     if config["Global"].get("do_train", True):
-         trainer.train()
+        trainer.train()
     if config["Global"].get("do_eval", False):
         logger.info("Evaluating on validation set")
         time_info, loss_info, metric_info = trainer.eval(val_loader)
     if config["Global"].get("do_test", False):
         logger.info("Evaluating on test set")
         time_info, loss_info, metric_info = trainer.eval(test_loader)
-
-
