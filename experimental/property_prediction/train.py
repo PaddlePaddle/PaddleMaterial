@@ -21,6 +21,7 @@ __dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
 sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
@@ -71,6 +72,9 @@ def read_independent_dataloader_config(config):
 
 
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -124,9 +128,11 @@ if __name__ == "__main__":
         # Use pre-split (independent) train/val/test datasets and build dataloaders
         train_loader, val_loader, test_loader = read_independent_dataloader_config(config)
 
+    # build model from config
+    model_cfg = config["Model"]
 
     # scaling dataset
-    if "transform" in config["Dataset"]:
+    if "transform" in config["Dataset"] and config['Global'].get("do_train", False) == True:
         dataset_trans_cfg = config["Dataset"].get("transform")
         if dataset_trans_cfg is not None:
             trans_func = dataset_trans_cfg.pop("__class_name__")
@@ -139,8 +145,6 @@ if __name__ == "__main__":
         data_mean, data_std = eval(trans_func)(train_loader, config['Global']['label_names'], **trans_parms)
         logger.info(f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}")
         
-        # build model from config
-        model_cfg = config["Model"]
         model_cfg['__init_params__']['data_mean'] = data_mean
         model_cfg['__init_params__']['data_std'] = data_std
 
