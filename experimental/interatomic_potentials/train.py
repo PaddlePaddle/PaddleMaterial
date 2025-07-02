@@ -20,6 +20,7 @@ __dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
 sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
@@ -31,6 +32,9 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
+
+if dist.get_world_size() > 1:
+    fleet.init(is_collective=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
