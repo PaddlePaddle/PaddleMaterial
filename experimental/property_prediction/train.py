@@ -15,10 +15,6 @@ import argparse
 import datetime
 import os
 import os.path as osp
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
@@ -26,7 +22,7 @@ from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
-from ppmat.datasets.transform import *
+from ppmat.datasets.transform import run_dataset_transform
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
@@ -34,8 +30,6 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 
-if dist.get_world_size() > 1:
-    fleet.init(is_collective=True)
 
 def read_independent_dataloader_config(config):
     """
@@ -74,6 +68,9 @@ def read_independent_dataloader_config(config):
 
 
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -131,7 +128,7 @@ if __name__ == "__main__":
     model_cfg = config["Model"]
 
     # scaling dataset
-    if "transform" in config["Dataset"] and config['Global'].get("do_train", False) == True:
+    if "transform" in config["Dataset"] and config["Global"].get("do_train", False):
         dataset_trans_cfg = config["Dataset"].get("transform")
         if dataset_trans_cfg is not None:
             trans_func = dataset_trans_cfg.pop("__class_name__")
@@ -141,15 +138,17 @@ if __name__ == "__main__":
             trans_func = "no_scaling"
             trans_parms = {}
             logger.warning("No transform specified, using 'no_scaling' instead.")
-        data_mean, data_std = eval(trans_func)(
-            train_loader, config['Global']['label_names'], **trans_parms
+        # TODO: To temporarily use functional calling methods, transform should be
+        # wrapped as a class and called using the build method
+        data_mean, data_std = run_dataset_transform(
+            trans_func, train_loader, config["Global"]["label_names"], **trans_parms
         )
         logger.info(
-            f"Target is {config['Global']['label_names']}, data mean is {data_mean}, data std is {data_std}"
+            f"Target is {config['Global']['label_names']}, data mean is {data_mean}, "
+            f"data std is {data_std}"
         )
-        model_cfg['__init_params__']['data_mean'] = data_mean
-        model_cfg['__init_params__']['data_std'] = data_std
-
+        model_cfg["__init_params__"]["data_mean"] = data_mean
+        model_cfg["__init_params__"]["data_std"] = data_std
 
     model = build_model(model_cfg)
 
