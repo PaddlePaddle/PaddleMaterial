@@ -1,4 +1,4 @@
-# Installation
+# Installation 🔧
 
 [简体中文](./install_cn.md)
 
@@ -34,6 +34,10 @@ If you see "PaddlePaddle is installed successfully! Let's start deep learning wi
 
     # Navigate to PaddleMaterial directory
     cd PaddleMaterial
+
+    # Install dependencies
+    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --upgrade pip setuptools wheel
+    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple Cython
 
     # Install in editable mode
     pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
