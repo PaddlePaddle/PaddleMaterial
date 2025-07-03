@@ -27,16 +27,17 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
 
 - Jarvis
 
+    The original dataset can download from [here](https://github.com/usnistgov/jarvis).
     | Dataset | Count |
     | :----: | :---: |
-    | [dft_3d]() | 1109 | 
-    | [dft_2d]() | 75993|
+    | dft_3d | 1109 |
+    | dft_2d | 75993|
 
 - Alexandria Material Project
 
     | Dataset | Count |
-    | :---: | :---: | 
-    | [pbe_2d]() | 100000 |
+    | :---: | :---: |
+    | pbe_2d | 100000 |
 
 
 ## Results
@@ -71,9 +72,9 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <th  nowrap="nowrap">band gap</th>
             <td  nowrap="nowrap"> 0.2962 / 0.2934</td>
             <td  nowrap="nowrap">1</td>
-            <td  nowrap="nowrap">~ hours</td>
+            <td  nowrap="nowrap">~20 hours</td>
             <td  nowrap="nowrap"><a href="megnet_mp2018_train_60k_band_gap.yaml">megnet_mp2018_train_60k_band_gap</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_band_gap.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -83,7 +84,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~1.5 hours</td>
             <td  nowrap="nowrap"><a href="megnet_mp2018_train_60k_G.yaml">megnet_mp2018_train_60k_G</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_G.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -93,7 +94,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~1.5 hours</td>
             <td  nowrap="nowrap"><a href="megnet_mp2018_train_60k_K.yaml">megnet_mp2018_train_60k_K</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2018_train_60k_K.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -103,7 +104,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~48 hours</td>
             <td  nowrap="nowrap"><a href="megnet_mp2024_train_130k_e_form.yaml">megnet_mp2024_train_130k_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_mp2024_train_130k_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -113,7 +114,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~0.25 hours</td>
             <td  nowrap="nowrap"><a href="megnet_jarvis_dft_2d_e_form.yaml">megnet_jarvis_dft_2d_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_dft_2d_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -123,7 +124,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~20 hours</td>
             <td  nowrap="nowrap"><a href="megnet_jarvis_dft_3d_e_form.yaml">megnet_jarvis_dft_3d_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_dft_3d_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">MegNet</td>
@@ -133,7 +134,7 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~34 hours</td>
             <td  nowrap="nowrap"><a href="megnet_jarvis_alex_pbe_2d_all_e_form.yaml">megnet_jarvis_alex_pbe_2d_all_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_alex_pbe_2d_all_e_form.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>

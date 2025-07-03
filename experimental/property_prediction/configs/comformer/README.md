@@ -19,6 +19,26 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
     | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
     | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  |
 
+- MP2024
+
+    |                                   Dataset                                    | Train |  Val  | Test  |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
+    | [mp2024_train_130k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip) | 130000 | 10000  | 15361  |
+
+- Jarvis
+
+    The original dataset can download from [here](https://github.com/usnistgov/jarvis).
+    | Dataset | Count |
+    | :----: | :---: |
+    | dft_3d | 1109 |
+    | dft_2d | 75993|
+
+- Alexandria Material Project
+
+    | Dataset | Count |
+    | :---: | :---: |
+    | pbe_2d | 100000 |
+
 ## Results
 
 <table>
@@ -83,7 +103,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~88 hours</td>
             <td  nowrap="nowrap"><a href="comformer_mp2024_train_130k_e_form.yaml">comformer_mp2024_train_130k_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_mp2024_train_130k_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">Comformer</td>
@@ -93,8 +113,8 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~0.2 hours</td>
             <td  nowrap="nowrap"><a href="comformer_jarvis_dft_2d_train_e_form.yaml">comformer_jarvis_dft_2d_train_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
-        </tr> 
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_jarvis_dft_2d_e_form.zip">checkpoint | log</a></td>
+        </tr>
         <tr>
             <td  nowrap="nowrap">Comformer</td>
             <td  nowrap="nowrap">Jarvis_dft_3d</td>
@@ -103,7 +123,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~12 hours</td>
             <td  nowrap="nowrap"><a href="comformer_jarvis_dft_3d_train_e_form.yaml">comformer_jarvis_dft_3d_train_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_jarvis_dft_3d_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">Comformer</td>
@@ -113,7 +133,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~20 hours</td>
             <td  nowrap="nowrap"><a href="comformer_jarvis_alex_pbe_2d_train_e_form.yaml">comformer_jarvis_alex_pbe_2d_train_e_form</a></td>
-            <td  nowrap="nowrap">Waiting</td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/comformer/comformer_jarvis_alex_pbe_2d_all_e_form.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
