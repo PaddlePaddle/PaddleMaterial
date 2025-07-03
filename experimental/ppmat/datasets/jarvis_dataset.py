@@ -360,9 +360,6 @@ class JarvisDataset(Dataset):
         self.build_structure_cfg = build_structure_cfg
 
         # Handle graph_cfg
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
         # if build_graph_cfg is None:
         #     build_graph_cfg = {
         #         "__class_name__": "FindPointsInSpheres",
@@ -373,9 +370,7 @@ class JarvisDataset(Dataset):
         #         "The build_graph_cfg is not set, will use the default "
         #         f"configs: {build_graph_cfg}"
         #     )
->>>>>>> Add Jarvis dataset support.
-=======
->>>>>>> modify train loop logic
+
         self.build_graph_cfg = build_graph_cfg
 
         # Determine cache directory
