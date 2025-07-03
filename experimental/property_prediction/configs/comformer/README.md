@@ -30,8 +30,8 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
     The original dataset can download from [here](https://github.com/usnistgov/jarvis).
     | Dataset | Count |
     | :----: | :---: |
-    | dft_3d | 1109 |
-    | dft_2d | 75993|
+    | dft_2d | 1109 |
+    | dft_3d | 75993|
 
 - Alexandria Material Project
 
