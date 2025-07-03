@@ -70,6 +70,7 @@ def read_independent_dataloader_config(config):
 if __name__ == "__main__":
     if dist.get_world_size() > 1:
         fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -123,8 +124,11 @@ if __name__ == "__main__":
             config
         )
 
+    # build model from config
+    model_cfg = config["Model"]
+
     # scaling dataset
-    if "transform" in config["Dataset"]:
+    if "transform" in config["Dataset"] and config["Global"].get("do_train", False):
         dataset_trans_cfg = config["Dataset"].get("transform")
         if dataset_trans_cfg is not None:
             trans_func = dataset_trans_cfg.pop("__class_name__")
@@ -143,13 +147,8 @@ if __name__ == "__main__":
             f"Target is {config['Global']['label_names']}, data mean is {data_mean}, "
             f"data std is {data_std}"
         )
-
-        # build model from config
-        model_cfg = config["Model"]
         model_cfg["__init_params__"]["data_mean"] = data_mean
         model_cfg["__init_params__"]["data_std"] = data_std
-    else:
-        model_cfg = config["Model"]
 
     model = build_model(model_cfg)
 

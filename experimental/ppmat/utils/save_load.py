@@ -134,7 +134,7 @@ def load_pretrain(model: nn.Layer, path: str, weights_name: Optional[str] = None
                         match = epoch_pattern.match(name)
                         if match:
                             epochs.append(
-                                (int(match.groups(1)), os.path.join(root, name))
+                                (int(match.group(1)), os.path.join(root, name))
                             )
                         else:
                             others.append(os.path.join(root, name))
@@ -152,7 +152,7 @@ def load_pretrain(model: nn.Layer, path: str, weights_name: Optional[str] = None
 
     # remove ".pdparams" in suffix of path for convenient
     if path.endswith(".pdparams"):
-        path = path[:-9]
+        path = os.path.splitext(path)[0]
     _load_pretrain_from_path(path, model)
 
 
