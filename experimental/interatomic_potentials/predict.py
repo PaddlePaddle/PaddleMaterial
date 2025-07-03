@@ -1,12 +1,6 @@
+import argparse
 import os
 import os.path as osp
-import sys
-
-__dir__ = osp.dirname(osp.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, osp.abspath(osp.join(__dir__, "..")))  # ruff: noqa
-
-
-import argparse
 from collections import defaultdict
 from typing import Optional
 
@@ -66,11 +60,13 @@ class PotentialPredictor:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        # if model_name is not None, then config_path and checkpoint_path must be provided
+        # if model_name is not None, then config_path and checkpoint_path must be
+        # provided
         if model_name is None:
             assert (
                 config_path is not None and checkpoint_path is not None
-            ), "config_path and checkpoint_path must be provided when model_name is None."
+            ), "config_path and checkpoint_path must be provided when model_name is "
+            "None."
 
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 

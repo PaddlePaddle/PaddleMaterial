@@ -1,10 +1,5 @@
 import argparse
 import os
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
-
 from typing import Optional
 
 import numpy as np
@@ -64,11 +59,13 @@ class StructureSampler:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        # if model_name is not None, then config_path and checkpoint_path must be provided
+        # if model_name is not None, then config_path and checkpoint_path must be
+        # provided
         if model_name is None:
             assert (
                 config_path is not None and checkpoint_path is not None
-            ), "config_path and checkpoint_path must be provided when model_name is None."
+            ), "config_path and checkpoint_path must be provided when model_name is "
+            "None."
 
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 
