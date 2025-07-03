@@ -11,13 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import argparse
 import os
 import os.path as osp
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
