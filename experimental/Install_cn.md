@@ -1,5 +1,5 @@
 
-# Installation
+# Installation 🔧
 
 [English](./install.md)
 
@@ -35,6 +35,10 @@
 
     # 切换到PaddleMaterial目录
     cd PaddleMaterial
+
+    # 安装依赖
+    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --upgrade pip setuptools wheel
+    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple Cython
 
     # 以可编辑模式安装PaddleMaterial
     pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
