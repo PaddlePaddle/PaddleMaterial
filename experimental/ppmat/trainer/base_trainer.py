@@ -820,6 +820,8 @@ class BaseTrainer:
     def eval(self, dataloader: paddle.io.DataLoader):
         assert dataloader is not None, "dataloader is None, please set it first"
         self.state = TrainerState()
+        logger.info("Start evaluating...")
+        logger.info(f"Number of samples in evaluation dataset: {len(dataloader.dataset)}")
         time_info, loss_info, metric_info = self.eval_epoch(dataloader)
         logs: OrderedDict[str, float] = {}
         for name, average_meter in time_info.items():
