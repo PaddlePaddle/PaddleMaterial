@@ -6,6 +6,8 @@
 
 Crystal structures are characterized by atomic bases within a primitive unit cell that repeats along a regular lattice throughout 3D space. The periodic and infinite nature of crystals poses unique challenges for geometric graph representation learning. Specifically, constructing graphs that effectively capture the complete geometric information of crystals and handle chiral crystals remains an unsolved and challenging problem. In this paper, we introduce a novel approach that utilizes the periodic patterns of unit cells to establish the lattice-based representation for each atom, enabling efficient and expressive graph representations of crystals. Furthermore, we propose ComFormer, a SE(3) transformer designed specifically for crystalline materials. ComFormer includes two variants; namely, iComFormer that employs invariant geometric descriptors of Euclidean distances and angles, and eComFormer that utilizes equivariant vector representations. Experimental results demonstrate the state-of-the-art predictive accuracy of ComFormer variants on various tasks across three widely-used crystal benchmarks.
 
+![DiffCSP Overview](../../docs/diffcsp_overview.png)
+
 ## Datasets:
 
 - MP20:
@@ -34,9 +36,9 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
     </head>
     <body>
         <tr>
-            <td  nowrap="nowrap">DiffCSP</td>
+            <td  nowrap="nowrap">diffcsp_mp20</td>
             <td  nowrap="nowrap">mp20</td>
-            <th  nowrap="nowrap">51.72</th>
+            <td  nowrap="nowrap">51.72</td>
             <td  nowrap="nowrap">0.0591</td>
             <td  nowrap="nowrap">1</td>
             <td  nowrap="nowrap">~13.5 hours</td>
@@ -74,7 +76,7 @@ python structure_generation/train.py -c structure_generation/configs/diffcsp/dif
 # The prediction results will be saved in the folder specified by the `save_path` parameter, with the default set to `result`.
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='diffcsp_mp20' --weights_name='latest.pdparams' --save_path='result_diffcsp_mp20/' ----chemical_formula="LiMnO2"
+python structure_generation/sample.py --model_name='diffcsp_mp20' --weights_name='latest.pdparams' --save_path='result_diffcsp_mp20/' --chemical_formula="LiMnO2"
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 python structure_generation/sample.py --config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' --checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' --save_path='result_diffcsp_mp20/' --chemical_formula="LiMnO2"
