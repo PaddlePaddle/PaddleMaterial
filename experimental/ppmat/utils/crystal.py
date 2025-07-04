@@ -17,6 +17,7 @@ import numpy as np
 import paddle
 
 from ppmat.utils import paddle_aux  # noqa: F401
+from ppmat.utils.paddle_aux import dim2perm
 
 OFFSET_LIST = [
     [-1, -1, -1],
@@ -127,6 +128,43 @@ def lattices_to_params_shape(lattices):
         return lattices_to_params_shape_paddle(lattices)
     else:
         raise TypeError(f"Unsupported type {type(lattices)}.")
+
+
+def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
+    """Converts lattice from abc, angles to matrix.
+    https://github.com/materialsproject/pymatgen/blob/b789d74639aa851d7e5ee427a765d9fd5a8d1079/pymatgen/core/lattice.py#L311
+    """
+    angles_r = np.radians([alpha, beta, gamma])
+    cos_alpha, cos_beta, cos_gamma = np.cos(angles_r)
+    sin_alpha, sin_beta, sin_gamma = np.sin(angles_r)
+
+    val = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha * sin_beta)
+    val = abs_cap(val)
+    gamma_star = np.arccos(val)
+
+    vector_a = [a * sin_beta, 0.0, a * cos_beta]
+    vector_b = [
+        -b * sin_alpha * np.cos(gamma_star),
+        b * sin_alpha * np.sin(gamma_star),
+        b * cos_alpha,
+    ]
+    vector_c = [0.0, 0.0, float(c)]
+    return np.array([vector_a, vector_b, vector_c])
+
+
+def abs_cap(val, max_abs_val=1):
+    """
+    Returns the value with its absolute value capped at max_abs_val.
+    Particularly useful in passing values to trignometric functions where
+    numerical errors may result in an argument > 1 being passed in.
+    https://github.com/materialsproject/pymatgen/blob/b789d74639aa851d7e5ee427a765d9fd5a8d1079/pymatgen/util/num.py#L15
+    Args:
+        val (float): Input value.
+        max_abs_val (float): The maximum absolute value for val. Defaults to 1.
+    Returns:
+        val if abs(val) < 1 else sign of val * max_abs_val.
+    """
+    return max(min(val, max_abs_val), -max_abs_val)
 
 
 def get_pbc_distances(
@@ -347,6 +385,14 @@ def frac_to_cart_coords(
     return pos
 
 
+def frac_to_cart_coords_with_lattice(
+    frac_coords: paddle.Tensor, num_atoms: paddle.Tensor, lattice: paddle.Tensor
+) -> paddle.Tensor:
+    lattice_nodes = paddle.repeat_interleave(x=lattice, repeats=num_atoms, axis=0)
+    pos = paddle.einsum("bi,bij->bj", frac_coords, lattice_nodes)
+    return pos
+
+
 def cart_to_frac_coords(
     cart_coords, num_atoms, lengths=None, angles=None, lattices=None
 ):
@@ -369,3 +415,14 @@ def polar_decomposition(x):
     )
     U = vecU @ vecV
     return U, P
+
+
+def compute_lattice_polar_decomposition(lattice_matrix: paddle.Tensor) -> paddle.Tensor:
+    W, S, V_transp = paddle.linalg.svd(full_matrices=True, x=lattice_matrix)
+    S_square = paddle.diag_embed(input=S)
+    V = V_transp.transpose(perm=dim2perm(V_transp.ndim, 1, 2))
+    U = W @ V_transp
+    P = V @ S_square @ V_transp
+    P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
+    symm_lattice_matrix = P_prime
+    return symm_lattice_matrix

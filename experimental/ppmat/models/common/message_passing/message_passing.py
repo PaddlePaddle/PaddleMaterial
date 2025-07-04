@@ -24,8 +24,8 @@ from typing import Tuple
 
 import paddle
 
-from ppmat.models.common.scatter import scatter
 from ppmat.utils import paddle_aux  # noqa
+from ppmat.utils.scatter import scatter
 
 from .inspector import Inspector
 

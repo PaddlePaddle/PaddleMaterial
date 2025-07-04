@@ -14,16 +14,21 @@
 
 import copy
 import traceback
-from typing import Any
-from typing import Tuple
+from typing import Any, Tuple
 
 from paddle import vision
 
+from ppmat.datasets.transform.dataset import custom_scaling
+from ppmat.datasets.transform.dataset import mean_std_scaling
+from ppmat.datasets.transform.dataset import no_scaling
+from ppmat.datasets.transform.dataset import rmsd_scaling
 from ppmat.datasets.transform.post_process import PowerData
 from ppmat.datasets.transform.post_process import UnNormalize
+from ppmat.datasets.transform.preprocess import Abs
 from ppmat.datasets.transform.preprocess import LatticePolarDecomposition
 from ppmat.datasets.transform.preprocess import Log10
 from ppmat.datasets.transform.preprocess import Normalize
+from ppmat.datasets.transform.preprocess import Scale
 from ppmat.utils import logger
 
 __all__ = [
@@ -32,6 +37,12 @@ __all__ = [
     "UnNormalize",
     "PowerData",
     "LatticePolarDecomposition",
+    "Scale",
+    "Abs",
+    "no_scaling",
+    "mean_std_scaling",
+    "rmsd_scaling",
+    "custom_scaling",
 ]
 
 
@@ -80,3 +91,9 @@ def build_post_transforms(cfg):
         transform_list.append(transform)
 
     return vision.Compose(transform_list)
+
+
+def run_dataset_transform(trans_func, *args, **kwargs):
+    result = eval(trans_func)(*args, **kwargs)
+
+    return result

@@ -108,7 +108,7 @@ def get_path_from_url(url, root_dir, md5sum=None, check_exist=True, decompress=T
     rank_id_curr_node = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
 
     if osp.exists(fullpath) and check_exist and _md5check(fullpath, md5sum):
-        logger.message(f"Found {fullpath} already in {WEIGHTS_HOME}, skip downloading.")
+        logger.message(f"Found {fullpath} exists, skip downloading.")
     else:
         with misc.RankZeroOnly(rank_id_curr_node) as is_master:
             if is_master:
@@ -118,6 +118,8 @@ def get_path_from_url(url, root_dir, md5sum=None, check_exist=True, decompress=T
         with misc.RankZeroOnly(rank_id_curr_node) as is_master:
             if is_master:
                 fullpath = _decompress(fullpath)
+            else:
+                fullpath = _get_extract_dir(fullpath)
 
     return fullpath
 

@@ -11,15 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import argparse
 import os
 import os.path as osp
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
@@ -30,6 +28,9 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+
+if dist.get_world_size() > 1:
+    fleet.init(is_collective=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -72,28 +73,36 @@ if __name__ == "__main__":
 
     # build dataloader from config
     set_signal_handlers()
-    train_data_cfg = config["Dataset"].get("train")
-    if train_data_cfg is None:
-        logger.warning("train dataset is not defined in config.")
-        train_loader = None
-    else:
+    if config["Global"].get("do_train", True):
+        train_data_cfg = config["Dataset"].get("train")
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined, when do_train is true"
         train_loader = build_dataloader(train_data_cfg)
+    else:
+        train_loader = None
 
-    val_data_cfg = config["Dataset"].get("val")
-    if val_data_cfg is None:
-        logger.warning("val dataset is not defined in config.")
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
+        val_data_cfg = config["Dataset"].get("val")
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
+    else:
         val_loader = None
-    else:
-        val_loader = build_dataloader(val_data_cfg)
-    test_data_cfg = config["Dataset"].get("test")
-    if test_data_cfg is None:
-        logger.warning("test dataset is not defined in config.")
-        test_loader = None
-    else:
+
+    if config["Global"].get("do_test", False):
+        test_data_cfg = config["Dataset"].get("test")
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined, when do_test is true"
         test_loader = build_dataloader(test_data_cfg)
+    else:
+        test_loader = None
 
     # build optimizer and learning rate scheduler from config
-    if config.get("Optimizer") is not None:
+    if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
         assert (
             train_loader is not None
         ), "train_loader must be defined when optimizer is defined."

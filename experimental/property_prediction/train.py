@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+import datetime
 import os
 import os.path as osp
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "..")))  # ruff: noqa
 
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
+from ppmat.datasets.transform import run_dataset_transform
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
@@ -31,7 +30,46 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 
+
+def read_independent_dataloader_config(config):
+    """
+    Args:
+        config (dict): config dict
+    """
+    if config["Global"].get("do_train", True):
+        train_data_cfg = config["Dataset"].get("train")
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined, when do_train is true"
+        train_loader = build_dataloader(train_data_cfg)
+    else:
+        train_loader = None
+
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
+        val_data_cfg = config["Dataset"].get("val")
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
+    else:
+        val_loader = None
+
+    if config["Global"].get("do_test", False):
+        test_data_cfg = config["Dataset"].get("test")
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined, when do_test is true"
+        test_loader = build_dataloader(test_data_cfg)
+    else:
+        test_loader = None
+    return train_loader, val_loader, test_loader
+
+
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -48,6 +86,16 @@ if __name__ == "__main__":
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
 
+    # set random seed
+    seed = config["Trainer"].get("seed", 42)
+    misc.set_random_seed(seed)
+    logger.info(f"Set random seed to {seed}")
+
+    # add timestamp to output_dir
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_output_dir = config["Trainer"]["output_dir"]
+    config["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+
     # save config to output_dir, only rank 0 process will do this
     if dist.get_rank() == 0:
         os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
@@ -61,39 +109,50 @@ if __name__ == "__main__":
     logger.init_logger(log_file=logger_path)
     logger.info(f"Logger saved to {logger_path}")
 
-    # set random seed
-    seed = config["Trainer"].get("seed", 42)
-    misc.set_random_seed(seed)
-    logger.info(f"Set random seed to {seed}")
+    # build dataloader from config
+    set_signal_handlers()
+    if config["Dataset"].get("split_dataset_ratio") is not None:
+        # Split the dataset into train/val/test and build corresponding dataloaders
+        loader = build_dataloader(config["Dataset"])
+        train_loader = loader.get("train", None)
+        val_loader = loader.get("val", None)
+        test_loader = loader.get("test", None)
+    else:
+        # Use pre-split (independent) train/val/test datasets and build dataloaders
+        train_loader, val_loader, test_loader = read_independent_dataloader_config(
+            config
+        )
 
     # build model from config
     model_cfg = config["Model"]
+
+    # scaling dataset
+    if "transform" in config["Dataset"] and config["Global"].get("do_train", False):
+        dataset_trans_cfg = config["Dataset"].get("transform")
+        if dataset_trans_cfg is not None:
+            trans_func = dataset_trans_cfg.pop("__class_name__")
+            trans_parms = dataset_trans_cfg.pop("__init_params__")
+            logger.info(f"Using transform function: {trans_func}")
+        else:
+            trans_func = "no_scaling"
+            trans_parms = {}
+            logger.warning("No transform specified, using 'no_scaling' instead.")
+        # TODO: To temporarily use functional calling methods, transform should be
+        # wrapped as a class and called using the build method
+        data_mean, data_std = run_dataset_transform(
+            trans_func, train_loader, config["Global"]["label_names"], **trans_parms
+        )
+        logger.info(
+            f"Target is {config['Global']['label_names']}, data mean is {data_mean}, "
+            f"data std is {data_std}"
+        )
+        model_cfg["__init_params__"]["data_mean"] = data_mean
+        model_cfg["__init_params__"]["data_std"] = data_std
+
     model = build_model(model_cfg)
 
-    # build dataloader from config
-    set_signal_handlers()
-    train_data_cfg = config["Dataset"].get("train")
-    if train_data_cfg is None:
-        logger.warning("train dataset is not defined in config.")
-        train_loader = None
-    else:
-        train_loader = build_dataloader(train_data_cfg)
-
-    val_data_cfg = config["Dataset"].get("val")
-    if val_data_cfg is None:
-        logger.warning("val dataset is not defined in config.")
-        val_loader = None
-    else:
-        val_loader = build_dataloader(val_data_cfg)
-    test_data_cfg = config["Dataset"].get("test")
-    if test_data_cfg is None:
-        logger.warning("test dataset is not defined in config.")
-        test_loader = None
-    else:
-        test_loader = build_dataloader(test_data_cfg)
-
     # build optimizer and learning rate scheduler from config
-    if config.get("Optimizer") is not None:
+    if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
         assert (
             train_loader is not None
         ), "train_loader must be defined when optimizer is defined."

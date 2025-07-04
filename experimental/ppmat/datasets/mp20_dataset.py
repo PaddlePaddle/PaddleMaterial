@@ -15,6 +15,7 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import math
 import os
 import os.path as osp
 import pickle
@@ -26,13 +27,16 @@ from typing import Optional
 import numpy as np
 import paddle.distributed as dist
 import pandas as pd
+from p_tqdm import p_map
 from paddle.io import Dataset
+from pymatgen.symmetry.groups import SpaceGroup
 
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
+from ppmat.utils.misc import is_equal
 
 
 class MP20Dataset(Dataset):
@@ -171,25 +175,23 @@ class MP20Dataset(Dataset):
                 build_structure_cfg_cache = self.load_from_cache(
                     osp.join(self.cache_path, "build_structure_cfg.pkl")
                 )
-                if len(build_structure_cfg_cache.keys()) != len(
-                    build_structure_cfg.keys()
-                ):
+                if is_equal(build_structure_cfg_cache, build_structure_cfg):
+                    logger.info(
+                        "The cached build_structure_cfg configuration matches "
+                        "the current settings. Reusing previously generated"
+                        " structural data to optimize performance."
+                    )
+                else:
                     logger.warning(
-                        "build_structure_cfg_cache has different keys than the original"
-                        " build_structure_cfg. Will rebuild the structures and graphs."
+                        "build_structure_cfg is different from "
+                        "build_structure_cfg_cache. Will rebuild the structures and "
+                        "graphs."
+                    )
+                    logger.warning(
+                        "If you want to use the cached structures and graphs, please "
+                        "ensure that the settings used in match your current settings."
                     )
                     overwrite = True
-                else:
-                    for key in build_structure_cfg_cache.keys():
-                        if build_structure_cfg_cache[key] != build_structure_cfg[key]:
-                            logger.warning(
-                                f"build_structure_cfg[{key}](build_structure_cfg[{key}])"
-                                f" is different from build_structure_cfg_cache[{key}]"
-                                f"(build_structure_cfg_cache[{key}]). Will rebuild the "
-                                "structures and graphs."
-                            )
-                            overwrite = True
-                            break
             except Exception as e:
                 logger.warning(e)
                 logger.warning(
@@ -203,24 +205,23 @@ class MP20Dataset(Dataset):
                     build_graph_cfg_cache = self.load_from_cache(
                         osp.join(self.cache_path, "build_graph_cfg.pkl")
                     )
-                    if len(build_graph_cfg_cache.keys()) != len(build_graph_cfg.keys()):
+                    if is_equal(build_graph_cfg_cache, build_graph_cfg):
+                        logger.info(
+                            "The cached build_structure_cfg configuration "
+                            "matches the current settings. Reusing previously "
+                            "generated structural data to optimize performance."
+                        )
+                    else:
                         logger.warning(
-                            "build_graph_cfg_cache has different keys than the original"
-                            " build_graph_cfg. Will rebuild the graphs."
+                            "build_graph_cfg is different from build_graph_cfg_cache"
+                            ". Will rebuild the graphs."
+                        )
+                        logger.warning(
+                            "If you want to use the cached structures and graphs, "
+                            "please ensure that the settings used in match your "
+                            "current settings."
                         )
                         overwrite = True
-                    else:
-                        for key in build_graph_cfg_cache.keys():
-                            if build_graph_cfg_cache[key] != build_graph_cfg[key]:
-                                logger.warning(
-                                    f"build_graph_cfg[{key}](build_graph_cfg[{key}]) is"
-                                    f" different from build_graph_cfg_cache[{key}]"
-                                    f"(build_graph_cfg_cache[{key}]). Will rebuild the "
-                                    "graphs."
-                                )
-                                overwrite = True
-                                break
-
                 except Exception as e:
                     logger.warning(e)
                     logger.warning(
@@ -313,7 +314,9 @@ class MP20Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if data_item is not None:
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
+                ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [
@@ -338,8 +341,22 @@ class MP20Dataset(Dataset):
             data (Dict): Data that contains the property data.
             property_names (list[str]): Property names.
         """
-        property_data = {data[property_name] for property_name in property_names}
+        property_data = {
+            property_name: data[property_name] for property_name in property_names
+        }
+        if "space_group" in property_names:
+            property_data["space_group"] = self.space_group_to_int(
+                property_data["space_group"]
+            )
         return property_data
+
+    def space_group_to_int(self, space_groups):
+        def space_group_to_int_single(space_group):
+            return SpaceGroup(space_group).int_number
+
+        space_groups_int = p_map(space_group_to_int_single, space_groups)
+
+        return space_groups_int
 
     def save_to_cache(self, cache_path: str, data: Any):
         with open(cache_path, "wb") as f:
@@ -388,9 +405,12 @@ class MP20Dataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
         for property_name in self.property_names:
             if property_name in self.property_data:
-                data[property_name] = np.array(
-                    [self.property_data[property_name][idx]]
-                ).astype("float32")
+                if isinstance(self.property_data[property_name][idx], str):
+                    data[property_name] = self.property_data[property_name][idx]
+                else:
+                    data[property_name] = np.array(
+                        [self.property_data[property_name][idx]]
+                    ).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
@@ -403,3 +423,23 @@ class MP20Dataset(Dataset):
 
     def __len__(self):
         return self.num_samples
+
+
+class MP20MatterGenDataset(MP20Dataset):
+    """This class is a subclass of MP20Dataset that is specifically designed for
+    the mp20 dataset used for mattergen.
+    """
+
+    name = "mp_20_mattergen"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20_chemical_system.zip"
+    md5 = "605e2aa2a7363f98ac90c8e6a448fb31"
+
+
+class AlexMP20MatterGenDataset(MP20Dataset):
+    """This class is a subclass of MP20Dataset that is specifically designed for
+    the mp20 dataset used for mattergen.
+    """
+
+    name = "alex_mp_20_mattergen"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/alex_mp_20/alex_mp_20.zip"
+    md5 = "624361c17259cc3af63a00b29fffe9cd"
