@@ -6,13 +6,14 @@
 
 The design of functional materials with desired properties is essential in driving technological advances in areas like energy storage, catalysis, and carbon capture. Generative models provide a new paradigm for materials design by directly generating novel materials given desired property constraints, but current methods have low success rate in proposing stable crystals or can only satisfy a limited set of property constraints. Here, we present MatterGen, a model that generates stable, diverse inorganic materials across the periodic table and can further be fine-tuned to steer the generation towards a broad range of property constraints. Compared to prior generative models, structures produced by MatterGen are more than twice as likely to be novel and stable, and more than 10 times closer to the local energy minimum. After fine-tuning, MatterGen successfully generates stable, novel materials with desired chemistry, symmetry, as well as mechanical, electronic and magnetic properties. As a proof of concept, we synthesize one of the generated structures and measure its property value to be within 20 % of our target. We believe that the quality of generated materials and the breadth of MatterGen’s capabilities represent a major advancement towards creating a foundational generative model for materials design.
 
+![MatterGen Overview](../../docs/mattergen.png)
 
 ## Results
 
 <table>
     <head>
         <tr>
-            <th  nowrap="nowrap">Model</th>
+            <th  nowrap="nowrap">Model Name</th>
             <th  nowrap="nowrap">Dataset</th>
             <th  nowrap="nowrap">Val(loss)</th>
             <th  nowrap="nowrap">Config</th>
@@ -21,91 +22,91 @@ The design of functional materials with desired properties is essential in drivi
     </head>
     <body>
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_mp20</td>
             <td  nowrap="nowrap">mp20</td>
             <td  nowrap="nowrap">0.3721</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20.yaml">mattergen_mp20</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_mp20_chemical_system</td>
             <td  nowrap="nowrap">mp20</td>
             <td  nowrap="nowrap">0.3121</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_chemical_system.yaml">mattergen_mp20_chemical_system</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_chemical_system.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_mp20_dft_band_gap</td>
             <td  nowrap="nowrap">mp20</td>
             <td  nowrap="nowrap">0.3575</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_dft_band_gap.yaml">mattergen_mp20_dft_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_band_gap.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_mp20_dft_bulk_modulus</td>
             <td  nowrap="nowrap">mp20</td>
             <td  nowrap="nowrap">0.2942</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_dft_bulk_modulus.yaml">mattergen_mp20_dft_bulk_modulus</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_bulk_modulus.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_mp20_dft_mag_density</td>
             <td  nowrap="nowrap">mp20</td>
             <td  nowrap="nowrap">0.3620</td>
             <td  nowrap="nowrap"><a href="mattergen_mp20_dft_mag_density.yaml">mattergen_mp20_dft_mag_density</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20_dft_mag_density.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2960</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20.yaml">mattergen_alex_mp20</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_dft_band_gap</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.3101</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_dft_band_gap.yaml">mattergen_alex_mp20_dft_band_gap</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_band_gap.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_chemical_system</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2289</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_chemical_system.yaml">mattergen_alex_mp20_chemical_system</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_dft_mag_density</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2881</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_dft_mag_density.yaml">mattergen_alex_mp20_dft_mag_density</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_ml_bulk_modulus</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2811</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_ml_bulk_modulus.yaml">mattergen_alex_mp20_ml_bulk_modulus</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_ml_bulk_modulus.zip">checkpoint | log</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_space_group</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2795</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_space_group.yaml">mattergen_alex_mp20_space_group</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_space_group.zip">checkpoint | log</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_chemical_system_energy_above_hull</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2272</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_chemical_system_energy_above_hull.yaml">mattergen_alex_mp20_chemical_system_energy_above_hull</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.zip">checkpoint | log</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">MatterGen</td>
+            <td  nowrap="nowrap">mattergen_alex_mp20_dft_mag_density_hhi_score</td>
             <td  nowrap="nowrap">alex_mp20</td>
             <td  nowrap="nowrap">0.2803</td>
             <td  nowrap="nowrap"><a href="mattergen_alex_mp20_dft_mag_density_hhi_score.yaml">mattergen_alex_mp20_dft_mag_density_hhi_score</a></td>
