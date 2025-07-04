@@ -14,8 +14,7 @@
 
 import copy
 import traceback
-from typing import Any
-from typing import Tuple
+from typing import Any, Tuple
 
 from paddle import vision
 

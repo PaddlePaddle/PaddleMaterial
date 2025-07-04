@@ -35,7 +35,6 @@ Dataset:
         shuffle: True
         drop_last: True
         batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
-
   val:
     dataset:
       __class_name__: MP2024Dataset
@@ -52,7 +51,6 @@ Dataset:
         shuffle: False
         drop_last: False
         batch_size: 32
-
   test:
     dataset:
       __class_name__: MP2024Dataset

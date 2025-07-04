@@ -31,6 +31,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
     | Dataset | Count |
     | :----: | :---: |
     | dft_2d | 1109 |
+    | dft_3d_2021 | 55723 |
     | dft_3d | 75993|
 
 - Alexandria Material Project
@@ -137,6 +138,8 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
         </tr>
     </body>
 </table>
+
+**Note:** The original [Comformer paper](https://arxiv.org/abs/2403.11857) used the `Jarvis dft_3d_2021` dataset.
 
 ### Training
 ```bash

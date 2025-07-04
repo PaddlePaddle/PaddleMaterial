@@ -27,16 +27,16 @@ from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
+from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
 from ppmat.datasets.mp2024_dataset import MP2024Dataset
-from ppmat.datasets.jarvis_dataset_modify import JarvisDataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
+from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
-from ppmat.datasets.split_mptrj_data import none_to_zero 
 from ppmat.utils import logger
 
 __all__ = [
@@ -146,8 +146,12 @@ def build_dataloader(cfg: Dict):
         ratio_dict = {k: none_to_zero(v) for k, v in ratio_dict.items()}
 
         if ratio_dict["train"] + ratio_dict["val"] + ratio_dict["test"] != 1.0:
-            raise ValueError(f"The sum of train_ratio, val_ratio and test_ratio should be equal to 1.0, but got {train_ratio + val_ratio + test_ratio}")
-        
+            raise ValueError(
+                f"The sum of train_ratio, val_ratio and test_ratio "
+                f"should be equal to 1.0, but got "
+                f"{ratio_dict['train'] + ratio_dict['val'] + ratio_dict['test']}"
+            )
+
         # split train/valid/test dataset numbers
         total_nums = len(dataset)
         if ratio_dict["test"] == 0:
@@ -158,9 +162,14 @@ def build_dataloader(cfg: Dict):
             train_nums = int(total_nums * ratio_dict["train"])
             val_nums = int(total_nums * ratio_dict["val"])
             test_nums = total_nums - train_nums - val_nums
-        logger.info( f"Number of train, val and test dataset are {train_nums}, {val_nums} and {test_nums}." )
-        
-        train_dataset, val_dataset, test_dataset = io.random_split(dataset, [train_nums, val_nums, test_nums])
+        logger.info(
+            f"Number of train, val and test dataset "
+            f"are {train_nums}, {val_nums} and {test_nums}."
+        )
+
+        train_dataset, val_dataset, test_dataset = io.random_split(
+            dataset, [train_nums, val_nums, test_nums]
+        )
         dataset_dict = {
             "train": train_dataset if len(train_dataset) != 0 else None,
             "val": val_dataset if len(val_dataset) != 0 else None,
@@ -186,7 +195,6 @@ def build_dataloader(cfg: Dict):
             )
 
         return data_loader_dict
-
 
     else:
         sampler_cfg = cfg.get("sampler", None)
@@ -229,7 +237,7 @@ def set_build_sample(sampler_cfg, world_size, dataset):
             )
         batch_sampler = getattr(io, batch_sampler_cls)(
             dataset,
-            batch_size=cfg["batch_size"],
+            batch_size=init_params["batch_size"],
             shuffle=False,
             drop_last=False,
         )
