@@ -114,6 +114,7 @@ Dataset:
           format: cif_str
           primitive: True
           niggli: True
+          canocial: False
           num_cpus: 10
         cache_path: "./data/mp_20_chemical_system_cache/train"
         transforms:
@@ -137,6 +138,7 @@ Dataset:
           format: cif_str
           primitive: True
           niggli: True
+          canocial: False
           num_cpus: 10
         cache_path: "./data/mp_20_chemical_system_cache/val"
         transforms:
@@ -157,6 +159,7 @@ Dataset:
           format: cif_str
           primitive: True
           niggli: True
+          canocial: False
           num_cpus: 10
         cache_path: "./data/mp_20_chemical_system_cache/test"
         transforms:
