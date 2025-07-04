@@ -440,6 +440,6 @@ class AlexMP20MatterGenDataset(MP20Dataset):
     the mp20 dataset used for mattergen.
     """
 
-    name = "mp_20_mattergen"
+    name = "alex_mp_20_mattergen"
     url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/alex_mp_20/alex_mp_20.zip"
     md5 = "624361c17259cc3af63a00b29fffe9cd"
