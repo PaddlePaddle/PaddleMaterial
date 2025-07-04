@@ -34,7 +34,6 @@ def get_requirements() -> list:
 if __name__ == "__main__":
     setuptools.setup(
         name="ppmat",
-        version="0.1.0",  # TODO: remove it when release
         author="PaddlePaddle",
         url="https://github.com/PaddlePaddle/PaddleMaterial",
         description=(

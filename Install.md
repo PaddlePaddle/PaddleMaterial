@@ -36,11 +36,12 @@ If you see "PaddlePaddle is installed successfully! Let's start deep learning wi
     cd PaddleMaterial
 
     # Install dependencies
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --upgrade pip setuptools wheel
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple Cython
+    pip install --upgrade pip setuptools wheel
+    pip install setuptools_scm
+    pip install Cython
 
     # Install in editable mode
-    pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+    pip install -e .
 
 ## 2. Run Examples
 

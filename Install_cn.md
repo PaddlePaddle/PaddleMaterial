@@ -37,11 +37,12 @@
     cd PaddleMaterial
 
     # 安装依赖
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --upgrade pip setuptools wheel
-    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple Cython
+    pip install --upgrade pip setuptools wheel
+    pip install setuptools_scm
+    pip install Cython
 
     # 以可编辑模式安装PaddleMaterial
-    pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+    pip install -e .
 
 
 ## 2. 运行示例
