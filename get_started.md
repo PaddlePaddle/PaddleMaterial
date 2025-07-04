@@ -2,6 +2,8 @@
 
 PaddleMaterial provides multiple pre-trained models and standard datasets for material property prediction, material structure generation, and interatomic potentials tasks. This document demonstrates how to perform common tasks using these existing models and standard datasets.
 
+Training workflows are parameterized through structured configuration files, allowing end-to-end model training with simple parameter adjustments. You can refer to the [PaddleMaterial Configuration](./about_configs.md) section for detailed configuration information.
+
 We have provided commands for training, evaluation, testing, and inference in each model's README file. You can also refer directly to these README files to complete corresponding tasks.
 
 ## 1. Inference with Existing Model

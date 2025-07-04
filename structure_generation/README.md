@@ -6,30 +6,26 @@ The inorganic material structure generation (IMSG) task tackles the inverse-desi
 
 ## 2.Models Matrix
 
-| **Supported Functions** | **DiffCSP** | **MatterGen** |
-|-------------|-----------|--------------|
-| **Structure Generation** |||
-| &emsp;Random Sample | ✅ | ✅ |
-| &emsp;Condition Sample  | ✅ | ✅ |
-| **ML Capabilities · Training** |||
-| &emsp;Single-GPU        | ✅ | ✅ |
-| &emsp;Distributed Train | ✅ | ✅ |
-| &emsp;Mixed Precision   | - | - |
-| &emsp;Fine-tuning       | ✅ | ✅ |
-| &emsp;Uncertainty / Active-Learning | - | - |
-| &emsp;Dynamic→Static    | - | - |
-| &emsp;Compiler CINN | - | - |
-| **ML Capabilities · Predict** |||
-| &emsp;Distillation / Pruning | - | - | 
-| &emsp;Standard inference     | ✅ | ✅ |
-| &emsp;Distributed inference  | - | - |
-| &emsp;Compiler CINN | - | - |
-| **Dataset** |||
-|**Material Project**|||
-| &emsp;MP20 | ✅ | ✅ |
-|**Hrbrid**|||
-| &emsp;ALEX MP20 | - | ✅ |
-
-
-
-
+| **Supported Functions**             | **[DiffCSP](./configs/diffcsp/README.md)** | **[MatterGen](./configs/mattergen/README.md)** |
+| ----------------------------------- | ------------------------------------------ | ---------------------------------------------- |
+| **Structure Generation**            |                                            |                                                |
+| &emsp;Random Sample                 | ✅                                          | ✅                                              |
+| &emsp;Condition Sample              | ✅                                          | ✅                                              |
+| **ML Capabilities · Training**      |                                            |                                                |
+| &emsp;Single-GPU                    | ✅                                          | ✅                                              |
+| &emsp;Distributed Train             | ✅                                          | ✅                                              |
+| &emsp;Mixed Precision               | -                                          | -                                              |
+| &emsp;Fine-tuning                   | ✅                                          | ✅                                              |
+| &emsp;Uncertainty / Active-Learning | -                                          | -                                              |
+| &emsp;Dynamic→Static                | -                                          | -                                              |
+| &emsp;Compiler CINN                 | -                                          | -                                              |
+| **ML Capabilities · Predict**       |                                            |                                                |
+| &emsp;Distillation / Pruning        | -                                          | -                                              |
+| &emsp;Standard inference            | ✅                                          | ✅                                              |
+| &emsp;Distributed inference         | -                                          | -                                              |
+| &emsp;Compiler CINN                 | -                                          | -                                              |
+| **Dataset**                         |                                            |                                                |
+| **Material Project**                |                                            |                                                |
+| &emsp;MP20                          | ✅                                          | ✅                                              |
+| **Hrbrid**                          |                                            |                                                |
+| &emsp;ALEX MP20                     | -                                          | ✅                                              |

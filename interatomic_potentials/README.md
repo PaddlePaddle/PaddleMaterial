@@ -6,30 +6,27 @@ Machine-learning interatomic potentials (MLIP) bridge the gap between quantum-le
 
 ## 2.Models Matrix
 
-| **Supported Functions** | **CHGNet** | **MatterSim** |
-|-------------|-----------|--------------|
-| **Forward Prediction** |||
-| &emsp;Energy | ✅ | ✅ |
-| &emsp;Force  | ✅ | ✅ |
-| &emsp;Stress | ✅ | ✅ |
-| &emsp;Magmom | ✅ | - |
-| **ML Capabilities · Training** |||
-| &emsp;Single-GPU        | ✅ | ✅ |
-| &emsp;Distributed Train | ✅ | ✅ |
-| &emsp;Mixed Precision   | - | - |
-| &emsp;Fine-tuning       | ✅ | ✅ |
-| &emsp;Uncertainty / Active-Learning | - | - |
-| &emsp;Dynamic→Static    | - | - |
-| &emsp;Compiler CINN | - | - |
-| **ML Capabilities · Predict** |||
-| &emsp;Distillation / Pruning | - | - | 
-| &emsp;Standard inference     | ✅ | ✅ |
-| &emsp;Distributed inference  | - | - |
-| &emsp;Compiler CINN | - | - |
-| **Molecular Dynamic Interface** |||
-| &emsp;ASE | ✅ | ✅ |
-| **Dataset** |||
-| &emsp;MPtrj | ✅ | 🚧 |
-
-
-
+| **Supported Functions**             | **[CHGNet](./configs/chgnet/README.md)** | **[MatterSim](./configs/mattersim//README.md)** |
+| ----------------------------------- | ---------------------------------------- | ----------------------------------------------- |
+| **Forward Prediction**              |                                          |                                                 |
+| &emsp;Energy                        | ✅                                        | ✅                                               |
+| &emsp;Force                         | ✅                                        | ✅                                               |
+| &emsp;Stress                        | ✅                                        | ✅                                               |
+| &emsp;Magmom                        | ✅                                        | -                                               |
+| **ML Capabilities · Training**      |                                          |                                                 |
+| &emsp;Single-GPU                    | ✅                                        | ✅                                               |
+| &emsp;Distributed Train             | ✅                                        | ✅                                               |
+| &emsp;Mixed Precision               | -                                        | -                                               |
+| &emsp;Fine-tuning                   | ✅                                        | ✅                                               |
+| &emsp;Uncertainty / Active-Learning | -                                        | -                                               |
+| &emsp;Dynamic→Static                | -                                        | -                                               |
+| &emsp;Compiler CINN                 | -                                        | -                                               |
+| **ML Capabilities · Predict**       |                                          |                                                 |
+| &emsp;Distillation / Pruning        | -                                        | -                                               |
+| &emsp;Standard inference            | ✅                                        | ✅                                               |
+| &emsp;Distributed inference         | -                                        | -                                               |
+| &emsp;Compiler CINN                 | -                                        | -                                               |
+| **Molecular Dynamic Interface**     |                                          |                                                 |
+| &emsp;ASE                           | ✅                                        | ✅                                               |
+| **Dataset**                         |                                          |                                                 |
+| &emsp;MPtrj                         | ✅                                        | 🚧                                               |
