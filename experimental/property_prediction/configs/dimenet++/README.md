@@ -111,16 +111,16 @@ python property_prediction/train.py -c property_prediction/configs/dimenet++/dim
 # such as: --Global.do_eval=True
 
 # formation energy per atom
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # band gap
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # bulk modulus
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # shear modulus
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml Global.do_eval=True Global.do_train=False Global.do_test=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Testing
@@ -128,16 +128,16 @@ python property_prediction/train.py -c property_prediction/configs/dimenet++/dim
 # This command is used to evaluate the model's performance on the test dataset.
 
 # formation energy per atom
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # band gap
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # bulk modulus
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # shear modulus
-python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml Global.do_test=True Global.do_train=False Global.do_eval=False
+python property_prediction/train.py -c property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Prediction
