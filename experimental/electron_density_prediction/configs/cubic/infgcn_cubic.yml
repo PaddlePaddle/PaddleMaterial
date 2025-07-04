@@ -1,0 +1,136 @@
+Global:
+  do_train: True
+  do_eval: True
+  do_test: True
+  use_voxel: False
+
+Trainer:
+  max_epochs: 1
+  start_eval_epoch: 0 #
+  max_iter: 10000 #
+  seed: 42
+  output_dir: ./output/infgcn_cubic
+  save_freq: 500  #
+  log_freq: 20    #
+  start_eval_step: 0
+  eval_freq: 100
+    # Pretrained model path, if null, no pretrained model will be loaded
+  pretrained_model_path: null
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  compute_metric_during_train: False
+  train_samples: 1024
+  val_samples: 4096
+  max_grad_norm: 100.0
+  batch_size: 12
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: InfGCN
+  __init_params__:
+    n_atom_type: 84
+    num_radial: 16
+    num_spherical: 7
+    radial_embed_size: 64
+    radial_hidden_size: 128
+    num_radial_layer: 2
+    num_gcn_layer: 3
+    cutoff: 3.0
+    grid_cutoff: 3.0
+    is_fc: false
+    gauss_start: 0.5
+    gauss_end: 5.0
+    residual: true
+
+#Metric:
+#  density_mae:
+#    __class_name__: paddle.nn.L1Loss
+#    __init_params__: {}
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 0.001
+        factor: 0.5
+        patience: 10
+        min_lr: 0.00001
+        by_epoch: True
+        indicator: "eval_loss"
+        indicator_name: "loss"
+    weight_decay: 0.0
+    beta1: 0.9
+    beta2: 0.999
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./cubic
+        split_file: ./datasplits.json
+        atom_file:  ./atom_info/crystal.json
+        extension: json
+        compression: xz
+        pbc: false
+        split: "train"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 16
+    loader:
+      num_workers: 4
+      use_shared_memory: True
+  val:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./cubic
+        split_file: ./datasplits.json
+        atom_file:  ./atom_info/crystal.json
+        extension: json
+        compression: xz
+        pbc: false
+        split: "validation"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 16
+    loader:
+      num_workers: 4
+      use_shared_memory: True
+  test:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./cubic
+        split_file: ./datasplits.json
+        atom_file:  ./atom_info/crystal.json
+        extension: json
+        compression: xz
+        pbc: false
+        split: "test"
+        rotate: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 5
+    loader:
+      num_workers: 16
+      use_shared_memory: True
+
+Predict:
+  eval_with_no_grad: True
+  num_infer: 100
+  num_vis: 2
+  inf_samples: 4096

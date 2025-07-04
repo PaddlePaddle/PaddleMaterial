@@ -26,6 +26,7 @@ from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConve
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
@@ -42,6 +43,7 @@ __all__ = [
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",
+    "InfGCN",
     "MatterGen",
     "MatterGenWithCondition",
     "DimeNetPlusPlus",
@@ -122,10 +124,10 @@ def build_model(cfg: Dict):
     if cfg is None:
         return None
     cfg = copy.deepcopy(cfg)
-    class_name = cfg.pop("__class_name__")
-    init_params = cfg.pop("__init_params__")
-    model = eval(class_name)(**init_params)
-    logger.debug(str(model))
+    class_name = cfg.pop("__class_name__")  
+    init_params = cfg.pop("__init_params__")  
+    model = eval(class_name)(**init_params)  
+    logger.debug(str(model))  
 
     return model
 
