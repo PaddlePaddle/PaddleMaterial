@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This file adapted from https://github.com/PaddlePaddle/PaddleScience
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -46,11 +48,6 @@ class SGD:
             Regularization strategy. Defaults to None.
         grad_clip (Optional[Union[nn.ClipGradByNorm, nn.ClipGradByValue,
             nn.ClipGradByGlobalNorm]]): Gradient clipping strategy. Defaults to None.
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.SGD(1e-3)(model)
     """
 
     def __init__(
@@ -98,11 +95,6 @@ class Momentum:
             Defaults to False.
         no_weight_decay_name (Optional[str]): List of names of no weight decay
             parameters split by white space. Defaults to None.
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.Momentum(1e-3, 0.9)(model)
     """
 
     def __init__(
@@ -196,11 +188,6 @@ class Adam:
             nn.ClipGradByGlobalNorm]]): Gradient clipping strategy. Defaults to None.
         lazy_mode (bool, optional): Whether to enable lazy mode for moving-average.
             Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.Adam(1e-3)(model)
     """
 
     def __init__(
@@ -216,6 +203,7 @@ class Adam:
             Union[nn.ClipGradByNorm, nn.ClipGradByValue, nn.ClipGradByGlobalNorm]
         ] = None,
         lazy_mode: bool = False,
+        amsgrad: bool = False,
     ):
         self.learning_rate = learning_rate
         self.beta1 = beta1
@@ -225,6 +213,7 @@ class Adam:
         self.weight_decay = weight_decay
         self.grad_clip = grad_clip
         self.lazy_mode = lazy_mode
+        self.amsgrad = amsgrad
 
     def __call__(self, model_list: Union[nn.Layer, Tuple[nn.Layer, ...]]):
         # model_list is None in static graph
@@ -242,6 +231,7 @@ class Adam:
             grad_clip=self.grad_clip,
             lazy_mode=self.lazy_mode,
             parameters=parameters,
+            amsgrad=self.amsgrad,
         )
         return opt
 
@@ -265,11 +255,6 @@ class LBFGS:
         history_size (int, optional): Update history size. Defaults to 100.
         line_search_fn (Optional[Literal["strong_wolfe"]]): Either 'strong_wolfe' or
             None. Defaults to "strong_wolfe".
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.LBFGS(1e-3)(model)
     """
 
     def __init__(
@@ -337,11 +322,6 @@ class RMSProp:
             Regularization strategy. Defaults to None.
         grad_clip (Optional[Union[nn.ClipGradByNorm, nn.ClipGradByValue,
             nn.ClipGradByGlobalNorm]]): Gradient clipping strategy. Defaults to None.
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.RMSProp(1e-3)(model)
     """
 
     def __init__(
@@ -403,11 +383,6 @@ class AdamW:
             parameters split by white space. Defaults to None.
         one_dim_param_no_weight_decay (bool, optional): Apply no weight decay on
             1-D parameter(s). Defaults to False.
-
-    Examples:
-        >>> import ppsci
-        >>> model = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt = ppsci.optimizer.AdamW(1e-3)(model)
     """
 
     def __init__(
@@ -422,6 +397,7 @@ class AdamW:
         ] = None,
         no_weight_decay_name: Optional[str] = None,
         one_dim_param_no_weight_decay: bool = False,
+        amsgrad: bool = False,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -434,6 +410,7 @@ class AdamW:
             no_weight_decay_name.split() if no_weight_decay_name else []
         )
         self.one_dim_param_no_weight_decay = one_dim_param_no_weight_decay
+        self.amsgrad = amsgrad
 
     def __call__(self, model_list: Union[nn.Layer, Tuple[nn.Layer, ...]]):
         # model_list is None in static graph
@@ -487,6 +464,7 @@ class AdamW:
             weight_decay=self.weight_decay,
             grad_clip=self.grad_clip,
             apply_decay_param_fun=self._apply_decay_param_fun,
+            amsgrad=self.amsgrad,
         )
         return opt
 
@@ -500,14 +478,6 @@ class OptimizerList:
 
     Args:
         optimizer_list (Tuple[optim.Optimizer, ...]): Optimizers listed in a tuple.
-
-    Examples:
-        >>> import ppsci
-        >>> model1 = ppsci.arch.MLP(("x",), ("u",), 5, 20)
-        >>> opt1 = ppsci.optimizer.Adam(1e-3)(model1)
-        >>> model2 = ppsci.arch.MLP(("y",), ("v",), 5, 20)
-        >>> opt2 = ppsci.optimizer.Adam(1e-3)(model2)
-        >>> opt = ppsci.optimizer.OptimizerList((opt1, opt2))
     """
 
     def __init__(self, optimizer_list: Tuple[optim.Optimizer, ...]):

@@ -16,62 +16,17 @@
 from __future__ import annotations
 
 import numbers
-from collections import defaultdict
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
-from typing import Dict
 from typing import List
 
 import numpy as np
 import paddle
 import pgl
 
-
-class ConcatData(object):
-    def __init__(self, data) -> None:
-        self.data = data
-
-    @staticmethod
-    def batch(data_list):
-        data_list = [data.data for data in data_list]
-        data = np.concatenate(data_list, axis=0)
-        return data
-
-    def __str__(self):
-        return str(self.__dict__)
-
-    def __repr__(self):
-        return str(self.__dict__)
-
-
-class Data(object):
-    def __init__(self, data: Dict):
-        for key, value in data.items():
-            assert isinstance(value, np.ndarray)
-            setattr(self, key, value)
-
-    @staticmethod
-    def batch(data_list):
-        feat = defaultdict(lambda: [])
-        for data in data_list:
-            for key in data.__dict__:
-                feat[key].append(data.__dict__[key])
-
-        ret_feat = {}
-        for key in feat:
-            ret_feat[key] = np.concatenate(feat[key], axis=0)
-        return Data(ret_feat)
-
-    def tensor(self):
-        for key, value in self.__dict__.items():
-            self.__dict__[key] = paddle.to_tensor(value)
-
-    def __str__(self):
-        return str(self.__dict__)
-
-    def __repr__(self):
-        return str(self.__dict__)
+from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 
 
 class DefaultCollator(object):
@@ -92,6 +47,9 @@ class DefaultCollator(object):
         sample = batch[0]
         if sample is None:
             return None
+        elif isinstance(sample, ConcatNumpyWarper):
+            batch = np.concatenate(batch, axis=0)
+            return batch
         elif isinstance(sample, np.ndarray):
             batch = np.stack(batch, axis=0)
             return batch
@@ -112,12 +70,10 @@ class DefaultCollator(object):
         elif str(type(sample)) == "<class 'pgl.graph.Graph'>":
             # use str(type()) instead of isinstance() in case of pgl is not installed.
             graphs = pgl.Graph.batch(batch)
-            graphs.tensor()
+            # NOTE: when num_works >1, graphs.tensor() will convert numpy.ndarray to
+            # CPU Tensor, which will cause error in model training.
+            # graphs.tensor()
             return graphs
-        elif isinstance(sample, Data):
-            data = Data.batch(batch)
-            data.tensor()
-            return data
         elif isinstance(sample, ConcatData):
             return ConcatData.batch(batch)
         raise TypeError(

@@ -31,6 +31,7 @@ from ppmat.utils import misc
 __all__ = ["get_weights_path_from_url"]
 
 WEIGHTS_HOME = osp.expanduser("~/.paddlemat/weights")
+DATASETS_HOME = osp.expanduser("~/.paddlemat/datasets")
 
 DOWNLOAD_RETRY_LIMIT = 3
 
@@ -57,6 +58,21 @@ def get_weights_path_from_url(url, md5sum=None):
         str: a local path to save downloaded weights.
     """
     path = get_path_from_url(url, WEIGHTS_HOME, md5sum)
+    return path
+
+
+def get_datasets_path_from_url(url, md5sum=None):
+    """Get datasets path from DATASETS_HOME, if not exists,
+    download it from url.
+
+    Args:
+        url (str): Download url
+        md5sum (str): md5 sum of download package
+
+    Returns:
+        str: a local path to save downloaded weights.
+    """
+    path = get_path_from_url(url, DATASETS_HOME, md5sum)
     return path
 
 
@@ -92,7 +108,7 @@ def get_path_from_url(url, root_dir, md5sum=None, check_exist=True, decompress=T
     rank_id_curr_node = int(os.environ.get("PADDLE_RANK_IN_NODE", 0))
 
     if osp.exists(fullpath) and check_exist and _md5check(fullpath, md5sum):
-        logger.message(f"Found {fullpath} already in {WEIGHTS_HOME}, skip downloading.")
+        logger.message(f"Found {fullpath} exists, skip downloading.")
     else:
         with misc.RankZeroOnly(rank_id_curr_node) as is_master:
             if is_master:
@@ -102,6 +118,8 @@ def get_path_from_url(url, root_dir, md5sum=None, check_exist=True, decompress=T
         with misc.RankZeroOnly(rank_id_curr_node) as is_master:
             if is_master:
                 fullpath = _decompress(fullpath)
+            else:
+                fullpath = _get_extract_dir(fullpath)
 
     return fullpath
 
@@ -205,12 +223,21 @@ def _decompress(fname):
     return uncompressed_path
 
 
+def _get_extract_dir(filepath):
+    return os.path.splitext(filepath)[0]
+
+
 def _uncompress_file_zip(filepath):
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"{filepath} not found")
+
+    file_dir = _get_extract_dir(filepath)
+
     with zipfile.ZipFile(filepath, "r") as files:
+        if files.testzip() is not None:
+            raise IOError(f"{filepath} is broken")
+
         file_list = files.namelist()
-
-        file_dir = os.path.dirname(filepath)
-
         if _is_a_single_file(file_list):
             rootpath = file_list[0]
             uncompressed_path = os.path.join(file_dir, rootpath)
@@ -240,7 +267,7 @@ def _uncompress_file_tar(filepath, mode="r:*"):
     with tarfile.open(filepath, mode) as files:
         file_list = files.getnames()
 
-        file_dir = os.path.dirname(filepath)
+        file_dir = _get_extract_dir(filepath)
 
         if _is_a_single_file(file_list):
             rootpath = file_list[0]

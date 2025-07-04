@@ -23,7 +23,9 @@ Ths copyright of pytorch/pytorch is a BSD-style license, as found in the LICENSE
 
 from __future__ import annotations
 
+import functools
 import math
+import operator
 
 import numpy as np
 import paddle
@@ -118,12 +120,6 @@ def uniform_(tensor: paddle.Tensor, a: float, b: float) -> paddle.Tensor:
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.uniform_(param, -1, 1)
     """
     return _no_grad_uniform_(tensor, a, b)
 
@@ -140,12 +136,6 @@ def normal_(
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.normal_(param, 0, 1)
     """
     return _no_grad_normal_(tensor, mean, std)
 
@@ -169,12 +159,6 @@ def trunc_normal_(
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.trunc_normal_(param, 0.0, 1.0)
     """
     return _no_grad_trunc_normal_(tensor, mean, std, a, b)
 
@@ -188,12 +172,6 @@ def constant_(tensor: paddle.Tensor, value: float = 0.0) -> paddle.Tensor:
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.constant_(param, 2)
     """
     return _no_grad_fill_(tensor, value)
 
@@ -206,12 +184,6 @@ def ones_(tensor: paddle.Tensor) -> paddle.Tensor:
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.ones_(param)
     """
     return _no_grad_fill_(tensor, 1)
 
@@ -224,12 +196,6 @@ def zeros_(tensor: paddle.Tensor) -> paddle.Tensor:
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.zeros_(param)
     """
     return _no_grad_fill_(tensor, 0)
 
@@ -281,11 +247,6 @@ def xavier_uniform_(
     Returns:
         paddle.Tensor: Initialized tensor.
 
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.xavier_uniform_(param)
     """
     fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor, reverse=reverse)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
@@ -307,11 +268,6 @@ def xavier_normal_(
     Returns:
         paddle.Tensor: Initialized tensor.
 
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.xavier_normal_(param)
     """
     fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor, reverse=reverse)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
@@ -387,12 +343,6 @@ def kaiming_uniform_(
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.kaiming_uniform_(param)
     """
     fan = _calculate_correct_fan(tensor, mode, reverse)
     gain = _calculate_gain(nonlinearity, a)
@@ -422,12 +372,6 @@ def kaiming_normal_(
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.kaiming_normal_(param)
     """
     fan = _calculate_correct_fan(tensor, mode, reverse)
     gain = _calculate_gain(nonlinearity, a)
@@ -440,12 +384,6 @@ def linear_init_(module: nn.Layer) -> None:
 
     Args:
         module (nn.Layer): Linear Layer to be initialized.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> layer = paddle.nn.Linear(128, 256)
-        >>> ppsci.utils.initializer.linear_init_(layer)
     """
     # kaiming_uniform_(module.weight, a=math.sqrt(5))
     fan_in, _ = _calculate_fan_in_and_fan_out(module.weight, reverse=True)
@@ -462,12 +400,6 @@ def lstm_init_(module: nn.Layer) -> None:
 
     Args:
         module (nn.Layer): Linear Layer to be initialized.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> layer = paddle.nn.Linear(128, 256)
-        >>> ppsci.utils.initializer.linear_init_(layer)
     """
     # kaiming_uniform_(module.weight, a=math.sqrt(5))
     fan_in, _ = _calculate_fan_in_and_fan_out(module.weight_hh_l0, reverse=True)
@@ -485,12 +417,6 @@ def conv_init_(module: nn.Layer) -> None:
 
     Args:
         module (nn.Layer): Convolution Layer to be initialized.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> layer = paddle.nn.Conv2D(4, 16, 2)
-        >>> ppsci.utils.initializer.conv_init_(layer)
     """
     kaiming_uniform_(module.weight, a=math.sqrt(5))
     if module.bias is not None:
@@ -508,12 +434,6 @@ def glorot_normal_(tensor: paddle.Tensor) -> paddle.Tensor:
 
     Returns:
         paddle.Tensor: Initialized tensor.
-
-    Examples:
-        >>> import paddle
-        >>> import ppsci
-        >>> param = paddle.empty((128, 256), "float32")
-        >>> param = ppsci.utils.initializer.glorot_normal_(param)
     """
     assert (
         tensor.ndim == 2
@@ -523,4 +443,49 @@ def glorot_normal_(tensor: paddle.Tensor) -> paddle.Tensor:
     stddev = math.sqrt(var) * 0.87962566103423978
     trunc_normal_(tensor)
     tensor.set_value(tensor * stddev)
+    return tensor
+
+
+def _standardize(kernel):
+    """
+    Makes sure that N*Var(W) = 1 and E[W] = 0
+    """
+    eps = 1e-06
+    if len(tuple(kernel.shape)) == 3:
+        axis = 0, 1
+    else:
+        axis = 1
+    var, mean = tuple(
+        [
+            paddle.var(kernel, axis=axis, unbiased=True, keepdim=True),
+            paddle.mean(kernel, axis=axis, keepdim=True),
+        ]
+    )
+    kernel = (kernel - mean) / (var + eps) ** 0.5
+    return kernel
+
+
+def he_orthogonal_init(tensor):
+    """
+    Generate a weight matrix with variance according to He initialization.
+    Based on a random (semi-)orthogonal matrix neural networks
+    are expected to learn better when features are decorrelated
+    (stated by eg. "Reducing overfitting in deep networks by decorrelating
+    representations",
+    "Dropout: a simple way to prevent neural networks from overfitting",
+    "Exact solutions to the nonlinear dynamics of learning in deep linear
+    neural networks")
+    """
+    init_Orthogonal = paddle.nn.initializer.Orthogonal()
+    init_Orthogonal(tensor)
+    if len(tuple(tensor.shape)) == 3:
+        fan_in = functools.reduce(operator.mul, tuple(tensor.shape)[:-1], 1)
+
+    else:
+        fan_in = tuple(tensor.shape)[0]
+    stop_gradient = tensor.stop_gradient
+    with paddle.no_grad():
+        tensor.data = _standardize(tensor.data)
+        tensor.data *= (1 / fan_in) ** 0.5
+    tensor.stop_gradient = stop_gradient
     return tensor

@@ -59,7 +59,7 @@ __all__ = [
 
 
 def init_logger(
-    name: str = "ppsci",
+    name: str = "ppmat",
     log_file: Optional[str] = None,
     log_level: int = logging.INFO,
 ) -> None:
@@ -71,7 +71,7 @@ def init_logger(
     is specified a FileHandler will also be added.
 
     Args:
-        name (str, optional): Logger name. Defaults to "ppsci".
+        name (str, optional): Logger name. Defaults to "ppmat".
         log_file (Optional[str]): The log filename. If specified, a FileHandler
             will be added to the logger. Defaults to None.
         log_level (int, optional): The logger level. Note that only the process of
@@ -198,40 +198,42 @@ def error(msg, *args):
 
 
 def scalar(
+    tag: str,
     metric_dict: Dict[str, float],
     step: int,
-    vdl_writer: Optional["visualdl.LogWriter"] = None,
+    visualdl_writer: Optional["visualdl.LogWriter"] = None,
     wandb_writer: Optional["wandb.run"] = None,
-    tbd_writer: Optional["tbd.SummaryWriter"] = None,
+    tensorboard_writer: Optional["tbd.SummaryWriter"] = None,
 ):
     """This function will add scalar data to VisualDL or WandB for plotting curve(s).
 
     Args:
+        tag (str): The tag of the metric.
         metric_dict (Dict[str, float]): Metrics dict with metric name and value.
         step (int): The step of the metric.
-        vdl_writer (Optional[visualdl.LogWriter]): VisualDL writer to record metrics.
-            Defaults to None.
+        visualdl_writer (Optional[visualdl.LogWriter]): VisualDL writer to record
+            metrics. Defaults to None.
         wandb_writer (Optional[wandb.run]): Run object of WandB to record metrics.
             Defaults to None.
-        tbd_writer (Optional[tbd.SummaryWriter]): Run object of WandB to record metrics.
-            Defaults to None.
+        tensorboard_writer (Optional[tbd.SummaryWriter]): Run object of WandB to record
+            metrics. Defaults to None.
     """
-    if vdl_writer is not None:
+    tag_metric_dict = {f"{tag}_{k}": v for k, v in metric_dict.items()}
+    if visualdl_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                for name, value in metric_dict.items():
-                    vdl_writer.add_scalar(name, value, step)
-
+                for name, value in tag_metric_dict.items():
+                    visualdl_writer.add_scalar(name, value, step)
     if wandb_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                wandb_writer.log({"step": step, **metric_dict})
+                wandb_writer.log(data=tag_metric_dict, step=step)
 
-    if tbd_writer is not None:
+    if tensorboard_writer is not None:
         with misc.RankZeroOnly() as is_master:
             if is_master:
-                for name, value in metric_dict.items():
-                    tbd_writer.add_scalar(name, value, global_step=step)
+                for name, value in tag_metric_dict.items():
+                    tensorboard_writer.add_scalar(name, value, global_step=step)
 
 
 def advertise():
@@ -239,18 +241,18 @@ def advertise():
     Show the advertising message like the following:
 
     ===========================================================
-    ==      PaddleScience is powered by PaddlePaddle !       ==
+    ==      PaddleMaterial is powered by PaddlePaddle !      ==
     ===========================================================
     ==                                                       ==
     ==   For more info please go to the following website.   ==
     ==                                                       ==
-    ==     https://github.com/PaddlePaddle/PaddleScience     ==
+    ==     https://github.com/PaddlePaddle/PaddleMaterial    ==
     ===========================================================
     """
 
-    _copyright = "PaddleScience is powered by PaddlePaddle !"
+    _copyright = "PaddleMaterial is powered by PaddlePaddle !"
     ad = "Please refer to the following website for more info."
-    website = "https://github.com/PaddlePaddle/PaddleScience"
+    website = "https://github.com/PaddlePaddle/PaddleMaterial"
     AD_LEN = 6 + len(max([_copyright, ad, website], key=len))
 
     info(

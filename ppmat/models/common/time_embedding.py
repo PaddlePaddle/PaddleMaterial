@@ -1,3 +1,16 @@
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import math
 
 import numpy as np
@@ -5,8 +18,29 @@ import paddle
 
 
 def uniform_sample_t(batch_size, timesteps):
-    times = np.random.choice(np.arange(1, timesteps + 1), batch_size)
+    times = np.random.choice(np.arange(0, timesteps), batch_size)
     return paddle.to_tensor(times)
+
+
+class UniformTimestepSampler:
+    """Samples diffusion timesteps uniformly over the training time."""
+
+    def __init__(self, *, min_t: float, max_t: float):
+        """Initializes the sampler.
+
+        Args:
+            min_t (float): Smallest timestep that will be seen during training.
+            max_t (float): Largest timestep that will be seen during training.
+        """
+        super().__init__()
+        self.min_t = min_t
+        self.max_t = max_t
+
+    def __call__(
+        self,
+        batch_size: int,
+    ) -> paddle.float32:
+        return paddle.rand(shape=[batch_size]) * (self.max_t - self.min_t) + self.min_t
 
 
 class SinusoidalTimeEmbeddings(paddle.nn.Layer):
@@ -22,3 +56,25 @@ class SinusoidalTimeEmbeddings(paddle.nn.Layer):
         embeddings = time[:, None] * self.embeddings[None, :]
         embeddings = paddle.concat(x=(embeddings.sin(), embeddings.cos()), axis=-1)
         return embeddings
+
+
+class NoiseLevelEncoding(paddle.nn.Layer):
+    def __init__(self, d_model: int, dropout: float = 0.0):
+        super().__init__()
+        self.dropout = paddle.nn.Dropout(p=dropout)
+        self.d_model = d_model
+        div_term = paddle.exp(
+            x=paddle.arange(start=0, end=d_model, step=2)
+            * (-math.log(10000.0) / d_model)
+        )
+        self.register_buffer(name="div_term", tensor=div_term)
+
+    def forward(self, t: paddle.Tensor) -> paddle.Tensor:
+        """
+        Args:
+            t: Tensor, shape [batch_size]
+        """
+        x = paddle.zeros(shape=(tuple(t.shape)[0], self.d_model))
+        x[:, 0::2] = paddle.sin(x=t[:, None] * self.div_term[None])
+        x[:, 1::2] = paddle.cos(x=t[:, None] * self.div_term[None])
+        return self.dropout(x)

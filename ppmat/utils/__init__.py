@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# NOTE: Put config module import at the top level for register default config(s) in
-# ConfigStore at the begining of ppsci
 
 from ppmat.utils import ema
 from ppmat.utils import logger
 from ppmat.utils import misc
-from ppmat.utils.default_elements import DEFAULT_ELEMENTS
-from ppmat.utils.default_elements import ELEMENTS_94
 from ppmat.utils.misc import AverageMeter
+from ppmat.utils.misc import format_time_manual
 from ppmat.utils.misc import set_random_seed
 from ppmat.utils.save_load import load_checkpoint
 from ppmat.utils.save_load import load_pretrain
@@ -31,10 +28,9 @@ __all__ = [
     misc,
     ema,
     AverageMeter,
+    format_time_manual,
     set_random_seed,
     load_checkpoint,
     load_pretrain,
     save_checkpoint,
-    DEFAULT_ELEMENTS,
-    ELEMENTS_94,
 ]

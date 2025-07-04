@@ -14,12 +14,22 @@
 
 import copy
 
+from ppmat.losses.l1_loss import HuberLoss
 from ppmat.losses.l1_loss import L1Loss
+from ppmat.losses.l1_loss import MAELoss
 from ppmat.losses.l1_loss import SmoothL1Loss
 from ppmat.losses.loss_warper import LossWarper
 from ppmat.losses.mse_loss import MSELoss
 
-__all__ = ["MSELoss", "L1Loss", "SmoothL1Loss", "LossWarper", "build_loss"]
+__all__ = [
+    "MSELoss",
+    "L1Loss",
+    "SmoothL1Loss",
+    "MAELoss",
+    "HuberLoss",
+    "LossWarper",
+    "build_loss",
+]
 
 
 def build_loss(cfg):
@@ -33,13 +43,14 @@ def build_loss(cfg):
     """
     cfg = copy.deepcopy(cfg)
 
-    loss_cls = cfg.pop("__name__")
+    loss_cls = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
     if loss_cls == "LossWarper":
-        losses_cfg = cfg.pop("loss_fn")
+        losses_cfg = init_params.pop("loss_fn")
         loss_fn = {}
         for key in losses_cfg.keys():
             loss_fn[key] = build_loss(losses_cfg[key])
-        cfg["loss_fn"] = loss_fn
+        init_params["loss_fn"] = loss_fn
 
-    loss = eval(loss_cls)(**cfg)
+    loss = eval(loss_cls)(**init_params)
     return loss

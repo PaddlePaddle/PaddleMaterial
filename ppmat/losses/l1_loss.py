@@ -21,7 +21,7 @@ from typing_extensions import Literal
 
 
 class L1Loss(nn.Layer):
-    r"""Class for mean squared error loss."""
+    r"""Class for l1 loss."""
 
     def __init__(
         self,
@@ -40,8 +40,13 @@ class L1Loss(nn.Layer):
         return loss
 
 
+class MAELoss(L1Loss):
+    r"""Class for mean absolute error loss."""
+    pass
+
+
 class SmoothL1Loss(nn.Layer):
-    r"""Class for mean squared error loss."""
+    r"""Class for smooth l1 loss."""
 
     def __init__(
         self,
@@ -60,3 +65,8 @@ class SmoothL1Loss(nn.Layer):
 
         loss = F.smooth_l1_loss(pred, label, self.reduction, delta=self.delta)
         return loss
+
+
+class HuberLoss(SmoothL1Loss):
+    r"""Class for huber loss."""
+    pass

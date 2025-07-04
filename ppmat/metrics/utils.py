@@ -7,6 +7,7 @@ import paddle
 import smact
 from matminer.featurizers.composition.composite import ElementProperty
 from matminer.featurizers.site.fingerprint import CrystalNNFingerprint
+from pymatgen.core import Element
 from pymatgen.core.composition import Composition
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
@@ -14,7 +15,6 @@ from scipy.linalg import polar
 from smact.screening import pauling_test
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
-from ppmat.utils.default_elements import DEFAULT_ELEMENTS
 
 # Ignore warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -29,7 +29,7 @@ CompFP = ElementProperty.from_preset("magpie")
 
 
 def smact_validity(comp, count, use_pauling_test=True, include_alloys=True):
-    elem_symbols = tuple([DEFAULT_ELEMENTS[elem] for elem in comp])
+    elem_symbols = tuple([Element.from_Z(elem).symbol for elem in comp])
     space = smact.element_dictionary(elem_symbols)
     smact_elems = [e[1] for e in space.items()]
     electronegs = [e.pauling_eneg for e in smact_elems]
@@ -94,12 +94,12 @@ class Crystal(object):
             else:
                 self.angles = np.array(crys_array_dict["angles"])
         else:
-            if isinstance(crys_array_dict["lattices"], paddle.Tensor):
-                lattices = crys_array_dict["lattices"].cpu().numpy()
+            if isinstance(crys_array_dict["lattice"], paddle.Tensor):
+                lattice = crys_array_dict["lattice"].cpu().numpy()
             else:
-                lattices = np.array(crys_array_dict["lattices"])
-            self.lengths, self.angles = lattices_to_params_shape_numpy(lattices)
-
+                lattice = np.array([crys_array_dict["lattice"]])
+            self.lengths, self.angles = lattices_to_params_shape_numpy(lattice)
+            self.lengths, self.angles = self.lengths[0], self.angles[0]
         self.dict = {
             "frac_coords": self.frac_coords,
             "atom_types": self.atom_types,
@@ -183,9 +183,7 @@ def get_crys_from_cif(cif, polar_decompose=False):
     structure = Structure.from_str(cif, fmt="cif")
     lattice = structure.lattice
 
-    atom_types = np.array(
-        [DEFAULT_ELEMENTS.index(site.specie.symbol) for site in structure]
-    )
+    atom_types = np.array([site.specie.Z for site in structure])
 
     if polar_decompose:
         lattice_m = lattice.matrix
