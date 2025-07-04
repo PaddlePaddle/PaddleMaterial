@@ -11,6 +11,11 @@
 **Crystalline materials**, characterized by their symmetrical and periodic structures, exhibit a wide range of properties and are widely applied in various fields, from electronic devices to energy applications. Traditional experimental and computational methods for discovering crystalline materials are often time-consuming and expensive. Data-driven approaches to material discovery have the power to model the highly complex atomic systems within crystalline materials, paving the way for rapid and accurate material discovery.
 
 
+## Task
+- [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
+- [IOMPP-Inorganic Material Property Prediction](property_prediction/README.md)
+- [IOMSG-Inorganic Material Structure Generation](structure_generation/README.md)
+
 ## Installation
 
 Please refer to the installation [document](Install.md) for environment configuration.
@@ -19,6 +24,16 @@ Please refer to the installation [document](Install.md) for environment configur
 ## Get Started
 
 Please refer to the [document](get_started.md).
+
+## Cooperation
+
+We sincerely invite you to spare a moment from your busy schedule to share your [feedback](https://paddle.wjx.cn/vm/rXyQwB2.aspx#).
+
+![feedback](docs/feedback.png)
+
+### Cooperative partner
+![SuZhouLab](docs/suzhoulab.png)
+
 
 ## Acknowledgements
 
