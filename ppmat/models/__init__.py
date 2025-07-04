@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import os
 import os.path as osp
 from typing import Dict
 from typing import Optional
@@ -86,8 +87,8 @@ MODEL_REGISTRY = {
     "chgnet_mptrj": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip",
     "dimenetpp_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_e_form.zip",
     "dimenetpp_mp2018_train_60k_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_band_gap.zip",
-    "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
-    "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_G.zipp",
+    "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_G.zip",
+    "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
     "mattersim_1M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_1M.zip",
     "mattersim_5M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_5M.zip",
 }
@@ -133,8 +134,23 @@ def build_model(cfg: Dict):
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
     path = osp.join(path, model_name)
-
     config_path = osp.join(path, f"{model_name}.yaml")
+    if not osp.exists(config_path):
+        logger.warning(
+            f"Config file not found: {config_path}, try find other yaml files."
+        )
+        file_list = os.listdir(path)
+        find_list = []
+        for file in file_list:
+            if file.endswith(".yaml") or file.endswith(".yml"):
+                find_list.append(osp.join(path, file))
+        if len(find_list) == 1:
+            config_path = find_list[0]
+        else:
+            raise ValueError(
+                f"Multiple yaml files found: {find_list}, must be only one"
+            )
+        logger.warning(f"Find config file: {config_path}, using this file.")
 
     config = OmegaConf.load(config_path)
     config = OmegaConf.to_container(config, resolve=True)

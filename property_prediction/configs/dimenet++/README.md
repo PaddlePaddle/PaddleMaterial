@@ -24,7 +24,7 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
 <table>
     <head>
         <tr>
-            <th  nowrap="nowrap">Model</th>
+            <th  nowrap="nowrap">Model Name</th>
             <th  nowrap="nowrap">Dataset</th>
             <th  nowrap="nowrap">Property</th>
             <th  nowrap="nowrap">MAE(Val / Test dataset)</th>
@@ -36,7 +36,7 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
     </head>
     <body>
         <tr>
-            <td  nowrap="nowrap">DimeNet++</td>
+            <td  nowrap="nowrap">dimenetpp_mp2018_train_60k_e_form</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
             <td  nowrap="nowrap">Form. Energy(eV/atom)</td>
             <td  nowrap="nowrap">0.030738 / 0.032307</td>
@@ -46,7 +46,7 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_e_form.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">DimeNet++</td>
+            <td  nowrap="nowrap">dimenetpp_mp2018_train_60k_band_gap</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
             <td  nowrap="nowrap">Band Gap(eV)</td>
             <td  nowrap="nowrap">0.270737 / 0.282961</td>
@@ -56,9 +56,9 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_band_gap.zip">checkpoint | log</a></td>
         </tr>  
         <tr>
-            <td  nowrap="nowrap">DimeNet++</td>
+            <td  nowrap="nowrap">dimenetpp_mp2018_train_60k_K</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">Bulk modulus( log(GPa) )</td>
+            <td  nowrap="nowrap">Bulk modulus(GPa)</td>
             <td  nowrap="nowrap">8.068773 / 7.031967</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~1 hour 38 min</td>
@@ -66,9 +66,9 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip">checkpoint | log</a></td>
         </tr>
         <tr>
-            <td  nowrap="nowrap">DimeNet++</td>
+            <td  nowrap="nowrap">dimenetpp_mp2018_train_60k_G</td>
             <td  nowrap="nowrap">mp2018_train_60k</td>
-            <td  nowrap="nowrap">Shear modulus( log(GPa) )</td>
+            <td  nowrap="nowrap">Shear modulus(GPa)</td>
             <td  nowrap="nowrap">8.083622 / 7.122238</td>
             <td  nowrap="nowrap">4</td>
             <td  nowrap="nowrap">~1 hour 38 min</td>
@@ -142,6 +142,8 @@ python property_prediction/train.py -c property_prediction/configs/dimenet++/dim
 
 ### Prediction
 
+You can replace the `--model_name` parameter at  `Mode 1` with other model names from the `results` table.
+
 ```bash
 # This command is used to predict the properties of new crystal structures using a trained model.
 # Note: The model_name and weights_name parameters are used to specify the pre-trained model and its corresponding weights. The cif_file_path parameter is used to specify the path to the CIF files for which properties need to be predicted.
@@ -150,7 +152,7 @@ python property_prediction/train.py -c property_prediction/configs/dimenet++/dim
 # formation energy per atom
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_e_form' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
@@ -159,7 +161,7 @@ python property_prediction/predict.py --config_path='property_prediction/configs
 # band gap
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal band gap prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_band_gap' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_band_gap' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal band gap prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
@@ -167,7 +169,7 @@ python property_prediction/predict.py --config_path='property_prediction/configs
 # bulk modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal bulk modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_K' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_K' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal bulk modulus prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
@@ -176,7 +178,7 @@ python property_prediction/predict.py --config_path='property_prediction/configs
 # shear modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_G' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_G' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear modulus prediction. This approach allows for more flexibility and customization.
 python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'

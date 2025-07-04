@@ -538,7 +538,7 @@ class DimeNetPlusPlus(paddle.nn.Layer):
                     }
                 )
                 result = self.unnormalize(result).numpy()[0, 0]
-                result = {self.property_name: result}
+                result = {self.property_names: result}
                 results.append(result)
             return results
 
@@ -548,5 +548,5 @@ class DimeNetPlusPlus(paddle.nn.Layer):
             }
             result = self._forward(data)
             result = self.unnormalize(result).numpy()[0, 0]
-            result = {self.property_name: result}
+            result = {self.property_names: result}
             return result
