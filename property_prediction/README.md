@@ -6,8 +6,6 @@ Inorganic Material Property Prediction (IMPP) targets rapid, first-principles-le
 
 ## 2.Models Matrix
 
-## 1.2 Product Matrix
-
 | **Supported Functions**                      | **[MegNet](./configs/megnet/README.md)** | **[Comfomer](./configs/comformer/README.md)** | **GemNet** | **[DimeNet++](./configs/dimenet++/README.md)** | **InfGCN** |
 | -------------------------------------------- | :--------------------------------------: | :-------------------------------------------: | :--------: | :--------------------------------------------: | :--------: |
 | **Forward Prediction · Material Properties** |                                          |                                               |            |                                                |            |
