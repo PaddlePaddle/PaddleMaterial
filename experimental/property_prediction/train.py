@@ -29,7 +29,7 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
-from ppmat.datasets.transform import *
+
 
 def read_independent_dataloader_config(config):
     """
@@ -67,6 +67,9 @@ def read_independent_dataloader_config(config):
 
 
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -184,12 +187,10 @@ if __name__ == "__main__":
     )
 
     if config["Global"].get("do_train", True):
-         trainer.train()
+        trainer.train()
     if config["Global"].get("do_eval", False):
         logger.info("Evaluating on validation set")
         time_info, loss_info, metric_info = trainer.eval(val_loader)
     if config["Global"].get("do_test", False):
         logger.info("Evaluating on test set")
         time_info, loss_info, metric_info = trainer.eval(test_loader)
-
-
