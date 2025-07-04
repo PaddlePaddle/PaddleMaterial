@@ -155,4 +155,12 @@ experimental/log2/
 
 output/*experimental/data/
 experimental/output/
-
+experimental/
+log2/
+log3/
+log_step2/
+log_step3/
+nohup.out
+ppmat/models/mattersim/threebody_indices.c
+step2_latest.log_nobug
+step3_15_H_without_formular.ckpt
