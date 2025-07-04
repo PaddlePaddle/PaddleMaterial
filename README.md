@@ -6,10 +6,15 @@
 
 ## Introduction
 
-**PaddleScience-Material** is a data-driven deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported crystalline materials and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported the equivalent graph networks-based model and will support the language-based model and multi-modal model in the feature.
+**PaddleMaterial** is a data-driven deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported crystalline materials and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported the equivalent graph networks-based model and will support the language-based model and multi-modal model in the feature.
 
 **Crystalline materials**, characterized by their symmetrical and periodic structures, exhibit a wide range of properties and are widely applied in various fields, from electronic devices to energy applications. Traditional experimental and computational methods for discovering crystalline materials are often time-consuming and expensive. Data-driven approaches to material discovery have the power to model the highly complex atomic systems within crystalline materials, paving the way for rapid and accurate material discovery.
 
+
+## Task
+- [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
+- [IOMPP-Inorganic Material Property Prediction](property_prediction/README.md)
+- [IOMSG-Inorganic Material Structure Generation](structure_generation/README.md)
 
 ## Installation
 
@@ -19,6 +24,16 @@ Please refer to the installation [document](Install.md) for environment configur
 ## Get Started
 
 Please refer to the [document](get_started.md).
+
+## Cooperation
+
+We sincerely invite you to spare a moment from your busy schedule to share your [feedback](https://paddle.wjx.cn/vm/rXyQwB2.aspx#).
+
+![feedback](docs/feedback.png)
+
+### Cooperative partner
+![SuZhouLab](docs/suzhoulab.png)
+
 
 ## Acknowledgements
 
