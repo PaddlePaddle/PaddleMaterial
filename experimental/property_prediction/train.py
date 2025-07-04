@@ -63,7 +63,6 @@ def read_independent_dataloader_config(config):
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
-
     return train_loader, val_loader, test_loader
 
 
