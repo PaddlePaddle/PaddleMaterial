@@ -25,14 +25,15 @@ Please refer to the installation [document](Install.md) for environment configur
 
 Please refer to the [document](get_started.md).
 
-## Cooperation
+
+## Cooperative Partner
+![SuZhouLab](docs/suzhoulab.png)
+
+## Feedback
 
 We sincerely invite you to spare a moment from your busy schedule to share your [feedback](https://paddle.wjx.cn/vm/rXyQwB2.aspx#).
 
 ![feedback](docs/feedback.png)
-
-### Cooperative partner
-![SuZhouLab](docs/suzhoulab.png)
 
 
 ## Acknowledgements
