@@ -14,12 +14,28 @@
 
 import copy
 
-from ppmat.metrics.csp_metric import CSPMetric
-from ppmat.metrics.gen_metric import GenMetric
-from ppmat.metrics.mae_metric import MAEMetric
-from ppmat.metrics.metric_warper import MetricWarper
+import paddle  # noqa
 
-__all__ = ["MAEMetric", "MetricWarper", "CSPMetric", "GenMetric"]
+from ppmat.metrics.csp_metric import CSPMetric
+
+__all__ = ["build_metric", "CSPMetric"]
+
+
+class IgnoreNanMetricWrapper:
+    def __init__(self, **metric_cfg):
+        self._metric_cfg = metric_cfg
+        self._metric = build_metric(self._metric_cfg)
+
+    def __call__(self, pred, label):
+
+        valid_value_indices = ~paddle.isnan(label)
+        valid_label = label[valid_value_indices]
+        valid_pred = pred[valid_value_indices]
+        if valid_label.numel() > 0:
+            metric_value = self._metric(valid_pred, valid_label)
+        else:
+            metric_value = paddle.nan
+        return metric_value
 
 
 def build_metric(cfg):
@@ -31,15 +47,19 @@ def build_metric(cfg):
     Returns:
         Metric: Callable Metric object.
     """
+    if cfg is None:
+        return None
     cfg = copy.deepcopy(cfg)
 
-    metric_cls = cfg.pop("__name__")
-    if metric_cls == "MetricWarper":
-        metric_cfg = cfg.pop("metric_fn")
-        metric_fn = {}
-        for key in metric_cfg.keys():
-            metric_fn[key] = build_metric(metric_cfg[key])
-        cfg["metric_fn"] = metric_fn
+    if "__class_name__" not in cfg:
+        assert isinstance(cfg, dict)
+        metric_dict = {}
+        for key, sub_cfg in cfg.items():
+            metric_dict[key] = build_metric(sub_cfg)
+        return metric_dict
 
-    loss = eval(metric_cls)(**cfg)
-    return loss
+    class_name = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
+
+    metric = eval(class_name)(**init_params)
+    return metric

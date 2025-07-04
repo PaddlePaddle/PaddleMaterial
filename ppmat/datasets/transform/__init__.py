@@ -14,29 +14,35 @@
 
 import copy
 import traceback
-from typing import Any
-from typing import Tuple
+from typing import Any, Tuple
 
 from paddle import vision
 
-from ppmat.datasets.transform.post_process import Denormalize
-from ppmat.datasets.transform.preprocess import ClipData
+from ppmat.datasets.transform.dataset import custom_scaling
+from ppmat.datasets.transform.dataset import mean_std_scaling
+from ppmat.datasets.transform.dataset import no_scaling
+from ppmat.datasets.transform.dataset import rmsd_scaling
+from ppmat.datasets.transform.post_process import PowerData
+from ppmat.datasets.transform.post_process import UnNormalize
+from ppmat.datasets.transform.preprocess import Abs
+from ppmat.datasets.transform.preprocess import LatticePolarDecomposition
+from ppmat.datasets.transform.preprocess import Log10
 from ppmat.datasets.transform.preprocess import Normalize
-from ppmat.datasets.transform.preprocess import SelecTargetTransform
-from ppmat.datasets.transform.preprocess import RemoveYTransform
-from ppmat.datasets.transform.preprocess import SelectMuTransform
-from ppmat.datasets.transform.preprocess import SelectHOMOTransform
+from ppmat.datasets.transform.preprocess import Scale
+from ppmat.utils import logger
 
 __all__ = [
     "Normalize",
-    "Denormalize",
-    "ClipData",
-    "SelecTargetTransform",
-    "RemoveYTransform",
-    "SelectMuTransform",
-    "SelectHOMOTransform",
-    "build_transforms",
-    "build_post_process",
+    "Log10",
+    "UnNormalize",
+    "PowerData",
+    "LatticePolarDecomposition",
+    "Scale",
+    "Abs",
+    "no_scaling",
+    "mean_std_scaling",
+    "rmsd_scaling",
+    "custom_scaling",
 ]
 
 
@@ -51,7 +57,7 @@ class Compose(vision.Compose):
                 data = f(*data)
             except Exception as e:
                 stack_info = traceback.format_exc()
-                print(
+                logger.info(
                     f"fail to perform transform [{f}] with error: "
                     f"{e} and stack:\n{str(stack_info)}"
                 )
@@ -65,23 +71,29 @@ def build_transforms(cfg):
     cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:
-        transform_cls = next(iter(_item.keys()))
-        transform_cfg = _item[transform_cls]
-        transform = eval(transform_cls)(**transform_cfg)
+        transform_cls = _item.pop("__class_name__")
+        init_params = _item.pop("__init_params__")
+        transform = eval(transform_cls)(**init_params)
         transform_list.append(transform)
 
     return vision.Compose(transform_list)
 
 
-def build_post_process(cfg):
+def build_post_transforms(cfg):
     if not cfg:
         return None
     cfg = copy.deepcopy(cfg)
     transform_list = []
     for _item in cfg:
-        transform_cls = next(iter(_item.keys()))
-        transform_cfg = _item[transform_cls]
-        transform = eval(transform_cls)(**transform_cfg)
+        transform_cls = _item.pop("__class_name__")
+        init_params = _item.pop("__init_params__")
+        transform = eval(transform_cls)(**init_params)
         transform_list.append(transform)
 
-    return Compose(transform_list)
+    return vision.Compose(transform_list)
+
+
+def run_dataset_transform(trans_func, *args, **kwargs):
+    result = eval(trans_func)(*args, **kwargs)
+
+    return result

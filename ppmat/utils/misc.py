@@ -22,6 +22,7 @@ from contextlib import ContextDecorator
 from typing import Callable
 from typing import Dict
 from typing import List
+from typing import Literal
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
@@ -32,6 +33,8 @@ import paddle
 from paddle import distributed as dist
 
 from ppmat.utils import logger
+from ppmat.utils.paddle_aux import dim2perm
+from ppmat.utils.scatter import scatter
 
 __all__ = [
     "AverageMeter",
@@ -39,6 +42,7 @@ __all__ = [
     "Prettydefaultdict",
     "RankZeroOnly",
     "Timer",
+    "format_time_manual",
     "all_gather",
     "concat_dict_list",
     "convert_to_array",
@@ -58,11 +62,12 @@ class AverageMeter:
     Code was based on https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
 
-    def __init__(self, name="", fmt="f", postfix="", need_avg=True):
+    def __init__(self, name="", fmt="f", postfix="", need_avg=True, smooth_window=1):
         self.name = name
         self.fmt = fmt
         self.postfix = postfix
         self.need_avg = need_avg
+        self.smooth_window = smooth_window
         self.reset()
 
     def reset(self):
@@ -80,6 +85,14 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
         self.history.append(val)
+
+    @property
+    def smooth_avg(self):
+        if len(self.history) >= self.smooth_window:
+            avg = sum(self.history[-self.smooth_window :]) / self.smooth_window
+        else:
+            avg = sum(self.history) / len(self.history)
+        return avg
 
     @property
     def avg_info(self):
@@ -231,6 +244,15 @@ class Timer(ContextDecorator):
         self.interval = self.end_time - self.start_time
         if self.auto_print:
             logger.message(f"{self.name}.time_cost = {self.interval:.2f} s")
+
+
+def format_time_manual(seconds):
+    seconds = int(seconds)
+    hours = seconds // 3600
+    remainder = seconds % 3600
+    minutes = remainder // 60
+    seconds = remainder % 60
+    return f"{hours:02d}h-{minutes:02d}m-{seconds:02d}s"
 
 
 def convert_to_dict(array: np.ndarray, keys: Tuple[str, ...]) -> Dict[str, np.ndarray]:
@@ -527,4 +549,298 @@ def run_at_rank0(func: Callable) -> Callable:
         if dist.get_rank() == 0:
             return func(*args, **kwargs)
 
-    return wrapped_func   
+    return wrapped_func
+
+
+def ragged_range(sizes: paddle.Tensor) -> paddle.Tensor:
+    """Multiple concatenated ranges.
+
+    Examples
+    --------
+        sizes = [1 4 2 3]
+        Return: [0  0 1 2 3  0 1  0 1 2]
+    """
+    assert sizes.dim() == 1
+    if sizes.sum() == 0:
+        return paddle.empty(shape=[0], dtype=sizes.dtype)
+    sizes_nonzero = sizes > 0
+    if not paddle.all(x=sizes_nonzero):
+        sizes = paddle.masked_select(x=sizes, mask=sizes_nonzero)
+    id_steps = paddle.ones(shape=sizes.sum(), dtype="int64")
+    id_steps[0] = 0
+    insert_index = sizes[:-1].cumsum(axis=0)
+    insert_val = (1 - sizes)[:-1]
+    id_steps[insert_index] = insert_val
+    res = id_steps.cumsum(axis=0)
+    return res
+
+
+def repeat_blocks(
+    sizes: paddle.Tensor,
+    repeats: paddle.Tensor,
+    continuous_indexing: bool = True,
+    start_idx: int = 0,
+    block_inc: int = 0,
+    repeat_inc: int = 0,
+) -> paddle.Tensor:
+    """Repeat blocks of indices.
+    Adapted from https://stackoverflow.com/questions/51154989/numpy-vectorized-function-to-repeat-blocks-of-consecutive-elements
+
+    continuous_indexing: Whether to keep increasing the index after each block
+    start_idx: Starting index
+    block_inc: Number to increment by after each block,
+               either global or per block. Shape: len(sizes) - 1
+    repeat_inc: Number to increment by after each repetition,
+                either global or per block
+
+    Examples
+    --------
+        sizes = [1,3,2] ; repeats = [3,2,3] ; continuous_indexing = False
+        Return: [0 0 0  0 1 2 0 1 2  0 1 0 1 0 1]
+        sizes = [1,3,2] ; repeats = [3,2,3] ; continuous_indexing = True
+        Return: [0 0 0  1 2 3 1 2 3  4 5 4 5 4 5]
+        sizes = [1,3,2] ; repeats = [3,2,3] ; continuous_indexing = True ;
+        repeat_inc = 4
+        Return: [0 4 8  1 2 3 5 6 7  4 5 8 9 12 13]
+        sizes = [1,3,2] ; repeats = [3,2,3] ; continuous_indexing = True ;
+        start_idx = 5
+        Return: [5 5 5  6 7 8 6 7 8  9 10 9 10 9 10]
+        sizes = [1,3,2] ; repeats = [3,2,3] ; continuous_indexing = True ;
+        block_inc = 1
+        Return: [0 0 0  2 3 4 2 3 4  6 7 6 7 6 7]
+        sizes = [0,3,2] ; repeats = [3,2,3] ; continuous_indexing = True
+        Return: [0 1 2 0 1 2  3 4 3 4 3 4]
+        sizes = [2,3,2] ; repeats = [2,0,2] ; continuous_indexing = True
+        Return: [0 1 0 1  5 6 5 6]
+    """
+    assert sizes.dim() == 1
+    assert all(sizes >= 0)
+    sizes_nonzero = sizes > 0
+    if not paddle.all(x=sizes_nonzero):
+        assert block_inc == 0
+        sizes = paddle.masked_select(x=sizes, mask=sizes_nonzero)
+        if isinstance(repeats, paddle.Tensor):
+            repeats = paddle.masked_select(x=repeats, mask=sizes_nonzero)
+        if isinstance(repeat_inc, paddle.Tensor):
+            repeat_inc = paddle.masked_select(x=repeat_inc, mask=sizes_nonzero)
+    if isinstance(repeats, paddle.Tensor):
+        assert all(repeats >= 0)
+        insert_dummy = repeats[0] == 0
+        if insert_dummy:
+            one = paddle.ones(shape=[1], dtype=sizes.dtype)
+            zero = paddle.zeros(shape=[1], dtype=sizes.dtype)
+            sizes = paddle.concat(x=(one, sizes))
+            repeats = paddle.concat(x=(one, repeats))
+            if isinstance(block_inc, paddle.Tensor):
+                block_inc = paddle.concat(x=(zero, block_inc))
+            if isinstance(repeat_inc, paddle.Tensor):
+                repeat_inc = paddle.concat(x=(zero, repeat_inc))
+    else:
+        assert repeats >= 0
+        insert_dummy = False
+    r1 = paddle.repeat_interleave(x=paddle.arange(end=len(sizes)), repeats=repeats)
+    N = (sizes * repeats).sum()
+    id_ar = paddle.ones(shape=N, dtype="int64")
+    id_ar[0] = 0
+    insert_index = sizes[r1[:-1]].cumsum(axis=0)
+    insert_val = (1 - sizes)[r1[:-1]]
+    if isinstance(repeats, paddle.Tensor) and paddle.any(x=repeats == 0):
+        diffs = r1[1:] - r1[:-1]
+        indptr = paddle.concat(
+            x=(paddle.zeros(shape=[1], dtype=sizes.dtype), diffs.cumsum(axis=0))
+        )
+        if continuous_indexing:
+            # insert_val += segment_csr(sizes[: r1[-1]], indptr, reduce="sum")
+            raise NotImplementedError()
+        if isinstance(block_inc, paddle.Tensor):
+            # insert_val += segment_csr(block_inc[: r1[-1]], indptr, reduce="sum")
+            raise NotImplementedError()
+        else:
+            insert_val += block_inc * (indptr[1:] - indptr[:-1])
+            if insert_dummy:
+                insert_val[0] -= block_inc
+    else:
+        idx = r1[1:] != r1[:-1]
+        if continuous_indexing:
+            insert_val[idx] = 1
+        idx = paddle.where(condition=idx)[0].flatten()
+        insert_val[idx] += block_inc
+    if isinstance(repeat_inc, paddle.Tensor):
+        insert_val += repeat_inc[r1[:-1]]
+        if isinstance(repeats, paddle.Tensor):
+            repeat_inc_inner = repeat_inc[repeats > 0][:-1]
+        else:
+            repeat_inc_inner = repeat_inc[:-1]
+    else:
+        insert_val += repeat_inc
+        repeat_inc_inner = repeat_inc
+    if isinstance(repeats, paddle.Tensor):
+        repeats_inner = repeats[repeats > 0][:-1]
+    else:
+        repeats_inner = repeats
+    idx = r1[1:] != r1[:-1]
+    idx = paddle.where(condition=idx)[0].flatten()
+    insert_val[idx] -= repeat_inc_inner * repeats_inner
+    id_ar[insert_index] = insert_val
+    if insert_dummy:
+        id_ar = id_ar[1:]
+        if continuous_indexing:
+            id_ar[0] -= 1
+    id_ar[0] += start_idx
+    res = id_ar.cumsum(axis=0)
+    return res
+
+
+def aggregate_per_sample(
+    data_per_row: paddle.Tensor,
+    batch_idx: (paddle.Tensor | None),
+    reduce: Literal["sum", "mean"],
+    batch_size: int,
+):
+    """
+    Aggregate (potentially) batched input tensor to get a scalar for each sample in the
+    batch.
+    E.g., (num_atoms, d1, d2, ..., dn) -> (batch_size, d1, d2, ..., dn) -> (batch_size,)
+    where the first aggregation only happens when batch_idx is provided.
+
+    Args:
+        data_per_row: shape (num_nodes, any_more_dims). May contain multiple nodes per
+            sample.
+        batch_idx: shape (num_nodes,). Indicates which sample each row belongs to. If
+            not provided, then we assume the first dimension is the batch dimension.
+        reduce: determines how to aggregate over nodes within each sample. (Aggregation
+            over samples and within dims for one node is always mean.)
+        batch_size: number of samples in the batch.
+
+    Returns:
+        Scalar for each sample, shape (batch_size,).
+
+    """
+    data_per_row = paddle.mean(
+        x=data_per_row.reshape(tuple(data_per_row.shape)[0], -1), axis=1
+    )
+    if batch_idx is None:
+        data_per_sample = data_per_row
+    else:
+        data_per_sample = scatter(
+            src=data_per_row, index=batch_idx, dim_size=batch_size, reduce=reduce
+        )
+    return data_per_sample
+
+
+def expand(a, x_shape, left=False):
+    a_dim = len(tuple(a.shape))
+    if left:
+        return a.reshape(*((1,) * (len(x_shape) - a_dim) + tuple(a.shape)))
+    else:
+        return a.reshape(*(tuple(a.shape) + (1,) * (len(x_shape) - a_dim)))
+
+
+def _broadcast_like(x, like):
+    """
+    add broadcast dimensions to x so that it can be broadcast over ``like``
+    """
+    if like is None:
+        return x
+    return x[(...,) + (None,) * (like.ndim - x.ndim)]
+
+
+def maybe_expand(
+    x: paddle.Tensor, batch: Optional[paddle.Tensor], like: paddle.Tensor = None
+) -> paddle.Tensor:
+    """
+
+    Args:
+        x: shape (batch_size, ...)
+        batch: shape (num_thingies,) with integer entries in the range [0, batch_size),
+            indicating which sample each thingy belongs to
+        like: shape x.shape + potential additional dimensions
+    Returns:
+        expanded x with shape (num_thingies,), or if given like.shape, containing value
+             of x for each thingy.
+        If `batch` is None, just returns `x` unmodified, to avoid pointless work if you
+        have exactly one thingy per sample.
+    """
+    x = _broadcast_like(x, like)
+    if batch is None:
+        return x
+    else:
+        return x[batch]
+
+
+def make_noise_symmetric_preserve_variance(noise: paddle.Tensor) -> paddle.Tensor:
+    """Makes the noise matrix symmetric, preserving the variance. Assumes i.i.d. noise
+    for each dimension.
+
+    Args:
+        noise (paddle.Tensor): Input noise matrix, must be a batched square matrix,
+            i.e., have shape (batch_size, dim, dim).
+
+    Returns:
+        paddle.Tensor: The symmetric noise matrix, with the same variance as the input.
+    """
+    assert (
+        len(tuple(noise.shape)) == 3 and tuple(noise.shape)[1] == tuple(noise.shape)[2]
+    ), "Symmetric noise only works for square-matrix-shaped data."
+    return (
+        1
+        / 2**0.5
+        * (1 - paddle.eye(num_rows=3)[None])
+        * (noise + noise.transpose(perm=dim2perm(noise.ndim, 1, 2)))
+        + paddle.eye(num_rows=3)[None] * noise
+    )
+
+
+def is_equal(dict1, dict2):
+    """Recursively compares two potentially nested structures for deep equality
+
+    This function performs a thorough comparison of dictionaries, lists, tuples,
+    and other basic data types, handling nested structures at any depth. It supports:
+
+    - Dictionary comparison (order-insensitive for keys)
+    - List/tuple comparison (order-sensitive)
+    - Type-sensitive comparisons (e.g., int vs float, list vs tuple)
+    - Mixed structure comparisons (dicts containing lists containing dicts, etc.)
+
+    Args:
+        dict1 (dict/list/tuple/any): First structure to compare
+        dict2 (dict/list/tuple/any): Second structure to compare
+
+    Returns:
+        bool: True if structures are deeply equal, False otherwise
+
+    Notes:
+        - For dictionaries: Key order doesn't matter, but key-value pairs must match
+        - For sequences: Element order matters (lists/tuples are order-sensitive)
+        - Basic types (int, str, etc.) are compared using normal equality
+        - Different container types are considered unequal (e.g., list vs tuple)
+        - Recursive structures (circular references) will cause infinite recursion
+    """
+
+    # type check
+    if type(dict1) != type(dict2):
+        return False
+
+    # compare dicts
+    if isinstance(dict1, dict):
+        if len(dict1) != len(dict2):
+            return False
+        for key in dict1:
+            if key not in dict2:
+                return False
+            if not is_equal(dict1[key], dict2[key]):
+                return False
+        return True
+
+    # compare lists/tuples
+    elif isinstance(dict1, (list, tuple)):
+        if len(dict1) != len(dict2):
+            return False
+        for i in range(len(dict1)):
+            if not is_equal(dict1[i], dict2[i]):
+                return False
+        return True
+
+    # compare basic types
+    else:
+        return dict1 == dict2

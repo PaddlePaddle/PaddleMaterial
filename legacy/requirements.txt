@@ -1,0 +1,27 @@
+ase==3.23.0
+chemparse==0.1.0
+colorlog==6.8.2
+einops==0.8.0
+jarvis-tools==2022.9.16
+matminer==0.9.2
+matplotlib==3.9.0
+numba==0.60.0
+numpy==1.26.4
+p_tqdm==1.4.0
+# paddlepaddle-gpu==2.6.1
+pandas==2.2.2
+pgl==2.2.3
+pymatgen==2024.6.10
+pyxtal==0.6.7
+PyYAML==6.0.1
+sacred==0.8.6
+scipy==1.13.1
+seml==0.5.1
+SMACT==2.5.5
+sympy==1.12.1
+tensorboardX==2.6.2.2
+tqdm==4.66.4
+typing_extensions==4.12.2
+visualdl==2.5.3
+wandb==0.18.3
+rdkit==2024.9.1
