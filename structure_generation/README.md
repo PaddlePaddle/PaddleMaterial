@@ -9,23 +9,26 @@ The inorganic material structure generation (IMSG) task tackles the inverse-desi
 | **Supported Functions**             | **[DiffCSP](./configs/diffcsp/README.md)** | **[MatterGen](./configs/mattergen/README.md)** |
 | ----------------------------------- | ------------------------------------------ | ---------------------------------------------- |
 | **Structure Generation**            |                                            |                                                |
-| &emsp;Random Sample                 | ✅                                          | ✅                                              |
-| &emsp;Condition Sample              | ✅                                          | ✅                                              |
+| &emsp;Random Sample                 | ✅                                         | ✅                                             |
+| &emsp;Condition Sample              | ✅                                         | ✅                                             |
 | **ML Capabilities · Training**      |                                            |                                                |
-| &emsp;Single-GPU                    | ✅                                          | ✅                                              |
-| &emsp;Distributed Train             | ✅                                          | ✅                                              |
+| &emsp;Single-GPU                    | ✅                                         | ✅                                             |
+| &emsp;Distributed Train             | ✅                                         | ✅                                             |
 | &emsp;Mixed Precision               | -                                          | -                                              |
-| &emsp;Fine-tuning                   | ✅                                          | ✅                                              |
+| &emsp;Fine-tuning                   | ✅                                         | ✅                                             |
 | &emsp;Uncertainty / Active-Learning | -                                          | -                                              |
 | &emsp;Dynamic→Static                | -                                          | -                                              |
 | &emsp;Compiler CINN                 | -                                          | -                                              |
 | **ML Capabilities · Predict**       |                                            |                                                |
 | &emsp;Distillation / Pruning        | -                                          | -                                              |
-| &emsp;Standard inference            | ✅                                          | ✅                                              |
+| &emsp;Standard inference            | ✅                                         | ✅                                             |
 | &emsp;Distributed inference         | -                                          | -                                              |
 | &emsp;Compiler CINN                 | -                                          | -                                              |
 | **Dataset**                         |                                            |                                                |
 | **Material Project**                |                                            |                                                |
-| &emsp;MP20                          | ✅                                          | ✅                                              |
+| &emsp;MP20                          | ✅                                         | ✅                                             |
 | **Hrbrid**                          |                                            |                                                |
-| &emsp;ALEX MP20                     | -                                          | ✅                                              |
+| &emsp;ALEX MP20                     | -                                          | ✅                                             |
+| **ML2DDB🌟**                        | -                                          | ✅                                             |
+
+**Notice**:🌟 represent originate research work published from paddlematerial toolkit
