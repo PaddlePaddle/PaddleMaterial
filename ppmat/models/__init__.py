@@ -92,6 +92,9 @@ MODEL_REGISTRY = {
     "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
     "mattersim_1M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_1M.zip",
     "mattersim_5M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_5M.zip",
+    "mattergen_ml2ddb": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb.zip",
+    "mattergen_ml2ddb_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_chemical_system.zip",
+    "mattergen_ml2ddb_space_group": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_space_group.zip",
 }
 
 
