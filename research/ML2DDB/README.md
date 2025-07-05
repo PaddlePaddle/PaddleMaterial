@@ -124,3 +124,6 @@ Refer to the [install doc](../../Install.md) to install PaddleMaterial.
    ```bash
    python structure_generation/sample.py --config_path='your config path after modify' --checkpoint_path='your downloaded checkpoint path(*.pdparams)'  --mode='by_dataloader' --save_path='results_mattergen_ml2ddb_space_group'
    ```
+
+
+**Notice:** The ML2DDB dataset, along with the property prediction model built upon it and the corresponding workflow scripts, will be released soon.

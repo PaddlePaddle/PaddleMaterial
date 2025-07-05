@@ -14,7 +14,7 @@
 
 ## 📣 News
 
-🔥 **2025.07.01**: The Suzhou Laboratory has established a novel framework based on PaddleMaterial, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./workflow/ML2DDB/README.md).
+🔥 **2025.07.01**: The Suzhou Laboratory has established a novel framework based on PaddleMaterial, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./research/ML2DDB/README.md).
 
 ## 📑 Task
 - [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
