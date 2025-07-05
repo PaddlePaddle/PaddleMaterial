@@ -1,7 +1,7 @@
 
 # Installation 🔧
 
-[English](./install.md)
+[English](./Install.md)
 
 ## 1. 安装说明
 
