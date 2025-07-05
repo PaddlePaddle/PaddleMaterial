@@ -1,6 +1,6 @@
 # Installation 🔧
 
-[简体中文](./install_cn.md)
+[简体中文](./Install_cn.md)
 
 ## 1. Installation Instructions
 
