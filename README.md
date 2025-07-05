@@ -12,6 +12,10 @@
 
 **Organic materials**, distinguished by covalently linked, directionally bonded networks, mainly defined as a carbon–hydrogen or carbon–carbon bond chemical compound. These traits support core applications including flexible displays, organic photovoltaics, high-energy-density battery electrodes, advanced separation membranes, catalyts. The vast compositional and conformational space of organic molecules makes trial-and-error synthesis and ab-initio simulations slow and costly. Data-driven methods that fuse high-throughput datasets, graph-based representations, and deep generative models rapidly learn structure–property links, enabling fast virtual screening and rational design for more agile, sustainable advances in organic materials.
 
+## 📣 News
+
+🔥 **2025.07.01**: The Suzhou Laboratory has established a novel framework based on PaddleMaterial, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./workflow/ML2DDB/README.md).
+
 ## 📑 Task
 - [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
 - [IOMPP-Inorganic Material Property Prediction](property_prediction/README.md)
