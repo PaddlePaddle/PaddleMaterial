@@ -64,7 +64,11 @@ For more information on how to use PaddleMaterial to train and fine tune a model
 
 
 ## 👩‍👩‍👧‍👦 Cooperative Partner
-![SuZhouLab](docs/suzhoulab.png)
+
+<p align="left">
+ <img src="docs/suzhoulab.png" align="middle" width = "200"/>
+ <img src="docs/zhonghua.jpeg" align="middle" width = "240"/>
+<p align="left">
 
 ## 🔄 Feedback
 
