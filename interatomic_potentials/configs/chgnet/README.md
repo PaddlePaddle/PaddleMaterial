@@ -56,7 +56,7 @@ The simulation of large-scale systems with complex electron interactions remains
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"><a href="chgnet_mptrj.yaml">chgnet_mptrj</a></td>
-            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/chgnet/chgnet_mptrj.zip">checkpoint | log</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip">checkpoint | log</a></td>
         </tr>  
     </body>
 </table>
