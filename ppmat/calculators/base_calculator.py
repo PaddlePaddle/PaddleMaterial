@@ -110,6 +110,16 @@ class PPMatPredictor:
         else:
             self.post_transforms = None
 
+    def from_structures(self, structures):
+        data = self.graph_converter(structures)
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                out = self.model.predict(data)
+        else:
+            out = self.model.predict(data)
+        out = self.post_process(out)
+        return out
+
     def graph_converter(self, structure):
         if self.graph_converter_fn is None:
             return structure
