@@ -461,6 +461,7 @@ def _standardize(kernel):
             paddle.mean(kernel, axis=axis, keepdim=True),
         ]
     )
+    var.nan_to_num_()
     kernel = (kernel - mean) / (var + eps) ** 0.5
     return kernel
 
