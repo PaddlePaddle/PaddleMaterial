@@ -1,13 +1,41 @@
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Example usage:
+
+1. Run prediction with a given model name:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/property.py \
+        predict \
+        --model_name chgnet_mptrj
+
+2. Run prediction with specified config, checkpoint and input structures:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/property.py \
+        predict \
+        --config_path "output/chgnet_mptrj/chgnet_mptrj.yaml" \
+        --checkpoint_path "output/chgnet_mptrj/checkpoints" \
+        --file_path "interatomic_potentials/example_data/cifs" \
+
+3. Run prediction with manually defined ASE structures,
+need to modify `structures` variable in the script:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/property.py \
+        predict \
+        --config_path "output/chgnet_mptrj/chgnet_mptrj.yaml" \
+        --checkpoint_path "output/chgnet_mptrj/checkpoints"
+"""
+
 from __future__ import annotations
-
-import os
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "../../")))  # ruff: noqa
-
-from ase.build import bulk
-from pymatgen.io.ase import AseAtomsAdaptor
 
 from ppmat.predict import PropertyPredictor
 from ppmat.predict import parse_args
@@ -17,11 +45,13 @@ from ppmat.utils import logger
 structures = None
 
 # Option B: Manually generate a single structure using ASE
+# from ase.build import bulk
 # structures = bulk("Fe")
 # structures = bulk("Fe").repeat((4, 4, 4))
 
 # Option C: Generate multiple structures using ASE
-structures = [bulk("Cu"), bulk("Al")]
+# from ase.build import bulk
+# structures = [bulk("Cu"), bulk("Al")]
 
 
 def prepare_structures(args, predictor):
@@ -38,6 +68,8 @@ def prepare_structures(args, predictor):
             )
     else:
         if structures is not None:
+            from pymatgen.io.ase import AseAtomsAdaptor
+
             if not isinstance(structures, list):
                 structures = [structures]
             # Convert ASE Atoms to pymatgen Structure
