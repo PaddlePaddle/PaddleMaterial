@@ -1,13 +1,47 @@
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Note:
+    `ase_opt` is used for structure relaxation (optimization)
+    `ase_md` is used for molecular dynamics simulation
+
+
+Example usage:
+
+1. Run ASE molecular dynamics with a given model name:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/ase_run.py \
+        ase_md \
+        --model_name chgnet_mptrj
+
+2. Run ASE optimization with specified config, checkpoint, and input structures:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/ase_run.py \
+        ase_opt \
+        --config_path "output/chgnet_mptrj/chgnet_mptrj.yaml" \
+        --checkpoint_path "output/chgnet_mptrj/checkpoints" \
+        --file_path "interatomic_potentials/example_data/cifs"
+
+3. Run ASE optimization with manually defined ASE structures.
+   Note: Modify the `structures` variable inside the script before running:
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=$PWD python ppmat/tasks/ase_run.py \
+        ase_opt \
+        --config_path "output/chgnet_mptrj/chgnet_mptrj.yaml" \
+        --checkpoint_path "output/chgnet_mptrj/checkpoints"
+
+"""
+
 from __future__ import annotations
-
-import os
-import sys
-
-__dir__ = os.path.dirname(os.path.abspath(__file__))  # ruff: noqa
-sys.path.insert(0, os.path.abspath(os.path.join(__dir__, "../../")))  # ruff: noqa
-
-from ase.build import bulk
-from pymatgen.io.ase import AseAtomsAdaptor
 
 from ppmat.predict import ASECalculator
 from ppmat.predict import PPMatPredictor
@@ -18,10 +52,12 @@ from ppmat.utils import logger
 structures = None
 
 # Option B: Manually generate a single structure using ASE
-structures = bulk("Fe")
-structures = bulk("Fe").repeat((4, 4, 4))
+# from ase.build import bulk
+# structures = bulk("Fe")
+# structures = bulk("Fe").repeat((4, 4, 4))
 
 # Option C: Generate multiple structures using ASE
+# from ase.build import bulk
 # structures = [bulk("Cu"), bulk("Al")]
 
 
@@ -39,6 +75,8 @@ def prepare_structures(args):
             )
     else:
         if structures is not None:
+            from pymatgen.io.ase import AseAtomsAdaptor
+
             if not isinstance(structures, list):
                 structures = [structures]
             structures = [
