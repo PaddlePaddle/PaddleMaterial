@@ -2,17 +2,28 @@ import os
 import os.path as osp
 from typing import Any
 from typing import List
-from typing import Optional
 
 import numpy as np
 from ase import Atoms
+from ase import filters
+from ase import units
 from ase.calculators.calculator import Calculator
+from ase.io import Trajectory
+from ase.io import write
+from ase.md import MDLogger
+from ase.md.langevin import Langevin
+from ase.optimize import BFGS
+from ase.optimize import FIRE
+from ase.optimize import LBFGS
+from ase.optimize import BFGSLineSearch
+from ase.optimize import GPMin
+from ase.optimize import LBFGSLineSearch
+from ase.optimize import MDMin
 from ase.stress import full_3x3_to_voigt_6_stress
-from ppmat.calculators.base_calculator import PPMatPredictor
-from pymatgen.core import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from tqdm import tqdm
 
+from ppmat.predict import PPMatPredictor
 from ppmat.utils import logger
 
 CHARGE_RANGE = [-100, 100]
@@ -22,14 +33,25 @@ DEFAULT_SPIN_OMOL = 1
 DEFAULT_SPIN = 0
 
 
-class PPMatCalculator(Calculator):
+OPTIMIZERS = {
+    "FIRE": FIRE,
+    "BFGS": BFGS,
+    "LBFGS": LBFGS,
+    "MDMin": MDMin,
+    "GPMin": GPMin,
+    "LBFGSLineSearch": LBFGSLineSearch,
+    "BFGSLineSearch": BFGSLineSearch,
+}
+
+
+class ASECalculator(Calculator):
     def __init__(
         self,
         predictor: "PPMatPredictor",
         **kwargs: Any,
     ):
         """
-        Initialize the PPMatCalculator from a model PPMatPredictor
+        Initialize the ASECalculator from a model PPMatPredictor
 
         Args:
             predict_unit (PPMatPredictor): A pretrained PPMatPredictor.
@@ -66,37 +88,23 @@ class PPMatCalculator(Calculator):
             )
 
         self.implemented_properties = label_names
-        
+
         self.predictor = predictor
 
-    def from_cif_file(
-        self,
-        file_path: Optional[str] = None,
-    ):
-        # TODO: Currently only support cif format files
-        if osp.isdir(file_path):
-            cif_files = [
-                osp.join(file_path, f)
-                for f in os.listdir(file_path)
-                if f.endswith(".cif")
-            ]
-        else:
-            if file_path.endswith(".cif"):
-                cif_files = [file_path]
-            else:
-                raise ValueError(f"Invalid CIF file path: {file_path}")
+    def structure_to_ase(self, structures):
         # Read raw file and convert to ASE Atom
-        structures = []
-        for cif_file in tqdm(cif_files):
-            structure = Structure.from_file(cif_file)
+        ase_structures = []
+
+        for structure in tqdm(structures):
             graph = self.predictor.graph_converter(structure)
             # covert pymatgen Structure to ASE Atom
             atom = AseAtomsAdaptor().get_atoms(structure)
             # attach graph information to ASE Atom
             atom.info["graph"] = graph
-            structures.append(atom)
+            ase_structures.append(atom)
+
         logger.info("Successfully covert all structures to ASE Atoms.")
-        return structures
+        return ase_structures
 
     def check_state(self, atoms: Atoms, tol: float = 1e-15) -> list:
         """
@@ -155,10 +163,11 @@ class PPMatCalculator(Calculator):
         Calculator.calculate(self, atoms, properties, system_changes)
 
         if len(atoms) == 1 and sum(atoms.pbc) == 0:
-            pass  # self.results = self._get_single_atom_energies(atoms)
+            self._get_single_atom_energies(atoms)
         else:
             # Predict
             graph = atoms.info["graph"]
+            graph = graph.tensor()
             pred = self.predictor.model.predict(graph)
             pred = self.predictor.post_process(pred)
 
@@ -259,6 +268,115 @@ class PPMatCalculator(Calculator):
                 f"Spin must be within the range "
                 f"{SPIN_RANGE[0]} to {SPIN_RANGE[1]}."
             )
+
+    def _get_single_atom_energies(self, atoms) -> dict:
+        """
+        Populate output with single atom energies
+        """
+        raise ValueError("Single atom systems are not handled by the model.")
+
+    def run_opt(
+        self,
+        structures: List[Atoms],
+        save_path: str,
+        file_path: str,
+        optimizer: str = "LBFGS",
+        filter: str = "FrechetCellFilter",
+        fmax: float = 0.05,
+        steps: int = 100,
+    ):
+        # Initialize the save path
+        self.predictor.init_save_dir(file_path=file_path, save_path=save_path)
+        save_path = osp.join(self.predictor.save_path, "results_opt")
+        os.makedirs(save_path, exist_ok=True)
+        logger.info(f"Save predictions to {save_path}")
+
+        # Convert structures to ASE format
+        structures = self.structure_to_ase(structures)
+
+        # Set filter and optimizer
+        optimizer_cls = OPTIMIZERS[optimizer]
+        filter_cls = getattr(filters, filter) if filter != "none" else None
+
+        # Relax
+        for idx, atoms in enumerate(structures):
+            formula = atoms.get_chemical_formula()
+            logger.info(f"[{idx+1}/{len(structures)}] Relaxing structure: {formula}")
+
+            # Set calculator
+            atoms.calc = self
+            system = filter_cls(atoms) if filter_cls else atoms
+
+            # Set up optimizer (with logfile and trajectory)
+            logfile = osp.join(save_path, f"{idx}_{formula}.log")
+            traj = osp.join(save_path, f"{idx}_{formula}.traj")
+            opt = optimizer_cls(system, logfile=logfile, trajectory=traj)
+
+            # Run optimization
+            try:
+                opt.run(fmax=fmax, steps=steps)
+            except Exception as e:
+                logger.warning(f"Optimization failed for {formula}: {e}")
+                continue
+
+            # Save relaxed structure
+            outfile = osp.join(save_path, f"{idx}_{formula}.xyz")
+            write(outfile, atoms)
+            logger.info(f"Saved relaxed structure to: {outfile}")
+
+    def run_md(
+        self,
+        structures: List[Atoms],
+        save_path: str,
+        file_path: str,
+        temperature: float = 300,
+        timestep: float = 0.1,
+        steps: int = 100,
+        interval: int = 1,
+        **kwargs,
+    ):
+        # Initialize the save path
+        self.predictor.init_save_dir(file_path=file_path, save_path=save_path)
+        save_path = osp.join(self.predictor.save_path, "results_md")
+        os.makedirs(save_path, exist_ok=True)
+        logger.info(f"Save predictions to {save_path}")
+
+        # Convert structures to ASE format
+        structures = self.structure_to_ase(structures)
+
+        # Run MD
+        for idx, atoms in enumerate(structures):
+            formula = atoms.get_chemical_formula()
+            logger.info(f"[{idx+1}/{len(structures)}] Running MD: {formula}")
+
+            # Set the calculator
+            atoms.calc = self
+
+            dyn = Langevin(
+                atoms,
+                timestep=timestep * units.fs,
+                temperature_K=temperature,
+                friction=0.01 / units.fs,
+            )
+
+            # Log file
+            logfile = open(osp.join(save_path, f"{idx}_{formula}.log"), "w")
+            dyn.attach(
+                MDLogger(dyn, atoms, logfile, header=True, stress=False, peratom=False),
+                interval=interval,
+            )
+
+            # Trajectory
+            traj_out = osp.join(save_path, f"{idx}_{formula}.traj")
+            trajectory = Trajectory(traj_out, "w", atoms)
+            dyn.attach(trajectory.write, interval=interval)
+            dyn.run(steps=steps)
+            logger.info(f"Saved MD trajectory to: {traj_out}")
+
+            # Last structure
+            xyz_out = osp.join(save_path, f"{idx}_{formula}_final.xyz")
+            write(xyz_out, atoms)
+            logger.info(f"Saved final frame to: {xyz_out}")
 
 
 class MixedPBCError(ValueError):
