@@ -175,7 +175,7 @@ if __name__ == "__main__":
     else:
         metric_func = None
 
-    # # initialize trainer
+    # initialize trainer
     trainer = BaseTrainer(
         config["Trainer"],
         model,
