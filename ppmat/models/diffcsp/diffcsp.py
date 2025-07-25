@@ -292,7 +292,6 @@ class CSPNet(paddle.nn.Layer):
         else:
             raise NotImplementedError("Edge style '%s'" % self.edge_style)
 
-    @paddle.jit.to_static()
     def forward(
         self,
         t,
@@ -312,63 +311,18 @@ class CSPNet(paddle.nn.Layer):
         node_features = paddle.concat(x=[node_features, t_per_atom], axis=1)
         node_features = self.atom_latent_emb(node_features)
 
-        # for i in range(0, self.num_layers):
-        #     node_features = eval("self.csp_layer_%d" % i)(
-        #         node_features,
-        #         frac_coords,
-        #         lattices,
-        #         edges,
-        #         edge2graph,
-        #         frac_diff=frac_diff,
-        #         num_atoms=num_atoms,
-        #         property_emb=property_emb,
-        #         property_mask=property_mask,
-        #     )
-
-        node_features = self.csp_layer_0(
-            node_features,
-            frac_coords,
-            lattices,
-            edges,
-            edge2graph,
-            frac_diff=frac_diff,
-            num_atoms=num_atoms,
-            property_emb=property_emb,
-            property_mask=property_mask,
-        )
-        # node_features = self.csp_layer_1(
-        #     node_features,
-        #     frac_coords,
-        #     lattices,
-        #     edges,
-        #     edge2graph,
-        #     frac_diff=frac_diff,
-        #     num_atoms=num_atoms,
-        #     property_emb=property_emb,
-        #     property_mask=property_mask,
-        # )
-        # node_features = self.csp_layer_2(
-        #     node_features,
-        #     frac_coords,
-        #     lattices,
-        #     edges,
-        #     edge2graph,
-        #     frac_diff=frac_diff,
-        #     num_atoms=num_atoms,
-        #     property_emb=property_emb,
-        #     property_mask=property_mask,
-        # )
-        # node_features = self.csp_layer_3(
-        #     node_features,
-        #     frac_coords,
-        #     lattices,
-        #     edges,
-        #     edge2graph,
-        #     frac_diff=frac_diff,
-        #     num_atoms=num_atoms,
-        #     property_emb=property_emb,
-        #     property_mask=property_mask,
-        # )
+        for i in range(0, self.num_layers):
+            node_features = eval("self.csp_layer_%d" % i)(
+                node_features,
+                frac_coords,
+                lattices,
+                edges,
+                edge2graph,
+                frac_diff=frac_diff,
+                num_atoms=num_atoms,
+                property_emb=property_emb,
+                property_mask=property_mask,
+            )
         if self.ln:
             node_features = self.final_layer_norm(node_features)
         coord_out = self.coord_out(node_features)
@@ -434,7 +388,6 @@ class DiffCSP(paddle.nn.Layer):
         elif isinstance(m, nn.LSTM):
             initializer.lstm_init_(m)
 
-    # @paddle.jit.to_static()
     def forward(self, batch, **kwargs):
 
         structure_array = batch["structure_array"]
