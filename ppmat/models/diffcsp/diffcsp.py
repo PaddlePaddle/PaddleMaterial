@@ -15,12 +15,12 @@ import math
 
 import paddle
 import paddle.nn as nn
-from ppmat.schedulers import build_scheduler
 from tqdm import tqdm
 
 from ppmat.models.common import initializer
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.common.time_embedding import uniform_sample_t
+from ppmat.schedulers import build_scheduler
 from ppmat.utils import paddle_aux  # noqa
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
@@ -50,7 +50,7 @@ class SinusoidsEmbedding(paddle.nn.Layer):
 
     def forward(self, x):
         emb = x.unsqueeze(axis=-1) * self.frequencies[None, None, :]
-        emb = emb.reshape(-1, self.n_frequencies * self.n_space)
+        emb = emb.reshape([-1, self.n_frequencies * self.n_space])
         emb = paddle.concat(x=(emb.sin(), emb.cos()), axis=-1)
         return emb
 
@@ -323,7 +323,6 @@ class CSPNet(paddle.nn.Layer):
                 property_emb=property_emb,
                 property_mask=property_mask,
             )
-
         if self.ln:
             node_features = self.final_layer_norm(node_features)
         coord_out = self.coord_out(node_features)
