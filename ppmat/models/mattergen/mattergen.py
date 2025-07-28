@@ -26,7 +26,6 @@ from typing import Tuple
 
 import numpy as np
 import paddle
-from ppmat.schedulers import build_scheduler
 from tqdm import tqdm
 
 from ppmat.models.common.activation import ScaledSiLU
@@ -44,6 +43,7 @@ from ppmat.models.mattergen.property_embeddings import SetEmbeddingType
 from ppmat.models.mattergen.property_embeddings import SetPropertyScalers
 from ppmat.models.mattergen.property_embeddings import SetUnconditionalEmbeddingType
 from ppmat.models.mattergen.property_embeddings import get_use_unconditional_embedding
+from ppmat.schedulers import build_scheduler
 from ppmat.utils import logger
 from ppmat.utils import paddle_aux  # noqa
 from ppmat.utils.crystal import frac_to_cart_coords_with_lattice
@@ -2083,7 +2083,7 @@ def get_pbc_offsets(pbc: paddle.Tensor, max_offset_integer: int = 3) -> paddle.T
     offset = (
         pbc[:, None, None, None] * meshgrid[None, :, :, :, :, None].astype("float32")
     ).sum(axis=-2)
-    pbc_offset_per_molecule = offset.reshape(tuple(pbc.shape)[0], -1, 3)
+    pbc_offset_per_molecule = offset.reshape([tuple(pbc.shape)[0], -1, 3])
     return pbc_offset_per_molecule
 
 

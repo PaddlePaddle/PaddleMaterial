@@ -717,7 +717,7 @@ def aggregate_per_sample(
 
     """
     data_per_row = paddle.mean(
-        x=data_per_row.reshape(tuple(data_per_row.shape)[0], -1), axis=1
+        x=data_per_row.reshape([tuple(data_per_row.shape)[0], -1]), axis=1
     )
     if batch_idx is None:
         data_per_sample = data_per_row
@@ -733,7 +733,7 @@ def expand(a, x_shape, left=False):
     if left:
         return a.reshape(*((1,) * (len(x_shape) - a_dim) + tuple(a.shape)))
     else:
-        return a.reshape(*(tuple(a.shape) + (1,) * (len(x_shape) - a_dim)))
+        return a.reshape([*(tuple(a.shape) + (1,) * (len(x_shape) - a_dim))])
 
 
 def _broadcast_like(x, like):
