@@ -63,12 +63,18 @@ python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_fo
 For more information on how to use PaddleMaterial to train and fine tune a model, please refer to the [documentation](get_started.md).
 
 
-## 👩‍👩‍👧‍👦 Cooperative Partner
+## 👩‍👩‍👧‍👦 Cooperation
 
 <p align="left">
  <img src="docs/suzhoulab.png" align="middle" width = "200"/>
  <img src="docs/zhonghua.jpeg" align="middle" width = "240"/>
 <p align="left">
+
+## 👩‍👩‍👧‍👦 Community
+
+Join PaddleMaterial WeChat group to disscuss with us!
+
+![WeChat Group](docs/wechat_group.png)
 
 ## 🔄 Feedback
 
