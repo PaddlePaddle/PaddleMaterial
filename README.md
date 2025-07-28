@@ -74,14 +74,13 @@ For more information on how to use PaddleMaterial to train and fine tune a model
 
 Join PaddleMaterial WeChat group to disscuss with us!
 
-![WeChat Group](docs/wechat_group.png)
+<p align="left">
+ <img src="docs/wechat_group.png" align="middle" width = "200"/>
+<p align="left">
 
 ## 🔄 Feedback
 
 We sincerely invite you to spare a moment from your busy schedule to share your [feedback](https://paddle.wjx.cn/vm/rXyQwB2.aspx#).
-
-![feedback](docs/feedback.png)
-
 
 ## 📜 License
 
