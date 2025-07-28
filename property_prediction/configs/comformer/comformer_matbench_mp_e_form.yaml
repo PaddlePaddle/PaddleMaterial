@@ -1,0 +1,132 @@
+Global:
+  label_names: ["e_form"]
+  task_name: "matbench_mp_e_form_full"
+  do_train: True
+  do_eval: True
+  do_test: False  # No test set for initial training
+
+  graph_converter:
+    __class_name__: ComformerGraphConverter
+    __init_params__:
+        cutoff: 4.0
+        num_cpus: 10
+
+Trainer:
+  # Max epochs to train
+  max_epochs: 1000
+  # Random seed
+  seed: 42
+  # Save path for checkpoints and logs
+  output_dir: ./output/comformer_matbench_mp_e_form_full
+  # Save frequency [epoch]
+  save_freq: 50
+  # Logging frequency [step]
+  log_freq: 100
+
+  # Start evaluation epoch
+  start_eval_epoch: 10
+  # Evaluation frequency [epoch]
+  eval_freq: 10
+  # Pretrained model path
+  pretrained_model_path: null
+  # Pretrained weight name
+  pretrained_weight_name: null
+  # Resume from checkpoint path
+  resume_from_checkpoint: null
+  # Whether use automatic mixed precision
+  use_amp: False
+  # Automatic mixed precision level
+  amp_level: 'O1'
+  # Whether run a model on no_grad mode during evaluation
+  eval_with_no_grad: True
+  # Gradient accumulation steps
+  gradient_accumulation_steps: 2  # Increased for large dataset
+
+  # Best metric indicator
+  best_metric_indicator: 'eval_metric'
+  # The name of the best metric
+  name_for_best_metric: "e_form"
+  # The metric whether is better when it is greater
+  greater_is_better: False
+
+  # Compute metric during training or evaluation
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+
+  # Whether use visualdl, wandb, tensorboard to log
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: iComformer
+  __init_params__:
+    conv_layers: 4
+    edge_layers: 1
+    atom_input_features: 92
+    edge_features: 256
+    triplet_input_features: 256
+    node_features: 256
+    fc_features: 256
+    output_features: 1
+    node_layer_head: 1
+    edge_layer_head: 1
+    property_name: ${Global.label_names}
+    # Full MatBench formation energy statistics (132,752 samples)
+    # Mean: -1.407918 eV/atom, Std: 1.163129 eV/atom
+    data_mean: -1.407918
+    data_std: 1.163129
+
+Metric:
+  e_form:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    lr:
+      __class_name__: OneCycleLR
+      __init_params__:
+        max_learning_rate: 0.001
+        by_epoch: True
+
+Dataset:
+  # Use split_dataset_ratio to automatically split the dataset
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.2
+    test: 0.0
+
+  dataset:
+    __class_name__: MatbenchDataset
+    __init_params__:
+      path: "./data/matbench/matbench_mp_e_form_full.pkl"  # Full dataset
+      property_names: ${Global.label_names}
+      build_structure_cfg:
+        format: structure  # Already Structure objects, no conversion needed
+      build_graph_cfg: ${Global.graph_converter}
+      cache_path: "./data/matbench_cache_comformer_full_cutoff_4"
+      # max_samples: null  # Use all samples (132,752)
+      overwrite: True  # Force regenerate cache for full dataset
+      filter_unvalid: True
+    num_workers: 8  # Increased for full dataset
+    use_shared_memory: False
+
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: True
+      drop_last: True
+      batch_size: 32  # Larger batch size for full dataset
+
+  val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True
