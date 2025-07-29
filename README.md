@@ -9,7 +9,7 @@
 **PaddleMaterial** is a data-mechanism dual-driven and  deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported inorganic materials and part of organic molecules, and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported some representative models including the equivalent graph networks-based model, diffusion model, multi-modal model, and will support more kinds of deep learing models and agents works related to AI4Material fields in the feature.
 
 <p align="left">
- <img src="docs/paddlematerial_overview_en.png" align="middle" width = "1000"/>
+ <img src="docs/ppmat_overview_en.png" align="middle" width = "1000"/>
 <p align="left">
 
 
