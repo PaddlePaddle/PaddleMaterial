@@ -1,7 +1,7 @@
 # PaddleMaterial
 
 <p align="center">
- <img src="docs/logo_ppmat.png" align="middle" width = "300"/>
+ <img src="docs/ppmat_logo.png" align="middle" width = "300"/>
 <p align="center">
 
 ## 🚀 Introduction
