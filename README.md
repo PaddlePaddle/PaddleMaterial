@@ -1,12 +1,17 @@
-# PaddleMaterial
+# PaddleMaterials
 
 <p align="center">
- <img src="docs/logo_ppmat.png" align="middle" width = "300"/>
+ <img src="docs/ppmat_logo.png" align="middle" width = "400"/>
 <p align="center">
 
 ## 🚀 Introduction
 
-**PaddleMaterial** is a data-mechanism dual-driven and  deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported inorganic materials and part of organic molecules, and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported some representative models including the equivalent graph networks-based model, diffusion model, multi-modal model, and will support more kinds of deep learing models and agents works related to AI4Material fields in the feature.
+**PaddleMaterials** is a data-mechanism dual-driven and  deep learning toolkit based on PaddlePaddle for material science, designed to help researchers more efficiently explore, discover, and develop new materials. It has supported inorganic materials and part of organic molecules, and will support more types of materials including polymers, organic molecules, catalysts, and so on. It has supported some representative models including the equivalent graph networks-based model, diffusion model, multi-modal model, and will support more kinds of deep learing models and agents works related to AI4Material fields in the feature.
+
+<p align="left">
+ <img src="docs/overview_en.png" align="middle" width = "1000"/>
+<p align="left">
+
 
 <p align="left">
  <img src="docs/ppmat_overview_en.png" align="middle" width = "1000"/>
@@ -19,7 +24,7 @@
 
 ## 📣 News
 
-🔥 **2025.07.01**: The Suzhou Laboratory has established a novel framework based on PaddleMaterial, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./research/ML2DDB/README.md).
+🔥 **2025.07.01**: The Suzhou Laboratory has established a novel framework based on PaddleMaterials, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./research/ML2DDB/README.md).
 
 ## 📑 Task
 - [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
@@ -33,7 +38,7 @@ Please refer to the installation [document](Install.md) for environment configur
 
 ## ⚡ Get Started
 
-PaddleMaterial offers multiple built-in models that can be directly used for inference. Taking the `megnet_mp2018_train_60k_e_form` model as an example (a MEGNet model trained on the MP2018 dataset for material formation energy prediction), use the following command for inference:
+s offers multiple built-in models that can be directly used for inference. Taking the `megnet_mp2018_train_60k_e_form` model as an example (a MEGNet model trained on the MP2018 dataset for material formation energy prediction), use the following command for inference:
 ```bash
 python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/' --save_path='result.csv'
 ```
@@ -65,7 +70,7 @@ python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_fo
     </tbody>
 </table>
 
-For more information on how to use PaddleMaterial to train and fine tune a model, please refer to the [documentation](get_started.md).
+For more information on how to use PaddleMaterials to train and fine tune a model, please refer to the [documentation](get_started.md).
 
 
 ## 👩‍👩‍👧‍👦 Cooperation
@@ -77,7 +82,7 @@ For more information on how to use PaddleMaterial to train and fine tune a model
 
 ## 👩‍👩‍👧‍👦 Community
 
-Join PaddleMaterial WeChat group to disscuss with us!
+Join PaddleMaterials WeChat group to disscuss with us!
 
 <p align="left">
  <img src="docs/wechat_group.png" align="middle" width = "200"/>
@@ -89,16 +94,16 @@ We sincerely invite you to spare a moment from your busy schedule to share your 
 
 ## 📜 License
 
-PaddleMaterial is licensed under the [Apache License 2.0](LICENSE).
+PaddleMaterials is licensed under the [Apache License 2.0](LICENSE).
 
 
 ## 🎓 Citation
 
 
-    @misc{paddlematerial2025,
-    title={PaddleMaterial, a deep learning toolkit based on PaddlePaddle for material science.},
-    author={PaddleMaterial Contributors},
-    howpublished = {\url{https://github.com/PaddlePaddle/PaddleMaterial}},
+    @misc{paddlematerials2025,
+    title={PaddleMaterials, a deep learning toolkit based on PaddlePaddle for material science.},
+    author={PaddleMaterials Contributors},
+    howpublished = {\url{https://github.com/PaddlePaddle/PaddleMaterials}},
     year={2025}
     }
 
