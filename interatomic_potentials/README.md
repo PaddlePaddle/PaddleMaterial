@@ -32,4 +32,4 @@ Machine-learning interatomic potentials (MLIP) bridge the gap between quantum-le
 | &emsp;MPtrj                         | ✅                                       | 🚧                                              |
 | **ML2DDB🌟**                        | ✅                                       | -                                               | 
 
-**Notice**:🌟 represent originate research work published from paddlematerial toolkit
+**Notice**:🌟 represent originate research work published from paddlematerials toolkit

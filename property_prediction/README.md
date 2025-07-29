@@ -1,14 +1,14 @@
-# IOMPP-Inorganic Material Property Prediction
+# IOMPP-Inorganic Materials Property Prediction
 
 ## 1.Introduction
 
-Inorganic Material Property Prediction (IMPP) targets rapid, first-principles-level estimation of key crystalline properties—formation energy, band gap, elastic moduli, ionic conductivity, and more—without performing new density-functional-theory calculations. The workflow mirrors modern ML interatomic-potential pipelines but shifts the label space from forces to scalar and tensor observables. Starting from crystal structure files (CIF), an automated converter builds atom–bond graphs enriched with chemical descriptors and symmetry-aware positional encodings. Equivariant graph neural networks, or transformer-based variants, are then trained on tens of thousands of reference entries. By collapsing months of high-throughput DFT time into minutes of GPU inference, IMPP empowers data-driven discovery of semiconductors, catalysts and functional
+Inorganic Materials Property Prediction (IMPP) targets rapid, first-principles-level estimation of key crystalline properties—formation energy, band gap, elastic moduli, ionic conductivity, and more—without performing new density-functional-theory calculations. The workflow mirrors modern ML interatomic-potential pipelines but shifts the label space from forces to scalar and tensor observables. Starting from crystal structure files (CIF), an automated converter builds atom–bond graphs enriched with chemical descriptors and symmetry-aware positional encodings. Equivariant graph neural networks, or transformer-based variants, are then trained on tens of thousands of reference entries. By collapsing months of high-throughput DFT time into minutes of GPU inference, IMPP empowers data-driven discovery of semiconductors, catalysts and functional
 
 ## 2.Models Matrix
 
-| **Supported Functions**                      | **[MegNet](./configs/megnet/README.md)** | **[Comfomer](./configs/comformer/README.md)** | **GemNet** | **[DimeNet++](./configs/dimenet++/README.md)** | **InfGCN** |
+| **Supported Functions**                      | **[MEGNet](./configs/megnet/README.md)** | **[Comfomer](./configs/comformer/README.md)** | **GemNet** | **[DimeNet++](./configs/dimenet++/README.md)** | **InfGCN** |
 | -------------------------------------------- | :--------------------------------------: | :-------------------------------------------: | :--------: | :--------------------------------------------: | :--------: |
-| **Forward Prediction · Material Properties** |                                          |                                               |            |                                                |            |
+| **Forward Prediction · Materials Properties**|                                          |                                               |            |                                                |            |
 | Formation energy                             |                    ✅                    |                       ✅                      |     🚧     |                       ✅                       |     —      |
 | Band gap                                     |                    ✅                    |                       ✅                      |     🚧     |                       ✅                       |     —      |
 | Bulk modulus                                 |                    ✅                    |                       ✅                      |     🚧     |                       ✅                       |     —      |
@@ -30,7 +30,7 @@ Inorganic Material Property Prediction (IMPP) targets rapid, first-principles-le
 | Distributed inference                        |                    —                     |                       —                       |     —      |                       —                        |     —      |
 | Compiler-level inference                     |                    —                     |                       —                       |     —      |                       —                        |     —      |
 | **Datasets**                                 |                                          |                                               |            |                                                |            |
-| **Material Project**                         |                                          |                                               |            |                                                |            |
+| **Materials Project**                        |                                          |                                               |            |                                                |            |
 | MP2024                                       |                    ✅                    |                       ✅                      |     —      |                       —                        |     —      |
 | MP2020                                       |                    ✅                    |                       ✅                      |     —      |                       —                        |     —      |
 | MP2018                                       |                    ✅                    |                       ✅                      |     🚧     |                       —                        |     —      |
@@ -41,4 +41,4 @@ Inorganic Material Property Prediction (IMPP) targets rapid, first-principles-le
 | pbe_2d                                       |                    ✅                    |                       ✅                      |     🚧     |                       —                        |     —      |
 | **ML2DDB🌟**                                 |                    ✅                    |                       ✅                      |     ✅     |                       ✅                       |     —      |
 
-**Notice**:🌟 represent originate research work published from paddlematerial toolkit
+**Notice**:🌟 represent originate research work published from paddlematerials toolkit
