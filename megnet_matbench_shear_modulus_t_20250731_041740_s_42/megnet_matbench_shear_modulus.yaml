@@ -1,0 +1,100 @@
+Global:
+  label_names:
+  - log10(G_VRH)
+  do_train: true
+  do_eval: true
+  do_test: false
+  graph_converter:
+    __class_name__: FindPointsInSpheres
+    __init_params__:
+      cutoff: 4.0
+      num_cpus: 10
+Trainer:
+  max_epochs: 1000
+  seed: 42
+  output_dir: ./output/megnet_matbench_shear_modulus_t_20250731_041740_s_42
+  save_freq: 50
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: false
+  amp_level: O1
+  eval_with_no_grad: true
+  gradient_accumulation_steps: 1
+  best_metric_indicator: eval_metric
+  name_for_best_metric: log10(G_VRH)
+  greater_is_better: false
+  compute_metric_during_train: true
+  metric_strategy_during_eval: epoch
+  use_visualdl: false
+  use_wandb: false
+  use_tensorboard: false
+Model:
+  __class_name__: MEGNetPlus
+  __init_params__:
+    dim_node_embedding: 16
+    dim_edge_embedding: 100
+    dim_state_embedding: 2
+    nblocks: 3
+    nlayers_set2set: 1
+    niters_set2set: 2
+    bond_expansion_cfg:
+      rbf_type: Gaussian
+      initial: 0.0
+      final: 5.0
+      num_centers: 100
+      width: 0.5
+    property_name: ${Global.label_names}
+    data_mean: 1.553639
+    data_std: 0.371598
+Metric:
+  log10(G_VRH):
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 0.001
+        eta_min: 0.0001
+        by_epoch: true
+Dataset:
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.2
+    test: 0.0
+  dataset:
+    __class_name__: MatbenchDataset
+    __init_params__:
+      data_dir: ./data/matbench
+      property_names: ${Global.label_names}
+      build_structure_cfg:
+        format: structure
+      build_graph_cfg: ${Global.graph_converter}
+      cache_path: ./data/matbench_cache_megnet_shear_modulus
+      overwrite: false
+      filter_unvalid: true
+    num_workers: 8
+    use_shared_memory: false
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: true
+      drop_last: true
+      batch_size: 64
+  val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: false
+      drop_last: false
+      batch_size: 64
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: true
