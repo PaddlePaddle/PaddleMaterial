@@ -67,7 +67,6 @@ def correct_coord_sys(a, b, c, lattice):
     value = sum(plane_vec * c_new)
     length = (sum(plane_vec**2) ** 0.5) * (sum(c_new**2) ** 0.5)
     cos = value / length
-    cos = np.clip(cos, -1.0, 1.0)
     angle = np.arccos(cos)
     return angle / np.pi * 180.0 <= 90.0
 
@@ -322,17 +321,7 @@ class ComformerGraphConverter:
         # Convert pymatgen structure to jarvis atoms
         lattice_mat = structure.lattice.matrix
         coords = structure.frac_coords
-        # Handle pymatgen API - site.species is a Composition object
-        elements = []
-        for site in structure:
-            # site.species is a Composition, get the first (and usually only) element
-            site_elements = list(site.species.elements)
-            if len(site_elements) == 1:
-                elements.append(site_elements[0].symbol)
-            else:
-                # For mixed occupancy, use the element with highest amount
-                max_elem = max(site.species.elements, key=lambda x: site.species[x])
-                elements.append(max_elem.symbol)
+        elements = [site.specie.symbol for site in structure]
         atoms = Atoms(lattice_mat=lattice_mat, coords=coords, elements=elements)
         edge_index, node_features, r, nei, atom_lat = atom_multigraph(
             atoms,
@@ -366,18 +355,8 @@ class ComformerGraphConverter:
         assert node_features is None or isinstance(node_features, dict)
         assert edge_features is None or isinstance(edge_features, dict)
 
-        # get atom types - handle pymatgen API
-        atom_types = []
-        for site in structure:
-            # site.species is a Composition, get the first (and usually only) element
-            site_elements = list(site.species.elements)
-            if len(site_elements) == 1:
-                atom_types.append(site_elements[0].Z)
-            else:
-                # For mixed occupancy, use the element with highest amount
-                max_elem = max(site.species.elements, key=lambda x: site.species[x])
-                atom_types.append(max_elem.Z)
-        atom_types = np.array(atom_types)
+        # get atom types
+        atom_types = np.array([site.specie.Z for site in structure])
 
         # get lattice parameters and matrix
         lattice_parameters = structure.lattice.parameters
