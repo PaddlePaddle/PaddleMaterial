@@ -106,8 +106,8 @@ Dataset:
   # Use split_dataset_ratio to automatically split the dataset
   split_dataset_ratio:
     train: 0.8
-    val: 0.2
-    test: 0.0
+    val: 0.1
+    test: 0.1
 
   dataset:
     __class_name__: MatbenchDataset
@@ -132,6 +132,13 @@ Dataset:
       batch_size: 64  # Adjust based on GPU memory
 
   val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 64
+
+  test_sampler:
     __class_name__: BatchSampler
     __init_params__:
       shuffle: False
