@@ -621,8 +621,10 @@ class JarvisDataset(Dataset):
             if dist.is_initialized():
                 dist.barrier()
             # now safe to delete large memory objects
-            del graphs
-            del structures
+            if "graphs" in locals():
+                del graphs
+            if "structures" in locals():
+                del structures
 
         # Obtain finial properies, structures and graphs
         self.property_data = {
@@ -804,8 +806,11 @@ class JarvisDataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (
-                    data_item is not None and not math.isnan(data_item)
+                # Only keep numeric values that are not NaN, None, or string 'na'
+                if (
+                    not isinstance(data_item, str)
+                    and data_item is not None
+                    and not math.isnan(data_item)
                 ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
@@ -886,9 +891,17 @@ class JarvisDataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
         for property_name in self.property_names:
             if property_name in self.property_data:
-                data[property_name] = np.array(
-                    [self.property_data[property_name][idx]]
-                ).astype("float32")
+                property_value = self.property_data[property_name][idx]
+                # Additional safety check for invalid values
+                if (
+                    isinstance(property_value, str)
+                    or property_value is None
+                    or math.isnan(property_value)
+                ):
+                    raise ValueError(
+                        f"Invalid property value for {property_name} at index {idx}: {property_value}"
+                    )
+                data[property_name] = np.array([property_value]).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
