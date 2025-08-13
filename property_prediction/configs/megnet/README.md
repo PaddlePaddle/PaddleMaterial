@@ -32,12 +32,24 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
     | :----: | :---: |
     | dft_2d | 1109 |
     | dft_3d | 75993|
-
+    | cfid_3d | 55723 |
+    | dft_3d_2021 | 55723 |
 - Alexandria Material Project
 
     | Dataset | Count |
     | :---: | :---: |
     | pbe_2d | 100000 |
+
+- Matbench
+
+    The Matbench benchmark dataset for materials property prediction. The original dataset can be downloaded from [here](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/matbench/matbench.zip/).
+
+    | Dataset | Property | Count |
+    | :---: | :---: | :---: |
+    | mp_e_form | Formation Energy (eV/atom) | 132752 |
+    | mp_gap | Band Gap (eV) | 106113 |
+    | G |  Shear Modulus (GPa) | 10987 |
+    | K |  Bulk Modulus (GPa) | 10987 |
 
 
 ## Results
@@ -127,6 +139,56 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_dft_3d_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
+            <td  nowrap="nowrap">megnet_jarvis_cfid_3d_e_form</td>
+            <td  nowrap="nowrap">Jarvis_cfid_3d</td>
+            <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
+            <td  nowrap="nowrap"> 0.056092 / 0.057279 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~18 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_cfid_3d_e_form.yaml">megnet_jarvis_cfid_3d_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_cfid_3d_formation_energy_peratom_t_20250807_092757_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_jarvis_cfid_3d_band_gap</td>
+            <td  nowrap="nowrap">Jarvis_cfid_3d</td>
+            <td  nowrap="nowrap">Band Gap(eV)</td>
+            <td  nowrap="nowrap"> 0.172418 / 0.162828 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~12.5 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_cfid_3d_band_gap.yaml">megnet_jarvis_cfid_3d_band_gap</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_cfid_3d_optb88vdw_bandgap_t_20250807_095235_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_jarvis_cfid_3d_shear_modulus</td>
+            <td  nowrap="nowrap">Jarvis_cfid_3d</td>
+            <td  nowrap="nowrap">Shear Modulus(G)</td>
+            <td  nowrap="nowrap"> 0.121244 / 0.117699 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~4.5 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_cfid_3d_shear_modulus.yaml">megnet_jarvis_cfid_3d_shear_modulus</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_cfid_3d_shear_modulus_gv_t_20250808_082145_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_jarvis_cfid_3d_bulk_modulus</td>
+            <td  nowrap="nowrap">Jarvis_cfid_3d</td>
+            <td  nowrap="nowrap">Bulk Modulus(K)</td>
+            <td  nowrap="nowrap"> 0.138926 / 0.141083 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~4.5 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_cfid_3d_bulk_modulus.yaml">megnet_jarvis_cfid_3d_bulk_modulus</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_cfid_3d_bulk_modulus_kv_t_20250808_081712_s_42.zip">checkpoint | log</a></td>
+        </tr>
+            <tr>
+            <td  nowrap="nowrap">megnet_jarvis_dft_3d_2021_e_form</td>
+            <td  nowrap="nowrap">Jarvis_dft_3d_2021</td>
+            <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
+            <td  nowrap="nowrap"> 0.048386 / 0.049537 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~12.5 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_dft_3d_2021_e_form.yaml">megnet_jarvis_dft_3d_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_dft_3d_2021_formation_energy_peratom_t_20250811_114527_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
             <td  nowrap="nowrap">megnet_jarvis_alex_pbe_2d_all_e_form</td>
             <td  nowrap="nowrap">Alex_pbe_2d_all</td>
             <td  nowrap="nowrap">Form. Energy(meV/atom)</td>
@@ -135,6 +197,46 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap">~34 hours</td>
             <td  nowrap="nowrap"><a href="megnet_jarvis_alex_pbe_2d_all_e_form.yaml">megnet_jarvis_alex_pbe_2d_all_e_form</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_alex_pbe_2d_all_e_form.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_matbench_e_form</td>
+            <td  nowrap="nowrap">Matbench</td>
+            <td  nowrap="nowrap">Form. Energy(eV/atom)</td>
+            <td  nowrap="nowrap"> 2.084808/ 2.072724 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~40 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_matbench_e_form.yaml">megnet_matbench_e_form</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_matbench_e_form_t_20250731_093333_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_matbench_band_gap</td>
+            <td  nowrap="nowrap">Matbench</td>
+            <td  nowrap="nowrap">Band Gap(eV)</td>
+            <td  nowrap="nowrap"> 0.225403 / 0.226996 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~8 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_matbench_band_gap.yaml">megnet_matbench_band_gap</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_matbench_band_gap_t_20250731_041639_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_matbench_shear_modulus</td>
+            <td  nowrap="nowrap">Matbench</td>
+            <td  nowrap="nowrap">Shear Modulus (G)</td>
+            <td  nowrap="nowrap"> 0.098680 / 0.093513 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~4 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_matbench_shear_modulus.yaml">megnet_matbench_shear_modulus</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_matbench_shear_modulus_t_20250731_041740_s_42.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_matbench_bulk_modulus</td>
+            <td  nowrap="nowrap">Matbench</td>
+            <td  nowrap="nowrap">Bulk Modulus (K)</td>
+            <td  nowrap="nowrap"> 0.080528 / 0.077150 </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap">~4 hours</td>
+            <td  nowrap="nowrap"><a href="megnet_matbench_bulk_modulus.yaml">megnet_matbench_bulk_modulus</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_matbench_bulk_modulus_t_20250731_041800_s_42.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
