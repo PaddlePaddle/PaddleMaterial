@@ -21,6 +21,7 @@ import os
 import os.path as osp
 import pickle
 import re
+import urllib.request
 import zipfile
 from collections import defaultdict
 from typing import Any
@@ -41,6 +42,28 @@ from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import logger
 from ppmat.utils.misc import is_equal
+
+# -----------------------------------------------------------------------------
+# JARVIS mirror dataset registry (preferred download entries)
+# List available datasets in the format similar to mp2018_dataset
+# -----------------------------------------------------------------------------
+JARVIS_MIRROR_DATASETS = [
+    {
+        "name": "dft_3d_2021",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_dft_3d-8-18-2021.json.zip",
+        "md5": "8f619035a2cd8030de1ce38ce8b561b2",
+    },
+    {
+        "name": "alexandria_scan_3d_2024.10.1_jarvis_tools",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_alexandria_scan_3d_2024.10.1_jarvis_tools.json.zip",
+        "md5": "ddeee1df79789d8f2b4a89f625864e6b",
+    },
+    {
+        "name": "cfid_3d",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_cfid_3d-8-18-2021.json.zip",
+        "md5": "6efe75ca51aa5fb5c23a5b08fb412a6e",
+    },
+]
 
 
 class JarvisDataset(Dataset):
@@ -696,19 +719,86 @@ class JarvisDataset(Dataset):
                     f"Jarvis dataset zip archive not found. "
                     f"Downloading of dataset {data_name}."
                 )
-            try:
-                raw_data = jdata(dataset=data_name, store_dir=os.path.dirname(path))
-                assert raw_data is not None, f"Failed to download dataset {data_name}"
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to download dataset {data_name}. Error: {e}"
+
+            # Preferred mirror download (Paddle BOS) based on expected filename
+            expected_filename_no_zip = os.path.splitext(os.path.basename(path))[0]
+            _registry_map = {d["name"]: d for d in JARVIS_MIRROR_DATASETS}
+            if data_name in _registry_map:
+                tmp_path = path + ".downloading"
+                try:
+                    logger.message(
+                        f"Trying preferred mirror download from Paddle BOS for dataset '{data_name}' (expected file '{expected_filename_no_zip}')."
+                    )
+                    urllib.request.urlretrieve(
+                        _registry_map[data_name]["url"], tmp_path
+                    )
+                    if not zipfile.is_zipfile(tmp_path):
+                        raise ValueError(
+                            "Downloaded file from mirror is not a valid zip archive."
+                        )
+                    os.replace(tmp_path, path)
+                    logger.message(
+                        "Mirror download succeeded. Using the mirrored archive."
+                    )
+                except Exception as e:
+                    logger.warning(e)
+                    if osp.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
+                    logger.message(
+                        "Mirror download failed. Falling back to JARVIS official source."
+                    )
+
+            # If mirror did not provide a valid file, fallback to jdata
+            if not osp.exists(path) or not zipfile.is_zipfile(path):
+                try:
+                    try:
+                        raw_data = jdata(
+                            dataset=data_name, store_dir=os.path.dirname(path)
+                        )
+                    except TypeError:
+                        raw_data = jdata(dataset=data_name)
+                    assert (
+                        raw_data is not None
+                    ), f"Failed to download dataset {data_name}"
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to download dataset {data_name}. Error: {e}"
+                    )
+            else:
+                # Mirror path ready; read from the zip file we just downloaded
+                logger.message(
+                    f"Existing Jarvis dataset zip archive found at '{path}'."
                 )
+                with zipfile.ZipFile(path) as zf:
+                    expected_member = os.path.splitext(os.path.basename(path))[0]
+                    try:
+                        bytes_data = zf.read(expected_member)
+                    except KeyError:
+                        json_members = [n for n in zf.namelist() if n.endswith(".json")]
+                        if not json_members:
+                            raise RuntimeError(
+                                "No .json file found inside the downloaded zip archive."
+                            )
+                        bytes_data = zf.read(json_members[0])
+                raw_data = json.loads(bytes_data)
         # File is valid
         else:
             logger.message(f"Existing Jarvis dataset zip archive found at '{path}'.")
-            raw_data = json.loads(
-                zipfile.ZipFile(path).read(os.path.splitext(os.path.basename(path))[0])
-            )
+            with zipfile.ZipFile(path) as zf:
+                expected_member = os.path.splitext(os.path.basename(path))[0]
+                try:
+                    bytes_data = zf.read(expected_member)
+                except KeyError:
+                    json_members = [n for n in zf.namelist() if n.endswith(".json")]
+                    if not json_members:
+                        raise RuntimeError(
+                            "No .json file found inside the zip archive."
+                        )
+                    bytes_data = zf.read(json_members[0])
+            raw_data = json.loads(bytes_data)
 
         # Convert list-of-dict raw data to dict-of-lists by property.
         property_data = defaultdict(list)
@@ -806,11 +896,8 @@ class JarvisDataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                # Only keep numeric values that are not NaN, None, or string 'na'
-                if (
-                    not isinstance(data_item, str)
-                    and data_item is not None
-                    and not math.isnan(data_item)
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
                 ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
@@ -891,17 +978,9 @@ class JarvisDataset(Dataset):
             data["structure_array"] = self.get_structure_array(structure)
         for property_name in self.property_names:
             if property_name in self.property_data:
-                property_value = self.property_data[property_name][idx]
-                # Additional safety check for invalid values
-                if (
-                    isinstance(property_value, str)
-                    or property_value is None
-                    or math.isnan(property_value)
-                ):
-                    raise ValueError(
-                        f"Invalid property value for {property_name} at index {idx}: {property_value}"
-                    )
-                data[property_name] = np.array([property_value]).astype("float32")
+                data[property_name] = np.array(
+                    [self.property_data[property_name][idx]]
+                ).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
