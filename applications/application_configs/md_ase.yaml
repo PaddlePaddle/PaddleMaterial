@@ -1,0 +1,24 @@
+# @package _global_
+
+device: cuda
+seed: null 
+
+defaults:
+  - _self_
+  - run: default
+  - model: load_model
+  - task: md
+  - interface: ase
+  - system: load_system                   # load_system, ase_create
+  - logger: default
+  - override hydra/job_logging: disabled
+
+hydra:
+  job:
+    name: md_ase
+    chdir: True                                            # 是否切换工作目录到 run.dir
+  run:
+    dir: ./out_${hydra:job.name}/${now:%Y-%m-%d-%H-%M-%S}  # 单次运行的输出目录
+
+# To convert the trajectory (.traj) file to XYZ format, run:
+# ase convert <trajectory_file>.traj <output_file>.xyz

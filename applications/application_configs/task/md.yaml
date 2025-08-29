@@ -1,0 +1,6 @@
+_target_: ppmat.interface.ase.MDSimulationTask
+
+temperature: 300  # Temperature in Kelvin
+timestep: 0.1     # Timestep for MD simulation in fs
+steps: 1000       # Number of MD steps
+interval: 1       # Interval to save trajectory

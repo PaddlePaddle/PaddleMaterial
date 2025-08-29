@@ -49,8 +49,8 @@ __all__ = [
     "CrystalNN",
     "CHGNetGraphConverter",
     "CHGNet",
-    "M3GNetGraphConvertor",
-    "M3GNet",
+    # "M3GNetGraphConvertor",
+    # "M3GNet",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

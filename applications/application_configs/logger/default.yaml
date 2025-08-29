@@ -1,0 +1,5 @@
+log_file: out.log           # Resolved to ${hydra:run.dir}/out.log
+log_level: INFO             # Logging level
+# use_visualdl: False         # Use VisualDL
+# use_wandb: False            # Use Weights & Biases (wandb)
+# use_tensorboard: False      # Use TensorBoard

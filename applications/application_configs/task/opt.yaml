@@ -1,0 +1,6 @@
+_target_: ppmat.interface.ase.OptimizationTask
+
+optimizer: LBFGS            # Optimizer name
+filter: FrechetCellFilter   # Filter name
+fmax: 0.05                  # Maximum force tolerance
+steps: 100                  # Number of steps

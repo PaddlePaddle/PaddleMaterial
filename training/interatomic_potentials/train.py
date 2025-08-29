@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import argparse
+import datetime
 import os
 import os.path as osp
 
@@ -30,10 +30,11 @@ from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
 
-if dist.get_world_size() > 1:
-    fleet.init(is_collective=True)
 
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -49,6 +50,16 @@ if __name__ == "__main__":
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
 
+    # set random seed
+    seed = config["Trainer"].get("seed", 42)
+    misc.set_random_seed(seed)
+    logger.info(f"Set random seed to {seed}")
+
+    # add timestamp to output_dir
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_output_dir = config["Trainer"]["output_dir"]
+    config["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+
     # save config to output_dir, only rank 0 process will do this
     if dist.get_rank() == 0:
         os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
@@ -62,19 +73,10 @@ if __name__ == "__main__":
     logger.init_logger(log_file=logger_path)
     logger.info(f"Logger saved to {logger_path}")
 
-    # set random seed
-    seed = config["Trainer"].get("seed", 42)
-    misc.set_random_seed(seed)
-    logger.info(f"Set random seed to {seed}")
-
     # set prim eager mode
     enabled = config["Global"].get("prim_eager_enabled", False)
     white_list = config["Global"].get("prim_backward_white_list", None)
     setting_eager_mode(enabled, white_list)
-
-    # build model from config
-    model_cfg = config["Model"]
-    model = build_model(model_cfg)
 
     # build dataloader from config
     set_signal_handlers()
@@ -106,6 +108,13 @@ if __name__ == "__main__":
     else:
         test_loader = None
 
+    # build model from config
+    model_cfg = config["Model"]
+
+    model = build_model(model_cfg)
+
+    
+
     # build optimizer and learning rate scheduler from config
     if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
         assert (
@@ -130,7 +139,7 @@ if __name__ == "__main__":
     else:
         metric_func = None
 
-    # # initialize trainer
+    # initialize trainer
     trainer = BaseTrainer(
         config["Trainer"],
         model,

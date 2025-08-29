@@ -1,0 +1,8 @@
+config_path: ???
+experiment: null
+work_dir: ${hydra:runtime.cwd}
+
+# data_dir: ${run.work_dir}/data
+# path: ${run.work_dir}/runs
+# id: ${uuid:1}
+# ckpt_path: null

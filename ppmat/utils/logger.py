@@ -33,8 +33,6 @@ if TYPE_CHECKING:
     import wandb  # isort:skip
     import tensorboardX as tbd
 
-_logger: logging.Logger = None
-
 # INFO(20) is white(no color)
 # use custom log level `MESSAGE` for printing message in color
 _MESSAGE_LEVEL = 25
@@ -57,6 +55,169 @@ __all__ = [
     "scalar",
 ]
 
+# class LoggerClass:
+#     def __init__(
+#         self,
+#         name: str = "ppmat",
+#         log_file: str = "out.log",
+#         log_dir: str = ".",
+#         log_level: str = "INFO",
+#         use_visualdl: bool = False,
+#         use_wandb: bool = False,
+#         use_tensorboard: bool = False,
+#     ):
+#         """
+#         Initialize and get a logger by name.
+#         If the logger has not been initialized, this method will initialize the logger 
+#         by adding one or two handlers, otherwise the initialized logger will be directly
+#         returned. During initialization, a StreamHandler will always be added. 
+#         If `log_file` is specified a FileHandler will also be added.
+
+#         Args:
+#             name (str, optional): Logger name. Defaults to "ppmat".
+#             log_file (str): The log filename. Defaults to "out.log".
+#             log_dir (str): The directory of log file. Defaults to current dir.
+#             log_level (str): The logger level. Defaults to logging.INFO.
+#             use_visualdl (bool): VisualDL writer to record metrics. 
+#                 Defaults to None.
+#             use_wandb (bool): Run object of WandB to record metrics.
+#                 Defaults to None.
+#             use_tensorboard (bool): Run object of WandB to record metrics. 
+#                 Defaults to None.
+#         """
+#         self.name = name
+#         self.log_dir = os.path.abspath(log_dir)
+#         self.log_file = os.path.abspath(log_file)
+
+#         self.log_level = getattr(logging, log_level.upper())
+
+#         self.use_visualdl = use_visualdl
+#         self.use_wandb = use_wandb
+#         self.use_tensorboard = use_tensorboard
+
+#         self.visualdl_writer = None
+#         self.tensorboard_writer = None
+#         self.wandb_writer = None
+     
+#         self._init_logger()
+#         self._init_writers()
+
+#         self.info("[PPMaterial] Logger initialized")
+#         self.info(f"Logger name      : {self.name}")
+#         self.info(f"Working directory: {os.getcwd()}")
+#         self.info(f"Log file path    : {self.log_file}")
+
+#     def _init_logger(self):
+#         # get a clean logger
+#         self._logger = logging.getLogger(self.name)
+#         self._logger.handlers.clear()
+        
+#         # add custom log level MESSAGE(25), between WARNING(30) and INFO(20)
+#         logging.addLevelName(_MESSAGE_LEVEL, "MESSAGE")
+
+#         # add stream_handler, output to stdout such as terminal
+#         stream_formatter = colorlog.ColoredFormatter(
+#             "%(log_color)s[%(asctime)s] %(name)s %(levelname)s: %(message)s",
+#             datefmt="%Y/%m/%d %H:%M:%S",
+#             log_colors=_COLORLOG_CONFIG,
+#         )
+#         stream_handler = logging.StreamHandler(stream=sys.stdout)
+#         stream_handler.setFormatter(stream_formatter)
+#         stream_handler._name = "stream_handler"
+#         self._logger.addHandler(stream_handler)
+
+#         # add file_handler, output to log_file(if specified), only for rank 0 device
+#         if dist.get_rank() == 0:
+#             file_formatter = logging.Formatter(
+#                 "[%(asctime)s] %(name)s %(levelname)s: %(message)s",
+#                 datefmt="%Y/%m/%d %H:%M:%S",
+#             )
+#             file_handler = logging.FileHandler(self.log_file, "a")  # append mode
+#             file_handler.setFormatter(file_formatter)
+#             file_handler._name = "file_handler"
+#             self._logger.addHandler(file_handler)
+#             self._logger.setLevel(self.log_level)
+#         else:
+#             self._logger.setLevel(logging.ERROR)
+
+#         self._logger.propagate = False
+    
+#     def _init_writers(self):
+#         if self.use_visualdl:
+#             self.info( f"VisualDL writer initialized at {self.log_dir}" )
+#             self.visualdl_writer = visualdl.LogWriter(logdir=self.log_dir)
+#         if self.use_tensorboard:
+#             self.info( f"TensorBoard writer initialized at {self.log_dir}" )
+#             self.tensorboard_writer = tbd.SummaryWriter(logdir=self.log_dir)
+#         if self.use_wandb:
+#             self.info( f"WandB writer initialized at {self.log_dir}" )
+#             if not wandb.run:
+#                 wandb.init(project=self.name)
+#             self.wandb_writer = wandb
+
+#     @misc.run_at_rank0
+#     def info(self, msg, *args):
+#         self._logger.info(msg, *args)
+
+#     @misc.run_at_rank0
+#     def message(self, msg, *args):
+#         self._logger.log(_MESSAGE_LEVEL, msg, *args)
+
+#     @misc.run_at_rank0
+#     def debug(self, msg, *args):
+#         self._logger.debug(msg, *args)
+
+#     @misc.run_at_rank0
+#     def warning(self, msg, *args):
+#         self._logger.warning(msg, *args)
+
+#     @misc.run_at_rank0
+#     def error(self, msg, *args):
+#         self._logger.error(msg, *args)
+
+#     def scalar(
+#         self,
+#         tag: str,
+#         metric_dict: Dict[str, float],
+#         step: int,
+#     ):
+#         """
+#         This function will add scalar data to VisualDL or WandB for plotting curve(s).
+
+#         Args:
+#             tag (str): The tag of the metric.
+#             metric_dict (Dict[str, float]): Metrics dict with metric name and value.
+#             step (int): The step of the metric.
+#         """
+#         tag_metric_dict = {f"{tag}_{k}": v for k, v in metric_dict.items()}
+
+#         if self.visualdl_writer:
+#             with misc.RankZeroOnly() as is_master:
+#                 if is_master:
+#                     for k, v in tag_metric_dict.items():
+#                         self.visualdl_writer.add_scalar(k, v, step)
+
+#         if self.tensorboard_writer:
+#             with misc.RankZeroOnly() as is_master:
+#                 if is_master:
+#                     for k, v in tag_metric_dict.items():
+#                         self.tensorboard_writer.add_scalar(k, v, global_step=step)
+
+#         if self.wandb_writer:
+#             with misc.RankZeroOnly() as is_master:
+#                 if is_master:
+#                     self.wandb_writer.log(data=tag_metric_dict, step=step)
+
+
+#     def get_logger(self) -> logging.Logger:
+#         """
+#         Return the internal logger instance for direct access.
+
+#         Returns:
+#             logging.Logger: The logger object.
+#         """
+#         return self._logger
+                        
 
 def init_logger(
     name: str = "ppmat",

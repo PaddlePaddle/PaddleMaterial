@@ -13,20 +13,20 @@
 # limitations under the License.
 
 import os
+import paddle
+import pandas as pd
+from tqdm import tqdm
 import os.path as osp
 from typing import Optional
-
 from omegaconf import OmegaConf
 from pymatgen.core import Structure
-from tqdm import tqdm
 
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
-from ppmat.utils import logger
 from ppmat.utils import save_load
-
+from ppmat.utils import logger
 
 class PPMatPredictor:
     """PPMaterial predictor.
@@ -76,18 +76,18 @@ class PPMatPredictor:
         weights_name: Optional[str] = None,
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
+        device: Optional[str] = "cpu",
     ):
-
         self.model_name = model_name
         self.weights_name = weights_name
         self.config_path = config_path
         self.checkpoint_path = checkpoint_path
+        self.device = device
 
     def load_inference_model(
         self,
-        ase_calc: bool = False,
-        device: Optional[str] = "cpu",
-    ):
+        interface_type: Optional[str] = None
+    ):    
         # if model_name is not None,
         # then config_path and checkpoint_path must be provided
         if self.model_name is None:
@@ -105,31 +105,20 @@ class PPMatPredictor:
 
             model_config = config.get("Model", None)
             assert model_config is not None, "Model config must be provided."
-            # TODO: support more models
-            if ase_calc:
-                if model_config["__class_name__"] == "CHGNet":
-                    # CHGNet by default predicts energy per atom;
-                    # convert it to total energy
-                    model_config["__init_params__"]["is_intensive"] = False
-                    logger.warning(
-                        "CHGNet by default predicts energy per atom; "
-                        "change 'is_intensive' to False to "
-                        "predict total energy for ASE integration."
-                    )
-                else:
-                    raise NotImplementedError(
-                        f"The model '{model_config.get('__class_name__')}' "
-                        f"is not yet supported with ASE integration.\n"
-                        f"Please ensure that the model predicts total energy, "
-                        f"or manually adjust parameter according to the model.\n"
-                        f"If this model should be supported, "
-                        f"please add a special handling case here."
-                    )
+            if interface_type:
+                model_config = self.modify_model_config(interface_type, model_config)
+            else:
+                logger.info("No interface, use the model directly")
             model = build_model(model_config)
             save_load.load_pretrain(model, self.checkpoint_path)
         else:
             logger.info("Since model_name is given, downloading it...")
             model, config = build_model_from_name(self.model_name, self.weights_name)
+            if interface_type:
+                model_config = config.get("Model")
+                config["Model"] = self.modify_model_config(interface_type, model_config)
+            else:
+                logger.info("No interface, use the model directly")
 
         self.model = model
         self.config = config
@@ -152,12 +141,44 @@ class PPMatPredictor:
         else:
             self.post_transforms = None
 
+    def modify_model_config(
+        self,
+        interface_type,
+        model_config,
+    ):
+        # TODO: support more models
+        if interface_type == 'ase':
+            logger.info("Integrate ASE calculator")
+            if model_config["__class_name__"] == "CHGNet":
+                # CHGNet by default predicts energy per atom;
+                # convert it to total energy
+                model_config["__init_params__"]["is_intensive"] = False
+                logger.warning(
+                    "CHGNet by default predicts energy per atom; "
+                    "change 'is_intensive' to False to "
+                    "predict total energy for ASE integration."
+                )
+            elif model_config["__class_name__"] == "M3GNet":
+                pass
+            else:
+                raise NotImplementedError(
+                    f"The model '{model_config.get('__class_name__')}' "
+                    f"is not yet supported with ASE integration.\n"
+                    f"Please ensure that the model predicts total energy, "
+                    f"or manually adjust parameter according to the model.\n"
+                    f"If this model should be supported, "
+                    f"please add a special handling case here."
+                )
+        elif interface_type == 'lammps':
+            pass
+        return model_config
+
     def collect_structures(
         self,
         file_path: str,
     ):
         """
-        Supported formats include:
+        pymatgen.core.Structure supported formats include:
             CIF, POSCAR/CONTCAR, CHGCAR, LOCPOT, vasprun.xml, CSSR,
             Netcdf and pymatgen's JSON-serialized structures.
 
@@ -196,20 +217,30 @@ class PPMatPredictor:
         if self.post_transforms is None:
             return data
         return self.post_transforms(data)
+    
 
-    def init_save_dir(
+    def get_predict(
         self,
-        file_path: Optional[str] = None,
-        save_path: Optional[str] = None,
+        files: list,
+        structures: list,
+
     ):
-        if save_path is not None:
-            self.save_path = save_path
-        else:
-            # The save_path is not provided,
-            # infer save_path from file_path.
-            if file_path is not None:
-                self.save_path = (
-                    file_path if osp.isdir(file_path) else osp.dirname(file_path)
-                )
+        results = []
+        for structure in tqdm(structures):
+            data = self.graph_converter(structure)
+            data = data.tensor()
+            if self.eval_with_no_grad:
+                with paddle.no_grad():
+                    out = self.model.predict(data)
             else:
-                self.save_path = "."
+                out = self.model.predict(data)
+            out = self.post_process(out)
+            results.append(out)
+
+        # save file names and output to csv file
+        if not results:
+            raise ValueError("No results to save csv file.")
+        df = pd.DataFrame(results)
+        df.insert(0, "file_name", files)
+        df.to_csv("results_pred_property.csv", index=False)
+        logger.info(f"Saved the prediction results.")

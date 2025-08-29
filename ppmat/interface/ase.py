@@ -37,7 +37,6 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from pymatgen.io.ase import AseAtomsAdaptor
 from tqdm import tqdm
 
-from ppmat.predict.base import PPMatPredictor
 from ppmat.utils import logger
 
 CHARGE_RANGE = [-100, 100]
@@ -58,17 +57,76 @@ OPTIMIZERS = {
 }
 
 
+class OptimizationTask:
+    def __init__(
+        self, 
+        optimizer="BFGS", 
+        filter="none",
+        fmax=0.05, 
+        steps=100, 
+    ):
+        self.optimizer = optimizer
+        self.filter = filter
+        self.fmax = fmax
+        self.steps = steps
+
+    def __call__(
+        self, 
+        interface_obj, 
+        structures, 
+    ):
+        logger.info("Relax structure.")
+        interface_obj.run_opt(
+            structures=structures,
+            optimizer=self.optimizer,
+            filter=self.filter,
+            fmax=self.fmax,
+            steps=self.steps,
+        )
+        logger.info("All relaxations finished successfully.")
+        
+        
+class MDSimulationTask:
+    def __init__(
+        self, 
+        temperature=300, 
+        timestep=0.1,
+        steps=100, 
+        interval=1,
+        **kwargs
+    ):
+        self.temperature = temperature
+        self.timestep = timestep
+        self.steps = steps
+        self.interval = interval
+
+    def __call__(
+        self, 
+        interface_obj, 
+        structures, 
+    ):
+        logger.info("Run MD simulation.")
+        interface_obj.run_md(
+            structures=structures,
+            temperature=self.temperature,
+            timestep=self.timestep,
+            steps=self.steps,
+            interval=self.interval,
+        )
+        logger.info("All MD simulations finished successfully.")
+
+
 class ASECalculator(Calculator):
     def __init__(
         self,
-        predictor: "PPMatPredictor",
+        predictor,
         **kwargs: Any,
     ):
         """
         Initialize the ASECalculator from a model PPMatPredictor
 
         Args:
-            predict_unit (PPMatPredictor): A pretrained PPMatPredictor.
+            predictor (PPMatPredictor): A pretrained PPMatPredictor.
         Notes:
             - For models that require total charge and spin multiplicity
                 `charge` and `spin` (corresponding to `spin_multiplicity`) are
@@ -94,6 +152,8 @@ class ASECalculator(Calculator):
             label_names = ["forces" if x == "force" else x for x in label_names]
             if "energy_per_atom" in label_names and "energy" not in label_names:
                 label_names.append("energy")
+        elif model_cls == "M3GNet":
+            print
         else:
             raise NotImplementedError(
                 f"Model {model_cls} not supported. "
@@ -292,19 +352,11 @@ class ASECalculator(Calculator):
     def run_opt(
         self,
         structures: List[Atoms],
-        save_path: str,
-        file_path: str,
         optimizer: str = "LBFGS",
         filter: str = "FrechetCellFilter",
         fmax: float = 0.05,
         steps: int = 100,
     ):
-        # Initialize the save path
-        self.predictor.init_save_dir(file_path=file_path, save_path=save_path)
-        save_path = osp.join(self.predictor.save_path, "results_opt")
-        os.makedirs(save_path, exist_ok=True)
-        logger.info(f"Save predictions to {save_path}")
-
         # Convert structures to ASE format
         structures = self.structure_to_ase(structures)
 
@@ -322,39 +374,29 @@ class ASECalculator(Calculator):
             system = filter_cls(atoms) if filter_cls else atoms
 
             # Set up optimizer (with logfile and trajectory)
-            logfile = osp.join(save_path, f"{idx}_{formula}.log")
-            traj = osp.join(save_path, f"{idx}_{formula}.traj")
-            opt = optimizer_cls(system, logfile=logfile, trajectory=traj)
+            opt = optimizer_cls(
+                system, 
+                logfile=f"{idx}_{formula}.log", 
+                trajectory=f"{idx}_{formula}.traj"
+            )
 
             # Run optimization
             try:
                 opt.run(fmax=fmax, steps=steps)
+                write(f"{idx}_{formula}.xyz", atoms)
             except Exception as e:
                 logger.warning(f"Optimization failed for {formula}: {e}")
                 continue
-
-            # Save relaxed structure
-            outfile = osp.join(save_path, f"{idx}_{formula}.xyz")
-            write(outfile, atoms)
-            logger.info(f"Saved relaxed structure to: {outfile}")
+            
 
     def run_md(
         self,
         structures: List[Atoms],
-        save_path: str,
-        file_path: str,
         temperature: float = 300,
         timestep: float = 0.1,
         steps: int = 100,
         interval: int = 1,
-        **kwargs,
     ):
-        # Initialize the save path
-        self.predictor.init_save_dir(file_path=file_path, save_path=save_path)
-        save_path = osp.join(self.predictor.save_path, "results_md")
-        os.makedirs(save_path, exist_ok=True)
-        logger.info(f"Save predictions to {save_path}")
-
         # Convert structures to ASE format
         structures = self.structure_to_ase(structures)
 
@@ -373,24 +415,21 @@ class ASECalculator(Calculator):
                 friction=0.01 / units.fs,
             )
 
-            # Log file
-            logfile = open(osp.join(save_path, f"{idx}_{formula}.log"), "w")
             dyn.attach(
-                MDLogger(dyn, atoms, logfile, header=True, stress=False, peratom=False),
+                MDLogger(
+                    dyn, atoms, f"{idx}_{formula}.log", 
+                    header=True, stress=False, peratom=False
+                ),
                 interval=interval,
             )
 
             # Trajectory
-            traj_out = osp.join(save_path, f"{idx}_{formula}.traj")
-            trajectory = Trajectory(traj_out, "w", atoms)
+            trajectory = Trajectory(f"{idx}_{formula}.traj", "w", atoms)
             dyn.attach(trajectory.write, interval=interval)
             dyn.run(steps=steps)
-            logger.info(f"Saved MD trajectory to: {traj_out}")
 
             # Last structure
-            xyz_out = osp.join(save_path, f"{idx}_{formula}_final.xyz")
-            write(xyz_out, atoms)
-            logger.info(f"Saved final frame to: {xyz_out}")
+            write(f"{idx}_{formula}_final.xyz", atoms)
 
 
 class MixedPBCError(ValueError):
