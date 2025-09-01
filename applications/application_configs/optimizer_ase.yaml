@@ -7,8 +7,8 @@ defaults:
   - _self_
   - run: default
   - model: load_model
-  - task: opt
-  - interface: ase
+  - task: opt                            # opt, md
+  - calculator: ase
   - system: ase_create                   # load_system, ase_create
   - logger: default
   - override hydra/job_logging: disabled

@@ -7,8 +7,8 @@ import hydra
 from hydra.utils import instantiate 
 from omegaconf import DictConfig, OmegaConf
 
-from ppmat.predict import PPMatPredictor
-from ppmat.predict.structures import prepare_structures
+from ppmat.predictor import PPMatPredictor
+from ppmat.predictor.structures import build_init_structures
 from ppmat.utils import logger
 
 
@@ -51,7 +51,7 @@ def main(cfg: DictConfig):
         predictor.load_inference_model( interface_type=None )
     
     # Load structures
-    files, structures = prepare_structures(cfg, predictor)
+    files, structures = build_init_structures(cfg, predictor)
 
     if cfg.get("task") is not None:
         # Initialize the task

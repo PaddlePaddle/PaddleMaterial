@@ -28,8 +28,8 @@ from ppmat.models import build_model_from_name
 from ppmat.utils import save_load
 from ppmat.utils import logger
 
-class PPMatPredictor:
-    """PPMaterial predictor.
+class Predictor:
+    """
 
     This class provides an interface for predicting properties of crystalline
     structures using pre-trained deep learning models.
