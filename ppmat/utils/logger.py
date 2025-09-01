@@ -56,7 +56,7 @@ __all__ = [
     "error",
     "scalar",
 ]
-                     
+
 
 def init_logger(
     name: str = "ppmat",
