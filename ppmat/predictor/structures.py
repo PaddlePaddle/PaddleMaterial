@@ -1,17 +1,18 @@
 import os
-from hydra.utils import instantiate 
-
-from ppmat.utils import logger
 
 from ase.build import bulk
+from hydra.utils import instantiate
 from pymatgen.io.ase import AseAtomsAdaptor
+
+from ppmat.utils import logger
 
 
 def get_structure_from_file(work_dir, system, predictor):
     system["file_path"] = os.path.join(work_dir, system["file_path"])
-    logger.info( f"Loading structures from files: {system['file_path']}." )
-    files, structures = predictor.collect_structures(file_path=system['file_path'])
+    logger.info(f"Loading structures from files: {system['file_path']}.")
+    files, structures = predictor.collect_structures(file_path=system["file_path"])
     return files, structures
+
 
 def get_structure_from_ase(system):
     files, structures = [], []
@@ -27,7 +28,8 @@ def get_structure_from_ase(system):
     logger.info(f"Using ASE provided structures (count: {len(structures)})")
     return files, structures
 
-def prepare_structures(cfg, predictor):
+
+def build_init_structures(cfg, predictor):
     system = instantiate(cfg.system)
     if system["interface"] == "load_file":
         work_dir = cfg.run.work_dir

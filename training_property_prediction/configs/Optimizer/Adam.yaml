@@ -1,0 +1,10 @@
+__class_name__: Adam
+__init_params__:
+  beta1: null
+  beta2: null
+  lr:
+    __class_name__: Cosine
+    __init_params__:
+      learning_rate: 0.001
+      eta_min: null
+      by_epoch: True

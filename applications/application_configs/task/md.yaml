@@ -1,4 +1,4 @@
-_target_: ppmat.interface.ase.MDSimulationTask
+_target_: ppmat.calculator.ase.MDSimulationTask
 
 temperature: 300  # Temperature in Kelvin
 timestep: 0.1     # Timestep for MD simulation in fs

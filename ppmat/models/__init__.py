@@ -138,6 +138,7 @@ def build_model(cfg: Dict):
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
     path = osp.join(path, model_name)
+    logger.info(f"Save model and configuration files in path: {path}")
     config_path = osp.join(path, f"{model_name}.yaml")
     if not osp.exists(config_path):
         logger.warning(

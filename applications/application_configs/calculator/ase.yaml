@@ -1,2 +1,2 @@
-_target_: ppmat.interface.ase.ASECalculator
+_target_: ppmat.calculator.ase.ASECalculator
 type: ase

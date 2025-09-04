@@ -13,22 +13,24 @@
 # limitations under the License.
 
 import os
-import paddle
-import pandas as pd
-from tqdm import tqdm
 import os.path as osp
 from typing import Optional
+
+import paddle
+import pandas as pd
 from omegaconf import OmegaConf
 from pymatgen.core import Structure
+from tqdm import tqdm
 
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
-from ppmat.utils import save_load
 from ppmat.utils import logger
+from ppmat.utils import save_load
 
-class Predictor:
+
+class BasePredictor:
     """
 
     This class provides an interface for predicting properties of crystalline
@@ -76,18 +78,17 @@ class Predictor:
         weights_name: Optional[str] = None,
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
+        work_dir: Optional[str] = None,
         device: Optional[str] = "cpu",
     ):
-        self.model_name = model_name
-        self.weights_name = weights_name
-        self.config_path = config_path
-        self.checkpoint_path = checkpoint_path
-        self.device = device
 
-    def load_inference_model(
-        self,
-        interface_type: Optional[str] = None
-    ):    
+        self.model_name = model_name
+        self.device = device
+        self.config_path = config_path and osp.join(work_dir, config_path)
+        self.checkpoint_path = checkpoint_path and osp.join(work_dir, checkpoint_path)
+        self.weights_name = weights_name and osp.join(work_dir, weights_name)
+
+    def load_inference_model(self, interface_type: Optional[str] = None):
         # if model_name is not None,
         # then config_path and checkpoint_path must be provided
         if self.model_name is None:
@@ -147,7 +148,7 @@ class Predictor:
         model_config,
     ):
         # TODO: support more models
-        if interface_type == 'ase':
+        if interface_type == "ase":
             logger.info("Integrate ASE calculator")
             if model_config["__class_name__"] == "CHGNet":
                 # CHGNet by default predicts energy per atom;
@@ -169,7 +170,7 @@ class Predictor:
                     f"If this model should be supported, "
                     f"please add a special handling case here."
                 )
-        elif interface_type == 'lammps':
+        elif interface_type == "lammps":
             pass
         return model_config
 
@@ -217,13 +218,11 @@ class Predictor:
         if self.post_transforms is None:
             return data
         return self.post_transforms(data)
-    
 
     def get_predict(
         self,
         files: list,
         structures: list,
-
     ):
         results = []
         for structure in tqdm(structures):
@@ -243,4 +242,4 @@ class Predictor:
         df = pd.DataFrame(results)
         df.insert(0, "file_name", files)
         df.to_csv("results_pred_property.csv", index=False)
-        logger.info(f"Saved the prediction results.")
+        logger.info("Saved the prediction results.")

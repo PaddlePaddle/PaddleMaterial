@@ -1,0 +1,4 @@
+__class_name__: IgnoreNanMetricWrapper #MAEMetric
+__init_params__:
+  __class_name__: paddle.nn.L1Loss
+  __init_params__: {}

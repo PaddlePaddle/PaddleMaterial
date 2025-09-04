@@ -1,0 +1,47 @@
+# @package _global_
+defaults:
+  - Run: default                        # Runtime settings (paths, devices, etc.)
+  - Logger: default                     # Logging configuration
+  - Dataset: ???                        # Dataset configuration (e.g., mp2018, jarvis)
+  - Dataset/transform: mean_std_scaling # Data transform: mean_std, rmsd, no, or custom
+  - Graph_converter: ???                # How to convert structures into graphs
+  - Model: ???                          # Model architecture (e.g., comformer, megnet)
+  - Trainer: default                    # Training loop configuration
+  - Optimizer: Adam                     # Optimizer
+  - Loss: L1Loss                        # Loss function
+  - _self_
+
+Global:
+  label_names: ???    # List of property names to predict, e.g., ["e_form", "band_gap"]
+  model_name: ???     # Model name used in output directory
+  dataset_name: ???   # Dataset name used in output directory
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  name_for_best_metric: ${Global.label_names[0]} # The target property used for model selection (best metric)
+
+_Metric:
+  keys: ${Global.label_names}         # The evaluation metrics will be calculated on these labels
+  values:                             # Metric is based on the specified loss function
+    - ${Loss}
+
+Predict:
+  graph_converter: ${Graph_converter}
+  eval_with_no_grad: True
+
+hydra:
+  job:
+    name: ${Global.label_names[0]}
+    chdir: True
+  run:
+    # Output directory includes model name, dataset name, label, timestamp, and seed
+    dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
+
+# Custom parameters (will override defaults)
+# Trainer:
+#   max_epochs: 500
+  # save_freq: 1
+  # log_freq: 1

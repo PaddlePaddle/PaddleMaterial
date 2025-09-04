@@ -1,4 +1,4 @@
-_target_: ppmat.interface.ase.OptimizationTask
+_target_: ppmat.calculator.ase.OptimizationTask
 
 optimizer: LBFGS            # Optimizer name
 filter: FrechetCellFilter   # Filter name

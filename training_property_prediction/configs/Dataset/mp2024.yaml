@@ -1,0 +1,62 @@
+# =========================================================
+# Base dataset parameters (shared by train/val/test)
+# =========================================================
+dataset_base_params: &dataset_base_params
+  property_names: ${Global.label_names}
+  build_structure_cfg:
+    format: dict
+    num_cpus: 10
+  build_graph_cfg: ${Graph_converter}
+
+# =========================================================
+# Sampler configuration (reusable aliases)
+# =========================================================
+train_sampler: &train_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: True
+    drop_last: False
+    batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+
+val_sampler: &val_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 32
+
+test_sampler: &test_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 32
+
+# =========================================================
+# Train / Validation / Test dataset configuration
+# =========================================================
+train:
+  dataset:
+    __class_name__: MP2024Dataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp2024_train_130k/mp2024_train.txt"
+    num_workers: 4
+    use_shared_memory: False
+  sampler: *train_sampler
+
+val:
+  dataset:
+    __class_name__: MP2024Dataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp2024_train_130k/mp2024_val.txt"
+  sampler: *val_sampler
+
+test:
+  dataset:
+    __class_name__: MP2024Dataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp2024_train_130k/mp2024_test.txt"
+  sampler: *test_sampler

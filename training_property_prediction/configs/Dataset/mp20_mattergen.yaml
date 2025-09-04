@@ -1,0 +1,71 @@
+# =========================================================
+# Base dataset parameters (shared by train/val/test)
+# =========================================================
+dataset_base_params: &dataset_base_params
+  property_names: ${Global.condition_names}
+  build_structure_cfg:
+    format: cif_str
+    primitive: True
+    niggli: True
+    canocial: False
+    num_cpus: 10
+  transforms:
+    - __class_name__: LatticePolarDecomposition
+      __init_params__: {}
+
+# =========================================================
+# Sampler configuration (reusable aliases)
+# =========================================================
+train_sampler: &train_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: True
+    drop_last: False
+    batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+
+val_sampler: &val_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 32
+
+test_sampler: &test_sampler
+  __class_name__: DistributedBatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 32
+
+# =========================================================
+# Train / Validation / Test dataset configuration
+# =========================================================
+train:
+  dataset:
+    __class_name__: MP20MatterGenDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp_20_chemical_system/train.csv"
+      cache_path: "${Run.data_dir}/mp_20_chemical_system_cache/train"
+  loader:
+    num_workers: 0
+    use_shared_memory: False
+  sampler: *train_sampler
+
+val:
+  dataset:
+    __class_name__: MP20MatterGenDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp_20_chemical_system/val.csv"
+      cache_path: "${Run.data_dir}/mp_20_chemical_system_cache/val"
+  sampler: *val_sampler
+
+test:
+  dataset:
+    __class_name__: MP20MatterGenDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/mp_20_chemical_system/test.csv"
+      cache_path: "${Run.data_dir}/mp_20_chemical_system_cache/test"
+  sampler: *test_sampler

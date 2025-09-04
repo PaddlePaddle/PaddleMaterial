@@ -1,0 +1,55 @@
+# @package _global_
+defaults:
+  - Run: default
+  - Logger: default
+  - Dataset: jarvis
+  - Dataset/transform: mean_std_scaling
+  - Graph_converter: FindPointsInSpheres
+  - Model: megnet
+  - Trainer: default
+  - Optimizer: Adam
+  - Loss: L1Loss
+  - _self_
+
+Global:
+  label_names: ["e_form"]
+  model_name: "megnet"
+  dataset_name: "jarvis_alex_pbe_2d_all"
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  name_for_best_metric: ${Global.label_names[0]}
+  jarvis_data_name: "alex_pbe_2d_all"
+
+_Metric:
+  keys: ${Global.label_names}
+  values:
+    - ${Loss}
+
+Predict:
+  graph_converter: ${Graph_converter}
+  eval_with_no_grad: True
+
+hydra:
+  job:
+    name: ${Global.label_names[0]}
+    chdir: True
+  run:
+    dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
+
+# Custom parameters (will override defaults)
+Trainer:
+  max_epochs: 2
+  save_freq: 1
+  log_freq: 1
+
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __init_params__:
+        eta_min: 0.0001
