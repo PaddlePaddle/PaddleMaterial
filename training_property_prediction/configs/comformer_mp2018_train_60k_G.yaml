@@ -2,8 +2,8 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: jarvis
-  - Dataset/transform: mean_std_scaling
+  - Dataset: mp2018
+  - Dataset/transform: no_scaling
   - Graph_converter: ComformerGraphConverter
   - Model: comformer
   - Trainer: default
@@ -13,9 +13,9 @@ defaults:
   - _self_
 
 Global:
-  label_names: ["formation_energy_peratom"]
+  label_names: ["G"]
   model_name: "comformer"
-  dataset_name: "jarvis_dft_2d"
+  dataset_name: "mp2018"
   do_train: True
   do_eval: False
   do_test: False
@@ -23,7 +23,6 @@ Global:
 
 Experiment:
   name_for_best_metric: ${Global.label_names[0]}
-  jarvis_data_name: "dft_2d"
 
 _Metric:
   keys: ${Global.label_names}
@@ -33,6 +32,11 @@ _Metric:
 Predict:
   graph_converter: ${Graph_converter}
   eval_with_no_grad: True
+  post_transforms:
+    - __class_name__: PowerData
+      __init_params__:
+        exp: 10
+        apply_keys: ${Global.label_names[0]}
 
 hydra:
   job:
@@ -49,3 +53,35 @@ Trainer:
   max_epochs: 500
   # save_freq: 1
   # log_freq: 1
+
+Graph_converter:
+  __init_params__:
+    max_neighbors: 16
+
+Learning_rate:
+  __init_params__:
+    max_learning_rate: 0.0001
+
+Model:
+  __init_params__:
+    conv_layers: 3
+
+
+log10_transform: &log10_transform
+  - __class_name__: Log10
+    __init_params__:
+      apply_keys: ${Global.label_names[0]}
+
+Dataset:
+  train:
+    dataset:
+      __init_params__:
+        transforms: *log10_transform
+  val:
+    dataset:
+      __init_params__:
+        transforms: *log10_transform
+  test:
+    dataset:
+      __init_params__:
+        transforms: *log10_transform

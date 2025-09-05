@@ -2,8 +2,8 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: jarvis
-  - Dataset/transform: mean_std_scaling
+  - Dataset: mp2018
+  - Dataset/transform: custom_scaling
   - Graph_converter: ComformerGraphConverter
   - Model: comformer
   - Trainer: default
@@ -13,9 +13,9 @@ defaults:
   - _self_
 
 Global:
-  label_names: ["formation_energy_peratom"]
+  label_names: ["formation_energy_per_atom"]
   model_name: "comformer"
-  dataset_name: "jarvis_dft_2d"
+  dataset_name: "mp2018"
   do_train: True
   do_eval: False
   do_test: False
@@ -23,7 +23,6 @@ Global:
 
 Experiment:
   name_for_best_metric: ${Global.label_names[0]}
-  jarvis_data_name: "dft_2d"
 
 _Metric:
   keys: ${Global.label_names}
@@ -49,3 +48,8 @@ Trainer:
   max_epochs: 500
   # save_freq: 1
   # log_freq: 1
+
+Dataset:
+  train: {sampler: {__init_params__: {shuffle: True}}}
+  test: {sampler: {__init_params__: {batch_size: 32}}}
+  transform: {__init_params__: {mean: -1.6519, std: 1.0694}}

@@ -2,20 +2,20 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: jarvis
-  - Dataset/transform: mean_std_scaling
-  - Graph_converter: ComformerGraphConverter
-  - Model: comformer
+  - Dataset: mp2018
+  - Dataset/transform: custom_scaling
+  - Graph_converter: CrystalNN
+  - Model: dimenet++
   - Trainer: default
-  - Optimizer: AdamW
-  - Learning_rate: OneCycleLR
+  - Optimizer: Adam
+  - Learning_rate: Cosine
   - Loss: L1Loss
   - _self_
 
 Global:
-  label_names: ["formation_energy_peratom"]
-  model_name: "comformer"
-  dataset_name: "jarvis_dft_2d"
+  label_names: ["formation_energy_per_atom"]
+  model_name: "dimenet++"
+  dataset_name: "mp2018"
   do_train: True
   do_eval: False
   do_test: False
@@ -23,7 +23,6 @@ Global:
 
 Experiment:
   name_for_best_metric: ${Global.label_names[0]}
-  jarvis_data_name: "dft_2d"
 
 _Metric:
   keys: ${Global.label_names}
@@ -46,6 +45,18 @@ hydra:
 # ==========================================
 
 Trainer:
-  max_epochs: 500
-  # save_freq: 1
-  # log_freq: 1
+  max_epochs: 2
+  save_freq: 1
+  log_freq: 1
+
+Dataset:
+  train:
+    sampler: {__init_params__: {drop_last: True, batch_size: 32}}
+  val:
+    sampler: {__init_params__: {batch_size: 128}}
+  test:
+    sampler: {__init_params__: {batch_size: 128}}
+  transform: {__init_params__: {mean: -1.6519675510987046, std: 1.0694354273392233}}
+
+Model:
+  __init_params__: {loss_type: 'l1_loss'}

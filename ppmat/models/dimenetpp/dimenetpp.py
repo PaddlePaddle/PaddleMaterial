@@ -310,9 +310,9 @@ class DimeNetPlusPlus(paddle.nn.Layer):
             a graph-level feature (“mean” or “sum”). Defaults to "mean".
         property_names (Optional[str], optional): A comma-separated list of
             target property names to predict. Defaults to "formation_energy_per_atom".
-        data_norm_mean (float, optional): The mean used for normalizing target values.
+        data_mean (float, optional): The mean used for normalizing target values.
             Defaults to 0.0.
-        data_norm_std (float, optional): The standard deviation used for
+        data_std (float, optional): The standard deviation used for
             normalizing target values. Defaults to 1.0.
         loss_type (str, optional): Loss type, can be 'mse_loss' or 'l1_loss'.
             Defaults to "l1_loss".
@@ -339,8 +339,8 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         num_output_layers: int = 3,
         readout: str = "mean",
         property_names: Optional[str] = "formation_energy_per_atom",
-        data_norm_mean: float = 0.0,
-        data_norm_std: float = 1.0,
+        data_mean: float = 0.0,
+        data_std: float = 1.0,
         loss_type: str = "l1_loss",
         act: str = "swish",
     ):
@@ -356,12 +356,8 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         else:
             assert isinstance(property_names, str)
             self.property_names = property_names
-        self.register_buffer(
-            tensor=paddle.to_tensor(data_norm_mean), name="data_norm_mean"
-        )
-        self.register_buffer(
-            tensor=paddle.to_tensor(data_norm_std), name="data_norm_std"
-        )
+        self.register_buffer(tensor=paddle.to_tensor(data_mean), name="data_mean")
+        self.register_buffer(tensor=paddle.to_tensor(data_std), name="data_std")
 
         # basis layers
         self.rbf = BesselBasisLayer(num_radial, cutoff, envelope_exponent)
@@ -445,10 +441,10 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         )
 
     def normalize(self, tensor):
-        return (tensor - self.data_norm_mean) / self.data_norm_std
+        return (tensor - self.data_mean) / self.data_std
 
     def unnormalize(self, tensor):
-        return tensor * self.data_norm_std + self.data_norm_mean
+        return tensor * self.data_std + self.data_mean
 
     def _forward(self, data):
         #  The data in data['graph'] is numpy.ndarray, convert it to paddle.Tensor

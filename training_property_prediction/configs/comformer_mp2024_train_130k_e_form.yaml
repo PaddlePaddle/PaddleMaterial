@@ -8,6 +8,7 @@ defaults:
   - Model: comformer
   - Trainer: default
   - Optimizer: AdamW
+  - Learning_rate: OneCycleLR
   - Loss: L1Loss
   - _self_
 
@@ -40,7 +41,10 @@ hydra:
   run:
     dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
 
-# Custom paramaters (will override defaults)
+# ==========================================
+# Custom parameters (will override defaults)
+# ==========================================
+
 Trainer:
   max_epochs: 500
   # save_freq: 1

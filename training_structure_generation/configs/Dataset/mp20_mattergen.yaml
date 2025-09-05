@@ -2,7 +2,6 @@
 # Base dataset parameters (shared by train/val/test)
 # =========================================================
 dataset_base_params: &dataset_base_params
-  property_names: ${Global.condition_names}
   build_structure_cfg:
     format: cif_str
     primitive: True

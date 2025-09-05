@@ -8,6 +8,7 @@ defaults:
   - Model: megnet
   - Trainer: default
   - Optimizer: Adam
+  - Learning_rate: Cosine
   - Loss: L1Loss
   - _self_
 
@@ -40,7 +41,10 @@ hydra:
   run:
     dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
 
+# ==========================================
 # Custom parameters (will override defaults)
+# ==========================================
+
 Trainer:
   max_epochs: 2
   save_freq: 1
@@ -50,6 +54,7 @@ Optimizer:
   __init_params__:
     beta1: 0.9
     beta2: 0.999
-    lr:
-      __init_params__:
-        eta_min: 0.0001
+
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

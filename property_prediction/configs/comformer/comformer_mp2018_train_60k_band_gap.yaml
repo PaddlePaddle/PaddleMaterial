@@ -86,7 +86,7 @@ Model:
     loss_type: 'l1_loss'
 
 Metric:
-  formation_energy_per_atom:
+  band_gap:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 

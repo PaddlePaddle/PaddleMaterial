@@ -337,6 +337,11 @@ class MP2018Dataset(Dataset):
             for idx in idxs:
                 data[key].append(json_data[key][idx])
 
+        # Example: Load a small subset of the dataset for quick testing
+        # num_samples = 1000
+        # for key in data.keys():
+        #     data[key] = data[key][:num_samples]
+
         return data, num_samples
 
     def filter_unvalid_by_property(self):
@@ -344,7 +349,9 @@ class MP2018Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
+                ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [

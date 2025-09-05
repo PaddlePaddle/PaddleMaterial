@@ -1,0 +1,34 @@
+__class_name__: DiffCSP
+__init_params__:
+  decoder_cfg:
+    hidden_dim: 512
+    latent_dim: 256
+    num_layers: 6
+    act_fn: silu
+    dis_emb: sin
+    num_freqs: 128
+    edge_style: fc
+    ln: true
+    ip: true
+    smooth: False
+    pred_type: False
+    prop_dim: 512
+    pred_scalar: False
+    num_classes: 100
+  lattice_noise_scheduler_cfg:
+    __class_name__: DDPMScheduler
+    __init_params__:
+      beta_schedule: 'squaredcos_cap_v2'
+      num_train_timesteps: ${Experiment.num_train_timesteps}
+      clip_sample: False
+  coord_noise_scheduler_cfg:
+    __class_name__: ScoreSdeVeSchedulerWrapped
+    __init_params__:
+      num_train_timesteps:  ${Experiment.num_train_timesteps}
+      sigma_min: 0.005
+      sigma_max: 0.5
+      snr: 1e-5
+  num_train_timesteps: ${Experiment.num_train_timesteps}
+  time_dim: 256
+  lattice_loss_weight: 1
+  coord_loss_weight: 1
