@@ -1,0 +1,3 @@
+__class_name__: Adam
+__init_params__:
+  lr: ${Learning_rate}

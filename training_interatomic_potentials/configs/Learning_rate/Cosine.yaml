@@ -1,0 +1,4 @@
+__class_name__: Cosine
+__init_params__:
+  learning_rate: 0.001
+  by_epoch: True

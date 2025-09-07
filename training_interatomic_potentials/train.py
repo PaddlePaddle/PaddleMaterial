@@ -19,55 +19,21 @@ import os
 import hydra
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
-
-# from hydra.utils import instantiate
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
-from ppmat.datasets.transform import run_dataset_transform
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.utils.eager_comp_setting import setting_eager_mode
 
-
-def read_independent_dataloader_config(config):
-    """
-    Args:
-        config (dict): config dict
-    """
-    if config["Global"].get("do_train", True):
-        train_data_cfg = config["Dataset"].get("train")
-        assert (
-            train_data_cfg is not None
-        ), "train_data_cfg must be defined, when do_train is true"
-        train_loader = build_dataloader(train_data_cfg)
-    else:
-        train_loader = None
-
-    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
-        val_data_cfg = config["Dataset"].get("val")
-        if val_data_cfg is not None:
-            val_loader = build_dataloader(val_data_cfg)
-        else:
-            logger.info("No validation dataset defined.")
-            val_loader = None
-    else:
-        val_loader = None
-
-    if config["Global"].get("do_test", False):
-        test_data_cfg = config["Dataset"].get("test")
-        assert (
-            test_data_cfg is not None
-        ), "test_data_cfg must be defined, when do_test is true"
-        test_loader = build_dataloader(test_data_cfg)
-    else:
-        test_loader = None
-    return train_loader, val_loader, test_loader
+if dist.get_world_size() > 1:
+    fleet.init(is_collective=True)
 
 
 @hydra.main(config_path="configs", version_base=None)
@@ -102,49 +68,46 @@ def main(config: DictConfig):
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 
-    # Build dataloader from config
-    set_signal_handlers()
-    if config["Dataset"].get("split_dataset_ratio") is not None:
-        # Split the dataset into train/val/test and build corresponding dataloaders
-        loader = build_dataloader(config["Dataset"])
-        train_loader = loader.get("train", None)
-        val_loader = loader.get("val", None)
-        test_loader = loader.get("test", None)
-    else:
-        # Use pre-split (independent) train/val/test datasets and build dataloaders
-        train_loader, val_loader, test_loader = read_independent_dataloader_config(
-            config
-        )
+    # set prim eager mode
+    enabled = config["Experiment"].get("prim_eager_enabled", False)
+    white_list = config["Experiment"].get("prim_backward_white_list", None)
+    setting_eager_mode(enabled, white_list)
 
-    # Build model from config
+    # build model from config
     model_cfg = config["Model"]
-
-    # Scaling dataset
-    if "transform" in config["Dataset"] and config["Global"].get("do_train", False):
-        dataset_trans_cfg = config["Dataset"].get("transform")
-        if dataset_trans_cfg is not None:
-            trans_func = dataset_trans_cfg.pop("__class_name__")
-            trans_parms = dataset_trans_cfg.pop("__init_params__")
-            logger.info(f"Using transform function: {trans_func}")
-        else:
-            trans_func = "no_scaling"
-            trans_parms = {}
-            logger.warning("No transform specified, using 'no_scaling' instead.")
-        # TODO: To temporarily use functional calling methods, transform should be
-        # wrapped as a class and called using the build method
-        data_mean, data_std = run_dataset_transform(
-            trans_func, train_loader, config["Global"]["label_names"], **trans_parms
-        )
-        logger.info(
-            f"Target is {config['Global']['label_names']}, data mean is {data_mean}, "
-            f"data std is {data_std}"
-        )
-        model_cfg["__init_params__"]["data_mean"] = data_mean
-        model_cfg["__init_params__"]["data_std"] = data_std
-
     model = build_model(model_cfg)
 
-    # Build optimizer and learning rate scheduler from config
+    # build dataloader from config
+    set_signal_handlers()
+    if config["Global"].get("do_train", True):
+        train_data_cfg = config["Dataset"].get("train")
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined, when do_train is true"
+        train_loader = build_dataloader(train_data_cfg)
+    else:
+        train_loader = None
+
+    if config["Global"].get("do_eval", False) or config["Global"].get("do_train", True):
+        val_data_cfg = config["Dataset"].get("val")
+        if val_data_cfg is not None:
+            val_loader = build_dataloader(val_data_cfg)
+        else:
+            logger.info("No validation dataset defined.")
+            val_loader = None
+    else:
+        val_loader = None
+
+    if config["Global"].get("do_test", False):
+        test_data_cfg = config["Dataset"].get("test")
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined, when do_test is true"
+        test_loader = build_dataloader(test_data_cfg)
+    else:
+        test_loader = None
+
+    # build optimizer and learning rate scheduler from config
     if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
         assert (
             train_loader is not None
@@ -161,7 +124,7 @@ def main(config: DictConfig):
     else:
         optimizer, lr_scheduler = None, None
 
-    # Build metric from config
+    # build metric from config
     metric_cfg = config.get("Metric")
     if metric_cfg is not None:
         metric_func = build_metric(metric_cfg)

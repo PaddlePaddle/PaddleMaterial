@@ -1,0 +1,29 @@
+__class_name__: MatterGen
+__init_params__:
+  decoder_cfg:
+    gemnet_cfg:
+      num_targets: 1
+      latent_dim: 512
+      atom_embedding_cfg:
+        emb_size: 512
+        with_mask_type: True
+      max_neighbors: 50
+      max_cell_images_per_dim: 5
+      cutoff: 7.0
+      num_blocks: 4
+      otf_graph: true
+  lattice_noise_scheduler_cfg:
+    __class_name__: LatticeVPSDEScheduler
+    __init_params__:
+      limit_density: 0.05771451654022283
+  coord_noise_scheduler_cfg:
+    __class_name__: NumAtomsVarianceAdjustedWrappedVESDE
+    __init_params__: {}
+  atom_noise_scheduler_cfg:
+    __class_name__: D3PMScheduler
+    __init_params__: {}
+  num_train_timesteps: ${Experiment.num_train_timesteps}
+  time_dim: 256
+  lattice_loss_weight: 1
+  coord_loss_weight: 0.1
+  atom_loss_weight: 1

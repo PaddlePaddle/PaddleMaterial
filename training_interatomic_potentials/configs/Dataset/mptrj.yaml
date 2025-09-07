@@ -1,0 +1,71 @@
+# =========================================================
+# Base dataset parameters (shared by train/val/test)
+# =========================================================
+dataset_base_params: &dataset_base_params
+  property_names: ${Global.label_names}
+  build_structure_cfg:
+    format: dict
+    num_cpus: 10
+  build_graph_cfg: ${Graph_converter}
+  filter_unvalid: False
+  transforms:
+    - __class_name__: Scale
+      __init_params__:
+        scale: -0.1
+        apply_keys: ['stress']
+    - __class_name__: Abs
+      __init_params__:
+        apply_keys: ['magmom']
+
+# =========================================================
+# Sampler configuration (reusable aliases)
+# =========================================================
+train_sampler: &train_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: True
+    drop_last: True
+    batch_size: 40 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+
+val_sampler: &val_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 16
+
+test_sampler: &test_sampler
+  __class_name__: BatchSampler
+  __init_params__:
+    shuffle: False
+    drop_last: False
+    batch_size: 16
+
+# =========================================================
+# Train / Validation / Test dataset configuration
+# =========================================================
+train:
+  dataset:
+    __class_name__: MPTrjDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/MPtrj_2022.9_full/train.json"
+    num_workers: 0
+    use_shared_memory: False
+  sampler: *train_sampler
+
+val:
+  dataset:
+    __class_name__: MPTrjDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/MPtrj_2022.9_full/val.json"
+  sampler: *val_sampler
+
+test:
+  dataset:
+    __class_name__: MPTrjDataset
+    __init_params__:
+      <<: *dataset_base_params
+      path: "${Run.data_dir}/MPtrj_2022.9_full/test.json"
+  sampler: *test_sampler

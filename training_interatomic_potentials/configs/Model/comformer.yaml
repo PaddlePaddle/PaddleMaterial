@@ -1,0 +1,13 @@
+__class_name__: iComformer
+__init_params__:
+  conv_layers: 4
+  edge_layers: 1
+  atom_input_features: 92
+  edge_features: 256
+  triplet_input_features: 256
+  node_features: 256
+  fc_features: 256
+  output_features: 1
+  node_layer_head: 1
+  edge_layer_head: 1
+  property_name: ${Global.label_names}

@@ -1,0 +1,7 @@
+__class_name__: CHGNetGraphConverter
+__init_params__:
+  cutoff: 5.0
+  pdc: [1, 1, 1]
+  num_classes: 95
+  atom_graph_cutoff: 6.0
+  bond_graph_cutoff: 3.0
