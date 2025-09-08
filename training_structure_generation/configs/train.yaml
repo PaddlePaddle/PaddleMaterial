@@ -1,0 +1,46 @@
+# @package _global_
+defaults:
+  - /Run: default                        # Runtime settings (paths, devices, etc.)
+  - /Logger: default                     # Logging configuration
+  - /Dataset: ???                       # Dataset configuration (e.g., mp2018, jarvis)
+  - /Model: ???                      # Model architecture (e.g., comformer, megnet)
+  - /Trainer: default                    # Training loop configuration
+  - /Optimizer: Adam                     # Optimizer
+  - /Learning_rate: ReduceOnPlateau      # Learning rate
+  - /Loss: L1Loss                        # Loss function
+  - _self_
+
+Global:
+  model_name: ???     # Model identifier used in output directory naming
+  dataset_name: ???   # Dataset identifier used in output directory naming
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  # The target property used for model selection (best metric)
+  # name_for_best_metric: ${Global.label_names[0]}
+  name_for_best_metric: 'loss'
+  # Number of training timesteps for diffusion scheduler
+  num_train_timesteps: 1000
+
+Sample: ???
+
+hydra:
+  job:
+    name: structgen
+    chdir: True
+  run:
+    # Output directory includes model name, dataset name, label, timestamp, and seed
+    dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
+
+# ==========================================
+# Custom parameters (will override defaults)
+# ==========================================
+
+Trainer:
+  best_metric_indicator: 'eval_loss'
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'step'
+  # max_epochs: 1000

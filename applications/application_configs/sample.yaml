@@ -19,12 +19,13 @@ defaults:
   - run: default
   - logger: default
   - model: load_model
-  - system: ase_create                   # load_system, ase_create
+  - sample: by_chemical_formula
+  # Option: compute_metric, by_chemical_formula, by_num_atoms, by_dataloader
   - override hydra/job_logging: disabled
 
 hydra:
   job:
-    name: property
+    name: sample
     chdir: True                                            # 是否切换工作目录到 run.dir
   run:
     dir: ./out_${hydra:job.name}/${now:%Y%m%d_%H%M%S}  # 单次运行的输出目录

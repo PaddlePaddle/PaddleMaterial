@@ -1,0 +1,62 @@
+# @package _global_
+defaults:
+  - /Run: default
+  - /Logger: default
+  - /Dataset: matbench
+  - /Dataset/transform: custom_scaling
+  - /Graph_converter: FindPointsInSpheres
+  - /Model: megnet
+  - /Trainer: default
+  - /Optimizer: Adam
+  - /Learning_rate: Cosine
+  - /Loss: L1Loss
+  - _self_
+
+Global:
+  label_names: ["e_form"]
+  model_name: "megnet"
+  dataset_name: "matbench"
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  name_for_best_metric: ${Global.label_names[0]}
+
+_Metric:
+  keys: ${Global.label_names}
+  values:
+    - ${Loss}
+
+Predict:
+  graph_converter: ${Graph_converter}
+  eval_with_no_grad: True
+
+
+# ==========================================
+# Custom parameters (will override defaults)
+# ==========================================
+
+# Trainer:
+#   max_epochs: 1000
+#   save_freq: 1
+#   log_freq: 1
+
+Dataset:
+  dataset:
+    __init_params__:
+      max_samples: 1000
+  transform:
+    __init_params__:
+      mean: 0.556506
+      std: 0.578879
+
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

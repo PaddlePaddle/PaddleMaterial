@@ -1,0 +1,51 @@
+# @package _global_
+defaults:
+  - /Run: default
+  - /Logger: default
+  - /Dataset: jarvis
+  - /Dataset/transform: mean_std_scaling
+  - /Graph_converter: ComformerGraphConverter
+  - /Model: comformer
+  - /Trainer: default
+  - /Optimizer: AdamW
+  - /Learning_rate: OneCycleLR
+  - /Loss: L1Loss
+  - _self_
+
+Global:
+  label_names: ["formation_energy_peratom"]
+  model_name: "comformer"
+  dataset_name: "jarvis_dft_2d"
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  name_for_best_metric: ${Global.label_names[0]}
+  jarvis_data_name: "dft_2d"
+
+_Metric:
+  keys: ${Global.label_names}
+  values:
+    - ${Loss}
+
+Predict:
+  graph_converter: ${Graph_converter}
+  eval_with_no_grad: True
+
+hydra:
+  job:
+    name: ${Global.label_names[0]}
+    chdir: True
+  run:
+    dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
+
+# ==========================================
+# Custom parameters (will override defaults)
+# ==========================================
+
+Trainer:
+  max_epochs: 500
+  # save_freq: 1
+  # log_freq: 1

@@ -1,0 +1,110 @@
+# @package _global_
+defaults:
+  - /Run: default                        # Runtime settings (paths, devices, etc.)
+  - /Logger: default                     # Logging configuration
+  - /Dataset: alex_mp20                  # Dataset configuration (e.g., mp2018, jarvis)
+  - /Model: mattergen                    # Model architecture (e.g., comformer, megnet)
+  - /Trainer: default                    # Training loop configuration
+  - /Optimizer: Adam                     # Optimizer
+  - /Learning_rate: ReduceOnPlateau      # Learning rate
+  - /Loss: L1Loss                        # Loss function
+  - _self_
+
+Global:
+  model_name: mattergen     # Model identifier used in output directory naming
+  dataset_name: alex_mp20   # Dataset identifier used in output directory naming
+  do_train: True
+  do_eval: False
+  do_test: False
+  seed: 42
+
+Experiment:
+  # The target property used for model selection (best metric)
+  # name_for_best_metric: ${Global.label_names[0]}
+  name_for_best_metric: 'loss'
+  # Number of training timesteps for diffusion scheduler
+  num_train_timesteps: 1000
+  #
+  condition_names: ['chemical_system']
+  property_embeddings_adapt_cfg:
+    chemical_system:
+      conditional_embedding_module_name: 'ChemicalSystemMultiHotEmbedding'
+      conditional_embedding_module_cfg:
+        hidden_dim: 512
+      unconditional_embedding_module_name: ZerosEmbedding
+      unconditional_embedding_module_cfg:
+        hidden_dim: 512
+      scaler_name: Identity
+      scaler_cfg: {}
+
+Sample:
+  data:
+    dataset:
+      __class_name__: NumAtomsCrystalDataset
+      __init_params__:
+        total_num: 16
+        prop_names: ${Experiment.condition_names}
+        prop_values: ['Mo-Si']
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 16
+  build_structure_cfg:
+    format: array
+    niggli: False
+
+  model_sample_params:
+    num_inference_steps: 1000
+
+hydra:
+  job:
+    name: ${Experiment.condition_names}
+    chdir: True
+  run:
+    # Output directory includes model name, dataset name, label, timestamp, and seed
+    dir: ./output/${Global.model_name}_${Global.dataset_name}_${hydra.job.name}/t_${now:%Y%m%d_%H%M%S}_seed_${Global.seed}
+
+# ==========================================
+# Custom parameters (will override defaults)
+# ==========================================
+
+Trainer:
+  max_epochs: 200
+  best_metric_indicator: 'eval_loss'
+  # Set your pretrained model path here
+  pretrained_model_path: https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20.zip
+  # Pretrained weight name, will be used when pretrained_model_path is a directory
+  pretrained_weight_name: 'latest.pdparams'
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'step'
+
+Dataset:
+  train:
+    dataset:
+      __init_params__:
+        property_names: ${Experiment.condition_names}
+    sampler:
+      __init_params__:
+        batch_size: 16
+  val:
+    dataset:
+      __init_params__:
+        property_names: ${Experiment.condition_names}
+    sampler:
+      __init_params__:
+        batch_size: 32
+
+
+Optimizer:
+  clip_value: 0.5
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+
+Learning_rate:
+  __init_params__:
+    learning_rate: 5.0e-06
+    patience: 100
+    min_lr: 1.0e-06
