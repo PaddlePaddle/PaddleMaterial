@@ -7,7 +7,7 @@
 Crystal structures are characterized by atomic bases within a primitive unit cell that repeats along a regular lattice throughout 3D space. The periodic and infinite nature of crystals poses unique challenges for geometric graph representation learning. Specifically, constructing graphs that effectively capture the complete geometric information of crystals and handle chiral crystals remains an unsolved and challenging problem. In this paper, we introduce a novel approach that utilizes the periodic patterns of unit cells to establish the lattice-based representation for each atom, enabling efficient and expressive graph representations of crystals. Furthermore, we propose ComFormer, a SE(3) transformer designed specifically for crystalline materials. ComFormer includes two variants; namely, iComFormer that employs invariant geometric descriptors of Euclidean distances and angles, and eComFormer that utilizes equivariant vector representations. Experimental results demonstrate the state-of-the-art predictive accuracy of ComFormer variants on various tasks across three widely-used crystal benchmarks.
 
 
-![ComFormer pipeline](../../docs/ComFormer_pipline.png)
+![ComFormer pipeline](../../../docs/ComFormer_pipline.png)
 
 ## Datasets:
 
@@ -145,27 +145,27 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
 ```bash
 # formation energy per atom
 # multi-gpu training, we use 4 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml
 # single-gpu training
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml
 
 # band gap
 # multi-gpu training, we use 4 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml
 # single-gpu training
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml
 
 # bulk modulus
 # multi-gpu training, we use 4 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml
 # single-gpu training
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml
 
 # shear modulus
 # multi-gpu training, we use 4 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml
 # single-gpu training
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml
 ```
 
 ### Validation
@@ -174,16 +174,16 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 # such as: --Global.do_eval=True
 
 # formation energy per atom
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # band gap
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # bulk modulus
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # shear modulus
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Testing
@@ -191,16 +191,16 @@ python property_prediction/train.py -c property_prediction/configs/comformer/com
 # This command is used to evaluate the model's performance on the test dataset.
 
 # formation energy per atom
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # band gap
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # bulk modulus
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # shear modulus
-python property_prediction/train.py -c property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Prediction
@@ -215,36 +215,37 @@ You can replace the `--model_name` parameter at  `Mode 1` with other model names
 # formation energy per atom
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_e_form' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.model_name='comformer_mp2018_train_60k_e_form' system.file_path='./property_prediction/example_data/cifs/'
+
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' system.file_path='./property_prediction/example_data/cifs/'
 
 
 # band gap
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal band gap prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_band_gap' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.model_name='comformer_mp2018_train_60k_band_gap' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal band gap prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' system.file_path='./property_prediction/example_data/cifs/'
 
 # bulk modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal bulk modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_K'  --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.model_name='comformer_mp2018_train_60k_K'  system.file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal bulk modulus prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' system.file_path='./property_prediction/example_data/cifs/'
 
 
 # shear modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='comformer_mp2018_train_60k_G' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.model_name='comformer_mp2018_train_60k_G' system.file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear modulus prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' system.file_path='./property_prediction/example_data/cifs/'
 ```
 
 

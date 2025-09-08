@@ -7,7 +7,7 @@
 Graph networks are a new machine learning (ML) paradigm that supports both relational reasoning and combinatorial generalization. Here, we develop universal MatErials Graph Network (MEGNet) models for accurate property prediction in both molecules and crystals. We demonstrate that the MEGNet models outperform prior ML models such as the SchNet in 11 out of 13 properties of the QM9 molecule data set. Similarly, we show that MEGNet models trained on ∼60,000 crystals in the Materials Project substantially outperform prior ML models in the prediction of the formation energies, band gaps and elastic modulus of crystals, achieving better than DFT accuracy over a much larger data set. We present two new strategies to address data limitations common in materials science and chemistry. First, we demonstrate a physically-intuitive approach to unify four separate molecular MEGNet models for the internal energy at 0 K and room temperature, enthalpy and Gibbs free energy into a single free energy MEGNet model by incorporating the temperature, pressure and entropy as global state inputs. Second, we show that the learned element embeddings in MEGNet models encode periodic chemical trends and can be transfer-learned from a property model trained on a larger data set (formation energies) to improve property models with smaller amounts of data (band gaps and elastic modulus).
 
 
-![MegNet Overview](../../docs/megnet.png)
+![MegNet Overview](../../../docs/megnet.png)
 
 ## Datasets:
 
@@ -245,9 +245,9 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
 ```bash
 # formation energy per atom
 # multi-gpu training, we use 4 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_property_prediction/train.py --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml
 # single-gpu training
-python property_prediction/train.py -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml
+python training_property_prediction/train.py --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml
 
 ```
 
@@ -259,8 +259,8 @@ python property_prediction/train.py -c property_prediction/configs/megnet/megnet
 # such as: --Global.do_eval=True
 
 # formation energy per atom
-python property_prediction/train.py \
-    -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml \
+python training_property_prediction/train.py \
+    --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml \
     Global.do_train=False \
     Global.do_eval=True \
     Global.do_test=False \
@@ -272,8 +272,8 @@ python property_prediction/train.py \
 # This command is used to evaluate the model's performance on the test dataset.
 
 # formation energy per atom
-python property_prediction/train.py \
-    -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml \
+python training_property_prediction/train.py \
+    --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml \
     Global.do_train=False \
     Global.do_test=True \
     Global.do_eval=False \
@@ -293,15 +293,11 @@ You can replace the `--model_name` parameter at  `Mode 1` with other model names
 # formation energy per atom
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py \
-    --model_name='megnet_mp2018_train_60k_e_form' \
-    --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.model_name='megnet_mp2018_train_60k_e_form' system.file_path='./property_prediction/example_data/cifs/'
+
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py \
-    --config_path='property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml' \
-    --checkpoint_path='you_checkpoint_path.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/'
+python applications/main.py --config-name property model.config_path='property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' system.file_path='./property_prediction/example_data/cifs/'
 
 ```
 

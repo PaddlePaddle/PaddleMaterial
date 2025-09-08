@@ -6,7 +6,7 @@
 
 Accurate and fast prediction of materials properties is central to the digital transformation of materials design. However, the vast design space and diverse operating conditions pose significant challenges for accurately modeling arbitrary material candidates and forecasting their properties. We present MatterSim, a deep learning model actively learned from large-scale first-principles computations, for efficient atomistic simulations at first-principles level and accurate prediction of broad material properties across the periodic table, spanning temperatures from 0 to 5000 K and pressures up to 1000 GPa. Out-of-the-box, the model serves as a machine learning force field, and shows remarkable capabilities not only in predicting ground-state material structures and energetics, but also in simulating their behavior under realistic temperatures and pressures, signifying an up to ten-fold enhancement in precision compared to the prior best-in-class. This enables MatterSim to compute materials' lattice dynamics, mechanical and thermodynamic properties, and beyond, to an accuracy comparable with first-principles methods. Specifically, MatterSim predicts Gibbs free energies for a wide range of inorganic solids with near-first-principles accuracy and achieves a 15 meV/atom resolution for temperatures up to 1000K compared with experiments. This opens an opportunity to predict experimental phase diagrams of materials at minimal computational cost. Moreover, MatterSim also serves as a platform for continuous learning and customization by integrating domain-specific data. The model can be fine-tuned for atomistic simulations at a desired level of theory or for direct structure-to-property predictions, achieving high data efficiency with a reduction in data requirements by up to 97%.
 
-![MatterSim Overview](../../docs/mattersim.png)
+![MatterSim Overview](../../../docs/mattersim.png)
 
 ## Pre-trained Models
 
@@ -20,18 +20,19 @@ Fine-tune the mattersim_1M model using high_level_water.
 
 ```bash
 # multi-gpu training
-python -m paddle.distributed.launch --gpus="0,1,2,3" interatomic_potentials/train.py -c interatomic_potentials/configs/mattersim/mattersim_1M_high_level_water.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_interatomic_potentials/train.py --config-name task_mattersim/mattersim_1M_high_level_water.yaml
+
 # single-gpu training
-python interatomic_potentials/train.py -c interatomic_potentials/configs/mattersim/mattersim_1M_high_level_water.yaml
+python training_interatomic_potentials/train.py --config-name task_mattersim/mattersim_1M_high_level_water.yaml
 ```
 
 Fine-tune the mattersim_5M model using high_level_water.
 
 ```bash
 # multi-gpu training
-python -m paddle.distributed.launch --gpus="0,1,2,3" interatomic_potentials/train.py -c interatomic_potentials/configs/mattersim/mattersim_5M_high_level_water.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_interatomic_potentials/train.py --config-name task_mattersim/mattersim_5M_high_level_water.yaml
 # single-gpu training
-python interatomic_potentials/train.py -c interatomic_potentials/configs/mattersim/mattersim_5M_high_level_water.yaml
+python training_interatomic_potentials/train.py --config-name task_mattersim/mattersim_5M_high_level_water.yaml
 ```
 
 ### Validation
@@ -39,7 +40,7 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/matters
 # Adjust program behavior on-the-fly using command-line parameters – this provides a convenient way to customize settings without modifying the configuration file directly.
 # such as: --Global.do_eval=True
 
-python interatomic_potentials/train.py -c interatomic_potentials/configs/mattersim/mattersim_1M_high_level_water.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
+python training_interatomic_potentials/train.py --config-name task_mattersim/mattersim_1M_high_level_water.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
 
 ```
 
@@ -61,12 +62,24 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/matters
 
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python interatomic_potentials/predict.py --model_name='mattersim_1M' --weights_name='mattersim-v1.0.0-1M_model.pdparams' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python applications/main.py --config-name potential model.model_name='mattersim_1M' model.weights_name='mattersim-v1.0.0-1M_model.pdparams' system.file_path='./interatomic_potentials/example_data/cifs/'
 
-python interatomic_potentials/predict.py --model_name='mattersim_5M' --weights_name='mattersim-v1.0.0-5M_model.pdparams' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python applications/main.py --config-name potential model.model_name='mattersim_5M' model.weights_name='mattersim-v1.0.0-5M_model.pdparams' system.file_path='./interatomic_potentials/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
-python interatomic_potentials/predict.py --config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' --checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams" --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python applications/main.py --config-name potential model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' model.checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams" system.file_path='./interatomic_potentials/example_data/cifs/'
+
+
+# Task: molecular dynamics simulation, interface is ase:
+python applications/main.py --config-name md_ase model.model_name='mattersim_1M'
+
+python applications/main.py --config-name md_ase model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' model.checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams"
+
+# Task: optimization, interface is ase:
+python applications/main.py --config-name optimizer_ase model.model_name='mattersim_1M'
+
+python applications/main.py --config-name optimizer_ase model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' model.checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams"
+
 ```
 
 

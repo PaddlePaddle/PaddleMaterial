@@ -6,7 +6,7 @@
 
 The design of functional materials with desired properties is essential in driving technological advances in areas like energy storage, catalysis, and carbon capture. Generative models provide a new paradigm for materials design by directly generating novel materials given desired property constraints, but current methods have low success rate in proposing stable crystals or can only satisfy a limited set of property constraints. Here, we present MatterGen, a model that generates stable, diverse inorganic materials across the periodic table and can further be fine-tuned to steer the generation towards a broad range of property constraints. Compared to prior generative models, structures produced by MatterGen are more than twice as likely to be novel and stable, and more than 10 times closer to the local energy minimum. After fine-tuning, MatterGen successfully generates stable, novel materials with desired chemistry, symmetry, as well as mechanical, electronic and magnetic properties. As a proof of concept, we synthesize one of the generated structures and measure its property value to be within 20 % of our target. We believe that the quality of generated materials and the breadth of MatterGen’s capabilities represent a major advancement towards creating a foundational generative model for materials design.
 
-![MatterGen Overview](../../docs/mattergen.png)
+![MatterGen Overview](../../../docs/mattergen.png)
 
 ## Results
 
@@ -119,76 +119,76 @@ The design of functional materials with desired properties is essential in drivi
 ```bash
 # mp20 dataset, without conditional constraints
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml
 
 # mp20 dataset, with chemical system constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml
 
 # mp20 dataset, with dft_band_gap constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml
 
 # mp20 dataset, with dft_bulk_modulus constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml
 
 # mp20 dataset, with dft_mag_density constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml
 
 
 # alex_mp20 dataset, without conditional constraints
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20.yaml
 
 # alex_mp20 dataset, with dft_band_gap constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_band_gap.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_band_gap.yaml
 
 # alex_mp20 dataset, with chemical system constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
 # multi-gpu training, we use 8 gpus here
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system.yaml
 
 # alex_mp20 dataset, with dft_mag_density constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density.yaml
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
 
 # alex_mp20 dataset, with space_group constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_space_group.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_space_group.yaml
 
 # alex_mp20 dataset, with chemical system and energy above hull constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
 # single-gpu training
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
 ```
 
 ### Validation
@@ -197,43 +197,43 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 # such as: --Global.do_eval=True
 
 # mp20 dataset, without conditional constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with chemical system constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_band_gap constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_bulk_modulus constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_mag_density constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, without conditional constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with dft_band_gap constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_band_gap.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with chemical system constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with dft_mag_density constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with space_group constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_space_group.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with chemical system and energy above hull constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Testing
@@ -241,19 +241,19 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 # This command is used to evaluate the model's performance on the test dataset.
 
 # mp20 dataset, without conditional constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with chemical system constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_band_gap constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_bulk_modulus constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # mp20 dataset, with dft_mag_density constraints
-python structure_generation/train.py -c structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
+python training_structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 
 # Since the alex_mp20 dataset does not include a test set, we cannot utilize the test command.
 ```
@@ -267,112 +267,112 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 # mp20 dataset, without conditional constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
 # or
-python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
 # or
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
 
 
 # mp20 dataset, with chemical system constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_mp20_chemical_system' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_chemical_system' model.weights_name='latest.pdparams'  sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' --checkpoint_path='./outpout/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_band_gap constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_band_gap' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_bulk_modulus constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_bulk_modulus' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_bulk_modulus' model.weights_name='latest.pdparams'  sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_mag_density constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_mag_density' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' --checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, without conditional constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_band_gap constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_band_gap' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_ml_bulk_modulus' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_ml_bulk_modulus' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with space_group constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_space_group' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_space_group' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system and energy_above_hull constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density_hhi_score/' --mode='by_dataloader'
+python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' --checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density_hhi
+python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' sample='by_dataloader'
 ```
 
 ## Citation

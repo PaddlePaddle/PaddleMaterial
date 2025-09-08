@@ -19,7 +19,7 @@ defaults:
   - run: default
   - logger: default
   - model: load_model
-  - sample: by_chemical_formula
+  - sample: ???
   # Option: compute_metric, by_chemical_formula, by_num_atoms, by_dataloader
   - override hydra/job_logging: disabled
 

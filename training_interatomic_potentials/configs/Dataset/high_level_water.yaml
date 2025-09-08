@@ -2,9 +2,9 @@
 # Base dataset parameters (shared by train/val/test)
 # =========================================================
 dataset_base_params: &dataset_base_params
-  energy_key: ${Global.energy_key}
-  force_key: ${Global.force_key}
-  stress_key: ${Global.stress_key}
+  energy_key: ${Experiment.energy_key}
+  force_key: ${Experiment.force_key}
+  stress_key: ${Experiment.stress_key}
   build_structure_cfg:
     format: ase_atoms
     primitive: False

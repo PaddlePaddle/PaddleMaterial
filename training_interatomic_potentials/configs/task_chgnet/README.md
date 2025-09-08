@@ -6,7 +6,7 @@
 
 The simulation of large-scale systems with complex electron interactions remains one of the greatest challenges for the atomistic modeling of materials. Although classical force fields often fail to describe the coupling between electronic states and ionic rearrangements, the more accurate ab-initio molecular dynamics suffers from computational complexity that prevents long-time and large-scale simulations, which are essential to study many technologically relevant phenomena, such as reactions, ion migrations, phase transformations, and degradation. In this work, we present the Crystal Hamiltonian Graph neural Network (CHGNet) as a novel machine-learning interatomic potential (MLIP), using a graph-neural-network-based force field to model a universal potential energy surface. CHGNet is pretrained on the energies, forces, stresses, and magnetic moments from the Materials Project Trajectory Dataset, which consists of over 10 years of density functional theory static and relaxation trajectories of ∼ 1.5 million inorganic structures. The explicit inclusion of magnetic moments enables CHGNet to learn and accurately represent the orbital occupancy of electrons, enhancing its capability to describe both atomic and electronic degrees of freedom. We demonstrate several applications of CHGNet in solid-state materials, including charge-informed molecular dynamics in LixMnO2, the finite temperature phase diagram for LixFePO4 and Li diffusion in garnet conductors. We critically analyze the significance of including charge information for capturing appropriate chemistry, and we provide new insights into ionic systems with additional electronic degrees of freedom that can not be observed by previous MLIPs.
 
-![CHGNet Overview](../../docs/chgnet.png)
+![CHGNet Overview](../../../docs/chgnet.png)
 
 ## Datasets:
 
@@ -67,9 +67,9 @@ The simulation of large-scale systems with complex electron interactions remains
 
 ```bash
 # multi-gpu training
-python -m paddle.distributed.launch --gpus="0,1,2,3" interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml
+python -m paddle.distributed.launch --gpus="0,1,2,3" training_interatomic_potentials/train.py --config-name task_chgnet/chgnet_mptrj.yaml
 # single-gpu training
-python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml
+python training_interatomic_potentials/train.py --config-name task_chgnet/chgnet_mptrj.yaml
 ```
 
 ### Validation
@@ -77,7 +77,7 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/
 # Adjust program behavior on-the-fly using command-line parameters – this provides a convenient way to customize settings without modifying the configuration file directly.
 # such as: --Global.do_eval=True
 
-python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
+python training_interatomic_potentials/train.py --config-name task_chgnet/chgnet_mptrj.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
 
 ```
 
@@ -86,7 +86,7 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/
 ```bash
 # This command is used to evaluate the model's performance on the test dataset.
 
-python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml Global.do_test=True Global.do_train=False Global.do_eval=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
+python training_interatomic_potentials/train.py --config-name task_chgnet/chgnet_mptrj.yaml Global.do_train=False Global.do_test=True Global.do_eval=False Trainer.pretrained_model_path='your checkpoint path(*.pdparams)'
 
 ```
 
@@ -99,10 +99,22 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/
 
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python interatomic_potentials/predict.py --model_name='chgnet_mptrj' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python applications/main.py --config-name potential model.model_name='chgnet_mptrj' system.file_path='./interatomic_potentials/example_data/cifs/'
+
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
-python interatomic_potentials/predict.py --config_path='interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml' --checkpoint_path="your checkpoint path(*.pdparams)"
+python applications/main.py --config-name potential model.config_path='interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml' model.checkpoint_path="your checkpoint path(*.pdparams)" system.file_path='./interatomic_potentials/example_data/cifs/'
+
+# Task: molecular dynamics simulation, interface is ase:
+python applications/main.py --config-name md_ase model.model_name=chgnet_mptrj
+
+python applications/main.py --config-name md_ase model.config_path=output/chgnet_mptrj/chgnet_mptrj.yaml model.checkpoint_path=output/chgnet_mptrj/checkpoints/best.pdparams
+
+# Task: optimization, interface is ase:
+python applications/main.py --config-name optimizer_ase model.model_name=chgnet_mptrj
+
+python applications/main.py --config-name optimizer_ase model.config_path=output/chgnet_mptrj/chgnet_mptrj.yaml model.checkpoint_path=output/chgnet_mptrj/checkpoints/best.pdparams
+
 ```
 
 
