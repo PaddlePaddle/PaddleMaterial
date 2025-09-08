@@ -4,8 +4,8 @@ defaults:
   - Logger: default
   - Dataset: mp2018
   - Dataset/transform: no_scaling
-  - Graph_converter: CrystalNN
-  - Model: dimenet++
+  - Graph_converter: FindPointsInSpheres
+  - Model: megnet
   - Trainer: default
   - Optimizer: Adam
   - Learning_rate: Cosine
@@ -14,7 +14,7 @@ defaults:
 
 Global:
   label_names: ["G"]
-  model_name: "dimenet++"
+  model_name: "megnet"
   dataset_name: "mp2018"
   do_train: True
   do_eval: False
@@ -45,17 +45,48 @@ hydra:
 # ==========================================
 
 # Trainer:
-#   max_epochs: 2
+#   max_epochs: 2000
 #   save_freq: 1
 #   log_freq: 1
 
 Dataset:
   train:
-    sampler: {__init_params__: {drop_last: True, batch_size: 32}}
+    dataset:
+      __init_params__:
+        transforms:
+          - __class_name__: Log10
+            __init_params__:
+              apply_keys: ${Global.label_names[0]}
+    sampler:
+      __init_params__:
+        batch_size: 128
+        drop_last: True
   val:
-    sampler: {__init_params__: {batch_size: 128}}
+    dataset:
+      __init_params__:
+        transforms:
+          - __class_name__: Log10
+            __init_params__:
+              apply_keys: ${Global.label_names[0]}
+    sampler:
+      __init_params__:
+        batch_size: 128
   test:
-    sampler: {__init_params__: {batch_size: 128}}
+    dataset:
+      __init_params__:
+        transforms:
+          - __class_name__: Log10
+            __init_params__:
+              apply_keys: ${Global.label_names[0]}
+    sampler:
+      __init_params__:
+        batch_size: 128
 
-Model:
-  __init_params__: {loss_type: 'l1_loss'}
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

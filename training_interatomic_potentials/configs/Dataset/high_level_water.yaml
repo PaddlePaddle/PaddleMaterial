@@ -21,7 +21,7 @@ train_sampler: &train_sampler
   __init_params__:
     shuffle: True
     drop_last: True
-    batch_size: 16 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
+    batch_size: 2 # 16 for 4 GPUs, total batch size = 16 * 4 = 64
 
 val_sampler: &val_sampler
   __class_name__: BatchSampler

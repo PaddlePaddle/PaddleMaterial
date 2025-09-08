@@ -44,10 +44,10 @@ hydra:
 # Custom parameters (will override defaults)
 # ==========================================
 
-Trainer:
-  max_epochs: 2
-  save_freq: 1
-  log_freq: 1
+# Trainer:
+#   max_epochs: 2
+#   save_freq: 1
+#   log_freq: 1
 
 Dataset:
   train:

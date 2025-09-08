@@ -2,10 +2,10 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: mp2018
-  - Dataset/transform: no_scaling
-  - Graph_converter: CrystalNN
-  - Model: dimenet++
+  - Dataset: matbench
+  - Dataset/transform: custom_scaling
+  - Graph_converter: FindPointsInSpheres
+  - Model: megnet
   - Trainer: default
   - Optimizer: Adam
   - Learning_rate: Cosine
@@ -13,9 +13,9 @@ defaults:
   - _self_
 
 Global:
-  label_names: ["G"]
-  model_name: "dimenet++"
-  dataset_name: "mp2018"
+  label_names: ["log10(K_VRH)"]
+  model_name: "megnet"
+  dataset_name: "matbench"
   do_train: True
   do_eval: False
   do_test: False
@@ -45,17 +45,21 @@ hydra:
 # ==========================================
 
 # Trainer:
-#   max_epochs: 2
+#   max_epochs: 1000
 #   save_freq: 1
 #   log_freq: 1
 
 Dataset:
-  train:
-    sampler: {__init_params__: {drop_last: True, batch_size: 32}}
-  val:
-    sampler: {__init_params__: {batch_size: 128}}
-  test:
-    sampler: {__init_params__: {batch_size: 128}}
+  transform:
+    __init_params__:
+      mean: 1.880446
+      std: 0.369314
 
-Model:
-  __init_params__: {loss_type: 'l1_loss'}
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

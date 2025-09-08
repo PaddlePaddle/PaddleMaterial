@@ -339,6 +339,18 @@ class MPTrjDataset(Dataset):
             path (str): Path to the data.
         """
         json_data = read_json(path)
+
+        # Example: Load a small subset of the dataset for quick testing
+        num_samples = 1000
+        json_data_subset = {}
+        count = 0
+        for k, v in json_data.items():
+            json_data_subset[k] = v
+            count += 1
+            if count >= num_samples:
+                break
+        json_data = json_data_subset
+
         return json_data
 
     def filter_unvalid_by_property(self):

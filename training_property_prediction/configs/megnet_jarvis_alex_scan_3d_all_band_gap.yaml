@@ -2,10 +2,10 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: mp2018
-  - Dataset/transform: no_scaling
-  - Graph_converter: CrystalNN
-  - Model: dimenet++
+  - Dataset: jarvis
+  - Dataset/transform: mean_std_scaling
+  - Graph_converter: FindPointsInSpheres
+  - Model: megnet
   - Trainer: default
   - Optimizer: Adam
   - Learning_rate: Cosine
@@ -13,9 +13,9 @@ defaults:
   - _self_
 
 Global:
-  label_names: ["G"]
-  model_name: "dimenet++"
-  dataset_name: "mp2018"
+  label_names: ["band_gap_ind"]
+  model_name: "megnet"
+  dataset_name: "jarvis_alex_scan_3d_all"
   do_train: True
   do_eval: False
   do_test: False
@@ -23,6 +23,7 @@ Global:
 
 Experiment:
   name_for_best_metric: ${Global.label_names[0]}
+  jarvis_data_name: "alex_scan_3d_all"
 
 _Metric:
   keys: ${Global.label_names}
@@ -49,13 +50,11 @@ hydra:
 #   save_freq: 1
 #   log_freq: 1
 
-Dataset:
-  train:
-    sampler: {__init_params__: {drop_last: True, batch_size: 32}}
-  val:
-    sampler: {__init_params__: {batch_size: 128}}
-  test:
-    sampler: {__init_params__: {batch_size: 128}}
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
 
-Model:
-  __init_params__: {loss_type: 'l1_loss'}
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

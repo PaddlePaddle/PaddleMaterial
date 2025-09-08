@@ -2,10 +2,10 @@
 defaults:
   - Run: default
   - Logger: default
-  - Dataset: mp2018
+  - Dataset: jarvis
   - Dataset/transform: no_scaling
-  - Graph_converter: CrystalNN
-  - Model: dimenet++
+  - Graph_converter: FindPointsInSpheres
+  - Model: megnet
   - Trainer: default
   - Optimizer: Adam
   - Learning_rate: Cosine
@@ -13,9 +13,9 @@ defaults:
   - _self_
 
 Global:
-  label_names: ["G"]
-  model_name: "dimenet++"
-  dataset_name: "mp2018"
+  label_names: ["bulk_modulus_kv"]
+  model_name: "megnet"
+  dataset_name: "jarvis_cfid_3d"
   do_train: True
   do_eval: False
   do_test: False
@@ -23,6 +23,7 @@ Global:
 
 Experiment:
   name_for_best_metric: ${Global.label_names[0]}
+  jarvis_data_name: "cfid_3d"
 
 _Metric:
   keys: ${Global.label_names}
@@ -45,17 +46,24 @@ hydra:
 # ==========================================
 
 # Trainer:
-#   max_epochs: 2
+#   max_epochs: 2000
 #   save_freq: 1
 #   log_freq: 1
 
 Dataset:
-  train:
-    sampler: {__init_params__: {drop_last: True, batch_size: 32}}
-  val:
-    sampler: {__init_params__: {batch_size: 128}}
-  test:
-    sampler: {__init_params__: {batch_size: 128}}
+  dataset:
+    __init_params__:
+      transforms:
+        - __class_name__: Scale
+          __init_params__:
+            scale: 0.01
+            apply_keys: ${Global.label_names[0]}
 
-Model:
-  __init_params__: {loss_type: 'l1_loss'}
+Optimizer:
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+
+Learning_rate:
+  __init_params__:
+    eta_min: 0.0001

@@ -43,19 +43,21 @@ class MatbenchDataset(Dataset):
     """Matbench Dataset Handler
 
     This class provides utilities for loading and processing the Matbench materials
-    science benchmark datasets. The implementation supports loading multiple properties
-    from different matbench JSON files and processing them for materials property prediction.
+        science benchmark datasets.
+    The implementation supports loading multiple properties from different
+        matbench JSON files and processing them for materials property prediction.
 
     **Dataset Overview**
     Matbench is a benchmark suite for materials property prediction containing multiple
-    datasets with different properties:
+        datasets with different properties:
     - Formation Energy (mp_e_form): ~132k samples
     - Band Gap (mp_gap): ~106k samples
     - Shear Modulus G (elasticity_log10(G_VRH)): ~11k samples
     - Bulk Modulus K (elasticity_log10(K_VRH)): ~11k samples
 
     **Automatic Download**
-    If the data directory doesn't exist, the dataset will be automatically downloaded from:
+    If the data directory doesn't exist, the dataset will be
+        automatically downloaded from:
     https://paddle-org.bj.bcebos.com/paddlematerial/datasets/matbench/matbench.zip
 
     **Data Format**
@@ -79,18 +81,21 @@ class MatbenchDataset(Dataset):
     - "log10(K_VRH)": Log10 of bulk modulus (GPa) from elasticity_log10(K_VRH).json
 
     Args:
-        data_dir (str): Directory containing matbench JSON files.
+        path (str): Directory containing matbench JSON files.
             Defaults to "./data/matbench".
         property_names (Optional[List[str]]): Property names to load.
-            Should be selected from ["e_form", "gap pbe", "log10(G_VRH)", "log10(K_VRH)"].
+            Should be selected from
+                ["e_form", "gap pbe", "log10(G_VRH)", "log10(K_VRH)"].
             Defaults to None (loads all available properties).
         build_structure_cfg (Dict, optional): Configs for building pymatgen structures.
             Defaults to None.
         build_graph_cfg (Dict, optional): Configs for building graphs from structures.
             Defaults to None.
-        transforms (Optional[Callable], optional): Preprocessing transforms for each sample.
+        transforms (Optional[Callable], optional):
+            Preprocessing transforms for each sample.
             Defaults to None.
-        cache_path (Optional[str], optional): Path for caching processed structures and graphs.
+        cache_path (Optional[str], optional):
+            Path for caching processed structures and graphs.
             Defaults to None.
         overwrite (bool, optional): Whether to overwrite existing cache files.
             Defaults to False.
@@ -105,7 +110,8 @@ class MatbenchDataset(Dataset):
     url = (
         "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/matbench/matbench.zip"
     )
-    md5 = "71e85300825604c2e228cbbf75574906"  # TODO: Replace with actual MD5 hash when available
+    # TODO: Replace with actual MD5 hash when available
+    md5 = "71e85300825604c2e228cbbf75574906"
 
     # Property file mapping
     PROPERTY_FILES = {
@@ -117,7 +123,7 @@ class MatbenchDataset(Dataset):
 
     def __init__(
         self,
-        data_dir: str = "./data/matbench",
+        path: str = "./data/matbench",
         property_names: Optional[List[str]] = None,
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
@@ -132,23 +138,24 @@ class MatbenchDataset(Dataset):
 
         # Check if data directory and required files exist, if not download the dataset
         # This follows the same pattern as MP2018Dataset
-        if not osp.exists(data_dir):
+        if not osp.exists(path):
             logger.message("The matbench dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            data_dir = osp.join(root_path, self.name)
+            path = osp.join(root_path, self.name)
         else:
             # Check if required files exist in the directory
             required_files = list(self.PROPERTY_FILES.values())
-            files_exist = all(osp.exists(osp.join(data_dir, f)) for f in required_files)
+            files_exist = all(osp.exists(osp.join(path, f)) for f in required_files)
 
             if not files_exist:
                 logger.message(
-                    "Some matbench data files are missing. Will download the dataset now."
+                    "Some matbench data files are missing. "
+                    "Will download the dataset now."
                 )
                 root_path = download.get_datasets_path_from_url(self.url, self.md5)
-                data_dir = osp.join(root_path, self.name)
+                path = osp.join(root_path, self.name)
 
-        self.data_dir = data_dir
+        self.path = path
         if isinstance(property_names, str):
             property_names = [property_names]
 
@@ -160,7 +167,8 @@ class MatbenchDataset(Dataset):
         for prop in property_names:
             if prop not in self.PROPERTY_FILES:
                 raise ValueError(
-                    f"Unknown property '{prop}'. Available properties: {list(self.PROPERTY_FILES.keys())}"
+                    f"Unknown property '{prop}'. "
+                    f"Available properties: {list(self.PROPERTY_FILES.keys())}"
                 )
 
         self.property_names = property_names
@@ -187,7 +195,7 @@ class MatbenchDataset(Dataset):
         else:
             # Generate cache path based on data directory and properties
             prop_str = "_".join(sorted(property_names))
-            self.cache_path = osp.join(data_dir + "_cache", f"matbench_{prop_str}")
+            self.cache_path = osp.join(path + "_cache", f"matbench_{prop_str}")
         logger.info(f"Cache path: {self.cache_path}")
 
         self.overwrite = overwrite
@@ -215,14 +223,14 @@ class MatbenchDataset(Dataset):
         else:
             # Multiple properties case - need to handle differently
             raise NotImplementedError(
-                "Loading multiple properties from different files is not yet implemented. "
+                "Loading multiple properties from different files is not implemented. "
                 "Please specify only one property at a time."
             )
 
     def _load_single_property_data(self):
         """Load data for a single property from its matbench JSON file."""
         prop_name = self.property_names[0]
-        file_path = osp.join(self.data_dir, self.PROPERTY_FILES[prop_name])
+        file_path = osp.join(self.path, self.PROPERTY_FILES[prop_name])
 
         if not osp.exists(file_path):
             raise FileNotFoundError(f"Matbench file not found: {file_path}")
@@ -231,6 +239,15 @@ class MatbenchDataset(Dataset):
 
         with open(file_path, "r") as f:
             data = json.load(f)
+
+        # If max_samples is not None, keep only the specified number of samples
+        if self.max_samples is not None:
+            data_samples = {
+                "index": data["index"][: self.max_samples],
+                "columns": data["columns"],
+                "data": data["data"][: self.max_samples],
+            }
+            data = data_samples
 
         # Validate data format
         if not all(key in data for key in ["index", "columns", "data"]):
@@ -250,17 +267,14 @@ class MatbenchDataset(Dataset):
         structures = []
         properties = []
 
-        for i, (structure_dict, prop_value) in enumerate(data["data"]):
-            if self.max_samples is not None and i >= self.max_samples:
-                break
-
+        for structure_dict, prop_value in data["data"]:
             # Convert structure dict to pymatgen Structure
             try:
                 structure = Structure.from_dict(structure_dict)
                 structures.append(structure)
                 properties.append(prop_value)
             except Exception as e:
-                logger.warning(f"Failed to parse structure {i} in {file_path}: {e}")
+                logger.warning(f"Failed to parse structure in {file_path}: {e}")
                 if not self.filter_unvalid:
                     structures.append(None)
                     properties.append(None)
