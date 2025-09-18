@@ -1,21 +1,15 @@
 # @package _global_
 
 # To run the script, use the following command:
-
 # Option A:
-# python applications/main.py --config-name potential \
+# python applications/main.py --config-name md_ase \
 #            model.model_name=chgnet_mptrj \
 #
 # Option B:
-# python applications/main.py --config-name potential \
-#            model.model_name=chgnet_mptrj \
-#            system.file_path=./interatomic_potentials/example_data/cifs/
-#
-# Option C:
-# python applications/main.py --config-name potential \
+# python applications/main.py --config-name md_ase \
 #            model.config_path=output/chgnet_mptrj/chgnet_mptrj.yaml \
 #            model.checkpoint_path=output/chgnet_mptrj/checkpoints/best.pdparams
-#            system.file_path=./interatomic_potentials/example_data/cifs/
+
 
 device: cuda
 seed: null
@@ -26,14 +20,16 @@ defaults:
   - logger: default
   - model: load_model
   - system: load_system                   # load_system, ase_create
+  - task: md                              # opt, md
+  - calculator: ase
   - override hydra/job_logging: disabled
 
 hydra:
   job:
-    name: potential
-    chdir: True                                            # 是否切换工作目录到 run.dir
+    name: md_ase
+    chdir: True                           # change working directory to run.dir
   run:
-    dir: ./out_${hydra:job.name}/${now:%Y%m%d_%H%M%S}  # 单次运行的输出目录
+    dir: ./out_${hydra:job.name}/${now:%Y%m%d_%H%M%S}  # output directory
 
 # To convert the trajectory (.traj) file to XYZ format, run:
 # ase convert <trajectory_file>.traj <output_file>.xyz
