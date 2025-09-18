@@ -76,10 +76,10 @@ python training_structure_generation/train.py --config-name task_diffcsp/diffcsp
 # The prediction results will be saved in the folder specified by the `save_path` parameter, with the default set to `result`.
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='diffcsp_mp20' model.weights_name='latest.pdparams' sample=by_chemical_formula sample.chemical_formula="LiMnO2"
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='diffcsp_mp20' model.weights_name='latest.pdparams' sample=by_chemical_formula sample.chemical_formula="LiMnO2"
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' model.checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' sample=by_chemical_formula sample.chemical_formula="LiMnO2"
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' model.checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' sample=by_chemical_formula sample.chemical_formula="LiMnO2"
 ```
 
 ## Citation

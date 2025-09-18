@@ -267,112 +267,112 @@ python training_structure_generation/train.py --config-name task_mattergen/matte
 # mp20 dataset, without conditional constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
 # or
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_num_atoms' sample.num_atoms=4
 # or
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
 
 
 # mp20 dataset, with chemical system constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_chemical_system' model.weights_name='latest.pdparams'  sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20_chemical_system' model.weights_name='latest.pdparams'  sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_band_gap constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_bulk_modulus constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_bulk_modulus' model.weights_name='latest.pdparams'  sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_bulk_modulus' model.weights_name='latest.pdparams'  sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # mp20 dataset, with dft_mag_density constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, without conditional constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_band_gap constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_band_gap' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_ml_bulk_modulus' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_ml_bulk_modulus' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with space_group constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_space_group' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_space_group' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system and energy_above_hull constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python applications/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' model.weights_name='latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' model.weights_name='latest.pdparams' sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python applications/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' sample='by_dataloader'
+python training_structure_generation/structure_generation.py --config-name sample model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' sample='by_dataloader'
 ```
 
 ## Citation
