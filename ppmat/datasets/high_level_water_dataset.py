@@ -64,7 +64,7 @@ class HighLevelWaterDataset(Dataset):
             to None.
         overwrite (bool, optional): Overwrite the existing cache file at the given
             path if it already exists. Defaults to False.
-        filter_invalid (bool, optional): Whether to filter out invalid samples. Defaults
+        filter_unvalid (bool, optional): Whether to filter out invalid samples. Defaults
             to True.
     """
 
@@ -83,7 +83,7 @@ class HighLevelWaterDataset(Dataset):
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
-        filter_invalid: bool = True,
+        filter_unvalid: bool = True,
         **kwargs,  # for compatibility
     ):
         super().__init__()
@@ -134,7 +134,7 @@ class HighLevelWaterDataset(Dataset):
         logger.info(f"Cache path: {self.cache_path}")
 
         self.overwrite = overwrite
-        self.filter_invalid = filter_invalid
+        self.filter_unvalid = filter_unvalid
 
         self.cache_exists = True if osp.exists(self.cache_path) else False
         self.row_data, self.num_samples = self.read_data(path)
@@ -270,8 +270,8 @@ class HighLevelWaterDataset(Dataset):
         ), "The number of graphs must be equal to the number of samples."
 
         # filter by property data, since some samples may have no valid properties
-        if filter_invalid:
-            self.filter_invalid_by_property()
+        if filter_unvalid:
+            self.filter_unvalid_by_property()
 
     def read_data(self, path: str, format: str = None):
         """Read the data from the given json path.
@@ -292,7 +292,7 @@ class HighLevelWaterDataset(Dataset):
     def atoms_to_structure(self, atoms: Atoms):
         return AseAtomsAdaptor().get_structure(atoms)
 
-    def filter_invalid_by_property(self):
+    def filter_unvalid_by_property(self):
         for property_name in self.property_names:
             data = self.property_data[property_name]
             reserve_idx = []
