@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@ from typing import Literal
 from typing import Optional
 
 import numpy as np
+from jarvis.core.atoms import Atoms as jAtoms
 from p_tqdm import p_map
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.cif import CifParser
-
-from jarvis.core.atoms import Atoms as jAtoms
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
@@ -49,7 +48,9 @@ class BuildStructure:
 
     def __init__(
         self,
-        format: Literal["cif_str", "array", "cif_file", "dict", "cif_str_by_CifParser", "jarvis"],
+        format: Literal[
+            "cif_str", "array", "cif_file", "dict", "cif_str_by_CifParser", "jarvis"
+        ],
         primitive: bool = False,
         niggli: bool = True,
         canocial: bool = True,

@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -398,6 +398,7 @@ class AdamW:
         no_weight_decay_name: Optional[str] = None,
         one_dim_param_no_weight_decay: bool = False,
         amsgrad: bool = False,
+        multi_precision: bool = False,
     ):
         super().__init__()
         self.learning_rate = learning_rate
@@ -411,6 +412,7 @@ class AdamW:
         )
         self.one_dim_param_no_weight_decay = one_dim_param_no_weight_decay
         self.amsgrad = amsgrad
+        self.multi_precision = multi_precision
 
     def __call__(self, model_list: Union[nn.Layer, Tuple[nn.Layer, ...]]):
         # model_list is None in static graph
@@ -465,6 +467,7 @@ class AdamW:
             grad_clip=self.grad_clip,
             apply_decay_param_fun=self._apply_decay_param_fun,
             amsgrad=self.amsgrad,
+            multi_precision=self.multi_precision,
         )
         return opt
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -344,7 +344,9 @@ class MP2018Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
+                ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [

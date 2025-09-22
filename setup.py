@@ -24,7 +24,7 @@ def get_readme() -> str:
 
 
 def get_requirements() -> list:
-    """get requirements from PaddleMaterial/requirements.txt"""
+    """get requirements from PaddleMaterials/requirements.txt"""
     req_list = []
     with open("requirements.txt", "r") as f:
         req_list = f.read().splitlines()
@@ -35,9 +35,9 @@ if __name__ == "__main__":
     setuptools.setup(
         name="ppmat",
         author="PaddlePaddle",
-        url="https://github.com/PaddlePaddle/PaddleMaterial",
+        url="https://github.com/PaddlePaddle/PaddleMaterials",
         description=(
-            "PaddleMaterial is a data-driven deep learning toolkit based on "
+            "PaddleMaterials is a data-driven deep learning toolkit based on "
             "PaddlePaddle for material science."
         ),
         long_description=get_readme(),

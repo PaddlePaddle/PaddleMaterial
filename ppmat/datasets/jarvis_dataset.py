@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -727,7 +727,8 @@ class JarvisDataset(Dataset):
                 tmp_path = path + ".downloading"
                 try:
                     logger.message(
-                        f"Trying preferred mirror download from Paddle BOS for dataset '{data_name}' (expected file '{expected_filename_no_zip}')."
+                        f"Trying preferred mirror download from Paddle BOS for dataset"
+                        f"'{data_name}' (expected file '{expected_filename_no_zip}')."
                     )
                     urllib.request.urlretrieve(
                         _registry_map[data_name]["url"], tmp_path
@@ -748,7 +749,7 @@ class JarvisDataset(Dataset):
                         except Exception:
                             pass
                     logger.message(
-                        "Mirror download failed. Falling back to JARVIS official source."
+                        "Mirror download failed. Fall back to JARVIS official source."
                     )
 
             # If mirror did not provide a valid file, fallback to jdata

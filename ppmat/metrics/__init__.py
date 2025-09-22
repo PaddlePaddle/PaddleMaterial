@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,15 @@ import copy
 import paddle  # noqa
 
 from ppmat.metrics.csp_metric import CSPMetric
+from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
 
-__all__ = ["build_metric", "CSPMetric"]
+__all__ = [
+    "build_metric",
+    "CSPMetric",
+    "DiffNMRStreamingAdapter",
+    # "DiffNMRMetric",
+    # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
+]
 
 
 class IgnoreNanMetricWrapper:

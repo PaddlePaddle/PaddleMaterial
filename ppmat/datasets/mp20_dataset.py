@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -432,7 +432,7 @@ class MP20MatterGenDataset(MP20Dataset):
 
     name = "mp_20_mattergen"
     url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20_chemical_system.zip"
-    md5 = "605e2aa2a7363f98ac90c8e6a448fb31"
+    md5 = "9ce0c42c5696d07b73a0bf4d4ceadb71"
 
 
 class AlexMP20MatterGenDataset(MP20Dataset):

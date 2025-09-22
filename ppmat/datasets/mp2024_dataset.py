@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import math
 import os
 import os.path as osp
 import pickle
-import math
 import re
-from collections import defaultdict
 from typing import Any
 from typing import Callable
 from typing import Dict
@@ -35,8 +34,10 @@ from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils.io import read_json_lines, count_samples_json_lines
+from ppmat.utils.io import count_samples_json_lines
+from ppmat.utils.io import read_json_lines
 from ppmat.utils.misc import is_equal
+
 
 class MP2024Dataset(Dataset):
     """MP2024 Dataset Handler
@@ -51,10 +52,11 @@ class MP2024Dataset(Dataset):
     │ Sample Count      │ 130000  │  10000  │  15361  │
     └───────────────────┴─────────┴─────────┴─────────┘
     ```
-    Download preprocessed data: https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip
+    Download preprocessed data: https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip # noqa
 
     **Data Format**
-    Each sample in the dataset is represented as a `dict` with the following keys and value types:
+    Each sample in the dataset is represented as a `dict` with the following keys and
+        value types:
 
     General Identifiers:
     --------------------
@@ -62,23 +64,28 @@ class MP2024Dataset(Dataset):
     - 'material_id': `str` — Unique identifier for Materials Project.
     - 'database_IDs': `dict` — Other database identifiers.
     - 'task_ids': `list` — Related task identifiers.
-    - 'last_updated': `dict` — Last update timestamp.   
+    - 'last_updated': `dict` — Last update timestamp.
     - `deprecated`: `bool` — Whether the material entry is deprecated.
     - `deprecation_reasons`: `str` — Reasons for deprecation, if any.
-    - 'builder_meta': `dict` — Metadata about the dataset construction tools and environment.
-        - 'emmet_version': `str` — Version of the Emmet library used to process the data.
-        - 'pymatgen_version': `str` — Version of the Pymatgen library used to process the data.
+    - 'builder_meta': `dict` — Metadata about the dataset construction tools and
+        environment.
+        - 'emmet_version': `str` — Version of the Emmet library used to process the
+            data.
+        - 'pymatgen_version': `str` — Version of the Pymatgen library used to process
+            the data.
         - 'pull_request'
         - 'database_version'
         - 'build_date'
         - 'license'
     - 'origins': `list` — Source information for structure, energy, magnetism, etc.
-        - 'name': `str` — The property type or task name (e.g., 'structure', 'energy', 'magnetism').
+        - 'name': `str` — The property type or task name (e.g., 'structure', 'energy',
+            'magnetism').
         - 'task_id': `str` — The computation task ID associated with this property.
-        - 'last_updated': `dict` — Dictionary containing the timestamp of the last update for this property source.
+        - 'last_updated': `dict` — Dictionary containing the timestamp of the last
+            update for this property source.
     - 'warnings': `list` — Any known issues or notes about the entry.
 
-    Chemical Information:   
+    Chemical Information:
     ---------------------
     - `formula_pretty`: `str` — Human-readable chemical formula.
     - `formula_anonymous`: `str` — Element-anonymized formula (e.g., "ABC3").
@@ -102,23 +109,27 @@ class MP2024Dataset(Dataset):
     - `composition`: `dict` — Elemental amounts.
     - `composition_reduced`: `dict` — Reduced stoichiometry.
     - `structure`: `dict` — Full crystal structure. **Details as follows:**
-        - `@module`: `str` — Python module where the structure class is defined, e.g., `'pymatgen.core.structure'`.
+        - `@module`: `str` — Python module where the structure class is defined, e.g.,
+            `'pymatgen.core.structure'`.
         - `@class`: `str` — Class name of the structure, e.g., `'Structure'`.
         - `charge`: `int` — Net charge of the entire structure.
         - `lattice`: `dict` — Lattice information:
             - `matrix`: `list` — 3x3 lattice vectors defining the unit cell.
-            - `pbc`: `list[bool]` — Periodic boundary conditions flags for each spatial direction.
+            - `pbc`: `list[bool]` — Periodic boundary conditions flags for each spatial
+                direction.
             - `a`, `b`, `c`: `float` — Lattice constants lengths.
             - `alpha`, `beta`, `gamma`: `float` — Lattice angles in degrees.
             - `volume`: `float` — Volume of the unit cell.
-        - `properties`: `dict` — Optional additional properties related to the structure.
+        - `properties`: `dict` — Optional additional properties related to the
+            structure.
         - `sites`: `list[dict]` — List of atomic sites, each site including:
             - `species`: `list[dict]` — List of species at the site, with:
                 - `element`: `str` — Chemical element symbol.
                 - `occu`: `float` — Occupancy of the element at the site.
             - `abc`: `list[float]` — Fractional coordinates within the unit cell.
             - `xyz`: `list[float]` — Cartesian coordinates in Ångstroms.
-            - `properties`: `dict` — Site-specific properties, e.g., magnetic moment (`magmom`).
+            - `properties`: `dict` — Site-specific properties, e.g., magnetic moment
+                (`magmom`).
             - `label`: `str` — Element label for the site.
 
     Thermodynamic Properties:
@@ -130,7 +141,8 @@ class MP2024Dataset(Dataset):
     - `energy_per_atom`: `float` — Final total energy per atom.
     - `formation_energy_per_atom`: `float` — Formation energy per atom.
     - `energy_above_hull`: `float` — Energy above convex hull (thermodynamic stability).
-    - `equilibrium_reaction_energy_per_atom`: `float` — Equilibrium reaction energy per atom.
+    - `equilibrium_reaction_energy_per_atom`: `float` — Equilibrium reaction energy per
+        atom.
     - `is_stable`: `bool` — Whether the material is thermodynamically stable.
     - `decomposes_to`: `list` — Decomposition products.
 
@@ -146,18 +158,25 @@ class MP2024Dataset(Dataset):
     - `es_source_calc_id`
     - `bandstructure`
     - `dos`:  Density of states. **Details as follows:**
-        - `total`: `dict` — Total density of states aggregated over all elements and orbitals. Contains spin channels keyed by `'1'` (spin up) and `'-1'` (spin down), each holding:
+        - `total`: `dict` — Total density of states aggregated over all elements and
+            orbitals. Contains spin channels keyed by `'1'` (spin up) and `'-1'` (spin
+                down), each holding:
             - `task_id`: `str` — Identifier of the calculation task.
             - `band_gap`: `float` — Band gap energy in eV.
             - `cbm`: `float` — Conduction band minimum energy in eV.
             - `vbm`: `float` — Valence band maximum energy in eV.
             - `efermi`: `float` — Fermi energy in eV.
             - `spin_polarization`: `float` or `None` — Degree of spin polarization.
-        - `elemental`: `dict` — Density of states resolved by element symbol. Each element maps to:
-            - `total`: `dict` — Total DOS for that element (with same spin structure as above).
-            - Orbital-resolved DOS: keys like `'s'`, `'p'`, `'d'`, each mapping spin-resolved DOS dicts.
-        - `orbital`: `dict` — Density of states resolved by orbital type (`'s'`, `'p'`, `'d'`), with spin-resolved data similar to above.
-        - `magnetic_ordering`: `str` — Magnetic ordering of the system, e.g., `'FM'` (ferromagnetic).
+        - `elemental`: `dict` — Density of states resolved by element symbol. Each
+            element maps to:
+            - `total`: `dict` — Total DOS for that element (with same spin structure
+                as above).
+            - Orbital-resolved DOS: keys like `'s'`, `'p'`, `'d'`, each mapping
+                spin-resolved DOS dicts.
+        - `orbital`: `dict` — Density of states resolved by orbital type (`'s'`, `'p'`,
+            `'d'`), with spin-resolved data similar to above.
+        - `magnetic_ordering`: `str` — Magnetic ordering of the system, e.g., `'FM'`
+            (ferromagnetic).
     - `dos_energy_up`: `float` — Spin-up DOS energy
     - `dos_energy_down`: `float` — Spin-down DOS energy.
 
@@ -168,7 +187,8 @@ class MP2024Dataset(Dataset):
     - `ordering`: `str` — Magnetic ordering type (e.g., 'FM', 'AFM').
     - `total_magnetization`: `float` — Total magnetization.
     - `total_magnetization_normalized_vol`: `float` — Magnetization per unit volume.
-    - `total_magnetization_normalized_formula_units`: `float` — Magnetization per formula unit.
+    - `total_magnetization_normalized_formula_units`: `float` — Magnetization per
+        formula unit.
     - `num_magnetic_sites`: `int` — Number of magnetic sites.
     - `num_unique_magnetic_sites`: `int` — Number of unique magnetic sites.
     - `types_of_magnetic_species`: `list` — Magnetic element types.
@@ -196,29 +216,32 @@ class MP2024Dataset(Dataset):
     - 'xas'
 
     ----
-    - 'grain_boundaries' 
+    - 'grain_boundaries'
 
     Electronic Energy:
     ------------------
-    - 'e_total' 
-    - 'e_ionic' 
-    - 'e_electronic' 
+    - 'e_total'
+    - 'e_ionic'
+    - 'e_electronic'
     - 'n'
-    - 'e_ij_max' 
+    - 'e_ij_max'
 
     Other Fields:
     -------------
     - `possible_species`: `list` — Estimated possible oxidation states.
     - `has_props`: `dict` — Flags indicating presence of specific property data, e.g.,
-        'materials', 'thermo', 'xas', 'grain_boundaries', 'chemenv', 'electronic_structure', 'absorption', 
-        'bandstructure', 'dos', 'magnetism', 'elasticity', 'dielectric', 'piezoelectric', 'surface_properties', 
-        'oxi_states', 'provenance', 'charge_density', 'eos', 'phonon', 'insertion_electrodes', 'substrates'.
+        'materials', 'thermo', 'xas', 'grain_boundaries', 'chemenv',
+            'electronic_structure', 'absorption',
+        'bandstructure', 'dos', 'magnetism', 'elasticity', 'dielectric',
+            'piezoelectric', 'surface_properties',
+        'oxi_states', 'provenance', 'charge_density', 'eos', 'phonon',
+            'insertion_electrodes', 'substrates'.
     - `theoretical`: `bool` — Whether the structure is theoretical.
     - `property_name`: `str`
 
 
     **Notes**
-    - Missing values are represented as `None` 
+    - Missing values are represented as `None`
     - CIF parsing requires additional dependencies (e.g., pymatgen)
     - For custom data, ensure index consistency across all fields
 
@@ -247,7 +270,7 @@ class MP2024Dataset(Dataset):
     """
 
     name = "mp2024_train_130k"
-    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip"  # noqa
     md5 = "6aa4d9f52e3f39270719e163465fcea8"
 
     def __init__(
@@ -268,10 +291,10 @@ class MP2024Dataset(Dataset):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
             path = osp.join(root_path, self.name, osp.basename(path))
-        
+
         self.path = path
         if isinstance(property_names, str):
-            property_names = [property_names]        
+            property_names = [property_names]
 
         if build_structure_cfg is None:
             build_structure_cfg = {
@@ -284,7 +307,7 @@ class MP2024Dataset(Dataset):
                 "The build_structure_cfg is not set, will use the default "
                 f"configs: {build_structure_cfg}"
             )
-        
+
         self.property_names = property_names if property_names is not None else []
         self.build_structure_cfg = build_structure_cfg
         self.build_graph_cfg = build_graph_cfg
@@ -295,11 +318,18 @@ class MP2024Dataset(Dataset):
         else:
             # for example:
             # path = ./data/mp2024_train_130k/mp2024_train.txt
-            # cache_path = ./data/mp2024_train_130k_cache_find_points_in_spheres_cutoff_4/mp2024_train
-            graph_converter_name = re.sub(r'(?<!^)([A-Z])', r'_\1', build_graph_cfg['__class_name__']).lower()
-            cutoff_name = str( int(build_graph_cfg['__init_params__']['cutoff']) ) 
-            self.cache_path = osp.join( osp.split(path)[0] + "_cache_" + graph_converter_name + "_cutoff_" + cutoff_name,
-                 osp.splitext(osp.basename(path))[0]
+            # cache_path = ./data/mp2024_train_130k_cache_find_points_in_spheres_cutoff_4/mp2024_train # noqa
+            graph_converter_name = re.sub(
+                r"(?<!^)([A-Z])", r"_\1", build_graph_cfg["__class_name__"]
+            ).lower()
+            cutoff_name = str(int(build_graph_cfg["__init_params__"]["cutoff"]))
+            self.cache_path = osp.join(
+                osp.split(path)[0]
+                + "_cache_"
+                + graph_converter_name
+                + "_cutoff_"
+                + cutoff_name,
+                osp.splitext(osp.basename(path))[0],
             )
         logger.info(f"Cache path: {self.cache_path}")
         os.makedirs(self.cache_path, exist_ok=True)
@@ -321,13 +351,17 @@ class MP2024Dataset(Dataset):
             try:
                 for property_name in self.property_names:
                     data = self.load_from_cache(
-                        osp.join(property_cache_path, f"{property_name}.pkl"), 
+                        osp.join(property_cache_path, f"{property_name}.pkl"),
                     )
-                    logger.info(f"Load {len(data)} {property_name} values from {property_cache_path}")
+                    logger.info(
+                        f"Load {len(data)} {property_name} values from "
+                        f"{property_cache_path}"
+                    )
                     if len(data) != num_samples_raw_file:
                         logger.warning(
-                            f"The number of {property_name} ({len(data)}) " 
-                            f"does not match the number of raw samples ({num_samples_raw_file}). "
+                            f"The number of {property_name} ({len(data)}) "
+                            f"does not match the number of raw samples "
+                            f"({num_samples_raw_file}). "
                             f"Please check if overwrite is needed."
                         )
                 logger.info("Property cache is found. Will load properties from cache.")
@@ -345,18 +379,27 @@ class MP2024Dataset(Dataset):
         # check if all raw structures have been built to crystal structure
         structure_cache_path = osp.join(self.cache_path, "structures")
         if osp.exists(structure_cache_path) and not overwrite:
-            logger.info("The cache file of built crystal structure is found. Will load structures from cache.")
-            
+            logger.info(
+                "The cache file of built crystal structure is found. Will load "
+                "structures from cache."
+            )
+
             # compute number of cached structures
-            files_structure = [f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")]
+            files_structure = [
+                f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")
+            ]
             num_cached_structures = len(files_structure)
             if num_samples_raw_file == num_cached_structures:
-                logger.info(f"All raw files have been built to crystal structures, and the number of structures are {num_cached_structures}.")
+                logger.info(
+                    f"All raw files have been built to crystal structures, and the "
+                    f"number of structures are {num_cached_structures}."
+                )
             else:
-                logger.warning( 
-                    f"The number of cached structures ({num_cached_structures}) does not match "
+                logger.warning(
+                    f"The number of cached structures ({num_cached_structures}) does "
+                    f"not match "
                     f"the number of raw samples ({num_samples_raw_file}). "
-                    f"Please check if overwrite is needed." 
+                    f"Please check if overwrite is needed."
                 )
         else:
             logger.info("Structure cache is not found. Will build structures.")
@@ -364,8 +407,10 @@ class MP2024Dataset(Dataset):
             os.makedirs(property_cache_path, exist_ok=True)
             self.row_data, self.num_samples = self.read_data(path)
             logger.info(f"Load {self.num_samples} samples from {path}")
-            self.property_data = self.read_property_data(self.row_data, self.property_names) 
-            
+            self.property_data = self.read_property_data(
+                self.row_data, self.property_names
+            )
+
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
                 # save build_structure_cfg to cache file
@@ -383,22 +428,29 @@ class MP2024Dataset(Dataset):
                         osp.join(structure_cache_path, f"{i:010d}.pkl"),
                         structures[i],
                     )
-                logger.info( f"Save {self.num_samples} structures to {structure_cache_path}" )
+                logger.info(
+                    f"Save {self.num_samples} structures to {structure_cache_path}"
+                )
                 # save property data to cache file
                 for property_name in self.property_names:
                     data = self.property_data[property_name]
                     self.save_to_cache(
-                        osp.join(property_cache_path, f"{property_name}.pkl"), 
+                        osp.join(property_cache_path, f"{property_name}.pkl"),
                         data,
                     )
-                    logger.info( f"Save {self.num_samples} {property_name} to {property_cache_path}" )
+                    logger.info(
+                        f"Save {self.num_samples} {property_name} to "
+                        f"{property_cache_path}"
+                    )
             # sync all processes
             if dist.is_initialized():
                 dist.barrier()
 
         # check if generate graph infomation
         graph_cache_path = osp.join(self.cache_path, "graphs")
-        graph_cache_exists = build_graph_cfg is not None and osp.exists(graph_cache_path)
+        graph_cache_exists = build_graph_cfg is not None and osp.exists(
+            graph_cache_path
+        )
         # check if create graph configures is same with cache.
         if graph_cache_exists and not overwrite:
             try:
@@ -432,17 +484,26 @@ class MP2024Dataset(Dataset):
 
         # check if all structures are built into the graph
         if osp.exists(graph_cache_path) and not overwrite:
-            logger.info("The cache file of built crystal structure is found. Will load structures from cache.")
+            logger.info(
+                "The cache file of built crystal structure is found. Will load "
+                "structures from cache."
+            )
             # compute number of cached graph
-            files_graph = [f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")]
+            files_graph = [
+                f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")
+            ]
             num_cached_graphs = len(files_graph)
             if num_cached_structures == num_cached_graphs:
-                logger.info(f"All cached structures have been built graphs, and the number of graphes are {num_cached_graphs}.")
+                logger.info(
+                    f"All cached structures have been built graphs, and the number of "
+                    f"graphes are {num_cached_graphs}."
+                )
             else:
-                logger.warning( 
-                    f"The number of cached structures ({num_cached_structures}) does not match "
+                logger.warning(
+                    f"The number of cached structures ({num_cached_structures}) does "
+                    f"not match "
                     f"the number of cached graphs ({num_cached_graphs}). "
-                    f"Please check if overwrite is needed." 
+                    f"Please check if overwrite is needed."
                 )
         else:
             logger.info("Graph cache is not found. Will build graphs.")
@@ -452,8 +513,7 @@ class MP2024Dataset(Dataset):
             if dist.get_rank() == 0:
                 # save build_graph_cfg to cache file
                 self.save_to_cache(
-                    osp.join(self.cache_path, "build_graph_cfg.pkl"), 
-                    build_graph_cfg
+                    osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
                 # convert graph
                 converter = build_graph_converter(build_graph_cfg)
@@ -469,22 +529,27 @@ class MP2024Dataset(Dataset):
                 dist.barrier()
 
         # Obtain finial properies, structures and graphs
-        self.property_data = {property_name: self.load_from_cache(osp.join(property_cache_path, f"{property_name}.pkl")) for property_name in self.property_names}
-        
+        self.property_data = {
+            property_name: self.load_from_cache(
+                osp.join(property_cache_path, f"{property_name}.pkl")
+            )
+            for property_name in self.property_names
+        }
+
         self.structures = [
-            osp.join(structure_cache_path, f) 
+            osp.join(structure_cache_path, f)
             for f in sorted(
                 os.listdir(structure_cache_path),
-                key=lambda x: int(x.replace(".pkl", ""))
+                key=lambda x: int(x.replace(".pkl", "")),
             )
         ]
-        
+
         if build_graph_cfg is not None:
             self.graphs = [
-                osp.join(graph_cache_path, f) 
+                osp.join(graph_cache_path, f)
                 for f in sorted(
                     os.listdir(graph_cache_path),
-                    key=lambda x: int(x.replace(".pkl", ""))
+                    key=lambda x: int(x.replace(".pkl", "")),
                 )
             ]
         else:
@@ -493,11 +558,11 @@ class MP2024Dataset(Dataset):
         # filter by property data, since some samples may have no valid properties
         if filter_unvalid:
             self.filter_unvalid_by_property()
-        
-        # filter by graph data, as some samples may not have edges and need to be removed
+
+        # filter by graph data, as some samples may not have edges and need be removed
         if self.graphs is not None:
             self.filter_unvalid_by_graph()
-        
+
         # assert (
         #     self.graphs is None or len(self.graphs) == self.num_samples
         # ), "The number of graphs must be equal to the number of samples."
@@ -512,16 +577,12 @@ class MP2024Dataset(Dataset):
             data = self.load_from_cache(g)
             if data is not None:
                 reserve_idx.append(i)
-            
+
         for key in self.property_data.keys():
-            self.property_data[key] = [
-                self.property_data[key][i] for i in reserve_idx
-            ]
+            self.property_data[key] = [self.property_data[key][i] for i in reserve_idx]
         self.structures = [self.structures[i] for i in reserve_idx]
         self.graphs = [self.graphs[i] for i in reserve_idx]
-        logger.warning(
-            f"Filter out {len(reserve_idx)} samples with valid graphs."
-        )
+        logger.warning(f"Filter out {len(reserve_idx)} samples with valid graphs.")
 
         self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
@@ -568,7 +629,9 @@ class MP2024Dataset(Dataset):
             data = self.property_data[property_name]
             reserve_idx = []
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (data_item is not None and not math.isnan(data_item)):
+                if isinstance(data_item, str) or (
+                    data_item is not None and not math.isnan(data_item)
+                ):
                     reserve_idx.append(i)
             for key in self.property_data.keys():
                 self.property_data[key] = [

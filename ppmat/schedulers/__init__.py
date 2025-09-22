@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ from typing import Dict
 import ppmat.schedulers.scheduling_wrapped_sde_ve as scheduling_wrapped_sde_ve  # noqa
 from ppmat.schedulers.scheduling_d3pm import D3PMScheduler
 from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
+from ppmat.schedulers.scheduling_diffprior import NoiseScheduler
 from ppmat.schedulers.scheduling_lattice_vp import LatticeVPSDEScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeSchedulerWrapped
@@ -33,6 +34,7 @@ __all__ = [
     "LatticeVPSDEScheduler",
     "NumAtomsVarianceAdjustedWrappedVESDE",
     "D3PMScheduler",
+    "NoiseScheduler",
 ]
 
 
