@@ -152,36 +152,36 @@ You can replace the `--model_name` parameter at  `Mode 1` with other model names
 # formation energy per atom
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_e_form' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenetpp_mp2018_train_60k_e_form' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenetpp_mp2018_train_60k_e_form.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
 
 # band gap
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal band gap prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_band_gap' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenetpp_mp2018_train_60k_band_gap' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal band gap prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_band_gap.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --config_path='property_prediction/configs/dimenetpp/dimenetpp_mp2018_train_60k_band_gap.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # bulk modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal bulk modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_K' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenetpp_mp2018_train_60k_K' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal bulk modulus prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --config_path='property_prediction/configs/dimenetpp/dimenetpp_mp2018_train_60k_K.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 
 
 # shear modulus
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear modulus prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python property_prediction/predict.py --model_name='dimenet++_mp2018_train_60k_G' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --model_name='dimenetpp_mp2018_train_60k_G' --cif_file_path='./property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear modulus prediction. This approach allows for more flexibility and customization.
-python property_prediction/predict.py --config_path='property_prediction/configs/dimenet++/dimenet++_mp2018_train_60k_G.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+python property_prediction/predict.py --config_path='property_prediction/configs/dimenetpp/dimenet++_mp2018_train_60k_G.yaml' --checkpoint_path='you_checkpoint_path.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
 ```
 
 

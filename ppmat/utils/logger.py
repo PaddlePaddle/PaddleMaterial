@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -241,18 +241,18 @@ def advertise():
     Show the advertising message like the following:
 
     ===========================================================
-    ==      PaddleMaterial is powered by PaddlePaddle !      ==
+    ==      PaddleMaterials is powered by PaddlePaddle !     ==
     ===========================================================
     ==                                                       ==
     ==   For more info please go to the following website.   ==
     ==                                                       ==
-    ==     https://github.com/PaddlePaddle/PaddleMaterial    ==
+    ==     https://github.com/PaddlePaddle/PaddleMaterials   ==
     ===========================================================
     """
 
-    _copyright = "PaddleMaterial is powered by PaddlePaddle !"
+    _copyright = "PaddleMaterials is powered by PaddlePaddle !"
     ad = "Please refer to the following website for more info."
-    website = "https://github.com/PaddlePaddle/PaddleMaterial"
+    website = "https://github.com/PaddlePaddle/PaddleMaterials"
     AD_LEN = 6 + len(max([_copyright, ad, website], key=len))
 
     info(

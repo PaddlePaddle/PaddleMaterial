@@ -27,13 +27,13 @@ After installation, verify the installation with:
 
 If you see "PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now.", the installation was successful.
 
-### 1.3 Install PaddleMaterial from Source:
+### 1.3 Install PaddleMaterials from Source:
 
-    # Clone PaddleMaterial repository
-    git clone https://github.com/PaddlePaddle/PaddleMaterial.git
+    # Clone PaddleMaterials repository
+    git clone https://github.com/PaddlePaddle/PaddleMaterials.git
 
-    # Navigate to PaddleMaterial directory
-    cd PaddleMaterial
+    # Navigate to PaddleMaterials directory
+    cd PaddleMaterials
 
     # Install dependencies
     pip install --upgrade pip setuptools wheel

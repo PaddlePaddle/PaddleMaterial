@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@ import math
 
 import numpy as np
 import paddle
+
+from ppmat.models.common.sinusoidal_embedding import SinusoidalEmbeddings
 
 
 def uniform_sample_t(batch_size, timesteps):
@@ -43,19 +45,9 @@ class UniformTimestepSampler:
         return paddle.rand(shape=[batch_size]) * (self.max_t - self.min_t) + self.min_t
 
 
-class SinusoidalTimeEmbeddings(paddle.nn.Layer):
+class SinusoidalTimeEmbeddings(SinusoidalEmbeddings):
     def __init__(self, dim):
-        super().__init__()
-        self.dim = dim
-        half_dim = dim // 2
-        embeddings = math.log(10000) / (half_dim - 1)
-        self.embeddings = paddle.exp(x=paddle.arange(end=half_dim) * -embeddings)
-
-    def forward(self, time):
-        time = time.astype(paddle.get_default_dtype())
-        embeddings = time[:, None] * self.embeddings[None, :]
-        embeddings = paddle.concat(x=(embeddings.sin(), embeddings.cos()), axis=-1)
-        return embeddings
+        super().__init__(dim)
 
 
 class NoiseLevelEncoding(paddle.nn.Layer):

@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,13 @@
 # limitations under the License.
 import copy
 import os
+import pickle
 import random
 import signal
+from pathlib import Path
 from typing import Dict
+from typing import Optional
+from typing import Type  # noqa
 
 import numpy as np
 import paddle
@@ -35,6 +39,8 @@ from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
 from ppmat.datasets.mp2024_dataset import MP2024Dataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
+from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
+from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
@@ -51,8 +57,13 @@ __all__ = [
     "MPTrjDataset",
     "JarvisDataset",
     "HighLevelWaterDataset",
+    "MSDnmrDataset",
     "MatbenchDataset",
 ]
+
+INFO_CLASS_REGISTRY: Dict[str, type] = {
+    "MSDnmrDataset": MSDnmrinfos,
+}
 
 
 def worker_init_fn(id: int):
@@ -249,3 +260,63 @@ def set_build_sample(sampler_cfg, world_size, dataset):
         )
 
     return batch_sampler
+
+
+def build_dataset_infos(
+    cfg: Dict,
+    dataloaders=None,
+    *,
+    recompute_statistics: bool = False,
+    cache_dir: Optional[str | Path] = None,
+    force_refresh: bool = False,
+    verbose: bool = True,
+):
+    """Build dataset information from config.
+
+    Args:
+        cfg (Dict): Global experiment config. Must contain
+            cfg["Dataset']["train"]["dataset"] with kyes:
+                - data_flag  (e.g. n<15 / n<20 / …)
+                - remove_h   (bool, drop hydrogens or not)
+                - info_class (optional, default "MMSnmrDataset")
+        dataloaders : object, optional
+            Needed only when recompute_statistics=True.
+            Expected to implement:
+                node_counts(), node_types(), edge_counts(), valency_count(max_n)
+        recompute_statistics : bool
+            If True, compute fresh histograms from *dataloaders*.
+        cache_dir : str | Path, optional
+            Folder for pickled cache files.  Disabled when None.
+        force_refresh : bool
+            Ignore existing cache and build from scratch.
+        verbose : bool
+            Print status messages.
+    """
+    # 1.Resolve which Infos class we should instantiate
+    if cfg is None:
+        return None
+    cfg = copy.deepcopy(cfg)
+
+    dataset_cfg = cfg["Dataset"]["train"]["dataset"]
+    info_class_name = dataset_cfg.pop("__class_name__")
+    init_params = dataset_cfg.pop("__init_params__")
+
+    info_cls = INFO_CLASS_REGISTRY.get(info_class_name)
+    if info_cls is None:
+        raise ValueError(f"Unknown info_class '{info_class_name}'."
+                         f"Supported classes: {list(INFO_CLASS_REGISTRY)}")
+
+    # 2.Build a *new* infos instance
+    if verbose:
+        logger.warning(
+            f"Build_dataset_infos Instantiating {info_class_name}"
+            f"(recompute_statistics={recompute_statistics})"
+        )
+
+    infos = info_cls(
+        dataloaders=dataloaders,
+        cfg=init_params,
+        recompute_statistics=recompute_statistics,
+    )
+
+    return infos

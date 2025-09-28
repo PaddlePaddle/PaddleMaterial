@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -361,17 +361,23 @@ class MEGNetGraphConv(paddle.nn.Layer):
         return MEGNetGraphConv(edge_update, node_update, attr_update)
 
     def edge_update(self, graph, node_feat, edge_feat, u):
-        vi = node_feat[graph.edges[:, 0]] # shape: [num_edges, 32]
-        vj = node_feat[graph.edges[:, 1]] # shape: [num_edges, 32]
-        u = u[graph.edges[:, 0]] # shape: [num_edges, 32]
-        edge_feat = paddle.concat([vi, vj, edge_feat, u], axis=1) # shape: [num_edges, 32+32+32+32] = [num_edges, 128]
-        edge_feat = self.edge_func(edge_feat)   # input shape: [num_edges, 128], out shape: [num_edges, 32]
+        vi = node_feat[graph.edges[:, 0]]  # shape: [num_edges, 32]
+        vj = node_feat[graph.edges[:, 1]]  # shape: [num_edges, 32]
+        u = u[graph.edges[:, 0]]  # shape: [num_edges, 32]
+        edge_feat = paddle.concat(
+            [vi, vj, edge_feat, u], axis=1
+        )  # shape: [num_edges, 32+32+32+32] = [num_edges, 128]
+        edge_feat = self.edge_func(
+            edge_feat
+        )  # input shape: [num_edges, 128], out shape: [num_edges, 32]
         return edge_feat
 
     def node_update(self, graph, node_feat, edge_feat, u):
         src, dst, eid = graph.sorted_edges(sort_by="dst")
         # node_feat_e = paddle.geometric.segment_mean(edge_feat[eid], dst)
-        node_feat_e = self.sorted_segment_mean(edge_feat[eid], dst, graph.num_nodes.item())
+        node_feat_e = self.sorted_segment_mean(
+            edge_feat[eid], dst, graph.num_nodes.item()
+        )
         node_feat = paddle.concat([node_feat, node_feat_e, u], axis=1)
         node_feat = self.node_func(node_feat)
         return node_feat
@@ -383,23 +389,23 @@ class MEGNetGraphConv(paddle.nn.Layer):
         state_feat = self.state_func(state)
         return state_feat
 
-
     @staticmethod
     def sorted_segment_mean(data, segment_ids, num_segments):
-        '''
+        """
         Custom Paddle op to replicate TensorFlow's `unsorted_segment_sum`
 
         Args:
-            data (Tensor [N, D]):      N is the number of edges, and D is the feature dimension.
+            data (Tensor [N, D]):      N is the number of edges, and D is the feature
+                dimension.
             segment_ids (Tensor [N]):  Each value is the segment ID (int).
             num_segments (int):        Total number of segments (e.g., number of nodes).
 
         Returns:
             Tensor [num_segments, D]
-        '''
+        """
 
         feat_dim = data.shape[1]
-        
+
         # Initialize output and count tensors
         result = paddle.zeros(shape=[num_segments, feat_dim])
         count = paddle.zeros(shape=[num_segments, feat_dim])
@@ -409,18 +415,18 @@ class MEGNetGraphConv(paddle.nn.Layer):
         segment_ids_exp = paddle.expand(segment_ids_exp, shape=[-1, feat_dim])
 
         # Accumulate values into result tensor (Note: must assign the returned tensor)
-        result = paddle.put_along_axis(arr=result, indices=segment_ids_exp, values=data, axis=0, reduce='add')
+        result = paddle.put_along_axis(
+            arr=result, indices=segment_ids_exp, values=data, axis=0, reduce="add"
+        )
 
         # Accumulate counts
         ones = paddle.ones_like(data)
-        count = paddle.put_along_axis(arr=count, indices=segment_ids_exp, values=ones, axis=0, reduce='add')
+        count = paddle.put_along_axis(
+            arr=count, indices=segment_ids_exp, values=ones, axis=0, reduce="add"
+        )
         count = paddle.clip(count, min=1.0)
 
         return result / count
-
-
-
-
 
     def forward(
         self,
@@ -442,7 +448,9 @@ class MEGNetGraphConv(paddle.nn.Layer):
         """
         batch_num_nodes = graph._graph_node_index
         batch_num_nodes = batch_num_nodes[1:] - batch_num_nodes[:-1]
-        u = paddle.repeat_interleave(state_feat, batch_num_nodes, axis=0)   # shape: [num_nodes, 32]
+        u = paddle.repeat_interleave(
+            state_feat, batch_num_nodes, axis=0
+        )  # shape: [num_nodes, 32]
 
         edge_feat = self.edge_update(graph, node_feat, edge_feat, u)
         node_feat = self.node_update(graph, node_feat, edge_feat, u)

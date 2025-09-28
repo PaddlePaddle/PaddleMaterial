@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import ast
 import hashlib
 import json
 import os
 
 import numpy as np
+
 
 def count_samples_json_lines(path: str):
     """Fast count of samples in a line-delimited JSON file."""
@@ -112,5 +114,9 @@ def calc_md5(fullname):
 
 
 if __name__ == "__main__":
-    md5 = calc_md5("yourfile.zip")
+    parser = argparse.ArgumentParser(description="Calculate MD5 hash of a file")
+    parser.add_argument("filename", help="Path to the file to hash")
+    args = parser.parse_args()
+
+    md5 = calc_md5(args.filename)
     print(md5)

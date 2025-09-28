@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+from typing import Optional
+from typing import Tuple
+from typing import Union
 
 import numpy as np
 
@@ -22,6 +24,7 @@ __all__ = [
     "UnNormalize",
     "PowerData",
 ]
+
 
 class UnNormalize:
     """UnNormalize the data.

@@ -61,7 +61,7 @@ This study establishes a novel framework integrating active learning workflows w
 
 ## How to use
 
-Refer to the [install doc](../../Install.md) to install PaddleMaterial.
+Refer to the [install doc](../../Install.md) to install PaddleMaterials.
 
 #### 1. Generate new 2D materials:
    ```bash

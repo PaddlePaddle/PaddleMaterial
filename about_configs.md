@@ -1,6 +1,6 @@
 # About Configs 🧩
 
-PaddleMaterial implements full lifecycle management for model training, covering core stages like training, fine-tuning, and prediction. It includes standardized datasets and build-in pre-trained model libraries, supporting one-click prediction. Training workflows are parameterized through structured configuration files, allowing end-to-end model training with simple parameter adjustments.
+PaddleMaterials implements full lifecycle management for model training, covering core stages like training, fine-tuning, and prediction. It includes standardized datasets and build-in pre-trained model libraries, supporting one-click prediction. Training workflows are parameterized through structured configuration files, allowing end-to-end model training with simple parameter adjustments.
 
 <table>
     <thead>
@@ -97,7 +97,7 @@ graph_converter:
     </tbody>
 </table>
 
-PaddleMaterial uses `__class_name__` and `__init_params__` for flexible class instantiation without hardcoding, enabling different graph construction methods through configuration changes.
+PaddleMaterials uses `__class_name__` and `__init_params__` for flexible class instantiation without hardcoding, enabling different graph construction methods through configuration changes.
 
 ## 2. Trainer Configuration
 

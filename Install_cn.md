@@ -28,20 +28,20 @@
 
 如果出现 PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now. 信息，说明已成功安装。
 
-### 1.3 源码安装PaddleMaterial：
+### 1.3 源码安装PaddleMaterials：
 
-    # clone PaddleMaterial
-    git clone https://github.com/PaddlePaddle/PaddleMaterial.git
+    # clone PaddleMaterials
+    git clone https://github.com/PaddlePaddle/PaddleMaterials.git
 
-    # 切换到PaddleMaterial目录
-    cd PaddleMaterial
+    # 切换到PaddleMaterials目录
+    cd PaddleMaterials
 
     # 安装依赖
     pip install --upgrade pip setuptools wheel
     pip install setuptools_scm
     pip install Cython
 
-    # 以可编辑模式安装PaddleMaterial
+    # 以可编辑模式安装PaddleMaterials
     pip install -e .
 
 

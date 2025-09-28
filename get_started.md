@@ -1,8 +1,8 @@
 # Get Started  ⚡
 
-PaddleMaterial provides multiple pre-trained models and standard datasets for material property prediction, material structure generation, and interatomic potentials tasks. This document demonstrates how to perform common tasks using these existing models and standard datasets.
+PaddleMaterials provides multiple pre-trained models and standard datasets for material property prediction, material structure generation, and interatomic potentials tasks. This document demonstrates how to perform common tasks using these existing models and standard datasets.
 
-Training workflows are parameterized through structured configuration files, allowing end-to-end model training with simple parameter adjustments. You can refer to the [PaddleMaterial Configuration](./about_configs.md) section for detailed configuration information.
+Training workflows are parameterized through structured configuration files, allowing end-to-end model training with simple parameter adjustments. You can refer to the [PaddleMaterials Configuration](./about_configs.md) section for detailed configuration information.
 
 We have provided commands for training, evaluation, testing, and inference in each model's README file. You can also refer directly to these README files to complete corresponding tasks.
 
@@ -12,7 +12,7 @@ You can perform inference using either built-in models or local models.
 
 ### 1.1 Inference with Built-in Model
 
-PaddleMaterial offers multiple built-in models that can be directly used for inference. Taking the `megnet_mp2018_train_60k_e_form` model as an example (a MEGNet model trained on the MP2018 dataset for material formation energy prediction), use the following command for inference:
+PaddleMaterials offers multiple built-in models that can be directly used for inference. Taking the `megnet_mp2018_train_60k_e_form` model as an example (a MEGNet model trained on the MP2018 dataset for material formation energy prediction), use the following command for inference:
 ```bash
 python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/' --save_path='result.csv'
 ```
@@ -122,7 +122,7 @@ python property_prediction/train.py -c property_prediction/configs/megnet/megnet
 
 ## 3. Train Predefined Models on Standard Datasets
 
-You can train models using PaddleMaterial's standard datasets and predefined configurations. For the `megnet_mp2018_train_60k_e_form` model:
+You can train models using PaddleMaterials's standard datasets and predefined configurations. For the `megnet_mp2018_train_60k_e_form` model:
 ```bash
 # Single-GPU training for formation energy per atom
 python property_prediction/train.py -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml
@@ -130,7 +130,7 @@ python property_prediction/train.py -c property_prediction/configs/megnet/megnet
 
 This command uses the `-c` parameter to specify the model configuration file. Training will be performed on the MP2018 training set, with logs saved to `Trainer.output_dir` by default (you can modify this path in the configuration file).
 
-PaddleMaterial also supports multi-GPU training using `paddle.distributed.launch`:
+PaddleMaterials also supports multi-GPU training using `paddle.distributed.launch`:
 ```bash
 # Multi-GPU training with 4 GPUs
 python -m paddle.distributed.launch --gpus="0,1,2,3" property_prediction/train.py -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml
@@ -140,7 +140,7 @@ The `--gpus` parameter specifies the GPU IDs and quantity to use.
 
 ## 4. Train with Customized Datasets
 
-PaddleMaterial supports training with custom datasets. If your dataset format matches the standard format, you can directly use the provided configurations by modifying the dataset paths:
+PaddleMaterials supports training with custom datasets. If your dataset format matches the standard format, you can directly use the provided configurations by modifying the dataset paths:
 
 ```yaml
 ...
@@ -166,7 +166,7 @@ Dataset:
 
 For datasets with different formats, you can either:
 1. Create a custom dataset class, import it in `ppmat/datasets/__init__.py`, and modify the configuration
-2. Convert your dataset to PaddleMaterial's supported format (recommended for convenience)
+2. Convert your dataset to PaddleMaterials's supported format (recommended for convenience)
 
 ## 5. Train with Customized Models and Standard Datasets
 
@@ -189,7 +189,7 @@ For datasets with different formats, you can either:
 
 ## 6. Finetuning Models
 
-PaddleMaterial supports model finetuning. Follow these steps using standard configurations (only need to modify pretrained model path):
+PaddleMaterials supports model finetuning. Follow these steps using standard configurations (only need to modify pretrained model path):
 
 1. Prepare your custom dataset (refer to Section 4)
 2. Copy the original model configuration file (e.g., `megnet_mp2018_train_60k_e_form.yaml`)

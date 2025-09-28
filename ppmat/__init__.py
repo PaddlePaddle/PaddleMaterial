@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,13 @@ from ppmat import optimizer  # noqa
 from ppmat import schedulers  # noqa
 from ppmat import trainer  # noqa
 from ppmat import utils  # noqa
+from ppmat import sampler  # noqa
+
+__all__ = [
+    "models",
+    "trainer",
+    "sampler",
+]
 
 try:
     # import auto-generated version information from '._version' file, using

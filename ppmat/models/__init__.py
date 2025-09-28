@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import copy
+import inspect
 import os
 import os.path as osp
+from typing import Any
 from typing import Dict
 from typing import Optional
 
@@ -26,7 +28,12 @@ from ppmat.models.comformer.comformer import iComformer
 from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConverter
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
+from ppmat.models.common.graph_converter import MolecularGraphConverter
 from ppmat.models.diffcsp.diffcsp import DiffCSP
+from ppmat.models.diffnmr.diffnmr import DiffNMR
+from ppmat.models.diffnmr.diffnmr import DiffPrior
+from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
+from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
@@ -51,6 +58,11 @@ __all__ = [
     "CHGNet",
     "M3GNetGraphConvertor",
     "M3GNet",
+    "MolecularGraphConverter",
+    "MolecularGraphFormer",
+    "NMRNetCLIP",
+    "DiffPrior",
+    "DiffNMR",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
@@ -115,11 +127,29 @@ def build_graph_converter(cfg: Dict):
     return graph_converter
 
 
-def build_model(cfg: Dict):
+def build_model(
+    cfg: Dict[str, Any],
+    strict_unused: bool = False,  # True → raise if some runtime deps are not consumed
+    override: bool = True,  # True → runtime_deps override same-named __init_params__
+    **runtime_deps,
+):
     """Build Model.
 
     Args:
         cfg (Dict): Model config.
+            {
+                "__class_name__": "pkg.module.MyModel",
+                "__init_params__": { "encoder_cfg": {...}, "decoder_cfg": {...}, ... }
+                    # Only serializable hyperparameters
+            }
+        strict_unused : bool, optional (default: False)
+            If True, raise a TypeError when any key in `runtime_deps` is not consumed
+            by the model constructor (i.e., the constructor does not accept that name).
+        override : bool, optional (default: True)
+            Conflict policy when a key exists in both `__init_params__` and
+            `runtime_deps`. If True, the value from `runtime_deps` wins; otherwise the
+            config value is kept and the runtime value is ignored.
+        runtime_deps: Runtime objects, such as dataset_infos=...
 
     Returns:
         nn.Layer: Model object.
@@ -129,7 +159,34 @@ def build_model(cfg: Dict):
     cfg = copy.deepcopy(cfg)
     class_name = cfg.pop("__class_name__")
     init_params = cfg.pop("__init_params__")
-    model = eval(class_name)(**init_params)
+
+    cls = eval(class_name)
+
+    sig = inspect.signature(cls.__init__)
+    accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())
+
+    params = dict(init_params)
+    consumed = set()
+
+    if accepts_kwargs:
+        if override:
+            params.update(runtime_deps)
+    else:
+        for k, v in runtime_deps.items():
+            if k in sig.parameters:
+                if override or (k not in params):
+                    params[k] = v
+                consumed.add(k)
+
+    if strict_unused:
+        unused = set(runtime_deps.keys()) - consumed
+        if unused:
+            raise TypeError(
+                f"Unused runtime deps for {class_name}: {sorted(unused)} "
+                f"(constructor params: {list(sig.parameters.keys())})"
+            )
+
+    model = cls(**params)
     logger.debug(str(model))
 
     return model
