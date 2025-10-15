@@ -1,0 +1,4 @@
+interface: load_file
+file_path: ppmatSim/example_data/cifs
+# position_unit_input: Angstrom
+# mass_unit_input: 1.0

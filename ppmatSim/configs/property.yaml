@@ -1,0 +1,17 @@
+# @package _global_
+device: cuda
+
+defaults:
+  - /Run: default
+  - /Logger: default
+  - /Model: load_model
+  - /System: ase_create                   # load_system, ase_create
+  - override hydra/job_logging: disabled
+  - _self_
+
+hydra:
+  job:
+    name: property
+    chdir: True                          # change working directory to run.dir
+  run:
+    dir: ./out_${hydra:job.name}/${now:%Y%m%d_%H%M%S}  # output directory

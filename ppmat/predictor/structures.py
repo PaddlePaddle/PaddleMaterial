@@ -30,9 +30,9 @@ def get_structure_from_ase(system):
 
 
 def build_init_structures(cfg, predictor):
-    system = instantiate(cfg.system)
+    system = instantiate(cfg.System)
     if system["interface"] == "load_file":
-        work_dir = cfg.run.work_dir
+        work_dir = cfg.Run.work_dir
         files, structures = get_structure_from_file(work_dir, system, predictor)
     elif system["interface"] == "ase":
         files, structures = get_structure_from_ase(system)

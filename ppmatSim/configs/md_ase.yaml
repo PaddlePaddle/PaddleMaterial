@@ -1,0 +1,23 @@
+# @package _global_
+device: cuda
+
+defaults:
+  - /Run: default                          # Runtime settings
+  - /Logger: default                       # Logging settings
+  - /Model: load_model                     # Load model weights (can be pre-trained or checkpoint)
+  - /System: load_system                   # System initialization:
+                                           #   'load_system': load pre-existing structure
+                                           #   'ase_create': generate system using ASE
+  - /Task: md                              # Task type:
+                                           #   'md' for molecular dynamics
+                                           #   'opt' for optimization
+  - /Calculator: ase                       # Calculator interface (ASE in this case)
+  - override hydra/job_logging: disabled   # Disable Hydra's default job logging
+  - _self_
+
+hydra:
+  job:
+    name: md_ase                          # Hydra job name (used in output directories)
+    chdir: True                           # Change working directory to run.dir
+  run:
+    dir: ./out_${hydra:job.name}/${now:%Y%m%d_%H%M%S}  # Output directory

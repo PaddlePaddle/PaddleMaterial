@@ -1,0 +1,7 @@
+interface: ase
+structures:
+  - element: Fe
+  - element: Cu
+  - element: Mg
+    type: fcc
+    repeat: [4, 4, 4]

@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import os.path as osp
 from typing import Any
 from typing import List
 
@@ -59,11 +57,11 @@ OPTIMIZERS = {
 
 class OptimizationTask:
     def __init__(
-        self, 
-        optimizer="BFGS", 
+        self,
+        optimizer="BFGS",
         filter="none",
-        fmax=0.05, 
-        steps=100, 
+        fmax=0.05,
+        steps=100,
     ):
         self.optimizer = optimizer
         self.filter = filter
@@ -71,9 +69,9 @@ class OptimizationTask:
         self.steps = steps
 
     def __call__(
-        self, 
-        interface_obj, 
-        structures, 
+        self,
+        interface_obj,
+        structures,
     ):
         logger.info("Relax structure.")
         interface_obj.run_opt(
@@ -84,26 +82,19 @@ class OptimizationTask:
             steps=self.steps,
         )
         logger.info("All relaxations finished successfully.")
-        
-        
+
+
 class MDSimulationTask:
-    def __init__(
-        self, 
-        temperature=300, 
-        timestep=0.1,
-        steps=100, 
-        interval=1,
-        **kwargs
-    ):
+    def __init__(self, temperature=300, timestep=0.1, steps=100, interval=1, **kwargs):
         self.temperature = temperature
         self.timestep = timestep
         self.steps = steps
         self.interval = interval
 
     def __call__(
-        self, 
-        interface_obj, 
-        structures, 
+        self,
+        interface_obj,
+        structures,
     ):
         logger.info("Run MD simulation.")
         interface_obj.run_md(
@@ -153,7 +144,7 @@ class ASECalculator(Calculator):
             if "energy_per_atom" in label_names and "energy" not in label_names:
                 label_names.append("energy")
         elif model_cls == "M3GNet":
-            print
+            label_names = ["forces" if x == "force" else x for x in label_names]
         else:
             raise NotImplementedError(
                 f"Model {model_cls} not supported. "
@@ -375,9 +366,9 @@ class ASECalculator(Calculator):
 
             # Set up optimizer (with logfile and trajectory)
             opt = optimizer_cls(
-                system, 
-                logfile=f"{idx}_{formula}.log", 
-                trajectory=f"{idx}_{formula}.traj"
+                system,
+                logfile=f"{idx}_{formula}.log",
+                trajectory=f"{idx}_{formula}.traj",
             )
 
             # Run optimization
@@ -387,7 +378,6 @@ class ASECalculator(Calculator):
             except Exception as e:
                 logger.warning(f"Optimization failed for {formula}: {e}")
                 continue
-            
 
     def run_md(
         self,
@@ -417,8 +407,12 @@ class ASECalculator(Calculator):
 
             dyn.attach(
                 MDLogger(
-                    dyn, atoms, f"{idx}_{formula}.log", 
-                    header=True, stress=False, peratom=False
+                    dyn,
+                    atoms,
+                    f"{idx}_{formula}.log",
+                    header=True,
+                    stress=False,
+                    peratom=False,
                 ),
                 interval=interval,
             )

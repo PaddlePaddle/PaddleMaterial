@@ -1,0 +1,295 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+  # Number of training timesteps for diffusion scheduler
+  num_train_timesteps: 500
+
+  molecule_converter:
+    format: "smiles"
+    sanitize: False
+    add_hs: False
+    remove_hs: False
+    kekulize: False
+    num_cpus: 10
+
+  graph_converter:
+    __class_name__: MolecularGraphConverter
+    __init_params__:
+        atom_vocab: {"C": 0, "N":1, "O": 2, "F": 3, "P": 4, "S": 5, "Cl": 6, "Br": 7, "I": 8} # {H: 0, C: 1, N: 2, O: 3, F: 4, P: 5, S: 6, Cl: 7, Br: 8, I: 9}
+        bond_vocab: {"SINGLE": 0, "DOUBLE": 1, "TRIPLE": 2, "AROMATIC": 3}
+        remove_h: true
+        add_self_loops: false
+        edge_mode: bidirectional
+        num_cpus: 10
+
+  spectrum_converter:
+    __class_name__: BuildSpectrumNMR
+    __init_params__:
+        seq_len_H1: 20                  # 1H spectrum sequence length
+        seq_len_C13: 75                 # 13C spectrum sequence length
+        j_len: 6                        # J-coupling dimension
+        integral_offset: 1              # Integral offset
+        unk_token: "<unk>"              # Unknown token identifier
+        dtype: "float32"                # Data type
+        num_cpus: 10                    # Number of parallel threads
+
+Trainer:
+  # Max epochs to train
+  max_epochs: 2000
+  # Random seed
+  seed: 42
+  # Save path for checkpoints and logs
+  output_dir: ./output/DiffNMR/DiffGraphFormer
+  # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
+  save_freq: 100 # set 0 to disable saving during training
+  # Logging frequency [step], for example, log_freq=10 means log every 10 steps
+  log_freq: 1 # log frequency [step]
+
+  # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
+  eval_freq: 1 # set 0 to disable evaluation during training
+  # Pretrained model path, if null, no pretrained model will be loaded
+  pretrained_model_path: ./pretrained/DiffNMR_DiffGraphFormer_nless15_init.pdparams # please set your pretrained model path here when run trainer.test
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  # whether use automatic mixed precision
+  use_amp: False
+  # automatic mixed precision level
+  amp_level: 'O1'
+  # whether run a model on no_grad mode during evaluation, useful for saving memory
+  # If the model contains higher-order derivatives in the forward, it should be set to
+  # False
+  eval_with_no_grad: True
+  # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
+  # gradient accumulation every 2 forward steps
+  # Note:
+  # one complete step  = gradient_accumulation_steps * forward steps + backward steps
+  gradient_accumulation_steps: 1
+
+  # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
+  best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
+  # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
+  name_for_best_metric: "val_nll"
+  # The metric whether is better when it is greater
+  greater_is_better: False
+
+  # compute metric during training or evaluation
+  compute_metric_during_train: False # True: the metric will be calculated on train dataset
+  metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+
+  # whether use visualdl, wandb, tensorboard to log
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+  # visualdl log dict
+  out_dict:
+    loss:
+      train: ["loss"]
+      eval:  ["loss"]
+    metric:
+      train: []
+      eval:  ["val_nll"]
+
+Sampler:
+  sample_every_val: 500
+  visual_num: 10 # number of visualize molecules in the sample
+  chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
+  number_chain_steps: 10 # Number of frames in each gif
+  sample_batch_iters: 1 # Number of sample batches
+  flag_retrival_sampling: False
+  flag_use_formula: False
+  flag_retrival_initilization: False
+  num_candidates: 1
+  retrival_database_path: ./spectrum_elucidation/retrival_database/mol_rep_15.csv
+  pretrained_model_path: ./pretrained/DiffNMR_DiffGraphFormer_nless15_best.pdparams
+  output_dir: ./output/DiffNMR/DiffGraphFormer/sample
+  out_dict: {"Accuracy"}
+  data:
+    dataset:
+      __class_name__: MSDnmrDataset
+      __init_params__:
+        path: "./data/MSD_nmr/test.csv"
+        vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
+        vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
+        cache: True
+        data_flag: "n<15"
+        max_atoms: 15
+        build_molecule_cfg: ${Global.molecule_converter}
+        build_graph_cfg: ${Global.graph_converter}
+        build_spectrum_cfg: ${Global.spectrum_converter}
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 8
+
+
+Model:
+  __class_name__: MolecularGraphFormer
+  __init_params__:
+    encoder_cfg:
+      hidden_mlp_dims: {
+        'X': 256,
+        'E': 128,
+        'y': 256
+      }
+      hidden_dims: {
+        'dx': 256,  # The dimensions should satisfy dx % n_head == 0
+        'de': 64,
+        'dy': 256,
+        'n_head': 8,
+        'dim_ffX': 256,
+        'dim_ffE': 128,
+        'dim_ffy': 256
+      }
+      num_layers: 5
+    decoder_cfg:
+      hidden_mlp_dims: {
+        'X': 256,
+        'E': 128,
+        'y': 256
+      }
+      hidden_dims: {
+        'dx': 256,
+        'de': 64,
+        'dy': 256,
+        'n_head': 8,
+        'dim_ffX': 256,
+        'dim_ffE': 128,
+        'dim_ffy': 256
+      }
+      num_layers: 5
+    diffmodel_cfg:
+      type: 'discrete_condition'
+      transition: 'marginal' # uniform or marginal
+      model: 'graph_tf'
+      diffusion_steps: 500
+      diffusion_noise_schedule: 'cosine' # 'cosine', 'polynomial_2'
+      extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+      lambda_train: [5, 0]
+      conditdim: 512
+      flag_use_formula: ${Sampler.flag_use_formula}
+
+CLIP:
+    __class_name__: NMRNetCLIP
+    __init_params__:
+      spectrum_encoder:
+        pretrained_model_path: "./pretrained/DiffNMR_NMRNet_nless15_best.pdparams"
+        dim_enc_H: 1024
+        dimff_enc_H: 2048
+        dim_enc_C: 256
+        dimff_enc_C: 512
+        ffn_hidden: 512
+        n_head: 8
+        n_layers: 3
+        drop_prob: 0.1 # 0.0
+        seq_len_H1: 20
+        seq_len_C13: 75
+        peakwidthemb_num: 70
+        integralemb_num: 26
+      graph_encoder:
+        pretrained_model_path: "./pretrained/DiffNMR_DiffGraphFormer_nless15_best.pdparams"
+        n_layers_GT: 5
+        hidden_mlp_dims: {
+          "X": 256,
+          "E": 128,
+          "y": 256,
+        }
+        hidden_dims: {
+          'dx': 256,
+          'de': 64,
+          'dy': 256,
+          'n_head': 8,
+          'dim_ffX': 256,
+          'dim_ffE': 128,
+          'dim_ffy': 256,
+        }
+      diffmodel_cfg: # to be deleted
+        extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+        conditdim: 512
+
+Optimizer:
+    __class_name__: AdamW
+    __init_params__:
+      beta1: 0.9
+      beta2: 0.999
+      weight_decay: 1e-12
+      amsgrad: True
+      epsilon: 1e-8
+      lr: 0.0002
+
+Metric:
+    __class_name__: DiffNMRStreamingAdapter
+    __init_params__:
+      dataset_infos: null   # insert by Trainer when runtime
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: MSDnmrDataset
+      __init_params__:
+        path: "./data/MSD_nmr/train.csv"
+        datadir: "./data/MSD_nmr"
+        vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
+        vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
+        cache: True
+        data_flag: "n<15"
+        max_atoms: 15
+        build_molecule_cfg: ${Global.molecule_converter}
+        build_graph_cfg: ${Global.graph_converter}
+        build_spectrum_cfg: ${Global.spectrum_converter}
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: DistributedBatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 256
+  val:
+    dataset:
+      __class_name__: MSDnmrDataset
+      __init_params__:
+        path: "./data/MSD_nmr/val.csv"
+        vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
+        vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
+        cache: True
+        data_flag: "n<15"
+        max_atoms: 15
+        build_molecule_cfg: ${Global.molecule_converter}
+        build_graph_cfg: ${Global.graph_converter}
+        build_spectrum_cfg: ${Global.spectrum_converter}
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 256
+  test:
+    dataset:
+      __class_name__: MSDnmrDataset
+      __init_params__:
+        path: "./data/MSD_nmr/test.csv"
+        vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
+        vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
+        cache: True
+        data_flag: "n<15"
+        max_atoms: 15
+        build_molecule_cfg: ${Global.molecule_converter}
+        build_graph_cfg: ${Global.graph_converter}
+        build_spectrum_cfg: ${Global.spectrum_converter}
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 256
+
+DataInfo:
+    extra_features: 'all' # 'all', 'cycles', 'eigenvalues' or null
+    conditdim: 512
