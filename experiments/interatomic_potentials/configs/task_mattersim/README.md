@@ -31,6 +31,7 @@ Fine-tune the mattersim_5M model using high_level_water.
 ```bash
 # multi-gpu training
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/interatomic_potentials/train.py --config-name task_mattersim/mattersim_5M_high_level_water.yaml
+
 # single-gpu training
 python experiments/interatomic_potentials/train.py --config-name task_mattersim/mattersim_5M_high_level_water.yaml
 ```
@@ -66,7 +67,7 @@ python experiments/interatomic_potentials/predict.py --config-name predict Model
 python experiments/interatomic_potentials/predict.py --config-name predict Model.model_name='mattersim_5M' Model.weights_name='mattersim-v1.0.0-5M_model.pdparams' System=load_system System.file_path='./experiments/interatomic_potentials/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
-python experiments/interatomic_potentials/predict.py --config-name predict Model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' Model.checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams" System=load_system System.file_path='./experiments/interatomic_potentials/example_data/cifs/'
+python experiments/interatomic_potentials/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/interatomic_potentials/example_data/cifs/'
 ```
 
 
@@ -111,7 +112,7 @@ Example Usage:
 python ppmatSim/main.py --config-name md_ase Model.model_name='mattersim_1M'
 
 # Option B: Use a custom config and checkpoint
-python ppmatSim/main.py --config-name md_ase Model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' Model.checkpoint_path='/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams'
+python ppmatSim/main.py --config-name md_ase Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)'
 ```
 
 After the simulation, the generated trajectory (.traj) file can be easily converted to an .xyz file for visualization:
@@ -191,7 +192,7 @@ Example Usage:
 python ppmatSim/main.py --config-name optimizer_ase Model.model_name='mattersim_1M'
 
 # Option B: Use a custom config and checkpoint
-python ppmatSim/main.py --config-name optimizer_ase Model.config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' Model.checkpoint_path='/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams'
+python ppmatSim/main.py --config-name optimizer_ase Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)'
 ```
 
 

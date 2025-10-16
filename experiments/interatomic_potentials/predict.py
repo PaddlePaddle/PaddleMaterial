@@ -27,28 +27,33 @@ from ppmat.utils import logger
 
 
 @hydra.main(config_path="configs", version_base=None)
-def main(cfg: DictConfig):
+def main(config: DictConfig):
     # Save the loaded config
-    OmegaConf.save(cfg, "config_saved.yaml")
+    OmegaConf.save(config, "config_saved.yaml")
+
+    # Convert to dict
+    config = OmegaConf.to_container(config, resolve=True)
 
     # Initialize logger
-    log_file = cfg.Logger.get("log_file", "out.log")
-    logger.init_logger(log_file=log_file, log_level=cfg.get("log_level", "INFO"))
+    log_file = config["Logger"].get("log_file", "out.log")
+    logger.init_logger(
+        log_file=log_file, log_level=config["Logger"].get("log_level", "INFO")
+    )
     logger.info("[PPMaterial] Logger initialized")
     logger.info(f"Working directory: {os.getcwd()}")
     logger.info(f"Log file path    : {os.path.abspath(log_file)}")
 
     # Initialize the model
-    load_model = instantiate(cfg.Model)
+    load_model = instantiate(config["Model"])
     predictor = BasePredictor(
-        work_dir=cfg.Run.work_dir, device=cfg.device, **load_model
+        work_dir=config["Run"]["work_dir"], device=config["device"], **load_model
     )
 
     # Load inference model
     predictor.load_inference_model(interface_type=None)
 
     # Load structures
-    files, structures = build_init_structures(cfg, predictor)
+    files, structures = build_init_structures(config, predictor)
 
     # Predict
     predictor.get_predict(files, structures)

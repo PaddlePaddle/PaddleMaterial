@@ -144,27 +144,27 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
 ### Training
 ```bash
 # formation energy per atom
-# multi-gpu training, we use 4 gpus here
+## multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml
-# single-gpu training
+## single-gpu training
 python experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_e_form.yaml
 
 # band gap
-# multi-gpu training, we use 4 gpus here
+## multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml
-# single-gpu training
+## single-gpu training
 python experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_band_gap.yaml
 
 # bulk modulus
-# multi-gpu training, we use 4 gpus here
+## multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml
-# single-gpu training
+## single-gpu training
 python experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_K.yaml
 
 # shear modulus
-# multi-gpu training, we use 4 gpus here
+## multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml
-# single-gpu training
+## single-gpu training
 python experiments/property_prediction/train.py --config-name task_comformer/comformer_mp2018_train_60k_G.yaml
 ```
 
@@ -219,7 +219,7 @@ python experiments/property_prediction/predict.py --config-name predict Model.mo
 
 
 # Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
-python experiments/property_prediction/predict.py --config-name predict Model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_e_form.yaml' Model.checkpoint_path='you_checkpoint_path.pdparams' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
+python experiments/property_prediction/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 # band gap
 
@@ -227,7 +227,7 @@ python experiments/property_prediction/predict.py --config-name predict Model.co
 python experiments/property_prediction/predict.py --config-name predict Model.model_name='comformer_mp2018_train_60k_band_gap' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal band gap prediction. This approach allows for more flexibility and customization.
-python python experiments/property_prediction/predict.py --config-name predict Model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_band_gap.yaml' Model.checkpoint_path='you_checkpoint_path.pdparams' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
+python python experiments/property_prediction/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 # bulk modulus
 
@@ -235,7 +235,7 @@ python python experiments/property_prediction/predict.py --config-name predict M
 python experiments/property_prediction/predict.py --config-name predict Model.model_name='comformer_mp2018_train_60k_K'  System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal bulk modulus prediction. This approach allows for more flexibility and customization.
-python experiments/property_prediction/predict.py --config-name predict Model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_K.yaml' Model.checkpoint_path='you_checkpoint_path.pdparams' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
+python experiments/property_prediction/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 
 # shear modulus
@@ -244,7 +244,7 @@ python experiments/property_prediction/predict.py --config-name predict Model.co
 python experiments/property_prediction/predict.py --config-name predict Model.model_name='comformer_mp2018_train_60k_G' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear modulus prediction. This approach allows for more flexibility and customization.
-python experiments/property_prediction/predict.py --config-name predict Model.config_path='property_prediction/configs/comformer/comformer_mp2018_train_60k_G.yaml' Model.checkpoint_path='you_checkpoint_path.pdparams' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
+python experiments/property_prediction/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 ```
 
 ## Citation

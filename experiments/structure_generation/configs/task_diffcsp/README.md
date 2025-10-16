@@ -52,6 +52,7 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
 ```bash
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/structure_generation/train.py --config-name task_diffcsp/diffcsp_mp20.yaml
+
 # single-gpu training
 python experiments/structure_generation/train.py --config-name task_diffcsp/diffcsp_mp20.yaml
 ```
@@ -79,7 +80,7 @@ python experiments/structure_generation/train.py --config-name task_diffcsp/diff
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='diffcsp_mp20' Model.weights_name='latest.pdparams' Sample='by_chemical_formula' Sample.chemical_formula="LiMnO2"
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' Model.checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' Sample='by_chemical_formula' Sample.chemical_formula="LiMnO2"
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_chemical_formula' Sample.chemical_formula="LiMnO2"
 ```
 
 ## Citation

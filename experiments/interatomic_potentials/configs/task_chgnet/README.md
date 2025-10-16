@@ -103,7 +103,7 @@ python experiments/interatomic_potentials/predict.py --config-name predict Model
 
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
-python experiments/interatomic_potentials/predict.py --config-name predict Model.config_path='interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml' Model.checkpoint_path="your checkpoint path(*.pdparams)" System=load_system System.file_path='./experiments/interatomic_potentials/example_data/cifs/'
+python experiments/interatomic_potentials/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/interatomic_potentials/example_data/cifs/'
 
 ```
 
@@ -148,7 +148,7 @@ Example Usage:
 python ppmatSim/main.py --config-name md_ase Model.model_name='chgnet_mptrj'
 
 # Option B: Use a custom config and checkpoint
-python ppmatSim/main.py --config-name md_ase Model.config_path='output/chgnet_mptrj/chgnet_mptrj.yaml' Model.checkpoint_path='output/chgnet_mptrj/checkpoints/best.pdparams'
+python ppmatSim/main.py --config-name md_ase Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)'
 ```
 
 After the simulation, the generated trajectory (.traj) file can be easily converted to an .xyz file for visualization:
@@ -228,7 +228,7 @@ Example Usage:
 python ppmatSim/main.py --config-name optimizer_ase Model.model_name='chgnet_mptrj'
 
 # Option B: Use a custom config and checkpoint
-python ppmatSim/main.py --config-name optimizer_ase Model.config_path='output/chgnet_mptrj/chgnet_mptrj.yaml' Model.checkpoint_path='output/chgnet_mptrj/checkpoints/best.pdparams'
+python ppmatSim/main.py --config-name optimizer_ase Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)'
 ```
 
 

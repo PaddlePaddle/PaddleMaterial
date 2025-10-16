@@ -118,81 +118,105 @@ The design of functional materials with desired properties is essential in drivi
 ### Training
 ```bash
 # mp20 dataset, without conditional constraints
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20.yaml
 
 # mp20 dataset, with chemical system constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_chemical_system.yaml
 
 # mp20 dataset, with dft_band_gap constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_band_gap.yaml
 
 # mp20 dataset, with dft_bulk_modulus constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_bulk_modulus.yaml
 
 # mp20 dataset, with dft_mag_density constraints, pre-trained model is mattergen_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_mp20_dft_mag_density.yaml
 
-
 # alex_mp20 dataset, without conditional constraints
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20.yaml
 
 # alex_mp20 dataset, with dft_band_gap constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_band_gap.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_band_gap.yaml
 
 # alex_mp20 dataset, with chemical system constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system.yaml
 
 # alex_mp20 dataset, with dft_mag_density constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density.yaml
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml
 
 # alex_mp20 dataset, with space_group constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_space_group.yaml
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_space_group.yaml
 
 # alex_mp20 dataset, with chemical system and energy above hull constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints, pre-trained model is mattergen_alex_mp20, will be downloaded automatically
+
 ## multi-gpu training, we use 8 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
+
 ## single-gpu training
 python experiments/structure_generation/train.py --config-name task_mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml
 ```
@@ -273,15 +297,18 @@ python experiments/structure_generation/train.py --config-name task_mattergen/ma
 # mp20 dataset, without conditional constraints
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal structure prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20' Model.weights_name='latest.pdparams' Sample='by_num_atoms' Sample.num_atoms=4
+
 # or
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' Model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' Sample='by_num_atoms' Sample.num_atoms=4
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_num_atoms' Sample.num_atoms=4
+
 # or
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' Model.checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # mp20 dataset, with chemical system constraints
 
@@ -289,7 +316,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20_chemical_system' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' Model.checkpoint_path='./outpout/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # mp20 dataset, with dft_band_gap constraints
 
@@ -297,7 +324,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20_dft_band_gap' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' Model.checkpoint_path='./outpout/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # mp20 dataset, with dft_bulk_modulus constraints
 
@@ -305,7 +332,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20_dft_bulk_modulus' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' Model.checkpoint_path='./outpout/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # mp20 dataset, with dft_mag_density constraints
 
@@ -313,7 +340,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_mp20_dft_mag_density' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' Model.checkpoint_path='./outpout/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, without conditional constraints
 
@@ -321,7 +348,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_band_gap constraints
 
@@ -329,7 +356,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_dft_band_gap' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system constraints
 
@@ -337,7 +364,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_chemical_system' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density constraints
 
@@ -345,7 +372,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_dft_mag_density' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints
 
@@ -353,7 +380,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_ml_bulk_modulus' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with space_group constraints
 
@@ -361,7 +388,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_space_group' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with chemical_system and energy_above_hull constraints
 
@@ -369,7 +396,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints
 
@@ -377,7 +404,7 @@ python experiments/structure_generation/structure_generation.py --config-name sa
 python experiments/structure_generation/structure_generation.py --config-name sample Model.model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' Model.weights_name='latest.pdparams' Sample='by_dataloader'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' Model.checkpoint_path='./outpout/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' Sample='by_dataloader'
+python experiments/structure_generation/structure_generation.py --config-name sample Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' Sample='by_dataloader'
 ```
 
 ## Citation

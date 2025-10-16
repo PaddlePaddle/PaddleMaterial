@@ -244,9 +244,11 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
 ### Training
 ```bash
 # formation energy per atom
-# multi-gpu training, we use 4 gpus here
+
+## multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" experiments/property_prediction/train.py --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml
-# single-gpu training
+
+## single-gpu training
 python experiments/property_prediction/train.py --config-name task_megnet/megnet_mp2018_train_60k_e_form.yaml
 
 ```
@@ -282,12 +284,12 @@ You can replace the `--model_name` parameter at  `Mode 1` with other model names
 
 # formation energy per atom
 
-# Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
+## Mode 1: Leverage a pre-trained machine learning model for crystal formation energy prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
 python experiments/property_prediction/predict.py --config-name predict Model.model_name='megnet_mp2018_train_60k_e_form' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 
-# Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
-python experiments/property_prediction/predict.py --config-name predict Model.config_path='property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml' model.checkpoint_path='you_checkpoint_path.pdparams' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
+## Mode2: Use a custom configuration file and checkpoint for crystal formation energy prediction. This approach allows for more flexibility and customization.
+python experiments/property_prediction/predict.py --config-name predict Model.config_path='your config path(*.yaml)' Model.checkpoint_path='your checkpoint path(*.pdparams)' System=load_system System.file_path='./experiments/property_prediction/example_data/cifs/'
 
 ```
 
