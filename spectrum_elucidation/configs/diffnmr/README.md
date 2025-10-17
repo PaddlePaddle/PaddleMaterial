@@ -77,68 +77,46 @@ Nuclear Magnetic Resonance (NMR) spectroscopy is a central characterization meth
 </table>
 
 ### Training
-
-2 stage pretraining
-
-stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
 ```bash
+## 2 stage pretraining
+### stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_DiffGraphFormer.yaml
-
 # single-gpu training
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_DiffGraphFormer.yaml
-```
-
-stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
-```bash
-# multi-gpu training, we use 4 gpus here
+### stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
 python -m paddle.distributed.launch --gpus="0,1,2,3" spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_NMRNet.yaml
-
 # single-gpu training
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_NMRNet.yaml
-```
-
-fine-tuning
-```bash
+## fine-tuning
 # multi-gpu training, we use 4 gpus here
 python -m paddle.distributed.launch --gpus="0,1,2,3" spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR.yaml
-
 # single-gpu training
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR.yaml
 ```
 
 ### Validation
-
-
 ```bash
 # Adjust program behavior on-the-fly using command-line parameters – this provides a convenient way to customize settings without modifying the configuration file directly.
 # such as: --Global.do_eval=True
-
-# 2 stage pretraining
-
-## stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
+## 2 stage pretraining
+### stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_DiffGraphFormer.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
-
-## stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
+### stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_NMRNet.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
-
-# fine-tuning
+## fine-tuning
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
 ### Testing
 ```bash
 # This command is used to evaluate the model's performance on the test dataset.
-
-# 2 stage pretraining
-
-## stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
+## 2 stage pretraining
+### stage 1: pretrain Diff-AE of Molecular Encoder and Molecular Decoder
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_DiffGraphFormer.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
-
-## stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
+### stage 2: pretrain NMR Spectrum Encoder NMRNet by CLIP
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR_NMRNet.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
-
-# fine-tuning
+## fine-tuning
 python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/DiffNMR.yaml Global.do_eval=False Global.do_train=False Global.do_test=True Trainer.pretrained_model_path='your model path(*.pdparams)'
 ```
 
@@ -150,8 +128,8 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 
 # Mode 1: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
 python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_nless15/' --checkpoint_path="pretrained"
-```
 
+```
 
 ## Citation
 ```
