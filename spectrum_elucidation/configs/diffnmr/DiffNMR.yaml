@@ -1,4 +1,4 @@
-itGlobal:
+Global:
   do_train: True
   do_eval: False
   do_test: False
