@@ -1,0 +1,217 @@
+Global:
+  # Whether to train, evaluate or test
+  do_train: True
+  do_eval: False
+  do_test: False
+  # Number of training timesteps for diffusion scheduler
+  num_train_timesteps: 1000
+
+  condition_names: ['dft_band_gap']
+  property_embeddings_adapt_cfg:
+    dft_band_gap:
+      conditional_embedding_module_name: 'NoiseLevelEncoding'
+      conditional_embedding_module_cfg:
+        d_model: 512
+      unconditional_embedding_module_name: ZerosEmbedding
+      unconditional_embedding_module_cfg:
+        hidden_dim: 512
+      scaler_name: StandardScalerPaddle
+      scaler_cfg: {}
+Trainer:
+  # Max epochs to train
+  max_epochs: 200
+  # Random seed
+  seed: 42
+  # Save path for checkpoints and logs
+  output_dir: ./output/mattergen_mp20_dft_band_gap
+  # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
+  save_freq: 100 # set 0 to disable saving during training
+  # Logging frequency [step], for example, log_freq=10 means log every 10 steps
+  log_freq: 10 # log frequency [step]
+
+  # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
+  eval_freq: 1 # set 0 to disable evaluation during training
+  # Pretrained model path, if null, no pretrained model will be loaded
+  pretrained_model_path: https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_mp20.zip # set your pretrained model path here
+  # Pretrained weight name, will be used when pretrained_model_path is a directory
+  pretrained_weight_name: 'latest.pdparams'
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  # whether use automatic mixed precision
+  use_amp: False
+  # automatic mixed precision level
+  amp_level: 'O1'
+  # whether run a model on no_grad mode during evaluation, useful for saving memory
+  # If the model contains higher-order derivatives in the forward, it should be set to
+  # False
+  eval_with_no_grad: True
+  # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
+  # gradient accumulation every 2 forward steps
+  # Note:
+  # one complete step  = gradient_accumulation_steps * forward steps + backward steps
+  gradient_accumulation_steps: 1
+
+  # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
+  best_metric_indicator: 'eval_loss' # "train_loss", "eval_loss", "train_metric", "eval_metric"
+  # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
+  name_for_best_metric: "loss"
+  # The metric whether is better when it is greater
+  greater_is_better: False
+
+  # compute metric during training or evaluation
+  compute_metric_during_train: False # True: the metric will be calculated on train dataset
+  metric_strategy_during_eval: 'step' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+
+  # whether use visualdl, wandb, tensorboard to log
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: MatterGenWithCondition
+  __init_params__:
+    set_embedding_type_cfg:
+      dropout_fields_iid: false
+      p_unconditional: 0.2
+    condition_names: ${Global.condition_names}
+    decoder_cfg:
+      property_embeddings_adapt_cfg: ${Global.property_embeddings_adapt_cfg}
+      gemnet_type: 'GemNetTCtrl'
+      gemnet_cfg:
+        num_targets: 1
+        latent_dim: 512
+        atom_embedding_cfg:
+          emb_size: 512
+          with_mask_type: True
+        max_neighbors: 50
+        max_cell_images_per_dim: 5
+        cutoff: 7.0
+        num_blocks: 4
+        otf_graph: true
+        condition_on_adapt: ${Global.condition_names}
+    lattice_noise_scheduler_cfg:
+      __class_name__: LatticeVPSDEScheduler
+      __init_params__:
+        limit_density: 0.05771451654022283
+    coord_noise_scheduler_cfg:
+      __class_name__: NumAtomsVarianceAdjustedWrappedVESDE
+      __init_params__: {}
+    atom_noise_scheduler_cfg:
+      __class_name__: D3PMScheduler
+      __init_params__: {}
+    num_train_timesteps: ${Global.num_train_timesteps}
+    time_dim: 256
+    lattice_loss_weight: 1
+    coord_loss_weight: 0.1
+    atom_loss_weight: 1
+
+Optimizer:
+  clip_value: 0.5
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 5.0e-06
+        factor: 0.6
+        by_epoch: True
+        patience: 100
+        min_lr: 1.0e-06
+        indicator: "train_loss"
+        indicator_name: 'loss'
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: MP20MatterGenDataset
+      __init_params__:
+        path: "./data/mp_20_chemical_system/train.csv"
+        property_names: ${Global.condition_names}
+        build_structure_cfg:
+          format: cif_str
+          primitive: True
+          niggli: True
+          canocial: False
+          num_cpus: 10
+        cache_path: "./data/mp_20_chemical_system_cache/train"
+        transforms:
+          - __class_name__: LatticePolarDecomposition
+            __init_params__: {}
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 16 # for 8 gpu, total batch size = 16 * 8 gpus = 128
+  val:
+    dataset:
+      __class_name__: MP20MatterGenDataset
+      __init_params__:
+        path: "./data/mp_20_chemical_system/val.csv"
+        property_names: ${Global.condition_names}
+        build_structure_cfg:
+          format: cif_str
+          primitive: True
+          niggli: True
+          canocial: False
+          num_cpus: 10
+        cache_path: "./data/mp_20_chemical_system_cache/val"
+        transforms:
+          - __class_name__: LatticePolarDecomposition
+            __init_params__: {}
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+  test:
+    dataset:
+      __class_name__: MP20MatterGenDataset
+      __init_params__:
+        path: "./data/mp_20_chemical_system/test.csv"
+        property_names: ${Global.condition_names}
+        build_structure_cfg:
+          format: cif_str
+          primitive: True
+          niggli: True
+          canocial: False
+          num_cpus: 10
+        cache_path: "./data/mp_20_chemical_system_cache/test"
+        transforms:
+          - __class_name__: LatticePolarDecomposition
+            __init_params__: {}
+    sampler:
+      __class_name__: DistributedBatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+
+Sample:
+  data:
+    dataset:
+      __class_name__: NumAtomsCrystalDataset
+      __init_params__:
+        total_num: 16
+        prop_names: ${Global.condition_names}
+        prop_values: [0.897]
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 16
+  build_structure_cfg:
+    format: array
+    niggli: False
+
+  model_sample_params:
+    num_inference_steps: 1000

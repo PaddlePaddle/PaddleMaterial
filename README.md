@@ -31,10 +31,10 @@
 🔥 **2025.07.01**: The **Suzhou Laboratory** has established a novel framework based on PaddleMaterials, combining an active learning workflow with conditional-diffusion-based structure generation, thereby achieving unprecedented expansion of two-dimensional material databases. For more information, please refer to [ML2DDB](./research/ML2DDB/README.md).
 
 ## 📑 Task
-- [MLIP-Machine Learning Interatomic Potential](experiments/interatomic_potentials/README.md)
-- [PP-Property Prediction](experiments/property_prediction/README.md)
-- [SG-Structure Generation](experiments/structure_generation/README.md)
-- [SE-Spectrum Elucidation](experiments/spectrum_elucidation/README.md)
+- [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
+- [PP-Property Prediction](property_prediction/README.md)
+- [SG-Structure Generation](structure_generation/README.md)
+- [SE-Spectrum Elucidation](spectrum_elucidation/README.md)
 
 ## 🔧 Installation
 
