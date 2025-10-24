@@ -1,5 +1,0 @@
-__class_name__: Linear
-__init_params__:
-  learning_rate: 0.0005
-  end_lr: 1.0e-05
-  by_epoch: false

@@ -1,6 +1,0 @@
-__class_name__: Step
-__init_params__:
-  learning_rate: 2e-4
-  step_size: 10
-  gamma: 0.95
-  by_epoch: True

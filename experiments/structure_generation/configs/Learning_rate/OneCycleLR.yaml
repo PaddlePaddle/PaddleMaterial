@@ -1,4 +1,0 @@
-__class_name__: OneCycleLR
-__init_params__:
-  max_learning_rate: 0.001
-  by_epoch: True

@@ -1,3 +1,0 @@
-__class_name__: AdamW
-__init_params__:
-  lr: ${Learning_rate}

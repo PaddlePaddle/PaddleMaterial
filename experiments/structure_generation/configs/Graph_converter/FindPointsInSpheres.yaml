@@ -1,4 +1,0 @@
-__class_name__: FindPointsInSpheres
-__init_params__:
-  cutoff: 4.0
-  num_cpus: 10
