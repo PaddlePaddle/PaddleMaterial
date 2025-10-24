@@ -111,9 +111,17 @@ class TmqmDataset(Dataset):
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/tmQM/tmQM.zip"
     md5 = "292f42fbabcd19ba08e9a2878d7f5995"
 
+    # Optional attachment information
+    url_charge = "https://www.uiocompcat.info/img/g330963833-o63018611.dat?dl=2&tk=Ik2psodHxr4BW0spTmXbLfWILuEgJFUe3_4GhZSeq6U="  # noqa
+    md5_charge = "8f758d62ee0a1c350239442797d2ec02"
+    url_bond = "https://www.uiocompcat.info/img/g525088609-o63018611.dat?dl=2&tk=V-tSIEKy98M0FtrC9Nx-tip0GsUD6NGTmA6oBbbNSsg="  # noqa
+    md5_bond = "2e959e456caab30725b1c361a141a2e0"
+
     def __init__(
         self,
         path: str,
+        path_charge: str,
+        path_bond: str,
         electronic_e_key: Optional[str] = None,
         dispersion_e_key: Optional[str] = None,
         dipole_m_key: Optional[str] = None,
@@ -127,8 +135,13 @@ class TmqmDataset(Dataset):
         build_graph_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
+        cache_path_charge: Optional[str] = None,
+        cache_path_bond: Optional[str] = None,
         overwrite: bool = False,
         filter_unvalid: bool = True,
+        # Whether to use additional information for training
+        use_atomic_charge: bool = True,
+        use_chemical_bonding: bool = True,
         **kwargs,  # for compatibility
     ):
         super().__init__()
@@ -141,7 +154,23 @@ class TmqmDataset(Dataset):
             # /home/aistudio/.paddlemat/datasets/tmQM/tmQM.xyz
             path = osp.join(root_path, osp.basename(path))
 
+        if use_atomic_charge:
+            logger.message("Use atomic charge dataset. Will download it now.")
+            root_path_charge = download.get_datasets_path_from_url(
+                self.url_charge, self.md5_charge
+            )
+            path_charge = osp.join(root_path_charge, "tmQM_X.q")
+
+        if use_chemical_bonding:
+            logger.message("Use chemical bonding dataset. Will download it now.")
+            root_path_bond = download.get_datasets_path_from_url(
+                self.url_bond, self.md5_bond
+            )
+            path_bond = osp.join(root_path_bond, "tmQM_X.BO")
+
         self.path = path
+        self.path_charge = path_charge
+        self.path_bond = path_bond
         self.electronic_e_key = electronic_e_key
         self.dispersion_e_key = dispersion_e_key
         self.dipole_m_key = dipole_m_key
@@ -198,6 +227,23 @@ class TmqmDataset(Dataset):
                 osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
             )
         logger.info(f"Cache path: {self.cache_path}")
+
+        if cache_path_charge is not None and use_atomic_charge:
+            self.cache_path_charge = cache_path_charge
+        else:
+            self.cache_path_charge = osp.join(
+                osp.split(path)[0] + "_cache",
+                osp.splitext(osp.basename(path_charge))[0],
+            )
+        logger.info(f"Cache path of charge: {self.cache_path_charge}")
+
+        if cache_path_bond is not None and use_chemical_bonding:
+            self.cache_path_bond = cache_path_bond
+        else:
+            self.cache_path_bond = osp.join(
+                osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path_bond))[0]
+            )
+        logger.info(f"Cache path of bond: {self.cache_path_bond}")
 
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
