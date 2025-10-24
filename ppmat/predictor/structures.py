@@ -23,6 +23,14 @@ from ppmat.utils import logger
 
 
 def get_structure_from_file(work_dir, system, predictor):
+    """
+    Reads structure data from specified file path.
+    Args:
+        work_dir: working directory
+        system: system configuration
+        predictor: predictor object for processing structure data
+    """
+    
     system["file_path"] = os.path.join(work_dir, system["file_path"])
     logger.info(f"Loading structures from files: {system['file_path']}.")
     files, structures = predictor.collect_structures(file_path=system["file_path"])
@@ -30,6 +38,12 @@ def get_structure_from_file(work_dir, system, predictor):
 
 
 def get_structure_from_ase(system):
+    """
+    Generates pymatgen Structure objects from ASE Atoms objects.
+    Args:
+        system: system configuration containing structure information
+    """
+
     files, structures = [], []
     for i, s in enumerate(system["structures"]):
         element = s["element"]
@@ -45,6 +59,13 @@ def get_structure_from_ase(system):
 
 
 def build_init_structures(config, predictor):
+    """
+    Loads structure data from either file or ASE interface according to system config
+    Args:
+        config: system configuration
+        predictor: Predictor object for processing structure data
+    """
+
     system = instantiate(config["System"])
     if system["interface"] == "load_file":
         work_dir = config["Run"]["work_dir"]
