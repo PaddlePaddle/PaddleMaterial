@@ -15,6 +15,7 @@ Global:
   do_eval: False
   do_test: False
 
+
   graph_converter:
     __class_name__: FindPointsInSpheres
     __init_params__:
@@ -119,8 +120,8 @@ Dataset:
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: "ase_atoms"
-          primitive: false   
-          niggli: false              
+          primitive: false
+          niggli: false
           num_cpus: 1
         build_graph_cfg: ${Global.graph_converter}
         cache_path: "./data/tmqm_train_108k_cache_find_points_in_spheres_cutoff_4/tmQM_train"

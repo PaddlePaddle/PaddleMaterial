@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from __future__ import annotations
 
 import math
@@ -27,14 +28,11 @@ from typing import Optional
 import numpy as np
 import paddle.distributed as dist
 from ase import Atoms
-from ase.io import read as ase_read
-from ase.units import GPa
 from paddle.io import Dataset
 from pymatgen.io.ase import AseAtomsAdaptor
 
 from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
-from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -42,66 +40,80 @@ from ppmat.utils.misc import is_equal
 
 
 class TmqmDataset(Dataset):
-    """ tmQM Dataset Handler.
+    """tmQM Dataset Handler.
 
-        The tmqm dataset, includes SMILES and quantum attributes computed on xTB-optimized 
-        geometry at the TPSSh/def2SVP level; i.e., electron and dispersion energy, 
-        dipole moment, metal charge, HOMO/LUMO gap and energy, and polarization rate.
+    The tmqm dataset, includes SMILES and quantum attributes
+    computed on xTB-optimized geometry at the TPSSh/def2SVP
+    level; i.e., electron and dispersion energy, dipole moment,
+    metal charge, HOMO/LUMO gap and energy, and polarization rate.
 
     Args:
         path (str): File path to the dataset file.
 
-        Electronic_E_key (Optional[str], optional): 
-            Defaults to "Electronic_E".
+    Electronic_E_key (Optional[str], optional):
+        Electronic energy of the system in atomic units.
+        Defaults to "Electronic_E".
 
-        Dispersion_E_key (Optional[str], optional): 
-            Defaults to "Dispersion_E".
+    Dispersion_E_key (Optional[str], optional):
+        Dispersion correction energy in atomic units.
+        Defaults to "Dispersion_E".
 
-        Dipole_M_key (Optional[str], optional): 
-            Defaults to "Dipole_M".
+    Dipole_M_key (Optional[str], optional):
+        Dipole moment vector in atomic units.
+        Defaults to "Dipole_M".
 
-        Metal_q_key (Optional[str], optional):
-            Defaults to "Metal_q".
+    Metal_q_key (Optional[str], optional):
+        Partial charge on the metal atom in atomic units.
+        Defaults to "Metal_q".
 
-        HL_Gap_key (Optional[str], optional):
-            Defaults to "HL_Gap".
+    HL_Gap_key (Optional[str], optional):
+        HOMO-LUMO gap energy in electron volts (eV).
+        Defaults to "HL_Gap".
 
-        HOMO_Energy_key (Optional[str], optional):
-            Defaults to "HOMO_Energy".
+    HOMO_Energy_key (Optional[str], optional):
+        Highest Occupied Molecular Orbital energy in electron volts (eV).
+        Defaults to "HOMO_Energy".
 
-        LUMO_Energy_key (Optional[str], optional):
-            Defaults to "LUMO_Energy".
+    LUMO_Energy_key (Optional[str], optional):
+        Lowest Unoccupied Molecular Orbital energy in electron volts (eV).
+        Defaults to "LUMO_Energy".
 
-        Polarizability_key (Optional[str], optional):
-            Defaults to "Polarizability".
+    Polarizability_key (Optional[str], optional):
+        Isotropic polarizability in atomic units.
+        Defaults to "Polarizability".
 
-        SMILES_key (Optional[str], optional):
-            Defaults to "SMILES".
-            
-        build_structure_cfg (Dict, optional): The configs for building the structure.
-            Defaults to None.
-        build_graph_cfg (Dict, optional): The configs for building the graph. 
-            Defaults to None.
-        transforms (Optional[Callable], optional): The preprocess transforms for each sample. 
-            Defaults to None.
-        cache_path (Optional[str], optional): If a cache_path is set, structures and
-            graph will be read directly from this path; if the cache does not exist,
-            the converted structures and graph will be saved to this path. 
-            Defaults to None.
-        overwrite (bool, optional): Overwrite the existing cache file at the given
-            path if it already exists. 
+    SMILES_key (Optional[str], optional):
+        Simplified Molecular Input Line Entry System representation
+        of the molecule. Defaults to "SMILES".
+
+    build_structure_cfg (Dict, optional):
+        The configs for building the structure.Defaults to None.
+
+    build_graph_cfg (Dict, optional):
+        The configs for building the graph.Defaults to None.
+
+    transforms (Optional[Callable], optional):
+        The preprocess transforms for each sample.Defaults to None.
+
+    cache_path (Optional[str], optional):
+        If a cache_path is set, structures and graph will be read directly
+        from this path; if the cache does not exist, the converted structures
+        and graph will be saved to this path. Defaults to None.
+
+    overwrite (bool, optional):
+        Overwrite the existing cache file at the given path if it already exists.
             Defaults to False.
-        filter_unvalid (bool, optional): Whether to filter out invalid samples. 
-            Defaults to True.
+    filter_unvalid (bool, optional):
+        Whether to filter out invalid samples. Defaults to True.
     """
 
     name = "tmqm_train_108k"
-    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/tmQM/tmQM.zip"  
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/tmQM/tmQM.zip"
     md5 = "292f42fbabcd19ba08e9a2878d7f5995"
-    
+
     def __init__(
         self,
-        path: str,  
+        path: str,
         electronic_e_key: Optional[str] = None,
         dispersion_e_key: Optional[str] = None,
         dipole_m_key: Optional[str] = None,
@@ -125,8 +137,8 @@ class TmqmDataset(Dataset):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
             if root_path.endswith("/tmQM/tmQM"):
-                root_path = root_path[:-4] 
-            #/home/aistudio/.paddlemat/datasets/tmQM/tmQM.xyz
+                root_path = root_path[:-4]
+            # /home/aistudio/.paddlemat/datasets/tmQM/tmQM.xyz
             path = osp.join(root_path, osp.basename(path))
 
         self.path = path
@@ -328,21 +340,21 @@ class TmqmDataset(Dataset):
             self.filter_unvalid_by_property()
 
     def _parse_comment_line(self, comment: str):
-        #Parsing attributes in comment lines
+        # Parsing attributes in comment lines
         properties = {}
         if not comment:
             return properties
-            
+
         try:
             parts = comment.split()
             for part in parts:
-                if '=' in part:
-                    key, value = part.split('=', 1)
-                    if value.lower() == 'nan':
-                        properties[key] = float('nan')
+                if "=" in part:
+                    key, value = part.split("=", 1)
+                    if value.lower() == "nan":
+                        properties[key] = float("nan")
                     else:
                         try:
-                            if '.' in value:
+                            if "." in value:
                                 properties[key] = float(value)
                             else:
                                 properties[key] = int(value)
@@ -350,33 +362,28 @@ class TmqmDataset(Dataset):
                             properties[key] = value
         except Exception as e:
             logger.warning(f"Comment line parsing error: {e}")
-        
+
         return properties
 
     def _add_virtual_lattice(self, atoms):
-        #Add an effective virtual lattice to molecular data
+        # Add an effective virtual lattice to molecular data
         import numpy as np
-        
 
-        if hasattr(atoms, 'cell') and atoms.cell.rank == 3:
+        if hasattr(atoms, "cell") and atoms.cell.rank == 3:
 
             if np.linalg.det(atoms.cell) > 1e-6:
-                return  
-        
+                return
 
         coords = atoms.positions
         if len(coords) > 0:
             min_coords = coords.min(axis=0)
             max_coords = coords.max(axis=0)
             size = max_coords - min_coords
-            
 
             padding = max(10.0, np.max(size) * 0.5)
             cell_size = size + padding
-            
 
             atoms.set_cell(np.diag(cell_size))
-            
 
             center = (min_coords + max_coords) / 2
             lattice_center = atoms.cell.lengths() / 2
@@ -384,47 +391,55 @@ class TmqmDataset(Dataset):
         else:
 
             atoms.set_cell(np.eye(3) * 20.0)
-        
 
         atoms.set_pbc([False, False, False])
 
     def _manual_xyz_parser(self, path: str):
 
         atoms_list = []
-        
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
-        
-        structures = [s.strip() for s in content.split('\n\n') if s.strip()]
-        
+
+        structures = [s.strip() for s in content.split("\n\n") if s.strip()]
+
         for struct_idx, struct_content in enumerate(structures):
-            lines = [line.strip() for line in struct_content.split('\n') if line.strip()]
-            
+            lines = [
+                line.strip() for line in struct_content.split("\n") if line.strip()
+            ]
+
             if len(lines) < 2:
-                logger.warning(f"Skip structure {struct_idx}: Insufficient number of lines")
+                logger.warning(
+                    f"Skip structure {struct_idx}: Insufficient number of lines"
+                )
                 continue
-            
+
             try:
                 natoms_line = lines[0]
                 try:
                     natoms = int(natoms_line)
                 except ValueError:
                     import re
-                    numbers = re.findall(r'\d+', natoms_line)
+
+                    numbers = re.findall(r"\d+", natoms_line)
                     if numbers:
                         natoms = int(numbers[0])
-                        logger.warning(f"Structure {struct_idx}: Inferring the number of atoms from '{natoms_line}' to {natoms}")
+                        logger.warning(f"{struct_idx}: Inferring the number of atoms")
                     else:
-                        logger.warning(f"Structure {struct_idx}: The number of atoms cannot be resolved '{natoms_line}'")
+                        logger.warning(
+                            f"{struct_idx}: The number of atoms cannot be resolved"
+                        )
                         continue
-                
+
                 comment_line = lines[1] if len(lines) > 1 else ""
-                
+
                 # Resolve atomic coordinates
                 symbols = []
                 positions = []
-                atom_lines = lines[2:2+natoms] if len(lines) >= 2+natoms else lines[2:]
-                
+                atom_lines = (
+                    lines[2 : 2 + natoms] if len(lines) >= 2 + natoms else lines[2:]
+                )
+
                 for atom_line in atom_lines:
                     parts = atom_line.split()
                     if len(parts) >= 4:
@@ -434,39 +449,40 @@ class TmqmDataset(Dataset):
                             symbols.append(symbol)
                             positions.append(coords)
                         except ValueError:
-                            logger.warning(f"{struct_idx}: Coordinates cannot be resolved '{atom_line}'")
-                
+                            logger.warning(
+                                f"{struct_idx}: Coordinates cannot be resolved"
+                            )
+
                 if len(symbols) != natoms:
-                    logger.warning(f"{struct_idx}: expect {natoms} atoms, actual parsing {len(symbols)} atoms")
+                    logger.warning(
+                        f"{struct_idx}: expect {natoms} atoms, actual {len(symbols)} "
+                    )
                     if len(symbols) == 0:
                         continue
-                
 
                 from ase import Atoms
+
                 atoms = Atoms(symbols=symbols, positions=positions)
-                
 
                 self._add_virtual_lattice(atoms)
-                
 
                 properties = self._parse_comment_line(comment_line)
                 atoms.info.update(properties)
-                
+
                 atoms_list.append(atoms)
-                
+
             except Exception as e:
                 logger.warning(f"Structure {struct_idx} Parsing error: {e}")
                 continue
-        
+
         if not atoms_list:
             raise ValueError("Didn't find an effective structure")
-        
-        return atoms_list
 
+        return atoms_list
 
     def read_data(self, path: str, format: str = None):
         logger.info("Parse to read xyz files...")
-        
+
         try:
             atoms_list = self._manual_xyz_parser(path)
             logger.info(f"Successful reading {len(atoms_list)} structure")
@@ -510,50 +526,53 @@ class TmqmDataset(Dataset):
             data (List[Atoms]): List of ASE Atoms objects.
         """
         property_data = {}
-        
+
         if self.electronic_e_key is not None:
             property_data[self.electronic_e_key] = [
-                data[i].info.get('Electronic_E', np.nan) for i in range(self.num_samples)
+                data[i].info.get("Electronic_E", np.nan)
+                for i in range(self.num_samples)
             ]
-        
+
         if self.dispersion_e_key is not None:
             property_data[self.dispersion_e_key] = [
-                data[i].info.get('Dispersion_E', np.nan) for i in range(self.num_samples)
+                data[i].info.get("Dispersion_E", np.nan)
+                for i in range(self.num_samples)
             ]
-        
+
         if self.dipole_m_key is not None:
             property_data[self.dipole_m_key] = [
-                data[i].info.get('Dipole_M', np.nan) for i in range(self.num_samples)
+                data[i].info.get("Dipole_M", np.nan) for i in range(self.num_samples)
             ]
-        
+
         if self.metal_q_key is not None:
             property_data[self.metal_q_key] = [
-                data[i].info.get('Metal_q', np.nan) for i in range(self.num_samples)
+                data[i].info.get("Metal_q", np.nan) for i in range(self.num_samples)
             ]
-        
+
         if self.hl_gap_key is not None:
             property_data[self.hl_gap_key] = [
-                data[i].info.get('HL_Gap', np.nan) for i in range(self.num_samples)
+                data[i].info.get("HL_Gap", np.nan) for i in range(self.num_samples)
             ]
-        
+
         if self.homo_energy_key is not None:
             property_data[self.homo_energy_key] = [
-                data[i].info.get('HOMO_Energy', np.nan) for i in range(self.num_samples)
+                data[i].info.get("HOMO_Energy", np.nan) for i in range(self.num_samples)
             ]
-        
+
         if self.lumo_energy_key is not None:
             property_data[self.lumo_energy_key] = [
-                data[i].info.get('LUMO_Energy', np.nan) for i in range(self.num_samples)
+                data[i].info.get("LUMO_Energy", np.nan) for i in range(self.num_samples)
             ]
-        
+
         if self.polarizability_key is not None:
             property_data[self.polarizability_key] = [
-                data[i].info.get('Polarizability', np.nan) for i in range(self.num_samples)
+                data[i].info.get("Polarizability", np.nan)
+                for i in range(self.num_samples)
             ]
-        
+
         if self.smiles_key is not None:
             property_data[self.smiles_key] = [
-                data[i].info.get('SMILES', None) for i in range(self.num_samples)
+                data[i].info.get("SMILES", None) for i in range(self.num_samples)
             ]
 
         return property_data
@@ -573,10 +592,10 @@ class TmqmDataset(Dataset):
     def get_structure_array(self, structure):
         atom_types = np.array([site.specie.Z for site in structure])
         # Keep interfaces consistent
-        lattice = np.eye(3, dtype="float32")  
+        lattice = np.eye(3, dtype="float32")
         lengths = np.array([1.0, 1.0, 1.0], dtype="float32").reshape(1, 3)
         angles = np.array([90.0, 90.0, 90.0], dtype="float32").reshape(1, 3)
-        
+
         structure_array = {
             "frac_coords": ConcatData(structure.frac_coords.astype("float32")),
             "cart_coords": ConcatData(structure.cart_coords.astype("float32")),
@@ -602,11 +621,11 @@ class TmqmDataset(Dataset):
             if isinstance(structure, str):
                 structure = self.load_from_cache(structure)
             data["structure_array"] = self.get_structure_array(structure)
-        
+
         for property_name in self.property_names:
 
             if property_name in self.property_data:
-                # SMILES is a string type and does not need to be converted to a numpy array
+                # SMILES is a string type
                 if property_name == self.smiles_key:
                     data[property_name] = self.property_data[property_name][idx]
                 else:
@@ -617,11 +636,10 @@ class TmqmDataset(Dataset):
             else:
                 raise KeyError(f"Property {property_name} not found.")
         # Use indexes as IDs
-        data["id"] = idx  
+        data["id"] = idx
         data = self.transforms(data) if self.transforms is not None else data
 
         return data
 
     def __len__(self):
         return self.num_samples
-    
