@@ -90,8 +90,8 @@ Model:
     # predict value name
     property_names: ${Global.label_names}
     # data preprocess parameters
-    data_norm_mean: -1.6519675510987046
-    data_norm_std: 1.0694354273392233
+    data_mean: -1.6519675510987046
+    data_std: 1.0694354273392233
     # loss
     loss_type: 'l1_loss'
 
