@@ -356,8 +356,12 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         else:
             assert isinstance(property_names, str)
             self.property_names = property_names
-        self.register_buffer(tensor=paddle.to_tensor(data_mean), name="data_mean")
-        self.register_buffer(tensor=paddle.to_tensor(data_std), name="data_std")
+        self.register_buffer(
+            tensor=paddle.to_tensor(data_mean), name="data_mean"
+        )
+        self.register_buffer(
+            tensor=paddle.to_tensor(data_std), name="data_std"
+        )
 
         # basis layers
         self.rbf = BesselBasisLayer(num_radial, cutoff, envelope_exponent)

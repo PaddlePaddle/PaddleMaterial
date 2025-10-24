@@ -28,7 +28,7 @@ Dataset:
     train: 0.8
     val: 0.1
     test: 0.1
-  transform:
+  transform: 
     __class_name__: mean_std_scaling
     __init_params__: {}
   train_sampler:

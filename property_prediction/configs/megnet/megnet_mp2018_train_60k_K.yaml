@@ -84,7 +84,7 @@ Dataset:
         shuffle: False
         drop_last: False
         batch_size: 128
-
+  
   transform:
     __class_name__: no_scaling
     __init_params__: {}

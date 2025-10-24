@@ -36,7 +36,7 @@ Dataset:
         shuffle: True
         drop_last: True
         batch_size: 128 # 128 for 1 GPUs, total batch size = 128 * 1 = 128
-
+        
   val:
     dataset:
       __class_name__: MP2024Dataset
@@ -72,7 +72,7 @@ Dataset:
         shuffle: False
         drop_last: False
         batch_size: 128
-
+  
   transform:
     __class_name__: mean_std_scaling
     __init_params__: {}

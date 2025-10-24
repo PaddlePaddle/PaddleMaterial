@@ -70,7 +70,7 @@ Model:
       ln: true
       ip: true
       smooth: False
-      pred_type: False
+      pred_type: False 
       prop_dim: 512
       pred_scalar: False
       num_classes: 100
