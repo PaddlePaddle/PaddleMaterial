@@ -6,14 +6,14 @@ Paddle ecosystem relies on the contributions of developers and users. We warmly 
 
 | Task Type | Model Name |   NVIDIA   | KUNLUNXIN | HYGON | Tecorigin |   MetaX   |
 |-----------|------------|------------|-----------|-------|-----------|-----------|
-| MLIP(Machine Learning Interatomic Potential) | [CHGNet](../interatomic_potentials/configs/chgnet/README.md)            | ✅ |  |  |  | |
-| MLIP(Machine Learning Interatomic Potential) | [MatterSim](../interatomic_potentials/configs/mattersim/README.md)      | ✅ |  |  |  | |
-| PP(Property Prediction)                      | [MEGNet](../property_prediction/configs/megnet/README.md)               | ✅ |  |  |  | |
-| PP(Property Prediction)                      | [DimeNet++](../property_prediction/configs/dimenet++/README.md)         | ✅ |  |  |  | |
-| PP(Property Prediction)                      | [ComFormer](../property_prediction/configs/comformer/README.md)         | ✅ |  |  |  | |
-| SG(Structure Generation)                     | [DiffCSP](../structure_generation/configs/diffcsp/README.md)            | ✅ |  |  |  | |
-| SG(Structure Generation)                     | [MatterGen](../structure_generation/configs/mattergen/README.md)        | ✅ |  |  |  | |
-| SE(Spectrum Elucidation)                     | [DiffNMR](../spectrum_elucidation/configs/diffnmr/README.md)            | ✅ |  |  |  | |
+| MLIP(Machine Learning Interatomic Potential) | [CHGNet](../interatomic_potentials/configs/chgnet/README.md)            | ✅ |  |  |  | ✅ |
+| MLIP(Machine Learning Interatomic Potential) | [MatterSim](../interatomic_potentials/configs/mattersim/README.md)      | ✅ |  |  |  | ✅ |
+| PP(Property Prediction)                      | [MEGNet](../property_prediction/configs/megnet/README.md)               | ✅ |  |  |  | ✅ |
+| PP(Property Prediction)                      | [DimeNet++](../property_prediction/configs/dimenet++/README.md)         | ✅ |  |  |  | ✅ |
+| PP(Property Prediction)                      | [ComFormer](../property_prediction/configs/comformer/README.md)         | ✅ |  |  |  | ✅ |
+| SG(Structure Generation)                     | [DiffCSP](../structure_generation/configs/diffcsp/README.md)            | ✅ |  |  |  | ✅ |
+| SG(Structure Generation)                     | [MatterGen](../structure_generation/configs/mattergen/README.md)        | ✅ |  |  |  | ✅ |
+| SE(Spectrum Elucidation)                     | [DiffNMR](../spectrum_elucidation/configs/diffnmr/README.md)            | ✅ |  |  |  | ✅ |
 
 
 ## 2. How to Contribute
