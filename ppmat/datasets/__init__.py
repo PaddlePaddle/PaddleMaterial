@@ -44,7 +44,6 @@ from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
-from ppmat.datasets.tmqm_dataset import TmqmDataset  # noqa
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
