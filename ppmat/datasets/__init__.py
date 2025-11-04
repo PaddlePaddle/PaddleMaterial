@@ -13,7 +13,7 @@
 # limitations under the License.
 import copy
 import os
-import pickle
+import pickle  # noqa
 import random
 import signal
 from pathlib import Path
@@ -31,6 +31,7 @@ from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
+from ppmat.datasets.jarvis_2d_dataset import Jarvis2DDataset  # noqa
 from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.matbench_dataset import MatbenchDataset
 from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
@@ -42,8 +43,8 @@ from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
-from ppmat.datasets.tmqm_dataset import TmqmDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
+from ppmat.datasets.tmqm_dataset import TmqmDataset  # noqa
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 
@@ -304,8 +305,10 @@ def build_dataset_infos(
 
     info_cls = INFO_CLASS_REGISTRY.get(info_class_name)
     if info_cls is None:
-        raise ValueError(f"Unknown info_class '{info_class_name}'."
-                         f"Supported classes: {list(INFO_CLASS_REGISTRY)}")
+        raise ValueError(
+            f"Unknown info_class '{info_class_name}'."
+            f"Supported classes: {list(INFO_CLASS_REGISTRY)}"
+        )
 
     # 2.Build a *new* infos instance
     if verbose:
