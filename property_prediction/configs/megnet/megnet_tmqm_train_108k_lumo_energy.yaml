@@ -10,7 +10,7 @@ Global:
   # "polarizability"
   # "smiles"
 
-  label_names: ["electronic_e"]
+  label_names: ["lumo_energy"]
   do_train: True
   do_eval: False
   do_test: False
@@ -28,7 +28,7 @@ Trainer:
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/megnet_tmqm_train_108k_electronic_e
+  output_dir: ./output/megnet_tmqm_train_108k_lumo_energy
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 100 # set 0 to disable saving during training
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -61,7 +61,7 @@ Trainer:
   # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
   best_metric_indicator: 'eval_metric' # "train_loss", "eval_loss", "train_metric", "eval_metric"
   # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "electronic_e"
+  name_for_best_metric: "lumo_energy"
   # The metric whether is better when it is greater
   greater_is_better: False
 
@@ -90,11 +90,9 @@ Model:
       num_centers: 100
       width: 0.5
     property_name: ${Global.label_names}
-    data_mean: -1.6519
-    data_std: 1.0694
 
 Metric:
-  electronic_e:
+  lumo_energy:
     __class_name__: paddle.nn.L1Loss #MAEMetric
     __init_params__: {}
 
@@ -117,8 +115,7 @@ Dataset:
       path: "./data/tmQM/tmQM.xyz"
       path_charge: "./data/tmQM/tmQM_X.q"
       path_bond: "./data/tmQM/tmQM_X.BO"
-      electronic_e_key: "electronic_e"
-      property_names: ${Global.label_names}
+      lumo_energy_key: "lumo_energy"
       # Determine whether to use the data files of charge and bond
       use_atomic_charge: True
       use_chemical_bonding: True
