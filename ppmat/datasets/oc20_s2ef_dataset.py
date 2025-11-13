@@ -31,6 +31,11 @@ from ppmat.models import build_graph_converter
 from ppmat.utils import logger
 from ppmat.utils.misc import is_equal  # noqa
 
+# OC20 S2EF dataset URLs
+OC20_S2EF_TRAIN_2M_URLS = [
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0000.parquet",
+]
+
 
 class OC20S2EFDataset(Dataset):
     """OC20 S2EF parquet dataset handler.
@@ -43,20 +48,23 @@ class OC20S2EFDataset(Dataset):
 
     Args:
         path (str): Base directory to store/download parquet shards
-        urls (Union[str, List[str]]): One or more parquet shard URLs or local file paths
+        urls (Union[str, List[str]], optional): Shard URLs or file paths. If None,
+            all shards from :data:`OC20_S2EF_TRAIN_2M_URLS` are used.
+        url_indices (List[int], optional): Indices to select a subset of ``urls``.
         property_names (Union[str, List[str]]): Labels to extract, e.g.
         build_graph_cfg (Dict, optional): Graph converter config
         transforms (Callable, optional): Sample transforms
         cache_path (str, optional): Explicit cache root
         overwrite (bool): Force rebuild caches
-        filter_unvalid (bool): Filter out samples with invalid labels or graphs
-    """
+        filter_unvalid (bool): Filter out samples with invalid labels or graphs"""
 
     def __init__(
         self,
         path: str,
-        urls: Union[str, List[str]],
-        property_names: Union[str, List[str]],
+        urls: Optional[Union[str, List[str]]] = None,
+        property_names: Optional[Union[str, List[str]]] = None,
+        *,
+        url_indices: Optional[List[int]] = None,
         build_graph_cfg: Optional[Dict] = None,
         transforms: Optional[Any] = None,
         cache_path: Optional[str] = None,
@@ -66,13 +74,26 @@ class OC20S2EFDataset(Dataset):
     ) -> None:
         super().__init__()
 
+        if property_names is None:
+            raise ValueError("property_names must be provided for OC20S2EFDataset")
+
         if isinstance(property_names, str):
             property_names = [property_names]
         self.property_names = list(property_names) if property_names else []
 
-        if isinstance(urls, str):
-            urls = [urls]
-        self.urls = list(urls)
+        urls_list: Union[str, List[str], None] = urls
+        if urls_list is None:
+            urls_list = OC20_S2EF_TRAIN_2M_URLS
+
+        if isinstance(urls_list, str):
+            urls_list = [urls_list]
+        else:
+            urls_list = list(urls_list)
+
+        if url_indices is not None:
+            urls_list = [urls_list[i] for i in url_indices if 0 <= i < len(urls_list)]
+
+        self.urls = urls_list
 
         os.makedirs(path, exist_ok=True)
         self.shard_dir = osp.join(path, "oc20_s2ef_shards")
@@ -226,14 +247,10 @@ class OC20S2EFDataset(Dataset):
             self._filter_by_properties()
             if len(self.structures) == 0:
                 raise RuntimeError(
-                    "所有样本在属性筛选后被剔除。\n"
-                    "可能原因：\n"
-                    "  - 标签列缺失或全为 None/NaN（请查看上方构建日志）\n"
-                    "  - 选择了错误的任务/分片或列名别名不匹配\n"
-                    "排查建议：\n"
-                    "  1) 检查配置的 label_names 与分片列是否一致\n"
-                    "  2) 暂时将 filter_unvalid 设为 False 以查看原始样本计数\n"
-                    "  3) 仅保留 1 个分片进行快速验证\n"
+                    "All samples have been removed after property filtering.\n"
+                    "Possible reasons:\n"
+                    "  - Label columns are missing or all values are None/NaN \n"
+                    "  - Incorrect task/shard selected do not match column aliases\n"
                 )
         if self.graphs is not None:
             self._filter_by_graphs()
@@ -350,9 +367,9 @@ class OC20S2EFDataset(Dataset):
                     missing_labels.append("forces (aliases: forces/force)")
             if missing_labels:
                 raise RuntimeError(
-                    "OC20 分片缺少任务标签列，无法继续构建。\n"
-                    f"  任务标签缺失: {missing_labels}\n"
-                    f"  实际可用列: {sorted(schema_names)}\n"
+                    "OC20 shard is missing required task label columns.\n"
+                    f"  Missing task labels: {missing_labels}\n"
+                    f"  Available columns: {sorted(schema_names)}\n"
                 )
 
             required = [

@@ -28,6 +28,14 @@ The simulation of large-scale systems with complex electron interactions remains
     | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
     | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592  | 14593  |
 
+- OC20 S2EF
+
+    The OC20 S2EF (Structure to Energy and Force) dataset is widely used for benchmarking atomic modeling methods that predict energy and atomic forces given atomic structures. We conducted experiments based on the CHGNet model on this dataset. For more information and the download link, please visit [here](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0000.parquet).
+
+    | Dataset        | Train     | Val      | Test     |
+    | :------------ | :-------- | :------- | :------- |
+    | oc20_s2ef_2M  | 2,000,000 | 100,000  | 200,000  |
+
 ## Results
 
 <table>
@@ -57,6 +65,30 @@ The simulation of large-scale systems with complex electron interactions remains
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"><a href="chgnet_mptrj.yaml">chgnet_mptrj</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">chgnet_oc20_s2ef_energy</td>
+            <td  nowrap="nowrap">oc20_s2ef</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="chgnet_oc20_s2ef_energy.yaml">chgnet_oc20_s2ef_energy</a></td>
+            <td  nowrap="nowrap"><a href="0">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">chgnet_oc20_s2ef_forces</td>
+            <td  nowrap="nowrap">oc20_s2ef</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="chgnet_oc20_s2ef_forces.yaml">chgnet_oc20_s2ef_forces</a></td>
+            <td  nowrap="nowrap"><a href="0">checkpoint | log</a></td>
         </tr>  
     </body>
 </table>

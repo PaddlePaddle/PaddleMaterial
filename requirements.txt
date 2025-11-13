@@ -10,11 +10,13 @@ p_tqdm==1.4.0
 packaging==25.0
 pandas==2.3.0
 pgl==2.2.6
+pyarrow==15.0.2
 pymatgen==2024.10.29
 pymatgen_analysis_defects==2025.1.18
 pymatgen_analysis_diffusion==2024.7.15
 pyparsing==3.2.3
 pytest==8.3.5
+rdkit==2024.9.1
 Requests==2.32.4
 scikit_learn==1.7.0
 scipy==1.13.1
@@ -27,4 +29,3 @@ tqdm==4.66.4
 typing_extensions==4.14.0
 visualdl==2.5.3
 wandb==0.18.3
-rdkit==2024.9.1
