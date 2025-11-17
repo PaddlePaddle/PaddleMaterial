@@ -43,13 +43,13 @@ class MatbenchDataset(Dataset):
     """Matbench Dataset Handler
 
     This class provides utilities for loading and processing the Matbench materials
-        science benchmark datasets.
+    science benchmark datasets.
     The implementation supports loading multiple properties from different
-        matbench JSON files and processing them for materials property prediction.
+    matbench JSON files and processing them for materials property prediction.
 
     **Dataset Overview**
     Matbench is a benchmark suite for materials property prediction containing multiple
-        datasets with different properties:
+    datasets with different properties:
     - Formation Energy (mp_e_form): ~132k samples
     - Band Gap (mp_gap): ~106k samples
     - Shear Modulus G (elasticity_log10(G_VRH)): ~11k samples
@@ -57,7 +57,7 @@ class MatbenchDataset(Dataset):
 
     **Automatic Download**
     If the data directory doesn't exist, the dataset will be
-        automatically downloaded from:
+    automatically downloaded from:
     https://paddle-org.bj.bcebos.com/paddlematerial/datasets/matbench/matbench.zip
 
     **Data Format**

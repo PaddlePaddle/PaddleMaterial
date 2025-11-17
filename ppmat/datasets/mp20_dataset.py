@@ -307,12 +307,6 @@ class MP20Dataset(Dataset):
         num_samples = 0
         for key in data:
             num_samples = max(num_samples, len(data[key]))
-
-        # Example: Load a small subset of the dataset for quick testing
-        # num_samples = 100
-        # for key in data.keys():
-        #     data[key] = data[key][:num_samples]
-
         return data, num_samples
 
     def filter_unvalid_by_property(self):

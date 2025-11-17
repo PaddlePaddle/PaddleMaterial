@@ -13,9 +13,7 @@
 # limitations under the License.
 
 from ppmat.predictor.base import BasePredictor
-from ppmat.predictor.sample import StructureSampler
 
 __all__ = [
     "BasePredictor",
-    "StructureSampler",
 ]

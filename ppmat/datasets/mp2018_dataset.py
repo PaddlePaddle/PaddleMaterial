@@ -336,12 +336,6 @@ class MP2018Dataset(Dataset):
         for key in json_data.keys():
             for idx in idxs:
                 data[key].append(json_data[key][idx])
-
-        # Example: Load a small subset of the dataset for quick testing
-        # num_samples = 1000
-        # for key in data.keys():
-        #     data[key] = data[key][:num_samples]
-
         return data, num_samples
 
     def filter_unvalid_by_property(self):
