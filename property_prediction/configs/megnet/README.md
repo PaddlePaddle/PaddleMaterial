@@ -199,6 +199,16 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_jarvis_alex_pbe_2d_all_e_form.zip">checkpoint | log</a></td>
         </tr>
         <tr>
+            <td  nowrap="nowrap">megnet_jarvis_dft_2d_bandgap</td>
+            <td  nowrap="nowrap">Jarvis_dft_2d_2020</td>
+            <td  nowrap="nowrap">Band Gap(eV)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_jarvis_dft_2d_bandgap.yaml">megnet_jarvis_dft_2d_bandgap</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+        </tr>
+        <tr>
             <td  nowrap="nowrap">megnet_matbench_e_form</td>
             <td  nowrap="nowrap">Matbench</td>
             <td  nowrap="nowrap">Form. Energy(eV/atom)</td>
