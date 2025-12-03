@@ -9,10 +9,11 @@ Global:
 
 Dataset:
   dataset:
-    __class_name__: Jarvis2DDataset
+    __class_name__: JarvisDataset
     __init_params__:
+      overwrite: True
       path: "./data/jarvis_2d"
-      url: "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jdft_2d-4-26-2020.zip"
+      jarvis_data_name: "dft_2d"
       property_names: ${Global.label_names}
       build_structure_cfg:
         format: jarvis

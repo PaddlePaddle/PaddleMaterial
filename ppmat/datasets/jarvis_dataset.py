@@ -45,23 +45,27 @@ from ppmat.utils.misc import is_equal
 
 # -----------------------------------------------------------------------------
 # JARVIS mirror dataset registry (preferred download entries)
-# List available datasets in the format similar to mp2018_dataset
 # -----------------------------------------------------------------------------
 JARVIS_MIRROR_DATASETS = [
     {
         "name": "dft_3d_2021",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_dft_3d-8-18-2021.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_dft_3d-8-18-2021.json.zip",  # noqa
         "md5": "8f619035a2cd8030de1ce38ce8b561b2",
     },
     {
         "name": "alexandria_scan_3d_2024.10.1_jarvis_tools",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_alexandria_scan_3d_2024.10.1_jarvis_tools.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_alexandria_scan_3d_2024.10.1_jarvis_tools.json.zip",  # noqa
         "md5": "ddeee1df79789d8f2b4a89f625864e6b",
     },
     {
         "name": "cfid_3d",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_cfid_3d-8-18-2021.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_cfid_3d-8-18-2021.json.zip",  # noqa
         "md5": "6efe75ca51aa5fb5c23a5b08fb412a6e",
+    },
+    {
+        "name": "dft_2d",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jdft_2d-4-26-2020.zip",  # noqa
+        "md5": "022c6e321bef034f5bff40e67c81f483",
     },
 ]
 
@@ -69,299 +73,42 @@ JARVIS_MIRROR_DATASETS = [
 class JarvisDataset(Dataset):
     """Jarvis Dataset Handler.
 
-    **Jarvis Dataset Overview**
-
-    Download preprocessed data: https://jarvis-materials-design.github.io/dbdocs/thedownloads/
-    Github: https://github.com/usnistgov/jarvis/tree/master
-
-    ```
-    -------------------------------------------------------------------------------
-    | Database name      |  Number of data-points	|  Description
-    -------------------------------------------------------------------------------
-    | AGRA_CHO	         |  214	         |  AGRA CHO catalyst dataset
-    | AGRA_COOH	         |  280	         |  AGRA COOH catalyst dataset
-    | AGRA_CO	         |  193	         |  AGRA CO catalyst dataset
-    | AGRA_OH	         |  875	         |  AGRA OH catalyst dataset
-    | AGRA_O	         |  1000	     |  AGRA Oxygen catalyst dataset
-    | aflow2	         |  400k	     |  AFLOW dataset
-    | alex_pbe_1d_all	 |  100k	     |  Alexandria DB all 1D materials with PBE
-    | alex_pbe_2d_all	 |  200k	     |  Alexandria DB all 2D materials with PBE
-    | alex_pbe_3d_all	 |  5 million	 |  Alexandria DB all 3D materials with PBE
-    | alex_pbe_hull	     |  116k	     |  Alexandria DB convex hull stable materials
-                                        with PBE functional
-    | alex_pbesol_3d_all |	500k	     |  Alexandria DB all 3D materials
-                                        with PBEsol
-    | alex_scan_3d_all	 |  500k	     |  Alexandria DB all 3D materials
-                                        with SCAN
-    | alignn_ff_db	     |  307113	     |  Energy per atom, forces and stresses
-                                        for ALIGNN-FF trainig for 75k materials.
-    | arXiv	             |  1796911	     |  arXiv dataset 1.8 million title,
-                                        abstract and id dataset
-    | arxiv_summary	     |  137927	     |  arXiv summary dataset
-    | c2db	             |  3514	     |  Various properties in C2DB database
-    | cccbdb	         |  1333	     |  CCCBDB dataset
-    | cfid_3d	         |  55723	     |  Various 3D materials properties
-                                        in JARVIS-DFT database computed
-                                        with OptB88vdW and TBmBJ methods with CFID
-    | cod	             |  431778	     |  Atomic structures from
-                                crystallographic open database
-    | dft_2d_2021	     |  1079	     |  Various 2D materials
-        properties in JARVIS-DFT database computed with OptB88vdW
-    | dft_2d	         |  1109	     |  Various 2D materials properties
-                            in JARVIS-DFT database computed with OptB88vdW
-    | dft_3d_2021	     |  55723	     |  Various 3D materials properties in
-                                JARVIS-DFT database computed with
-                                OptB88vdW and TBmBJ methods
-    | dft_3d	         |  75993	     |  Various 3D materials
-        properties in JARVIS-DFT database computed with OptB88vdW and TBmBJ methods
-    | edos_pdos	         |  48469	     |  Normalized electron and phonon density
-                    of states with interpolated values and fixed number of bins
-    | halide_peroskites	 |  229	         |  Halide perovskite dataset
-    | hmof	             |  137651	     |  Hypothetical MOF database
-    | hopv	             |  4855	     |  Various properties of molecules
-                                        in HOPV15 dataset
-    | interfacedb	     |  593	         |  Interface property dataset
-    | jff	             |  2538	     |  Various 3D materials properties in
-                            JARVIS-FF database computed with several force-fields
-    | m3gnet_mpf_1.5mil	 |  1.5 million	 |  1.5 million structures and their energy,
-                                        forces and stresses in MP
-    | m3gnet_mpf	     |  168k	     |  168k structures and their energy,
-                                        forces and stresses in MP
-    | megnet2	         |  133k	     |  133k materials and their
-                                        formation energy in MP
-    | megnet	         |  69239	     |  Formation energy and bandgaps
-                            of 3D materials properties in Materials project database
-                            as on 2018, used in megnet
-    | mlearn	         |  1730	     |  Machine learning force-field
-                                    for elements datasets
-    | mp_3d_2020	     |  127k	     |  CFID descriptors for materials project
-    | mp_3d	             |  84k	         |  CFID descriptors for 84k materials project
-    | mxene275	         |  275	         |  MXene dataset
-    | ocp100k	         |  149886	     |  Open Catalyst 100000 training,
-                                        rest validation and test dataset
-    | ocp10k	         |  59886	     |  Open Catalyst 10000 training,
-                                        rest validation and test dataset
-    | ocp_all	         |  510214	     |  Open Catalyst 460328 training,
-                                        rest validation and test dataset
-    | omdb	             |  12500	     |  Bandgaps for organic polymers
-                                        in OMDB database
-    | oqmd_3d_no_cfid	 |  817636	     |  Formation energies
-                    and bandgaps of 3D materials from OQMD database
-    | oqmd_3d	         |  460k	     |  CFID descriptors for 460k materials in OQMD
-    | pdbbind_core	     |  195	         |  Bio-molecular complexes database
-                                    from PDBBind core
-    | pdbbind	         |  11189	     |  Bio-molecular complexes database
-                                    from PDBBind v2015
-    | polymer_genome	 |  1073	     |  Electronic bandgap and diecltric constants
-                    of crystall ine polymer in polymer genome database
-    | qe_tb	             |  829574	     |  Various 3D materials properties
-                                        in JARVIS-QETB database
-    | qm9_dgl	         |  130829	     |  Various properties of molecules
-                                        in QM9 dgl database
-    | qm9_std_jctc	     |  130829	     |  Various properties of molecules
-                                        in QM9 database
-    | qmof	             |  20425	     |  Bandgaps and total energies of
-                                        metal organic frameowrks in QMOF database
-    | raw_files	         |  144895	     |  Figshare links to download
-                                        raw calculations VASP files from JARVIS-DFT
-    | snumat	         |  10481	     |  Bandgaps with hybrid functional
-    | ssub	             |  1726	     |  SSUB formation energy
-                                        for chemical formula dataset
-    | stm	             |  1132	     |  2D materials STM images
-                                        in JARVIS-STM database
-    | supercon_2d	     |  161	         |  2D superconductor DFT dataset
-    | supercon_3d	     |  1058	     |  3D superconductor DFT dataset
-    | supercon_chem	     |  16414	     |  Superconductor chemical formula dataset
-    | surfacedb	         |  607	         |  Surface property dataset
-    | tinnet_N	         |  329	         |  TinNet Nitrogen catalyst dataset
-    | tinnet_OH	         |  748	         |  TinNet OH group catalyst dataset
-    | tinnet_O	         |  747	         |  TinNet Oxygen catalyst dataset
-    | twod_matpd	     |  6351	     |  Formation energy and bandgaps
-                        of 2D materials properties in 2DMatPedia database
-    | vacancydb	         |  464	         |  Vacancy formation energy dataset
-    | wtbh_electron	     |  1440	     |  3D and 2D materials
-        Wannier tight-binding Hamiltonian database
-        for electrons with spin-orbit coupling in JARVIS-WTB (Keyword: 'WANN')
-    | wtbh_phonon	     |  15502	     |  3D and 2D materials
-        Wannier tight-binding Hamiltonian
-        for phonons at Gamma with finite difference (Keyword:FD-ELAST)
-    -------------------------------------------------------------------------------
-    dft_3d (3D-materials curated data) Data Format (Example)**
-
-    The dataset contains metadata for JARVIS-DFT data for 3D materials.
-    Specifically, the `dft_3d` dataset is a list of dictionaries,
-    where each sample (`dict`) contains keys such as:
-
-        Basic Information:
-        ------------------
-        - jid (str): Unique Jarvis material ID
-        - formula (str): Chemical formula
-        - search (str): Elemental search keyword
-        - spg (int): Space group number (same as spg_number)
-        - spg_number (int): Space group number
-        - spg_symbol (str): Space group symbol
-        - crys (str): Crystal system (e.g., tetragonal)
-        - dimensionality (str): Material dimensionality (e.g., 3D bulk)
-        - typ (str): Material type (e.g., bulk, monolayer)
-        - reference (str): Cross-reference ID from Materials Project
-        - icsd (str): ICSD database ID (if available)
-        - xml_data_link (str): Link to full DFT result in XML format
-        - raw_files (List): Raw files (if available)
-
-        Crystal Structure:
-        ------------------
-        - atoms (dict[str, list[Any]]):
-            - lattice_mat (List): Lattice matrix
-            - coords (List): Atomic coordinates
-            - elements (List): Element types
-            - abc (List): Lattice parameters
-            - angles (List): Lattice angles
-            - cartesian (bool): Whether coordinates are Cartesian
-            - props (List): properties
-        - nat (int): Number of atoms in the unit cell
-        - density (float): Material density
-
-        DFT Calculation Settings:
-        -------------------------
-        - func (str): Exchange-correlation functional used (e.g. OptB88vdW)
-        - encut (int): Plane-wave energy cutoff
-        - kpoint_length_unit (int): k-point sampling density
-
-        Thermodynamic Properties:
-        -------------------------
-        - formation_energy_peratom (float): Formation energy per atom
-        - optb88vdw_total_energy (float): Total DFT energy
-        - ehull (float): Energy above the convex hull (measures stability)
-        - exfoliation_energy (float):
-            Exfoliation energies for van der Waals bonded materials
-
-        Electronic Properties:
-        ----------------------
-        - optb88vdw_bandgap (float): Band gap from OptB88vdW functional
-        - mbj_bandgap (float): Band gap from modified Becke-Johnson (MBJ) functional
-        - hse_gap (float): Band gap from HSE hybrid functional
-        - effective_masses_300K (dict): Effective masses of electrons and holes at 300K
-        - avg_elec_mass (float): Average effective mass of electrons
-        - avg_hole_mass (float): Average effective mass of holes
-
-        Magnetic Properties:
-        --------------------
-        - magmom_outcar (float): Initial magnetic moment (from OSZICAR file)
-        - magmom_oszicar (float): Final magnetic moment (from OUTCAR file)
-
-        Dielectric and Optical Properties:
-        ----------------------------------
-        - epsx (float): Dielectric tensor component along x-axis
-        - epsy (float): Dielectric tensor component along y-axis
-        - epsz (float): Dielectric tensor component along z-axis
-        - mepsx (float): Electronic contribution to dielectric constant along x
-        - mepsy (float): Electronic contribution to dielectric constant along y
-        - mepsz (float): Electronic contribution to dielectric constant along z
-        - slme (float): Spectroscopy limited maximum efficiency
-
-        Elastic and Mechanical Properties:
-        ----------------------------------
-        - elastic_tensor (List): Elastic tensor matrix
-        - bulk_modulus_kv (float): Bulk modulus
-        - shear_modulus_gv (float): Shear modulus
-        - poisson (float): Poisson ratio
-        - max_ir_mode (float): Maximum infrared (IR) mode intensity
-        - min_ir_mode (float): Minimum infrared (IR) mode intensity
-        - max_efg (float): Maximum electric field gradient
-        - efg (float): Electric field gradients
-
-        Thermoelectric Properties:
-        --------------------------
-        - n_seebeck (float): Seebeck coefficient for n-type carriers
-        - p_seebeck (float): Seebeck coefficient for p-type carriers
-        - ncond (float): Electrical conductivity for n-type carriers
-        - pcond (float): Electrical conductivity for p-type carriers
-        - nkappa (float): Thermal conductivity for n-type carriers
-        - pkappa (float): Thermal conductivity for p-type carriers
-        - n-powerfact (float): Power factor for n-type
-        - p-powerfact (float): Power factor for p-type
-
-        Vibrational and Phonon Properties:
-        ----------------------------------
-        - modes (List): Phonon modes
-        - maxdiff_mesh (float): Maximum difference in mesh calculations
-        - maxdiff_bz (float): Maximum difference in BZ calculations
-
-        Piezoelectric and Dielectric Tensor (DFPT):
-        --------------------------------------------
-        - dfpt_piezo_max_eij (float):
-            Max piezoelectric tensor (strain-charge form)
-        - dfpt_piezo_max_dij (float):
-            Max piezoelectric tensor (stress-charge form)
-        - dfpt_piezo_max_dielectric (float):
-            Max total dielectric constant
-        - dfpt_piezo_max_dielectric_electronic (float):
-            Electronic part of dielectric constant
-        - dfpt_piezo_max_dielectric_ionic (float):
-            Ionic part of dielectric constant
-
-        Superconductivity:
-        ------------------
-        - Tc_supercon (float): Superconducting critical temperature
-
-
-    **Notes:**
-        - Missing values are represented as `na`
-
-
-    Args:
-        path (str): The path of the dataset,
-            if path is not exists, it will be downloaded.
-
-        jarvis_data_name (str): The name of the jarvis dataset.
-
-        property_names (Union[str, List[str]]): Property names you want to use,
-            for jarvis dataset.
-
-        build_structure_cfg (Dict, optional): The configs for building the pymatgen
-            structure from cif string, if not specified, the default setting will be
-            used. Defaults to None.
-
-        build_graph_cfg (Dict, optional): The configs for building the graph from
-            structure. Defaults to None.
-
-        transforms (Optional[Callable], optional): The preprocess transforms for each
-            sample. Defaults to None.
-
-        cache_path (Optional[str], optional): If a cache_path is set, structures and
-            graph will be read directly from this path; if the cache does not exist,
-            the converted structures and graph will be saved to this path. Defaults
-            to None.
-
-        overwrite (bool, optional): Overwrite the existing cache file at the given cache
-            path if it already exists. Defaults to False.
-
-        filter_unvalid (bool, optional): Whether to filter out unvalid samples. Defaults
-            to True.
-
+    Compatible with standard Jarvis datasets and specific URL-based datasets (e.g. 2D).
     """
 
     def __init__(
         self,
         path: str,
-        jarvis_data_name: str,
-        property_names: Union[str, List[str]],
+        jarvis_data_name: str = "custom",  # Default to custom if url is provided
+        property_names: Union[str, List[str]] = None,
+        url: Optional[str] = None,  # New argument
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
         filter_unvalid: bool = True,
-        **kwargs,  # for compatibility
+        **kwargs,
     ):
         super().__init__()
 
-        # Extract jarvis dataset name, and construct dataset zip file path
-        db_info = get_db_info()
-        if jarvis_data_name not in db_info:
-            raise ValueError(f"Unknown dataset name: {jarvis_data_name}")
-        _, jarvis_data_filename, _, _ = db_info[jarvis_data_name]
-        self.path = osp.join(path, jarvis_data_filename + ".zip")
+        self.url = url
+
+        # 1. Determine Path and Filename logic
+        # If URL is explicitly provided (Adapter logic), use it to determine filename
+        if self.url is not None:
+            zip_basename = osp.basename(self.url)
+            # e.g. jdft_2d-4-26-2020.zip
+            self.path = osp.join(path, zip_basename)
+            logger.info(f"Using provided URL: {self.url}")
+        else:
+            # Original logic: Lookup via jarvis_data_name
+            db_info = get_db_info()
+            if jarvis_data_name not in db_info:
+                raise ValueError(f"Unknown dataset name: {jarvis_data_name}")
+
+            _, jarvis_data_filename, _, _ = db_info[jarvis_data_name]
+            self.path = osp.join(path, jarvis_data_filename + ".zip")
 
         # Obtain property names
         if isinstance(property_names, str):
@@ -382,21 +129,9 @@ class JarvisDataset(Dataset):
             )
         self.build_structure_cfg = build_structure_cfg
 
-        # Handle graph_cfg
-        # if build_graph_cfg is None:
-        #     build_graph_cfg = {
-        #         "__class_name__": "FindPointsInSpheres",
-        #         "__init_params__": {"cutoff": 4},
-        #         "__call_params__": {},
-        #     }
-        #     logger.message(
-        #         "The build_graph_cfg is not set, will use the default "
-        #         f"configs: {build_graph_cfg}"
-        #     )
-
         self.build_graph_cfg = build_graph_cfg
 
-        # Determine cache directory
+        # Determine cache directory name suffix
         if build_graph_cfg is not None:
             graph_converter_name = re.sub(
                 r"(?<!^)([A-Z])", r"_\1", build_graph_cfg["__class_name__"]
@@ -406,30 +141,21 @@ class JarvisDataset(Dataset):
             graph_converter_name = "none"
             cutoff_name = "none"
 
+        # Construct Cache Path
         if cache_path is not None:
-            self.cache_path = osp.join(
-                cache_path,
-                jarvis_data_name
-                + "_cache_"
-                + graph_converter_name
-                + "_cutoff_"
-                + cutoff_name,
-            )
+            base_cache_dir = cache_path
         else:
-            # for example:
-            # path = ./data/jarvis/
-            # cache_path = ./data/jarvis/
-            # self.path = ./data/jarvis/jdft_3d-12-12-2022.json.zip
-            # self.cache_path =
-            # ./data/jarvis/dft_3d_cache_find_points_in_spheres_cutoff_4
-            self.cache_path = osp.join(
-                path,
-                jarvis_data_name
-                + "_cache_"
-                + graph_converter_name
-                + "_cutoff_"
-                + cutoff_name,
-            )
+            base_cache_dir = path  # default to dataset root
+
+        self.cache_path = osp.join(
+            base_cache_dir,
+            jarvis_data_name
+            + "_cache_"
+            + graph_converter_name
+            + "_cutoff_"
+            + cutoff_name,
+        )
+
         logger.info(f"Cache path: {self.cache_path}")
         os.makedirs(self.cache_path, exist_ok=True)
 
@@ -441,16 +167,22 @@ class JarvisDataset(Dataset):
         # compute number of samples of raw file
         if osp.exists(self.path) and zipfile.is_zipfile(self.path):
             try:
-                num_samples_raw_file = len(
-                    json.loads(
-                        zipfile.ZipFile(self.path).read(
-                            os.path.splitext(os.path.basename(self.path))[0]
-                        )
-                    )
-                )
+                with zipfile.ZipFile(self.path) as zf:
+                    # Logic to find json: check for name matching zip, or first .json
+                    expected_member = os.path.splitext(os.path.basename(self.path))[0]
+                    try:
+                        bytes_data = zf.read(expected_member)
+                    except KeyError:
+                        json_members = [n for n in zf.namelist() if n.endswith(".json")]
+                        if not json_members:
+                            raise RuntimeError(
+                                "No .json file found inside the zip archive."
+                            )
+                        bytes_data = zf.read(json_members[0])
+                num_samples_raw_file = len(json.loads(bytes_data))
                 logger.info(f"The raw file has {num_samples_raw_file} samples.")
             except Exception as e:
-                logger.warning(e)
+                logger.warning(str(e))
                 logger.warning("The raw file is corrupted.")
                 num_samples_raw_file = 0
         else:
@@ -476,9 +208,7 @@ class JarvisDataset(Dataset):
                             f"raw samples ({num_samples_raw_file}). "
                             f"Please check if overwrite is needed."
                         )
-                logger.info(
-                    "Property cache is found. " "Will load properties from cache."
-                )
+                logger.info("Property cache is found. Will load properties from cache.")
             except Exception as e:
                 logger.warning(e)
                 logger.warning(
@@ -487,7 +217,7 @@ class JarvisDataset(Dataset):
                 )
                 overwrite = True
         else:
-            logger.info("Property cache is not found. " "Will build properties.")
+            logger.info("Property cache is not found. Will build properties.")
             overwrite = True
 
         # check if all raw structures have been built to crystal structure
@@ -497,8 +227,6 @@ class JarvisDataset(Dataset):
                 "The cache file of built crystal structure is found. "
                 "Will load structures from cache."
             )
-
-            # compute number of cached structures
             files_structure = [
                 f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")
             ]
@@ -516,14 +244,16 @@ class JarvisDataset(Dataset):
                     f"Please check if overwrite is needed."
                 )
         else:
-            logger.info("Structure cache is not found. " "Will build structures.")
+            logger.info("Structure cache is not found. Will build structures.")
             os.makedirs(structure_cache_path, exist_ok=True)
             os.makedirs(property_cache_path, exist_ok=True)
-            # Load raw Jarvis dataset
+
+            # Load raw Jarvis dataset (Updated with url support)
             self.raw_data, self.num_samples = self.read_data(
-                path=self.path, data_name=jarvis_data_name
+                path=self.path, data_name=jarvis_data_name, url=self.url
             )
             logger.info(f"Load {self.num_samples} samples from {path}")
+
             # Extract property values from raw dataset
             self.property_data = self.read_property_data(
                 data=self.raw_data, property_names=self.property_names
@@ -531,25 +261,21 @@ class JarvisDataset(Dataset):
 
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save build_structure_cfg to cache file
                 self.save_to_cache(
                     osp.join(self.cache_path, "build_structure_cfg.pkl"),
                     build_structure_cfg,
                 )
-                # convert strucutes
                 structures = BuildStructure(**build_structure_cfg)(
                     self.raw_data["atoms"]
                 )
-                # save structures to cache file
                 for i in range(self.num_samples):
                     self.save_to_cache(
                         osp.join(structure_cache_path, f"{i:010d}.pkl"),
                         structures[i],
                     )
                 logger.info(
-                    f"Save {self.num_samples} structures " f"to {structure_cache_path}"
+                    f"Save {self.num_samples} structures to {structure_cache_path}"
                 )
-                # save property data to cache file
                 for property_name in self.property_names:
                     data = self.property_data[property_name]
                     self.save_to_cache(
@@ -557,99 +283,90 @@ class JarvisDataset(Dataset):
                         data,
                     )
                     logger.info(
-                        f"Save {self.num_samples} "
-                        f"{property_name} to {property_cache_path}"
+                        f"Save {self.num_samples} {property_name} to {property_cache_path}"  # noqa
                     )
-            # sync all processes
             if dist.is_initialized():
                 dist.barrier()
 
         # check if generate graph infomation
         graph_cache_path = osp.join(self.cache_path, "graphs")
-        graph_cache_exists = build_graph_cfg is not None and osp.exists(
-            graph_cache_path
-        )
-        # check if create graph configures is same with cache.
-        if graph_cache_exists and not overwrite:
-            try:
-                build_graph_cfg_cache = self.load_from_cache(
-                    osp.join(self.cache_path, "build_graph_cfg.pkl")
-                )
-                if is_equal(build_graph_cfg_cache, build_graph_cfg):
-                    logger.info(
-                        "The cached build_structure_cfg configuration "
-                        "matches the current settings. Reusing previously "
-                        "generated structural data to optimize performance."
-                    )
-                else:
-                    logger.warning(
-                        "build_graph_cfg is different from build_graph_cfg_cache"
-                        ". Will rebuild the graphs."
-                    )
-                    logger.warning(
-                        "If you want to use the cached structures and graphs, "
-                        "please ensure that the settings used in match your "
-                        "current settings."
-                    )
-                    overwrite = True
-            except Exception as e:
-                logger.warning(e)
-                logger.warning(
-                    "Failed to load builded_graph_cfg.pkl from cache. "
-                    "Will rebuild the graphs."
-                )
-                overwrite = True
+        need_build_graphs = False
 
-        # check if all structures are built into the graph
-        if osp.exists(graph_cache_path) and not overwrite:
-            logger.info(
-                "The cache file of built crystal structure is found. "
-                "Will load structures from cache."
-            )
-            # compute number of cached graph
-            files_graph = [
-                f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")
-            ]
+        # Determine if graphs need building (Logic merged from both versions)
+        if build_graph_cfg is not None:
+            if osp.exists(graph_cache_path) and not overwrite:
+                try:
+                    build_graph_cfg_cache = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
+                    if not is_equal(build_graph_cfg_cache, build_graph_cfg):
+                        logger.warning(
+                            "build_graph_cfg is different. Will rebuild graphs."
+                        )
+                        need_build_graphs = True
+                    else:
+                        logger.info("Graph config matches cache. Reusing graphs.")
+                except Exception as e:
+                    logger.warning(e)
+                    logger.warning("Failed to load build_graph_cfg.pkl. Will rebuild.")
+                    need_build_graphs = True
 
-            num_cached_graphs = len(files_graph)
-            if num_cached_structures == num_cached_graphs:
-                logger.info("All cached structures already have graphs")
-                logger.info(f"the number is {num_cached_graphs}")
+                # Check counts
+                if not need_build_graphs:
+                    files_graph = [
+                        f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")
+                    ]
+                    files_structure = [
+                        f
+                        for f in os.listdir(structure_cache_path)
+                        if f.endswith(".pkl")
+                    ]
+                    if len(files_graph) != len(files_structure):
+                        logger.warning("Graph/Structure count mismatch. Will rebuild.")
+                        need_build_graphs = True
             else:
-                logger.warning(
-                    f"Cached structures ({num_cached_structures}) and "
-                    f"graphs ({num_cached_graphs}) count mismatch. "
-                    f"Consider overwriting."
+                logger.info(
+                    "Graph cache not found or overwrite=True. Will build graphs."
                 )
-        else:
-            logger.info("Graph cache is not found. Will build graphs.")
+                need_build_graphs = True
+
+        if build_graph_cfg is not None and need_build_graphs:
             os.makedirs(graph_cache_path, exist_ok=True)
-            # convert graphs
-            # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save build_graph_cfg to cache file
                 self.save_to_cache(
                     osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
-                # convert graph
                 converter = build_graph_converter(build_graph_cfg)
+
+                # Load structures in order to ensure alignment
+                struct_files = sorted(
+                    [f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")],
+                    key=lambda x: int(x.replace(".pkl", "")),
+                )
+                # If structures variable exists (from init flow), use it, otherwise load
+                if "structures" not in locals():
+                    structures = [
+                        self.load_from_cache(osp.join(structure_cache_path, f))
+                        for f in struct_files
+                    ]
+
                 graphs = converter(structures)
-                # save graphs to cache file
-                for i in range(self.num_samples):
+                for i in range(len(graphs)):
                     self.save_to_cache(
                         osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
                     )
-                logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
-            # sync all processes
+                logger.info(f"Save {len(graphs)} graphs to {graph_cache_path}")
+
             if dist.is_initialized():
                 dist.barrier()
-            # now safe to delete large memory objects
+
+            # Clean up
             if "graphs" in locals():
                 del graphs
             if "structures" in locals():
                 del structures
 
-        # Obtain finial properies, structures and graphs
+        # Obtain final properties, structures and graphs
         self.property_data = {
             property_name: self.load_from_cache(
                 osp.join(property_cache_path, f"{property_name}.pkl")
@@ -667,19 +384,16 @@ class JarvisDataset(Dataset):
 
         if build_graph_cfg is not None:
             files = sorted(
-                os.listdir(graph_cache_path), key=lambda x: int(x.replace(".pkl", ""))
+                os.listdir(graph_cache_path) if osp.exists(graph_cache_path) else [],
+                key=lambda x: int(x.replace(".pkl", "")),
             )
             self.graphs = [osp.join(graph_cache_path, f) for f in files]
         else:
             self.graphs = None
 
-        # filter by property data,
-        # since some samples may have no valid properties
         if filter_unvalid:
             self.filter_unvalid_by_property()
 
-        # filter by graph data,
-        # as some samples may not have edges and need to be removed
         if self.graphs is not None:
             self.filter_unvalid_by_graph()
 
@@ -687,108 +401,100 @@ class JarvisDataset(Dataset):
         self,
         path: str,
         data_name: str,
+        url: str = None,  # Added url argument
     ):
         """
-        Load jarvis data, and convert from list-of-dict to dict-of-lists by property.
-
-        Args:
-            path (str): The directory of data file.
-            data_name (str): Name of the jarvis data.
-
-        Returns:
-            property_data (dict[str, list[Any]]):
-                Key is a property name, and
-                value is a list containing that property's values for all samples.
-            num_samples (int):
-                Total number of samples in the dataset.
+        Load jarvis data. Support both standard registry and direct URL.
         """
-
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        property_data = {}
 
-        # If file is missing or invalid, remove it and redownload
+        # 1. Download Logic
         if not osp.exists(path) or not zipfile.is_zipfile(path):
             if osp.exists(path):
                 logger.message(
-                    f"Invalid Jarvis dataset zip archive detected at '{path}'. "
-                    f"Delete it and initiating re-download of dataset '{data_name}'."
+                    f"Invalid dataset zip at '{path}'. Delete and re-download."
                 )
                 os.remove(path)
             else:
-                logger.message(
-                    f"Jarvis dataset zip archive not found. "
-                    f"Downloading of dataset {data_name}."
-                )
+                logger.message("Dataset zip not found. Downloading.")
 
-            # Preferred mirror download (Paddle BOS) based on expected filename
-            expected_filename_no_zip = os.path.splitext(os.path.basename(path))[0]
-            _registry_map = {d["name"]: d for d in JARVIS_MIRROR_DATASETS}
-            if data_name in _registry_map:
+            # Priority 1: Direct URL provided (Adapter logic)
+            if url is not None:
                 tmp_path = path + ".downloading"
                 try:
-                    logger.message(
-                        f"Trying preferred mirror download from Paddle BOS for dataset"
-                        f"'{data_name}' (expected file '{expected_filename_no_zip}')."
-                    )
-                    urllib.request.urlretrieve(
-                        _registry_map[data_name]["url"], tmp_path
-                    )
+                    logger.message(f"Downloading from provided URL: {url}")
+                    urllib.request.urlretrieve(url, tmp_path)
                     if not zipfile.is_zipfile(tmp_path):
-                        raise ValueError(
-                            "Downloaded file from mirror is not a valid zip archive."
-                        )
+                        raise ValueError("Downloaded file is not a valid zip archive.")
                     os.replace(tmp_path, path)
-                    logger.message(
-                        "Mirror download succeeded. Using the mirrored archive."
-                    )
+                    logger.message("Download succeeded.")
                 except Exception as e:
-                    logger.warning(e)
                     if osp.exists(tmp_path):
                         try:
                             os.remove(tmp_path)
                         except Exception:
                             pass
-                    logger.message(
-                        "Mirror download failed. Fall back to JARVIS official source."
-                    )
+                    raise RuntimeError(f"Failed to download from URL. Error: {e}")
 
-            # If mirror did not provide a valid file, fallback to jdata
-            if not osp.exists(path) or not zipfile.is_zipfile(path):
-                try:
-                    try:
-                        raw_data = jdata(
-                            dataset=data_name, store_dir=os.path.dirname(path)
-                        )
-                    except TypeError:
-                        raw_data = jdata(dataset=data_name)
-                    assert (
-                        raw_data is not None
-                    ), f"Failed to download dataset {data_name}"
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to download dataset {data_name}. Error: {e}"
-                    )
+            # Priority 2: Mirror / Jarvis-Tools (Original logic)
             else:
-                # Mirror path ready; read from the zip file we just downloaded
-                logger.message(
-                    f"Existing Jarvis dataset zip archive found at '{path}'."
-                )
-                with zipfile.ZipFile(path) as zf:
-                    expected_member = os.path.splitext(os.path.basename(path))[0]
+                # Preferred mirror download
+                _registry_map = {d["name"]: d for d in JARVIS_MIRROR_DATASETS}
+
+                download_success = False
+                if data_name in _registry_map:
+                    tmp_path = path + ".downloading"
                     try:
-                        bytes_data = zf.read(expected_member)
-                    except KeyError:
-                        json_members = [n for n in zf.namelist() if n.endswith(".json")]
-                        if not json_members:
-                            raise RuntimeError(
-                                "No .json file found inside the downloaded zip archive."
+                        logger.message(f"Trying mirror download for '{data_name}'.")
+                        urllib.request.urlretrieve(
+                            _registry_map[data_name]["url"], tmp_path
+                        )
+                        if zipfile.is_zipfile(tmp_path):
+                            os.replace(tmp_path, path)
+                            download_success = True
+                            logger.message("Mirror download succeeded.")
+                    except Exception as e:
+                        logger.warning(f"Mirror download failed: {e}")
+                        if osp.exists(tmp_path):
+                            os.remove(tmp_path)
+
+                # Fallback to jarvis-tools
+                if not download_success:
+                    if not osp.exists(path) or not zipfile.is_zipfile(path):
+                        try:
+                            logger.message(
+                                f"Falling back to jarvis.db.figshare for "
+                                f"'{data_name}'"
                             )
-                        bytes_data = zf.read(json_members[0])
-                raw_data = json.loads(bytes_data)
-        # File is valid
-        else:
-            logger.message(f"Existing Jarvis dataset zip archive found at '{path}'.")
+                            try:
+                                raw_data = jdata(
+                                    dataset=data_name,
+                                    store_dir=os.path.dirname(path),
+                                )
+                            except TypeError:
+                                raw_data = jdata(dataset=data_name)
+                            assert (
+                                raw_data is not None
+                            ), f"Failed to download dataset {data_name}"
+                            # If jdata returns the object directly, we handle it below
+                            if raw_data:
+                                property_data = defaultdict(list)
+                                num_samples = len(raw_data)
+                                for item in raw_data:
+                                    for key, value in item.items():
+                                        property_data[key].append(value)
+                                return dict(property_data), num_samples
+
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to download dataset {data_name}. Error: {e}"
+                            )
+
+        # 2. Reading Logic (from local zip)
+        if osp.exists(path) and zipfile.is_zipfile(path):
+            logger.message(f"Existing dataset zip found at '{path}'.")
             with zipfile.ZipFile(path) as zf:
+                # Generic approach to find json inside
                 expected_member = os.path.splitext(os.path.basename(path))[0]
                 try:
                     bytes_data = zf.read(expected_member)
@@ -800,25 +506,19 @@ class JarvisDataset(Dataset):
                         )
                     bytes_data = zf.read(json_members[0])
             raw_data = json.loads(bytes_data)
+        else:
+            # Should have been handled by download logic, but as failsafe
+            raise RuntimeError(f"File not found or invalid at {path}")
 
-        # Convert list-of-dict raw data to dict-of-lists by property.
         property_data = defaultdict(list)
         num_samples = len(raw_data)
-
-        # Test, only load part of data
-        # for idx, item in enumerate(raw_data):
-        #     if idx == 1001:
-        #         break
-        #     for key, value in item.items():
-        #         property_data[key].append(value)
-        # num_samples = len(property_data[key])
-
         for item in raw_data:
             for key, value in item.items():
                 property_data[key].append(value)
 
         for key, value in dict(property_data).items():
             if len(value) != num_samples:
+                # Check for mismatch length
                 raise ValueError(
                     f"Property {key} has different length than other properties."
                 )
@@ -826,18 +526,6 @@ class JarvisDataset(Dataset):
         return dict(property_data), num_samples
 
     def read_property_data(self, data: Dict, property_names: List[str]):
-        """
-        Read the property data from the given data and property names.
-
-        Args:
-            data (Dict): Data that contains the property data.
-            property_names (List[str]): Property names.
-
-        Returns:
-            property_data (dict[str, list[Any]]):
-                Key is a property name, and
-                value is a list containing that property's values for all samples.
-        """
         property_data = {}
         for property_name in property_names:
             if property_name not in data:
@@ -846,32 +534,10 @@ class JarvisDataset(Dataset):
         return property_data
 
     def save_to_cache(self, cache_path: str, data: Any):
-        """
-        Save data to a cache file.
-
-        Args:
-            cache_path (str): The path to the cache file.
-            data (Any): The data to be saved.
-
-        Returns:
-            None
-
-        """
-
         with open(cache_path, "wb") as f:
             pickle.dump(data, f)
 
     def load_from_cache(self, cache_path: str):
-        """
-        Load data from a cached .pkl file.
-
-        Args:
-            cache_path (str): The path to the cached file.
-
-        Returns:
-            data: The data loaded from the cache.
-        """
-
         if osp.exists(cache_path):
             with open(cache_path, "rb") as f:
                 data = pickle.load(f)
@@ -881,57 +547,72 @@ class JarvisDataset(Dataset):
 
     def filter_unvalid_by_property(self):
         """
-        Filter out samples that have invalid properties (e.g., NaN, string, or None).
-
-        This method updates:
-            - self.structures
-            - self.graphs (if not None)
-            - self.property_data
-            - self.num_samples
-
-        Returns:
-            None
+        Filter out samples that have invalid properties (Updated with stricter checks).
         """
-
         for property_name in self.property_names:
             data = self.property_data[property_name]
             reserve_idx = []
+            old_num_structs = len(self.structures)
+
             for i, data_item in enumerate(data):
-                if isinstance(data_item, str) or (
-                    data_item is not None and not math.isnan(data_item)
-                ):
+                is_valid = False
+                # Stricter check from new version
+                if isinstance(data_item, (int, float, np.floating)):
+                    try:
+                        is_valid = (data_item is not None) and (
+                            not math.isnan(float(data_item))
+                        )
+                    except Exception:
+                        is_valid = False
+                elif isinstance(data_item, str) and data_item.lower() != "na":
+                    # Allow non-'na' strings if dataset has string props
+                    is_valid = True
+
+                if is_valid:
                     reserve_idx.append(i)
+
             for key in self.property_data.keys():
                 self.property_data[key] = [
                     self.property_data[key][i] for i in reserve_idx
                 ]
 
             self.structures = [self.structures[i] for i in reserve_idx]
+
+            # Graphs reindex: compare with original structure count
             if self.graphs is not None:
-                self.graphs = [self.graphs[i] for i in reserve_idx]
+                if len(self.graphs) == old_num_structs:
+                    self.graphs = [self.graphs[i] for i in reserve_idx]
+                else:
+                    logger.warning(
+                        "Graphs count mismatches structures during property "
+                        "filtering. Rebuilding graphs."
+                    )
+                    self.graphs = self._build_graphs_for_structures(self.structures)
+
+            kept = len(reserve_idx)
+            total = len(data)
             logger.warning(
-                f"Filter out {len(reserve_idx)} samples with valid properties: "
-                f"{property_name}"
+                f"After property filtering '{property_name}': "
+                f"kept {kept}/{total} samples."
             )
+
         self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
     def filter_unvalid_by_graph(self):
         """
         Filter out samples that have invalid graphs.
-
-        This method updates:
-            - self.structures
-            - self.graphs (if not None)
-            - self.property_data
-            - self.num_samples
-
-        Returns:
-            None
         """
+        # If graphs and structures are misaligned, rebuild graphs for current structures
+        if len(self.graphs) != len(self.structures):
+            logger.warning(
+                "Rebuilding graphs to match structures before graph filtering."
+            )
+            self.graphs = self._build_graphs_for_structures(self.structures)
+
         reserve_idx = []
         for i, g in enumerate(self.graphs):
-            data = self.load_from_cache(g)
+            data = self.load_from_cache(g) if isinstance(g, str) else g
             if data is not None:
                 reserve_idx.append(i)
 
@@ -939,14 +620,31 @@ class JarvisDataset(Dataset):
             self.property_data[key] = [self.property_data[key][i] for i in reserve_idx]
         self.structures = [self.structures[i] for i in reserve_idx]
         self.graphs = [self.graphs[i] for i in reserve_idx]
-        logger.warning(f"Filter out {len(reserve_idx)} samples with valid graphs.")
+        logger.warning(
+            f"Filter out {len(self.graphs) - len(reserve_idx)} "
+            f"samples with invalid graphs."
+        )
 
         self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
+    def _build_graphs_for_structures(self, structures_list):
+        """Helper to rebuild graphs in-memory if needed (Ported from new version)."""
+        if self.build_graph_cfg is None:
+            logger.warning("build_graph_cfg is None, cannot build graphs.")
+            return []
+        converter = build_graph_converter(self.build_graph_cfg)
+        structures = []
+        for s in structures_list:
+            if isinstance(s, str):
+                structures.append(self.load_from_cache(s))
+            else:
+                structures.append(s)
+        graphs = converter(structures)
+        return graphs
+
     def get_structure_array(self, structure):
         atom_types = np.array([site.specie.Z for site in structure])
-        # get lattice parameters and matrix
         lattice_parameters = structure.lattice.parameters
         lengths = np.array(lattice_parameters[:3], dtype="float32").reshape(1, 3)
         angles = np.array(lattice_parameters[3:], dtype="float32").reshape(1, 3)
@@ -964,9 +662,7 @@ class JarvisDataset(Dataset):
         return structure_array
 
     def __getitem__(self, idx: int):
-        """Get item at index idx."""
         data = {}
-        # get graph
         if self.graphs is not None:
             graph = self.graphs[idx]
             if isinstance(graph, str):
@@ -977,6 +673,7 @@ class JarvisDataset(Dataset):
             if isinstance(structure, str):
                 structure = self.load_from_cache(structure)
             data["structure_array"] = self.get_structure_array(structure)
+
         for property_name in self.property_names:
             if property_name in self.property_data:
                 data[property_name] = np.array(
@@ -989,7 +686,6 @@ class JarvisDataset(Dataset):
             self.property_data["id"][idx] if "id" in self.property_data else idx
         )
         data = self.transforms(data) if self.transforms is not None else data
-
         return data
 
     def __len__(self):

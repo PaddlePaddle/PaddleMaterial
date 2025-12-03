@@ -31,7 +31,6 @@ from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
-from ppmat.datasets.jarvis_2d_dataset import Jarvis2DDataset  # noqa
 from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.matbench_dataset import MatbenchDataset
 from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
