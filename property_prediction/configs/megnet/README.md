@@ -238,6 +238,86 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap"><a href="megnet_matbench_bulk_modulus.yaml">megnet_matbench_bulk_modulus</a></td>
             <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/property_prediction/megnet/megnet_matbench_bulk_modulus_t_20250731_041800_s_42.zip">checkpoint | log</a></td>
         </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_dipole_m</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">Dipole Moment (Debye)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_dipole_m.yaml">megnet_tmqm_train_108k_dipole_m</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_dispersion_e</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">Dispersion Energy (Hartree)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_dispersion_e.yaml">megnet_tmqm_train_108k_dispersion_e</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_electronic_e</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">Electronic Energy (Hartree)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_electronic_e.yaml">megnet_tmqm_train_108k_electronic_e</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_hl_gap</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">HOMO-LUMO Gap (eV)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_hl_gap.yaml">megnet_tmqm_train_108k_hl_gap</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_homo_energy</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">HOMO Energy (eV)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_homo_energy.yaml">megnet_tmqm_train_108k_homo_energy</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_lumo_energy</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">LUMO Energy (eV)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_lumo_energy.yaml">megnet_tmqm_train_108k_lumo_energy</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_metal_q</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">Metal Charge (e)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_metal_q.yaml">megnet_tmqm_train_108k_metal_q</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_tmqm_train_108k_polarizability</td>
+            <td  nowrap="nowrap">tmQM_108k</td>
+            <td  nowrap="nowrap">Polarizability (Bohr³)</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap">1</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_polarizability.yaml">megnet_tmqm_train_108k_polarizability</a></td>
+            <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
     </body>
 </table>
 

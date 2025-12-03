@@ -113,6 +113,11 @@ class BaseTrainer:
         self.eval_with_no_grad = config.get("eval_with_no_grad", True)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
 
+        # Optional global step budget (used by some tasks such as InfGCN).
+        # This mirrors the historical `max_iter` semantics but is kept
+        # optional to avoid affecting existing users.
+        self.max_train_steps = config.get("max_iter", None)
+
         self.use_visualdl = config.get("use_visualdl", False)
         self.use_wandb = config.get("use_wandb", False)
         self.wandb_config = config.get("wandb_config", {})
@@ -507,6 +512,20 @@ class BaseTrainer:
         )
         if len(dataloader) % self.gradient_accumulation_steps != 0:
             self.state.max_steps_in_train_epoch += 1
+        # If a global step budget is given, clamp the epoch-local
+        # max_steps so that we never exceed the remaining budget.
+        if self.max_train_steps is not None:
+            remaining = self.max_train_steps - self.state.global_step
+            if remaining <= 0:
+                logger.info(
+                    "Max train steps (%d) already reached; skip further training.",
+                    self.max_train_steps,
+                )
+                self.state.max_steps_in_train_epoch = 0
+                self.state.step_in_train_epoch = 0
+                return time_info, loss_info, metric_info
+            if remaining < self.state.max_steps_in_train_epoch:
+                self.state.max_steps_in_train_epoch = remaining
         self.state.step_in_train_epoch = 0
 
         # Start timing for reading data and the entire batch
@@ -514,6 +533,12 @@ class BaseTrainer:
         batch_tic = time.perf_counter()
         # start training loop
         for iter_id, batch_data in enumerate(dataloader):
+            # Optional global-step based early stop.
+            if (
+                self.max_train_steps is not None
+                and self.state.global_step >= self.max_train_steps
+            ):
+                break
             reader_cost = time.perf_counter() - reader_tic
             time_info["reader_cost"].update(reader_cost)
             # auto compute batch size
@@ -681,6 +706,17 @@ class BaseTrainer:
 
         # train loop
         for _ in range(self.state.epoch, self.max_epochs):
+            # Optional global-step based early stop (max_iter semantics).
+            if (
+                self.max_train_steps is not None
+                and self.state.global_step >= self.max_train_steps
+            ):
+                logger.info(
+                    "Reached max_iter (max_train_steps=%d); stopping training.",
+                    self.max_train_steps,
+                )
+                break
+
             self.state.epoch += 1
             # train one epoch
             train_time_info, train_loss_info, train_metric_info = self.train_epoch(

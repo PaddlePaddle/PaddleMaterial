@@ -22,6 +22,21 @@ Nuclear Magnetic Resonance (NMR) spectroscopy is a central characterization meth
     | n<25    | 351,273 | 19,516 | 19,515 | 390,304 |
     | n<35    | 517,319 | 28,741 | 28,739 | 574,799 |
 
+## Data Preparation
+
+To set up the DiffNMR environment, please follow these steps:
+
+1. Download the required files:
+   - Vocabulary list: [vocab.tar.gz](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/vocab.tar.gz)
+   - Retrieval database: [retrival_database.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/retrival_database.zip)
+
+2. Place the downloaded files in the `spectrum_elucidation` directory
+
+3. Decompress the files using the following commands:
+   ```bash
+   tar -xvzf vocab.tar.gz
+   unzip retrival_database.zip
+   ```
 
 ## Results
 
