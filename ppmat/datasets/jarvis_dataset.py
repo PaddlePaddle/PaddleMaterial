@@ -556,7 +556,7 @@ class JarvisDataset(Dataset):
 
             for i, data_item in enumerate(data):
                 is_valid = False
-                # Stricter check from new version.
+                # Stricter check from new version
                 if isinstance(data_item, (int, float, np.floating)):
                     try:
                         is_valid = (data_item is not None) and (
