@@ -6,6 +6,7 @@ jarvis_tools==2025.5.30
 matminer==0.9.2
 numpy==1.26.4
 omegaconf==2.3.0
+einops==0.8.0
 p_tqdm==1.4.0
 packaging==25.0
 pandas==2.3.0

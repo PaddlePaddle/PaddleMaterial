@@ -555,20 +555,15 @@ class JarvisDataset(Dataset):
             old_num_structs = len(self.structures)
 
             for i, data_item in enumerate(data):
-                is_valid = False
-                # Stricter check from new version
-                if isinstance(data_item, (int, float, np.floating)):
-                    try:
-                        is_valid = (data_item is not None) and (
-                            not math.isnan(float(data_item))
-                        )
-                    except Exception:
-                        is_valid = False
-                elif isinstance(data_item, str) and data_item.lower() != "na":
-                    # Allow non-'na' strings if dataset has string props
-                    is_valid = True
-
-                if is_valid:
+                # Convert 'na' strings to NaN for proper filtering
+                if isinstance(data_item, str):
+                    if data_item.lower() in ['na', 'nan', 'none', '']:
+                        data_item = np.nan
+                    else:
+                        # Skip non-numeric strings (they're invalid for numeric properties)
+                        continue
+                # Keep only valid numeric values (not None, not NaN)
+                if data_item is not None and not math.isnan(data_item):
                     reserve_idx.append(i)
 
             for key in self.property_data.keys():
@@ -676,9 +671,22 @@ class JarvisDataset(Dataset):
 
         for property_name in self.property_names:
             if property_name in self.property_data:
-                data[property_name] = np.array(
-                    [self.property_data[property_name][idx]]
-                ).astype("float32")
+                value = self.property_data[property_name][idx]
+                # Check for 'na' strings - these should have been filtered out during initialization
+                if isinstance(value, str) and value.lower() in ['na', 'nan', 'none', '']:
+                    raise ValueError(
+                        f"Found invalid property value '{value}' at index {idx} for property "
+                        f"'{property_name}'. This should have been filtered out during dataset "
+                        f"initialization. Please ensure 'filter_unvalid=True' is set and "
+                        f"consider clearing the cache to regenerate filtered data."
+                    )
+                # Check for NaN values - these should also have been filtered out
+                if value is not None and (isinstance(value, float) and math.isnan(value)):
+                    raise ValueError(
+                        f"Found NaN value at index {idx} for property '{property_name}'. "
+                        f"This should have been filtered out during dataset initialization."
+                    )
+                data[property_name] = np.array([value]).astype("float32")
             else:
                 raise KeyError(f"Property {property_name} not found.")
 
