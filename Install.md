@@ -39,9 +39,12 @@ If you see "PaddlePaddle is installed successfully! Let's start deep learning wi
     pip install --upgrade pip setuptools wheel
     pip install setuptools_scm
     pip install Cython
+    pip install git+https://github.com/PFCCLab/paddle_scatter.git
 
     # Install in editable mode
     pip install -e .
+    # pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple recommended if you are in China
+    
 
 ## 2. Run Examples
 
