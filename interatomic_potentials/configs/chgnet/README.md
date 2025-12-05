@@ -69,10 +69,10 @@ The simulation of large-scale systems with complex electron interactions remains
         <tr>
             <td  nowrap="nowrap">chgnet_oc20_s2ef_energy</td>
             <td  nowrap="nowrap">oc20_s2ef</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"><a href="chgnet_oc20_s2ef_energy.yaml">chgnet_oc20_s2ef_energy</a></td>
@@ -81,10 +81,10 @@ The simulation of large-scale systems with complex electron interactions remains
         <tr>
             <td  nowrap="nowrap">chgnet_oc20_s2ef_forces</td>
             <td  nowrap="nowrap">oc20_s2ef</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
-            <td  nowrap="nowrap">0</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"> ~ </td>
             <td  nowrap="nowrap"><a href="chgnet_oc20_s2ef_forces.yaml">chgnet_oc20_s2ef_forces</a></td>

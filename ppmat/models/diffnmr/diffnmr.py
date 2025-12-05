@@ -447,11 +447,11 @@ class DiffNMR(nn.Layer):
         encoder_cfg,
         decoder_cfg,
         diffmodel_cfg,
-        connector_cfg,
         dataset_infos,
         extra_features,
         domain_features,
         clip,
+        connector_cfg = None,
     ) -> None:
         super().__init__()
 
