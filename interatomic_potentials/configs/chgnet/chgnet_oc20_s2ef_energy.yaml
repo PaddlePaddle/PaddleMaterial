@@ -26,7 +26,7 @@ Dataset:
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
         cache_path: "./data/oc20"
-        overwrite: True
+        overwrite: False
         filter_unvalid: False
     num_workers: 4
     use_shared_memory: False
