@@ -58,6 +58,19 @@ from ppmat.utils.misc import is_equal  # noqa
 # -----------------------------------------------------------------------------
 OC20_S2EF_TRAIN_2M_URLS = [
     "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0000.parquet",  # noqa
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0001.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0002.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0003.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0004.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0005.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0006.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0007.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0008.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0009.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0010.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0011.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0012.parquet",
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0013.parquet",
 ]
 
 
