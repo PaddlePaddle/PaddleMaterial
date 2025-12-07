@@ -51,6 +51,14 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
     | G |  Shear Modulus (GPa) | 10987 |
     | K |  Bulk Modulus (GPa) | 10987 |
 
+- OMol25:
+
+    The OMol25 dataset is widely used for benchmarking molecular modeling methods that predict quantum chemical properties (such as internal energy, HOMO-LUMO gap, and dipole moment) given molecular structures. We conducted experiments based on the CHGNet model on this dataset.
+    For more information and the download link, please visit [here](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OMol25/train_4M.tar.gz).
+
+    | Dataset | Count |
+    | :---: | :---: |
+    | OMol25 | 4000000 |
 
 ## Results
 
@@ -317,6 +325,66 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
             <td  nowrap="nowrap"> - </td>
             <td  nowrap="nowrap"><a href="megnet_tmqm_train_108k_polarizability.yaml">megnet_tmqm_train_108k_polarizability</a></td>
             <td  nowrap="nowrap"><a href="None">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_omol25_dipole</td>
+            <td  nowrap="nowrap">OMol25</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="megnet_omol25_dipole.yaml">megnet_omol25_dipole</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+        </tr>  
+        <tr>
+            <td  nowrap="nowrap">megnet_omol25_gap</td>
+            <td  nowrap="nowrap">OMol25</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="megnet_omol25_gap.yaml">megnet_omol25_gap</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_omol25_homo</td>
+            <td  nowrap="nowrap">OMol25</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="megnet_omol25_homo.yaml">megnet_omol25_homo</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_omol25_lumo</td>
+            <td  nowrap="nowrap">OMol25</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="megnet_omol25_lumo.yaml">megnet_omol25_lumo</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td  nowrap="nowrap">megnet_omol25_u0</td>
+            <td  nowrap="nowrap">OMol25</td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> - </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"> ~ </td>
+            <td  nowrap="nowrap"><a href="megnet_omol25_u0.yaml">megnet_omol25_u0</a></td>
+            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
