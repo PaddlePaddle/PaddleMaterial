@@ -616,9 +616,6 @@ class OMol25Dataset(Dataset):
         with open(p, "wb") as f:
             pickle.dump(o, f)
 
-    # =========================================================================
-    # CORE FIX: Patch Missing Graph Indices & Features for CHGNet
-    # =========================================================================
     def __getitem__(self, idx):
         global _DEBUG_PRINT_ONCE
         data = {}
