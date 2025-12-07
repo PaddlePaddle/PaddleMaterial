@@ -45,6 +45,7 @@ from ppmat.datasets.density_dataset import DensityDataset
 from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.tmqm_dataset import TmqmDataset
+from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger

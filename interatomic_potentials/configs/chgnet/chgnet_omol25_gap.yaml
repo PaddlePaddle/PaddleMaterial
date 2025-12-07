@@ -1,0 +1,128 @@
+Global:
+  # Available property names for OMol25 typically include:
+  # "u0" (Internal Energy), "gap" (HOMO-LUMO Gap), "homo", "lumo", "dipole"
+  # This config focuses on HOMO-LUMO gap prediction
+
+  label_names: ["gap"]
+  graph_converter:
+    __class_name__: CHGNetGraphConverter
+    __init_params__:
+      cutoff: 5.0
+      pdc: [1, 1, 1]
+      num_classes: 95
+      atom_graph_cutoff: 6.0
+      bond_graph_cutoff: 3.0
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: OMol25Dataset
+      __init_params__:
+        path: "./data/omol25"
+        # 只要在这里配置了 urls，第一次运行时会自动下载
+        #urls: ["https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OMol25/train_4M.tar.gz"]
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/omol25"
+    num_workers: 4
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True    
+        drop_last: False
+        batch_size: 32
+
+  val:
+    dataset:
+      __class_name__: OMol25Dataset
+      __init_params__:
+        path: "./data/omol25"
+        # 验证集指向相同的路径即可
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/omol25"
+    num_workers: 4
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+
+Model:
+  __class_name__: CHGNet
+  __init_params__:
+    atom_fea_dim: 64
+    bond_fea_dim: 64
+    angle_fea_dim: 64
+    composition_model: null     
+    num_radial: 31
+    num_angular: 31
+    n_conv: 4
+    atom_conv_hidden_dim: 64
+    update_bond: True
+    bond_conv_hidden_dim: 64
+    update_angle: True
+    angle_layer_hidden_dim: 0
+    conv_dropout:  0
+    read_out: "ave"
+    mlp_hidden_dims: [64, 64, 64]
+    mlp_dropout:  0
+    mlp_first: True
+    is_intensive: True
+    atom_graph_cutoff:  6
+    bond_graph_cutoff:  3
+    cutoff_coeff: 8
+    learnable_rbf: True
+    is_freeze: False
+    property_names: ['energy_per_atom']
+    return_site_energies: False
+    return_atom_feas: False
+    return_crystal_feas: False
+
+Trainer:
+  max_epochs: 2000
+  seed: 42
+  output_dir: ./output/megnet_omol25_gap
+  save_freq: 100
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "gap"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 0.001
+        eta_min: 0.0001
+        by_epoch: True
+
+Metric:
+  energy_per_atom:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True
