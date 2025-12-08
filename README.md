@@ -32,6 +32,7 @@
 
 ## 📑 Task
 - [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
+- [MLES-Machine Learning Electronic Structure](electronic_structure/README.md)
 - [PP-Property Prediction](property_prediction/README.md)
 - [SG-Structure Generation](structure_generation/README.md)
 - [SE-Spectrum Elucidation](spectrum_elucidation/README.md)
@@ -77,6 +78,15 @@ python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_fo
 
 For more information on how to use PaddleMaterials to train and fine tune a model, please refer to the [documentation](get_started.md).
 
+## 📈 Traffic analytics
+
+<!-- traffic:start -->
+| Date | Views | Unique views | Clones | Unique clones |
+| --- | --- | --- | --- | --- |
+| - | - | - | - | - |
+
+![Traffic trend](output/traffic/traffic_trend.png)
+<!-- traffic:end -->
 
 ## 👩‍👩‍👧‍👦 Cooperation
 

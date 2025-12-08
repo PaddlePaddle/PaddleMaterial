@@ -39,11 +39,8 @@ def split_tensor_func(self, split_size, dim=0):
     else:
         return paddle.split(self, split_size, dim)
 
-
 setattr(paddle.Tensor, "split", split_tensor_func)
-
-
-device = "gpu:1"
+device = "gpu:0"
 paddle.set_device(device)
 static_fig = True
 

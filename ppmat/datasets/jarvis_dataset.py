@@ -50,18 +50,23 @@ from ppmat.utils.misc import is_equal
 JARVIS_MIRROR_DATASETS = [
     {
         "name": "dft_3d_2021",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_dft_3d-8-18-2021.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_dft_3d-8-18-2021.json.zip",  # noqa
         "md5": "8f619035a2cd8030de1ce38ce8b561b2",
     },
     {
         "name": "alexandria_scan_3d_2024.10.1_jarvis_tools",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_alexandria_scan_3d_2024.10.1_jarvis_tools.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_alexandria_scan_3d_2024.10.1_jarvis_tools.json.zip",  # noqa
         "md5": "ddeee1df79789d8f2b4a89f625864e6b",
     },
     {
         "name": "cfid_3d",
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_cfid_3d-8-18-2021.json.zip",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jarvis_cfid_3d-8-18-2021.json.zip",  # noqa
         "md5": "6efe75ca51aa5fb5c23a5b08fb412a6e",
+    },
+    {
+        "name": "dft_2d",
+        "url": "https://paddle-org.bj.bcebos.com/paddlematerial/datasets/jarvis/jdft_2d-4-26-2020.zip",  # noqa
+        "md5": "022c6e321bef034f5bff40e67c81f483",
     },
 ]
 
@@ -313,10 +318,14 @@ class JarvisDataset(Dataset):
         path (str): The path of the dataset,
             if path is not exists, it will be downloaded.
 
-        jarvis_data_name (str): The name of the jarvis dataset.
+        jarvis_data_name (str): The name of the jarvis dataset. Default is "custom".
 
         property_names (Union[str, List[str]]): Property names you want to use,
             for jarvis dataset.
+
+        url (Optional[str], optional): Custom dataset download URL. If provided,
+            the dataset will be downloaded from this URL instead of checking the
+            registry. This supports specific datasets like jdft_2d.
 
         build_structure_cfg (Dict, optional): The configs for building the pymatgen
             structure from cif string, if not specified, the default setting will be
@@ -344,24 +353,36 @@ class JarvisDataset(Dataset):
     def __init__(
         self,
         path: str,
-        jarvis_data_name: str,
-        property_names: Union[str, List[str]],
+        jarvis_data_name: str = "custom",  # Default to custom if url is provided
+        property_names: Union[str, List[str]] = None,
+        url: Optional[str] = None,  # New argument
         build_structure_cfg: Dict = None,
         build_graph_cfg: Dict = None,
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
         filter_unvalid: bool = True,
-        **kwargs,  # for compatibility
+        **kwargs,
     ):
         super().__init__()
 
-        # Extract jarvis dataset name, and construct dataset zip file path
-        db_info = get_db_info()
-        if jarvis_data_name not in db_info:
-            raise ValueError(f"Unknown dataset name: {jarvis_data_name}")
-        _, jarvis_data_filename, _, _ = db_info[jarvis_data_name]
-        self.path = osp.join(path, jarvis_data_filename + ".zip")
+        self.url = url
+
+        # 1. Determine Path and Filename logic
+        # If URL is explicitly provided (Adapter logic), use it to determine filename
+        if self.url is not None:
+            zip_basename = osp.basename(self.url)
+            # e.g. jdft_2d-4-26-2020.zip
+            self.path = osp.join(path, zip_basename)
+            logger.info(f"Using provided URL: {self.url}")
+        else:
+            # Original logic: Lookup via jarvis_data_name
+            db_info = get_db_info()
+            if jarvis_data_name not in db_info:
+                raise ValueError(f"Unknown dataset name: {jarvis_data_name}")
+
+            _, jarvis_data_filename, _, _ = db_info[jarvis_data_name]
+            self.path = osp.join(path, jarvis_data_filename + ".zip")
 
         # Obtain property names
         if isinstance(property_names, str):
@@ -382,21 +403,9 @@ class JarvisDataset(Dataset):
             )
         self.build_structure_cfg = build_structure_cfg
 
-        # Handle graph_cfg
-        # if build_graph_cfg is None:
-        #     build_graph_cfg = {
-        #         "__class_name__": "FindPointsInSpheres",
-        #         "__init_params__": {"cutoff": 4},
-        #         "__call_params__": {},
-        #     }
-        #     logger.message(
-        #         "The build_graph_cfg is not set, will use the default "
-        #         f"configs: {build_graph_cfg}"
-        #     )
-
         self.build_graph_cfg = build_graph_cfg
 
-        # Determine cache directory
+        # Determine cache directory name suffix
         if build_graph_cfg is not None:
             graph_converter_name = re.sub(
                 r"(?<!^)([A-Z])", r"_\1", build_graph_cfg["__class_name__"]
@@ -406,30 +415,21 @@ class JarvisDataset(Dataset):
             graph_converter_name = "none"
             cutoff_name = "none"
 
+        # Construct Cache Path
         if cache_path is not None:
-            self.cache_path = osp.join(
-                cache_path,
-                jarvis_data_name
-                + "_cache_"
-                + graph_converter_name
-                + "_cutoff_"
-                + cutoff_name,
-            )
+            base_cache_dir = cache_path
         else:
-            # for example:
-            # path = ./data/jarvis/
-            # cache_path = ./data/jarvis/
-            # self.path = ./data/jarvis/jdft_3d-12-12-2022.json.zip
-            # self.cache_path =
-            # ./data/jarvis/dft_3d_cache_find_points_in_spheres_cutoff_4
-            self.cache_path = osp.join(
-                path,
-                jarvis_data_name
-                + "_cache_"
-                + graph_converter_name
-                + "_cutoff_"
-                + cutoff_name,
-            )
+            base_cache_dir = path  # default to dataset root
+
+        self.cache_path = osp.join(
+            base_cache_dir,
+            jarvis_data_name
+            + "_cache_"
+            + graph_converter_name
+            + "_cutoff_"
+            + cutoff_name,
+        )
+
         logger.info(f"Cache path: {self.cache_path}")
         os.makedirs(self.cache_path, exist_ok=True)
 
@@ -441,16 +441,22 @@ class JarvisDataset(Dataset):
         # compute number of samples of raw file
         if osp.exists(self.path) and zipfile.is_zipfile(self.path):
             try:
-                num_samples_raw_file = len(
-                    json.loads(
-                        zipfile.ZipFile(self.path).read(
-                            os.path.splitext(os.path.basename(self.path))[0]
-                        )
-                    )
-                )
+                with zipfile.ZipFile(self.path) as zf:
+                    # Logic to find json: check for name matching zip, or first .json
+                    expected_member = os.path.splitext(os.path.basename(self.path))[0]
+                    try:
+                        bytes_data = zf.read(expected_member)
+                    except KeyError:
+                        json_members = [n for n in zf.namelist() if n.endswith(".json")]
+                        if not json_members:
+                            raise RuntimeError(
+                                "No .json file found inside the zip archive."
+                            )
+                        bytes_data = zf.read(json_members[0])
+                num_samples_raw_file = len(json.loads(bytes_data))
                 logger.info(f"The raw file has {num_samples_raw_file} samples.")
             except Exception as e:
-                logger.warning(e)
+                logger.warning(str(e))
                 logger.warning("The raw file is corrupted.")
                 num_samples_raw_file = 0
         else:
@@ -476,9 +482,7 @@ class JarvisDataset(Dataset):
                             f"raw samples ({num_samples_raw_file}). "
                             f"Please check if overwrite is needed."
                         )
-                logger.info(
-                    "Property cache is found. " "Will load properties from cache."
-                )
+                logger.info("Property cache is found. Will load properties from cache.")
             except Exception as e:
                 logger.warning(e)
                 logger.warning(
@@ -487,7 +491,7 @@ class JarvisDataset(Dataset):
                 )
                 overwrite = True
         else:
-            logger.info("Property cache is not found. " "Will build properties.")
+            logger.info("Property cache is not found. Will build properties.")
             overwrite = True
 
         # check if all raw structures have been built to crystal structure
@@ -497,8 +501,6 @@ class JarvisDataset(Dataset):
                 "The cache file of built crystal structure is found. "
                 "Will load structures from cache."
             )
-
-            # compute number of cached structures
             files_structure = [
                 f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")
             ]
@@ -516,14 +518,16 @@ class JarvisDataset(Dataset):
                     f"Please check if overwrite is needed."
                 )
         else:
-            logger.info("Structure cache is not found. " "Will build structures.")
+            logger.info("Structure cache is not found. Will build structures.")
             os.makedirs(structure_cache_path, exist_ok=True)
             os.makedirs(property_cache_path, exist_ok=True)
-            # Load raw Jarvis dataset
+
+            # Load raw Jarvis dataset (Updated with url support)
             self.raw_data, self.num_samples = self.read_data(
-                path=self.path, data_name=jarvis_data_name
+                path=self.path, data_name=jarvis_data_name, url=self.url
             )
             logger.info(f"Load {self.num_samples} samples from {path}")
+
             # Extract property values from raw dataset
             self.property_data = self.read_property_data(
                 data=self.raw_data, property_names=self.property_names
@@ -531,25 +535,21 @@ class JarvisDataset(Dataset):
 
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save build_structure_cfg to cache file
                 self.save_to_cache(
                     osp.join(self.cache_path, "build_structure_cfg.pkl"),
                     build_structure_cfg,
                 )
-                # convert strucutes
                 structures = BuildStructure(**build_structure_cfg)(
                     self.raw_data["atoms"]
                 )
-                # save structures to cache file
                 for i in range(self.num_samples):
                     self.save_to_cache(
                         osp.join(structure_cache_path, f"{i:010d}.pkl"),
                         structures[i],
                     )
                 logger.info(
-                    f"Save {self.num_samples} structures " f"to {structure_cache_path}"
+                    f"Save {self.num_samples} structures to {structure_cache_path}"
                 )
-                # save property data to cache file
                 for property_name in self.property_names:
                     data = self.property_data[property_name]
                     self.save_to_cache(
@@ -557,99 +557,90 @@ class JarvisDataset(Dataset):
                         data,
                     )
                     logger.info(
-                        f"Save {self.num_samples} "
-                        f"{property_name} to {property_cache_path}"
+                        f"Save {self.num_samples} {property_name} to {property_cache_path}"  # noqa
                     )
-            # sync all processes
             if dist.is_initialized():
                 dist.barrier()
 
         # check if generate graph infomation
         graph_cache_path = osp.join(self.cache_path, "graphs")
-        graph_cache_exists = build_graph_cfg is not None and osp.exists(
-            graph_cache_path
-        )
-        # check if create graph configures is same with cache.
-        if graph_cache_exists and not overwrite:
-            try:
-                build_graph_cfg_cache = self.load_from_cache(
-                    osp.join(self.cache_path, "build_graph_cfg.pkl")
-                )
-                if is_equal(build_graph_cfg_cache, build_graph_cfg):
-                    logger.info(
-                        "The cached build_structure_cfg configuration "
-                        "matches the current settings. Reusing previously "
-                        "generated structural data to optimize performance."
-                    )
-                else:
-                    logger.warning(
-                        "build_graph_cfg is different from build_graph_cfg_cache"
-                        ". Will rebuild the graphs."
-                    )
-                    logger.warning(
-                        "If you want to use the cached structures and graphs, "
-                        "please ensure that the settings used in match your "
-                        "current settings."
-                    )
-                    overwrite = True
-            except Exception as e:
-                logger.warning(e)
-                logger.warning(
-                    "Failed to load builded_graph_cfg.pkl from cache. "
-                    "Will rebuild the graphs."
-                )
-                overwrite = True
+        need_build_graphs = False
 
-        # check if all structures are built into the graph
-        if osp.exists(graph_cache_path) and not overwrite:
-            logger.info(
-                "The cache file of built crystal structure is found. "
-                "Will load structures from cache."
-            )
-            # compute number of cached graph
-            files_graph = [
-                f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")
-            ]
+        # Determine if graphs need building (Logic merged from both versions)
+        if build_graph_cfg is not None:
+            if osp.exists(graph_cache_path) and not overwrite:
+                try:
+                    build_graph_cfg_cache = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
+                    if not is_equal(build_graph_cfg_cache, build_graph_cfg):
+                        logger.warning(
+                            "build_graph_cfg is different. Will rebuild graphs."
+                        )
+                        need_build_graphs = True
+                    else:
+                        logger.info("Graph config matches cache. Reusing graphs.")
+                except Exception as e:
+                    logger.warning(e)
+                    logger.warning("Failed to load build_graph_cfg.pkl. Will rebuild.")
+                    need_build_graphs = True
 
-            num_cached_graphs = len(files_graph)
-            if num_cached_structures == num_cached_graphs:
-                logger.info("All cached structures already have graphs")
-                logger.info(f"the number is {num_cached_graphs}")
+                # Check counts
+                if not need_build_graphs:
+                    files_graph = [
+                        f for f in os.listdir(graph_cache_path) if f.endswith(".pkl")
+                    ]
+                    files_structure = [
+                        f
+                        for f in os.listdir(structure_cache_path)
+                        if f.endswith(".pkl")
+                    ]
+                    if len(files_graph) != len(files_structure):
+                        logger.warning("Graph/Structure count mismatch. Will rebuild.")
+                        need_build_graphs = True
             else:
-                logger.warning(
-                    f"Cached structures ({num_cached_structures}) and "
-                    f"graphs ({num_cached_graphs}) count mismatch. "
-                    f"Consider overwriting."
+                logger.info(
+                    "Graph cache not found or overwrite=True. Will build graphs."
                 )
-        else:
-            logger.info("Graph cache is not found. Will build graphs.")
+                need_build_graphs = True
+
+        if build_graph_cfg is not None and need_build_graphs:
             os.makedirs(graph_cache_path, exist_ok=True)
-            # convert graphs
-            # only rank 0 process do the conversion
             if dist.get_rank() == 0:
-                # save build_graph_cfg to cache file
                 self.save_to_cache(
                     osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
                 )
-                # convert graph
                 converter = build_graph_converter(build_graph_cfg)
+
+                # Load structures in order to ensure alignment
+                struct_files = sorted(
+                    [f for f in os.listdir(structure_cache_path) if f.endswith(".pkl")],
+                    key=lambda x: int(x.replace(".pkl", "")),
+                )
+                # If structures variable exists (from init flow), use it, otherwise load
+                if "structures" not in locals():
+                    structures = [
+                        self.load_from_cache(osp.join(structure_cache_path, f))
+                        for f in struct_files
+                    ]
+
                 graphs = converter(structures)
-                # save graphs to cache file
-                for i in range(self.num_samples):
+                for i in range(len(graphs)):
                     self.save_to_cache(
                         osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
                     )
-                logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
-            # sync all processes
+                logger.info(f"Save {len(graphs)} graphs to {graph_cache_path}")
+
             if dist.is_initialized():
                 dist.barrier()
-            # now safe to delete large memory objects
+
+            # Clean up
             if "graphs" in locals():
                 del graphs
             if "structures" in locals():
                 del structures
 
-        # Obtain finial properies, structures and graphs
+        # Obtain final properties, structures and graphs
         self.property_data = {
             property_name: self.load_from_cache(
                 osp.join(property_cache_path, f"{property_name}.pkl")
@@ -667,19 +658,16 @@ class JarvisDataset(Dataset):
 
         if build_graph_cfg is not None:
             files = sorted(
-                os.listdir(graph_cache_path), key=lambda x: int(x.replace(".pkl", ""))
+                os.listdir(graph_cache_path) if osp.exists(graph_cache_path) else [],
+                key=lambda x: int(x.replace(".pkl", "")),
             )
             self.graphs = [osp.join(graph_cache_path, f) for f in files]
         else:
             self.graphs = None
 
-        # filter by property data,
-        # since some samples may have no valid properties
         if filter_unvalid:
             self.filter_unvalid_by_property()
 
-        # filter by graph data,
-        # as some samples may not have edges and need to be removed
         if self.graphs is not None:
             self.filter_unvalid_by_graph()
 
@@ -687,13 +675,15 @@ class JarvisDataset(Dataset):
         self,
         path: str,
         data_name: str,
+        url: str = None,  # Added url argument
     ):
         """
-        Load jarvis data, and convert from list-of-dict to dict-of-lists by property.
+        Load jarvis data. Support both standard registry and direct URL.
 
         Args:
             path (str): The directory of data file.
             data_name (str): Name of the jarvis data.
+            url (str, optional): Direct URL to download dataset from.
 
         Returns:
             property_data (dict[str, list[Any]]):
@@ -702,93 +692,95 @@ class JarvisDataset(Dataset):
             num_samples (int):
                 Total number of samples in the dataset.
         """
-
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        property_data = {}
 
-        # If file is missing or invalid, remove it and redownload
+        # 1. Download Logic
         if not osp.exists(path) or not zipfile.is_zipfile(path):
             if osp.exists(path):
                 logger.message(
-                    f"Invalid Jarvis dataset zip archive detected at '{path}'. "
-                    f"Delete it and initiating re-download of dataset '{data_name}'."
+                    f"Invalid dataset zip at '{path}'. Delete and re-download."
                 )
                 os.remove(path)
             else:
-                logger.message(
-                    f"Jarvis dataset zip archive not found. "
-                    f"Downloading of dataset {data_name}."
-                )
+                logger.message("Dataset zip not found. Downloading.")
 
-            # Preferred mirror download (Paddle BOS) based on expected filename
-            expected_filename_no_zip = os.path.splitext(os.path.basename(path))[0]
-            _registry_map = {d["name"]: d for d in JARVIS_MIRROR_DATASETS}
-            if data_name in _registry_map:
+            # Priority 1: Direct URL provided (Adapter logic)
+            if url is not None:
                 tmp_path = path + ".downloading"
                 try:
-                    logger.message(
-                        f"Trying preferred mirror download from Paddle BOS for dataset"
-                        f"'{data_name}' (expected file '{expected_filename_no_zip}')."
-                    )
-                    urllib.request.urlretrieve(
-                        _registry_map[data_name]["url"], tmp_path
-                    )
+                    logger.message(f"Downloading from provided URL: {url}")
+                    urllib.request.urlretrieve(url, tmp_path)
                     if not zipfile.is_zipfile(tmp_path):
-                        raise ValueError(
-                            "Downloaded file from mirror is not a valid zip archive."
-                        )
+                        raise ValueError("Downloaded file is not a valid zip archive.")
                     os.replace(tmp_path, path)
-                    logger.message(
-                        "Mirror download succeeded. Using the mirrored archive."
-                    )
+                    logger.message("Download succeeded.")
                 except Exception as e:
-                    logger.warning(e)
                     if osp.exists(tmp_path):
                         try:
                             os.remove(tmp_path)
                         except Exception:
                             pass
-                    logger.message(
-                        "Mirror download failed. Fall back to JARVIS official source."
-                    )
+                    raise RuntimeError(f"Failed to download from URL. Error: {e}")
 
-            # If mirror did not provide a valid file, fallback to jdata
-            if not osp.exists(path) or not zipfile.is_zipfile(path):
-                try:
-                    try:
-                        raw_data = jdata(
-                            dataset=data_name, store_dir=os.path.dirname(path)
-                        )
-                    except TypeError:
-                        raw_data = jdata(dataset=data_name)
-                    assert (
-                        raw_data is not None
-                    ), f"Failed to download dataset {data_name}"
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to download dataset {data_name}. Error: {e}"
-                    )
+            # Priority 2: Mirror / Jarvis-Tools (Original logic)
             else:
-                # Mirror path ready; read from the zip file we just downloaded
-                logger.message(
-                    f"Existing Jarvis dataset zip archive found at '{path}'."
-                )
-                with zipfile.ZipFile(path) as zf:
-                    expected_member = os.path.splitext(os.path.basename(path))[0]
+                # Preferred mirror download
+                _registry_map = {d["name"]: d for d in JARVIS_MIRROR_DATASETS}
+
+                download_success = False
+                if data_name in _registry_map:
+                    tmp_path = path + ".downloading"
                     try:
-                        bytes_data = zf.read(expected_member)
-                    except KeyError:
-                        json_members = [n for n in zf.namelist() if n.endswith(".json")]
-                        if not json_members:
-                            raise RuntimeError(
-                                "No .json file found inside the downloaded zip archive."
+                        logger.message(f"Trying mirror download for '{data_name}'.")
+                        urllib.request.urlretrieve(
+                            _registry_map[data_name]["url"], tmp_path
+                        )
+                        if zipfile.is_zipfile(tmp_path):
+                            os.replace(tmp_path, path)
+                            download_success = True
+                            logger.message("Mirror download succeeded.")
+                    except Exception as e:
+                        logger.warning(f"Mirror download failed: {e}")
+                        if osp.exists(tmp_path):
+                            os.remove(tmp_path)
+
+                # Fallback to jarvis-tools
+                if not download_success:
+                    if not osp.exists(path) or not zipfile.is_zipfile(path):
+                        try:
+                            logger.message(
+                                f"Falling back to jarvis.db.figshare for "
+                                f"'{data_name}'"
                             )
-                        bytes_data = zf.read(json_members[0])
-                raw_data = json.loads(bytes_data)
-        # File is valid
-        else:
-            logger.message(f"Existing Jarvis dataset zip archive found at '{path}'.")
+                            try:
+                                raw_data = jdata(
+                                    dataset=data_name,
+                                    store_dir=os.path.dirname(path),
+                                )
+                            except TypeError:
+                                raw_data = jdata(dataset=data_name)
+                            assert (
+                                raw_data is not None
+                            ), f"Failed to download dataset {data_name}"
+                            # If jdata returns the object directly, we handle it below
+                            if raw_data:
+                                property_data = defaultdict(list)
+                                num_samples = len(raw_data)
+                                for item in raw_data:
+                                    for key, value in item.items():
+                                        property_data[key].append(value)
+                                return dict(property_data), num_samples
+
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to download dataset {data_name}. Error: {e}"
+                            )
+
+        # 2. Reading Logic (from local zip)
+        if osp.exists(path) and zipfile.is_zipfile(path):
+            logger.message(f"Existing dataset zip found at '{path}'.")
             with zipfile.ZipFile(path) as zf:
+                # Generic approach to find json inside
                 expected_member = os.path.splitext(os.path.basename(path))[0]
                 try:
                     bytes_data = zf.read(expected_member)
@@ -800,25 +792,19 @@ class JarvisDataset(Dataset):
                         )
                     bytes_data = zf.read(json_members[0])
             raw_data = json.loads(bytes_data)
+        else:
+            # Should have been handled by download logic, but as failsafe
+            raise RuntimeError(f"File not found or invalid at {path}")
 
-        # Convert list-of-dict raw data to dict-of-lists by property.
         property_data = defaultdict(list)
         num_samples = len(raw_data)
-
-        # Test, only load part of data
-        # for idx, item in enumerate(raw_data):
-        #     if idx == 1001:
-        #         break
-        #     for key, value in item.items():
-        #         property_data[key].append(value)
-        # num_samples = len(property_data[key])
-
         for item in raw_data:
             for key, value in item.items():
                 property_data[key].append(value)
 
         for key, value in dict(property_data).items():
             if len(value) != num_samples:
+                # Check for mismatch length
                 raise ValueError(
                     f"Property {key} has different length than other properties."
                 )
@@ -857,7 +843,6 @@ class JarvisDataset(Dataset):
             None
 
         """
-
         with open(cache_path, "wb") as f:
             pickle.dump(data, f)
 
@@ -871,7 +856,6 @@ class JarvisDataset(Dataset):
         Returns:
             data: The data loaded from the cache.
         """
-
         if osp.exists(cache_path):
             with open(cache_path, "rb") as f:
                 data = pickle.load(f)
@@ -892,33 +876,48 @@ class JarvisDataset(Dataset):
         Returns:
             None
         """
-
         for property_name in self.property_names:
             data = self.property_data[property_name]
             reserve_idx = []
+            old_num_structs = len(self.structures)
+
             for i, data_item in enumerate(data):
                 # Convert 'na' strings to NaN for proper filtering
                 if isinstance(data_item, str):
-                    if data_item.lower() in ['na', 'nan', 'none', '']:
+                    if data_item.lower() in ["na", "nan", "none", ""]:
                         data_item = np.nan
                     else:
-                        # Skip non-numeric strings (they're invalid for numeric properties)
+                        # Skip non-numeric strings
                         continue
-                # Keep only valid numeric values (not None, not NaN)
+                # Keep only valid numeric values
                 if data_item is not None and not math.isnan(data_item):
                     reserve_idx.append(i)
+
             for key in self.property_data.keys():
                 self.property_data[key] = [
                     self.property_data[key][i] for i in reserve_idx
                 ]
 
             self.structures = [self.structures[i] for i in reserve_idx]
+
+            # Graphs reindex: compare with original structure count
             if self.graphs is not None:
-                self.graphs = [self.graphs[i] for i in reserve_idx]
+                if len(self.graphs) == old_num_structs:
+                    self.graphs = [self.graphs[i] for i in reserve_idx]
+                else:
+                    logger.warning(
+                        "Graphs count mismatches structures during property "
+                        "filtering. Rebuilding graphs."
+                    )
+                    self.graphs = self._build_graphs_for_structures(self.structures)
+
+            kept = len(reserve_idx)
+            total = len(data)
             logger.warning(
-                f"Filter out {len(reserve_idx)} samples with valid properties: "
-                f"{property_name}"
+                f"After property filtering '{property_name}': "
+                f"kept {kept}/{total} samples."
             )
+
         self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
@@ -935,9 +934,16 @@ class JarvisDataset(Dataset):
         Returns:
             None
         """
+        # If graphs and structures are misaligned, rebuild graphs for current structures
+        if len(self.graphs) != len(self.structures):
+            logger.warning(
+                "Rebuilding graphs to match structures before graph filtering."
+            )
+            self.graphs = self._build_graphs_for_structures(self.structures)
+
         reserve_idx = []
         for i, g in enumerate(self.graphs):
-            data = self.load_from_cache(g)
+            data = self.load_from_cache(g) if isinstance(g, str) else g
             if data is not None:
                 reserve_idx.append(i)
 
@@ -945,14 +951,31 @@ class JarvisDataset(Dataset):
             self.property_data[key] = [self.property_data[key][i] for i in reserve_idx]
         self.structures = [self.structures[i] for i in reserve_idx]
         self.graphs = [self.graphs[i] for i in reserve_idx]
-        logger.warning(f"Filter out {len(reserve_idx)} samples with valid graphs.")
+        logger.warning(
+            f"Filter out {len(self.graphs) - len(reserve_idx)} "
+            f"samples with invalid graphs."
+        )
 
         self.num_samples = len(self.structures)
         logger.warning(f"Remaining {self.num_samples} samples after filtering.")
 
+    def _build_graphs_for_structures(self, structures_list):
+        """Helper to rebuild graphs in-memory if needed (Ported from new version)."""
+        if self.build_graph_cfg is None:
+            logger.warning("build_graph_cfg is None, cannot build graphs.")
+            return []
+        converter = build_graph_converter(self.build_graph_cfg)
+        structures = []
+        for s in structures_list:
+            if isinstance(s, str):
+                structures.append(self.load_from_cache(s))
+            else:
+                structures.append(s)
+        graphs = converter(structures)
+        return graphs
+
     def get_structure_array(self, structure):
         atom_types = np.array([site.specie.Z for site in structure])
-        # get lattice parameters and matrix
         lattice_parameters = structure.lattice.parameters
         lengths = np.array(lattice_parameters[:3], dtype="float32").reshape(1, 3)
         angles = np.array(lattice_parameters[3:], dtype="float32").reshape(1, 3)
@@ -972,7 +995,6 @@ class JarvisDataset(Dataset):
     def __getitem__(self, idx: int):
         """Get item at index idx."""
         data = {}
-        # get graph
         if self.graphs is not None:
             graph = self.graphs[idx]
             if isinstance(graph, str):
@@ -983,22 +1005,30 @@ class JarvisDataset(Dataset):
             if isinstance(structure, str):
                 structure = self.load_from_cache(structure)
             data["structure_array"] = self.get_structure_array(structure)
+
         for property_name in self.property_names:
             if property_name in self.property_data:
                 value = self.property_data[property_name][idx]
-                # Check for 'na' strings - these should have been filtered out during initialization
-                if isinstance(value, str) and value.lower() in ['na', 'nan', 'none', '']:
+                # Check for 'na' strings
+                if isinstance(value, str) and value.lower() in [
+                    "na",
+                    "nan",
+                    "none",
+                    "",
+                ]:
                     raise ValueError(
-                        f"Found invalid property value '{value}' at index {idx} for property "
-                        f"'{property_name}'. This should have been filtered out during dataset "
-                        f"initialization. Please ensure 'filter_unvalid=True' is set and "
+                        f"Found invalid property value '{value}' at index {idx} for property "  # noqa
+                        f"'{property_name}'. This should have been filtered out during dataset "  # noqa
+                        f"initialization. Please ensure 'filter_unvalid=True' is set and "  # noqa
                         f"consider clearing the cache to regenerate filtered data."
                     )
                 # Check for NaN values - these should also have been filtered out
-                if value is not None and (isinstance(value, float) and math.isnan(value)):
+                if value is not None and (
+                    isinstance(value, float) and math.isnan(value)
+                ):
                     raise ValueError(
-                        f"Found NaN value at index {idx} for property '{property_name}'. "
-                        f"This should have been filtered out during dataset initialization."
+                        f"Found NaN value at index {idx} for property '{property_name}'. "  # noqa
+                        f"This should have been filtered out during dataset initialization."  # noqa
                     )
                 data[property_name] = np.array([value]).astype("float32")
             else:
@@ -1008,7 +1038,6 @@ class JarvisDataset(Dataset):
             self.property_data["id"][idx] if "id" in self.property_data else idx
         )
         data = self.transforms(data) if self.transforms is not None else data
-
         return data
 
     def __len__(self):
