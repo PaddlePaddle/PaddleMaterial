@@ -1,4 +1,4 @@
-# InfGCN Configuration for OMol25 Dataset
+# MatENO Configuration for OMol25 Dataset
 Global:
   do_train: True
   do_eval: True
