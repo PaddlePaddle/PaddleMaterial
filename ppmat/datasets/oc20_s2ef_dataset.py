@@ -202,6 +202,8 @@ class OC20S2EFDataset(Dataset):
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
         self.build_graph_cfg = build_graph_cfg
+        # Get graph_batch_size from kwargs, default to 100 for memory efficiency
+        self.graph_batch_size = kwargs.get("graph_batch_size", 100)
 
         # define sub-directories for cache
         self.structures_dir = osp.join(self.cache_path, "structures")
@@ -364,9 +366,12 @@ class OC20S2EFDataset(Dataset):
             logger.warning("No structures found to convert!")
             return
 
-        batch_size = 2000  # Define batch size
+        # Use configurable batch size to avoid OOM (Out of Memory) errors
+        # Can be set via graph_batch_size parameter in dataset config
+        batch_size = self.graph_batch_size
 
         logger.info(f"Converting {total} structures to graphs...")
+        logger.info(f"Using batch size: {batch_size} to manage memory usage")
 
         # 1. Create global progress bar
         pbar = tqdm(total=total, desc="Graph Conversion", unit="sample")
@@ -670,10 +675,21 @@ class OC20S2EFDataset(Dataset):
                                 e_col = chosen["energy"]
                                 if e_col and data.get(e_col):
                                     val = data[e_col][i]
+                                    # Ensure energy is converted to numpy array for consistency
+                                    # Store as scalar value (not array) to maintain type consistency
+                                    if np.isscalar(val):
+                                        val = float(val)  # Store as Python float
+                                    else:
+                                        val = float(np.asarray(val, dtype=float).item())  # Convert array to scalar
                                 elif chosen["reference_energy"] and data.get(
                                     chosen["reference_energy"]
                                 ):
                                     val = data[chosen["reference_energy"]][i]
+                                    # Ensure energy is converted to numpy array for consistency
+                                    if np.isscalar(val):
+                                        val = float(val)  # Store as Python float
+                                    else:
+                                        val = float(np.asarray(val, dtype=float).item())  # Convert array to scalar
 
                             # Special handling for forces
                             elif pname == "forces":
@@ -691,6 +707,16 @@ class OC20S2EFDataset(Dataset):
                                     c = pname
                                 if c and data.get(c):
                                     val = data[c][i]
+                                    # Ensure property is converted to appropriate format
+                                    # For scalar properties, store as Python float/int
+                                    # For array properties, store as numpy array
+                                    if val is not None:
+                                        if np.isscalar(val):
+                                            # Store scalar as Python native type for consistency
+                                            val = float(val) if isinstance(val, (float, np.floating)) else int(val) if isinstance(val, (int, np.integer)) else val
+                                        else:
+                                            # Store array as numpy array
+                                            val = np.asarray(val, dtype=float)
 
                             prop_buffers[pname].append(val)
 
@@ -801,11 +827,38 @@ class OC20S2EFDataset(Dataset):
         for pname in self.property_names:
             v = self.property_data[pname][idx]
             # Ensure consistent dimensionality for output tensors
-            data[pname] = (
-                np.array([v], dtype="float32")
-                if np.isscalar(v)
-                else np.array(v, dtype="float32")
-            )
+            # Convert to numpy array and ensure proper shape for tensor conversion
+            if v is None:
+                # Handle None values
+                if pname == "energy":
+                    data[pname] = np.array([0.0], dtype="float32")
+                elif pname == "forces":
+                    # Get number of atoms from structure if available
+                    if self.graphs is None and idx < len(self.structures):
+                        structure = self.structures[idx]
+                        if isinstance(structure, str):
+                            structure = self._load_pickle(structure)
+                        n_atoms = len(structure)
+                    else:
+                        n_atoms = 1
+                    data[pname] = np.zeros((n_atoms, 3), dtype="float32")
+                else:
+                    data[pname] = np.array([0.0], dtype="float32")
+            elif np.isscalar(v):
+                # For scalar values, wrap in array but keep as 1D array
+                # This ensures it can be properly converted to tensor
+                data[pname] = np.array([float(v)], dtype="float32")
+            else:
+                # For array values, ensure it's a proper numpy array
+                v_array = np.asarray(v, dtype="float32")
+                # Ensure at least 1D and handle 0D arrays
+                if v_array.ndim == 0:
+                    # 0D array (scalar array), convert to 1D
+                    v_array = np.array([float(v_array)], dtype="float32")
+                elif v_array.ndim > 0:
+                    # Ensure contiguous array for better tensor conversion
+                    v_array = np.ascontiguousarray(v_array, dtype="float32")
+                data[pname] = v_array
 
         data["id"] = idx
         data = self.transforms(data) if self.transforms is not None else data
