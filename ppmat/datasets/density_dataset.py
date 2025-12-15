@@ -142,16 +142,16 @@ class DensityDataset(paddle.io.Dataset):
             n, x, y, z = [float(s) for s in readline().split()]
             shape.append(int(n))
             cell[i] = paddle.to_tensor(data=[x, y, z], dtype="float32")
-        x_coord = paddle.arange(end=shape[0]).unsqueeze(axis=-1) * cell[0]
-        y_coord = paddle.arange(end=shape[1]).unsqueeze(axis=-1) * cell[1]
-        z_coord = paddle.arange(end=shape[2]).unsqueeze(axis=-1) * cell[2]
+        x_coord = paddle.multiply(paddle.arange(end=shape[0], dtype="float32").unsqueeze(axis=-1), cell[0])
+        y_coord = paddle.multiply(paddle.arange(end=shape[1], dtype="float32").unsqueeze(axis=-1), cell[1])
+        z_coord = paddle.multiply(paddle.arange(end=shape[2], dtype="float32").unsqueeze(axis=-1), cell[2])
         grid_coord = (
             x_coord.view(-1, 1, 1, 3)
             + y_coord.view(1, -1, 1, 3)
             + z_coord.view(1, 1, -1, 3)
         )
         grid_coord = grid_coord.view(-1, 3) - origin
-        atom_type = paddle.empty(shape=n_atom, dtype="int64")
+        atom_type = paddle.empty(shape=paddle.to_tensor(n_atom), dtype="int64")
         atom_coord = paddle.empty(shape=[n_atom, 3], dtype="float32")
         for i in range(n_atom):
             line = readline().split()

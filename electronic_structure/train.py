@@ -33,12 +33,15 @@ from ppmat.utils.eager_comp_setting import setting_eager_mode
 
 
 def read_independent_dataloader_config(config):
-    """Build train/val/test dataloaders when datasets are defined independently."""
+    """
+    Args:
+        config (dict): config dict
+    """
     if config["Global"].get("do_train", True):
         train_data_cfg = config["Dataset"].get("train")
         assert (
             train_data_cfg is not None
-        ), "train dataset must be defined when do_train is True"
+        ), "train_data_cfg must be defined, when do_train is true"
         train_loader = build_dataloader(train_data_cfg)
     else:
         train_loader = None
@@ -57,7 +60,7 @@ def read_independent_dataloader_config(config):
         test_data_cfg = config["Dataset"].get("test")
         assert (
             test_data_cfg is not None
-        ), "test dataset must be defined when do_test is True"
+        ), "test_data_cfg must be defined, when do_test is true"
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
@@ -65,16 +68,21 @@ def read_independent_dataloader_config(config):
 
 
 if __name__ == "__main__":
+    if dist.get_world_size() > 1:
+        fleet.init(is_collective=True)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
         "--config",
         type=str,
+        default="./electronic_structure/configs/infgcn_md.yaml",
         help="Path to config file",
     )
 
     args, dynamic_args = parser.parse_known_args()
 
+    # load config and merge with cli args
     config = OmegaConf.load(args.config)
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
@@ -84,7 +92,7 @@ if __name__ == "__main__":
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 
-    # add timestamp to output_dir for reproducible runs
+    # add timestamp to output_dir
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     base_output_dir = config["Trainer"]["output_dir"]
     config["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
@@ -94,8 +102,7 @@ if __name__ == "__main__":
         os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
         config_name = os.path.basename(args.config)
         OmegaConf.save(config, osp.join(config["Trainer"]["output_dir"], config_name))
-
-    # convert to dict for downstream usage
+    # convert to dict
     config = OmegaConf.to_container(config, resolve=True)
 
     # init logger
@@ -112,42 +119,16 @@ if __name__ == "__main__":
     model_cfg = config["Model"]
     model = build_model(model_cfg)
 
-    # Optionally map legacy Trainer.*_samples to DensityCollator.n_samples
-    trainer_cfg = config["Trainer"]
-    dataset_cfg = config.get("Dataset", {})
-
-    def _maybe_fill_n_samples(split_key: str, trainer_key: str) -> None:
-        split_cfg = dataset_cfg.get(split_key)
-        if split_cfg is None:
-            return
-        loader_cfg = split_cfg.get("loader")
-        if loader_cfg is None:
-            return
-        collate_fn = loader_cfg.get("collate_fn")
-        # Only touch DensityCollator-based loaders and string-form collate_fn.
-        if not isinstance(collate_fn, str) or not collate_fn.startswith(
-            "DensityCollator"
-        ):
-            return
-        target_samples = trainer_cfg.get(trainer_key)
-        if target_samples is None:
-            return
-        collate_params = loader_cfg.setdefault("collate_params", {})
-        # Respect explicit n_samples in loader.collate_params if already set.
-        if collate_params.get("n_samples") is None:
-            collate_params["n_samples"] = target_samples
-
-    _maybe_fill_n_samples("train", "train_samples")
-    _maybe_fill_n_samples("val", "val_samples")
-
     # build dataloader from config
     set_signal_handlers()
     if config["Dataset"].get("split_dataset_ratio") is not None:
+        # Split the dataset into train/val/test and build corresponding dataloaders
         loader = build_dataloader(config["Dataset"])
         train_loader = loader.get("train", None)
         val_loader = loader.get("val", None)
         test_loader = loader.get("test", None)
     else:
+        # Use pre-split (independent) train/val/test datasets and build dataloaders
         train_loader, val_loader, test_loader = read_independent_dataloader_config(
             config
         )
@@ -157,54 +138,13 @@ if __name__ == "__main__":
         assert (
             train_loader is not None
         ), "train_loader must be defined when optimizer is defined."
-        trainer_cfg = config["Trainer"]
-
-        # If a max_iter (global step budget) is provided, convert it into
-        # an effective max_epochs so that BaseTrainer can see enough epochs
-        # while still respecting the global step limit internally.
-        max_iter = trainer_cfg.get("max_iter", None)
-        if max_iter is not None and max_iter > 0:
-            grad_accum = trainer_cfg.get("gradient_accumulation_steps", 1)
-            steps_per_epoch = (
-                len(train_loader) // grad_accum
-                if (len(train_loader) and grad_accum)
-                else 0
-            )
-            if len(train_loader) % grad_accum != 0:
-                steps_per_epoch += 1
-            if steps_per_epoch > 0:
-                required_epochs = math.ceil(max_iter / steps_per_epoch)
-                orig_epochs = trainer_cfg.get("max_epochs", required_epochs)
-                if required_epochs > orig_epochs:
-                    logger.info(
-                        "Adjusting Trainer.max_epochs from %d to %d based on "
-                        "max_iter=%d and steps_per_epoch=%d.",
-                        orig_epochs,
-                        required_epochs,
-                        max_iter,
-                        steps_per_epoch,
-                    )
-                trainer_cfg["max_epochs"] = max(orig_epochs, required_epochs)
-
-        # Map optional Trainer.max_grad_norm to optimizer grad_clip if not set
-        max_grad_norm = trainer_cfg.get("max_grad_norm", None)
-        opt_cfg = config["Optimizer"]
-        if (
-            max_grad_norm is not None
-            and not any(
-                k in opt_cfg for k in ("clip_norm", "clip_norm_global", "clip_value")
-            )
-        ):
-            opt_cfg["clip_norm_global"] = max_grad_norm
-
         assert (
-            trainer_cfg.get("max_epochs") is not None
+            config["Trainer"].get("max_epochs") is not None
         ), "max_epochs must be defined when optimizer is defined."
-
         optimizer, lr_scheduler = build_optimizer(
-            opt_cfg,
+            config["Optimizer"],
             model,
-            trainer_cfg["max_epochs"],
+            config["Trainer"]["max_epochs"],
             len(train_loader),
         )
     else:
@@ -217,6 +157,7 @@ if __name__ == "__main__":
     else:
         metric_func = None
 
+    # initialize trainer
     trainer = BaseTrainer(
         config["Trainer"],
         model,
@@ -229,9 +170,9 @@ if __name__ == "__main__":
 
     if config["Global"].get("do_train", True):
         trainer.train()
-    if config["Global"].get("do_eval", False) and val_loader is not None:
+    if config["Global"].get("do_eval", False):
         logger.info("Evaluating on validation set")
-        trainer.eval(val_loader)
-    if config["Global"].get("do_test", False) and test_loader is not None:
+        time_info, loss_info, metric_info = trainer.eval(val_loader)
+    if config["Global"].get("do_test", False):
         logger.info("Evaluating on test set")
-        trainer.eval(test_loader)
+        time_info, loss_info, metric_info = trainer.eval(test_loader)

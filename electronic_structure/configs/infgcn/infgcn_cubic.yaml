@@ -69,7 +69,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_cubic
-        split_file: ./electronic_structure/configs/crystal_data_split.json
+        split_file: crystal_data_split.json
         atom_file:  ./electronic_structure/configs/crystal.json
         extension: json
         compression: xz
@@ -92,7 +92,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_cubic
-        split_file: ./electronic_structure/configs/crystal_data_split.json
+        split_file: crystal_data_split.json
         atom_file:  ./electronic_structure/configs/crystal.json
         extension: json
         compression: xz
@@ -115,7 +115,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_cubic
-        split_file: ./electronic_structure/configs/crystal_data_split.json
+        split_file: crystal_data_split.json
         atom_file:  ./electronic_structure/configs/crystal.json
         extension: json
         compression: xz

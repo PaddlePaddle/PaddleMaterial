@@ -1,6 +1,6 @@
 Global:
-  do_train: False
-  do_eval: False
+  do_train: True
+  do_eval: True
   do_test: True
   use_voxel: False
 
@@ -72,7 +72,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_qm9
-        split_file: ./electronic_structure/configs/qm9_data_split.json
+        split_file: qm9_data_split.json
         atom_file:  ./electronic_structure/configs/qm9.json
         extension: CHGCAR
         compression: lz4
@@ -95,7 +95,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_qm9
-        split_file: ./electronic_structure/configs/qm9_data_split.json
+        split_file: qm9_data_split.json
         atom_file:  ./electronic_structure/configs/qm9.json
         extension: CHGCAR
         compression: lz4
@@ -118,7 +118,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./dataset_ES/data_qm9
-        split_file: ./electronic_structure/configs/qm9_data_split.json
+        split_file: qm9_data_split.json
         atom_file:  ./electronic_structure/configs/qm9.json
         extension: CHGCAR
         compression: lz4

@@ -28,20 +28,19 @@ from ppmat.utils import logger
 from ppmat.utils.misc import set_random_seed
 
 
-def split_tensor_func(self, split_size, dim=0):
-    total_size = self.shape[dim]
+# def split_tensor_func(self, split_size, dim=0):
+#     total_size = self.shape[dim]
 
-    if isinstance(split_size, int):
-        sections = []
-        for i in range(0, total_size, split_size):
-            sections.append(min(split_size, total_size - i))
-        return paddle.split(self, sections, dim)
-    else:
-        return paddle.split(self, split_size, dim)
+#     if isinstance(split_size, int):
+#         sections = []
+#         for i in range(0, total_size, split_size):
+#             sections.append(min(split_size, total_size - i))
+#         return paddle.split(self, sections, dim)
+#     else:
+#         return paddle.split(self, split_size, dim)
 
-setattr(paddle.Tensor, "split", split_tensor_func)
-device = "gpu:0"
-paddle.set_device(device)
+# setattr(paddle.Tensor, "split", split_tensor_func)
+
 static_fig = True
 
 

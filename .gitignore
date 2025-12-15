@@ -168,3 +168,14 @@ outputs
 
 # codex
 AGENTS.md
+
+.baidu-cc/meta.json
+.comate/mcp.json
+dataset_ES
+ppmat/models/mateno
+electronic_structure/configs/omol25_data_split.json
+electronic_structure/configs/omol25.json
+electronic_structure/configs/qm9_data_split.json
+electronic_structure/configs/qm9.json
+electronic_structure/configs/crystal_data_split.json
+electronic_structure/configs/crystal.json

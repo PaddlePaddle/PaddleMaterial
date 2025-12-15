@@ -20,96 +20,12 @@ from ppmat.models.common.e3nn.math import soft_one_hot_linspace
 from ppmat.models.common.e3nn.nn import Activation
 from ppmat.models.common.e3nn.nn import Extract
 from ppmat.models.common.e3nn.nn import FullyConnectedNet
+from ppmat.models.common.orbital import GaussianOrbital
+from ppmat.models.common.activation import ScalarActivation
+from ppmat.models.common.activation import NormActivation
 
-from ppmat.models.infgcn.orbital import GaussianOrbital
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
-
-
-
-class ScalarActivation(paddle.nn.Layer):
-    """
-    Use the invariant scalar features to gate higher order equivariant features.
-    Adapted from `e3nn.nn.Gate`.
-    """
-
-    def __init__(self, irreps_in, act_scalars, act_gates):
-        """
-        :param irreps_in: input representations
-        :param act_scalars: scalar activation function
-        :param act_gates: gate activation function (for higher order features)
-        """
-        super(ScalarActivation, self).__init__()
-        self.irreps_in = o3.Irreps(irreps_in)
-        self.num_spherical = len(self.irreps_in)
-        irreps_scalars = self.irreps_in[0:1]
-        irreps_gates = irreps_scalars * (self.num_spherical - 1)
-        irreps_gated = self.irreps_in[1:]
-        self.act_scalars = Activation(irreps_scalars, [act_scalars])
-        self.act_gates = Activation(
-            irreps_gates, [act_gates] * (self.num_spherical - 1)
-        )
-        self.extract = Extract(
-            self.irreps_in,
-            [irreps_scalars, irreps_gated],
-            instructions=[(0,), tuple(range(1, self.irreps_in.lmax + 1))],
-        )
-        self.mul = o3.ElementwiseTensorProduct(irreps_gates, irreps_gated)
-
-    def forward(self, features):
-        scalars, gated = self.extract(features)
-        scalars_out = self.act_scalars(scalars)
-        if tuple(gated.shape)[-1]:
-            gates = self.act_gates(
-                scalars.tile(repeat_times=[1, self.num_spherical - 1])
-            )
-            gated_out = self.mul(gates, gated)
-            features = paddle.concat(x=[scalars_out, gated_out], axis=-1)
-        else:
-            features = scalars_out
-        return features
-
-
-class NormActivation(paddle.nn.Layer):
-    """
-    Use the norm of the higher order equivariant features to gate themselves.
-    Idea from the TFN paper.
-    """
-
-    def __init__(
-        self,
-        irreps_in,
-        act_scalars=paddle.nn.functional.silu,
-        act_vectors=paddle.nn.functional.sigmoid,
-    ):
-        """
-        :param irreps_in: input representations
-        :param act_scalars: scalar activation function
-        :param act_vectors: vector activation function (for the norm of higher order features)
-        """
-        super(NormActivation, self).__init__()
-        self.irreps_in = o3.Irreps(irreps_in)
-        self.scalar_irreps = self.irreps_in[0:1]
-        self.vector_irreps = self.irreps_in[1:]
-        self.act_scalars = act_scalars
-        self.act_vectors = act_vectors
-        self.scalar_idx = self.irreps_in[0].mul
-        inner_out = o3.Irreps([(mul, (0, 1)) for mul, _ in self.vector_irreps])
-        self.inner_prod = o3.TensorProduct(
-            self.vector_irreps,
-            self.vector_irreps,
-            inner_out,
-            [(i, i, i, "uuu", False) for i in range(len(self.vector_irreps))],
-        )
-        self.mul = o3.ElementwiseTensorProduct(inner_out, self.vector_irreps)
-
-    def forward(self, features):
-        scalars = self.act_scalars(features[..., : self.scalar_idx])
-        vectors = features[..., self.scalar_idx :]
-        norm = paddle.sqrt(x=self.inner_prod(vectors, vectors) + 1e-08)
-        act = self.act_vectors(norm)
-        vectors_out = self.mul(act, vectors)
-        return paddle.concat(x=[scalars, vectors_out], axis=-1)
 
 
 class GCNLayer(paddle.nn.Layer):

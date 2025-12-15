@@ -6,7 +6,7 @@ Machine Learning Electronic Structure (MLES) is an emerging paradigm in computat
 
 ## 2.Models Matrix
 
-| **Supported Functions**                      | **InfGCN** |
+| **Supported Functions**                      | **[InfGCN](./configs/infgcn/README.md)** |
 | -------------------------------------------- | :--------: |
 | **Forward Prediction · Materials Properties**|            |
 | Electron density                             |      ✅    |

@@ -24,6 +24,7 @@ from typing import List
 import numpy as np
 import paddle
 import pgl
+import warnings
 
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
@@ -87,6 +88,7 @@ class DensityCollator:
     def __init__(self, n_samples=None, padding_value=-1.0):
         self.n_samples = n_samples
         self.padding_value = padding_value
+        self._warned_length_mismatch = False
 
     def __call__(self, batch):
         g, densities, grid_coord, infos = zip(*batch)
@@ -102,7 +104,17 @@ class DensityCollator:
             sampled_density, sampled_grid, mask = [], [], []
             target_samples = int(self.n_samples)
             for d, coord in zip(densities, grid_coord):
-                total = int(d.shape[0])
+                total_d = int(d.shape[0])
+                total_coord = int(coord.shape[0])
+                total = min(total_d, total_coord)
+                if total_d != total_coord and not self._warned_length_mismatch:
+                    warnings.warn(
+                        f"Density length ({total_d}) and grid length "
+                        f"({total_coord}) differ; truncating to {total}."
+                    )
+                    self._warned_length_mismatch = True
+                if total == 0:
+                    raise ValueError("Empty density/grid pair encountered in batch.")
                 replace = total < target_samples
                 indices = np.random.choice(total, target_samples, replace=replace)
                 indices.sort()
