@@ -108,9 +108,9 @@ Dataset:
     dataset:
       __class_name__: DensityDataset
       __init_params__:
-        root: /home/liuxuwei01/processed_output
+        root: /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out
         split_file: omol25_data_split.json
-        atom_file:  /home/liuxuwei01/processed_output/omol25.json
+        atom_file:  /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out/omol25.json
         extension: cube
         compression: lz4
         pbc: false
@@ -131,9 +131,9 @@ Dataset:
     dataset:
       __class_name__: DensityDataset
       __init_params__:
-        root: /home/liuxuwei01/processed_output
+        root: /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out
         split_file: omol25_data_split.json
-        atom_file:  /home/liuxuwei01/processed_output/omol25.json
+        atom_file:  /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out/omol25.json
         extension: cube
         compression: lz4
         pbc: false
@@ -154,9 +154,9 @@ Dataset:
     dataset:
       __class_name__: DensityDataset
       __init_params__:
-        root: /home/liuxuwei01/processed_output
+        root: /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out
         split_file: omol25_data_split.json
-        atom_file:  /home/liuxuwei01/processed_output/omol25.json
+        atom_file:  /home/liuxuwei01/data_afs/dataset_OMol25_MC_5k/processed_out/omol25.json
         extension: cube
         compression: lz4
         pbc: false

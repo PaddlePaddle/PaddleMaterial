@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import paddle
+from ppmat.models.common.e3nn import o3
 
 
 class ScaledSiLU(paddle.nn.Layer):
