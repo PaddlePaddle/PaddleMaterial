@@ -1,11 +1,11 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,41 +13,28 @@
 # limitations under the License.
 
 
-import os
+import argparse
+import copy
+from pathlib import Path
 
 import paddle
 import plotly.graph_objects as go
-from IPython.display import Image
-from IPython.display import display
+from omegaconf import OmegaConf
 from tqdm import tqdm
 
-# from ppmat.datasets import DensityDataset
-from ppmat.datasets import SmallDensityDataset
+try:
+    from IPython.display import Image, display
+except ImportError:  # Optional dependency; visualization still works for files
+    Image, display = None, None
+
+from ppmat.datasets import DensityDataset
 from ppmat.models import build_model
 from ppmat.utils import logger
 from ppmat.utils.misc import set_random_seed
 
 
-# def split_tensor_func(self, split_size, dim=0):
-#     total_size = self.shape[dim]
-
-#     if isinstance(split_size, int):
-#         sections = []
-#         for i in range(0, total_size, split_size):
-#             sections.append(min(split_size, total_size - i))
-#         return paddle.split(self, sections, dim)
-#     else:
-#         return paddle.split(self, split_size, dim)
-
-# setattr(paddle.Tensor, "split", split_tensor_func)
-
-static_fig = True
-
-
 def get_pretrained_model(cfg_path, model_path):
     logger.info(f"from {cfg_path} loading config")
-    from omegaconf import OmegaConf
-
     cfg = OmegaConf.load(cfg_path)
     cfg = OmegaConf.to_container(cfg, resolve=True)
 
@@ -68,11 +55,15 @@ def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
             preds = model(g.x, g.pos, grid_coord, g.batch, infos).squeeze(0)
         else:
             preds = []
-            for grid in tqdm(grid_coord.split(grid_batch_size, dim=1)):
+            total = grid_coord.shape[1]
+            step = grid_batch_size
+            num_iter = (total + step - 1) // step
+            for start in tqdm(range(0, total, step), total=num_iter):
+                end = min(start + step, total)
+                grid = grid_coord[:, start:end]
                 preds.append(model(g.x, g.pos, grid, g.batch, infos).squeeze(0))
             preds = paddle.concat(preds, axis=0)
 
-        # 计算损失和MAE
         mask = (density > 0).astype(dtype="float32")
         preds = preds * mask
         density = density * mask
@@ -154,135 +145,186 @@ def draw_volume(
     return fig
 
 
-if __name__ == "__main__":
+def safe_write_image(fig, path, show_plot=False):
+    try:
+        fig.write_image(path)
+        logger.info(f"Image saved to: {path}")
+    except Exception as e:
+        logger.warning(f"Failed to save image {path}: {e}")
+        try:
+            html_path = path.with_suffix(".html")
+            fig.write_html(html_path)
+            logger.info(f"Saved interactive HTML instead: {html_path}")
+        except Exception as html_e:
+            logger.warning(f"Failed to save HTML fallback for {path}: {html_e}")
+
+    if show_plot:
+        try:
+            if Image is None or display is None:
+                raise ImportError("IPython not installed")
+            img_bytes = fig.to_image(format="png", scale=2)
+            display(Image(img_bytes))
+        except Exception as e:
+            logger.warning(f"Failed to display image: {e}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="InfGCN electron density inference")
+    parser.add_argument(
+        "--config",
+        default="electronic_structure/configs/infgcn/infgcn_qm9.yaml",
+        help="Path to config yaml",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default="output/infgcn_qm9_best/infgcn_qm9.pdparams",
+        help="Checkpoint (.pdparams) to load",
+    )
+    parser.add_argument(
+        "--split",
+        default="test",
+        choices=["train", "validation", "test"],
+        help="Dataset split to sample from",
+    )
+    parser.add_argument(
+        "--index",
+        default=0,
+        type=int,
+        help="Index within the chosen split",
+    )
+    parser.add_argument(
+        "--data_root",
+        default=None,
+        help="Override dataset root; defaults to value in config",
+    )
+    parser.add_argument(
+        "--split_file",
+        default=None,
+        help="Override split file path; defaults to value in config",
+    )
+    parser.add_argument(
+        "--atom_file",
+        default=None,
+        help="Override atom info file; defaults to value in config",
+    )
+    parser.add_argument(
+        "--output_dir",
+        default="./results",
+        help="Directory to store predictions/visualizations",
+    )
+    parser.add_argument(
+        "--grid_batch_size",
+        default=4096,
+        type=int,
+        help="Number of grid points per forward pass",
+    )
+    parser.add_argument(
+        "--skip_vis",
+        action="store_true",
+        help="Skip writing/visualizing density plots",
+    )
+    parser.add_argument(
+        "--show_plot",
+        action="store_true",
+        help="Display plotly figures inline (requires kaleido)",
+    )
+    args = parser.parse_args()
+
     set_random_seed(42)
 
-    output_dir = "./results"
-    os.makedirs(output_dir, exist_ok=True)
+    cfg = OmegaConf.load(args.config)
+    cfg = OmegaConf.to_container(cfg, resolve=True)
 
-    mol_name = (
-        "ethanol"  # : benzene, ethanol, phenol, resorcinol, ethane, malonaldehyde
-    )
-    file_id = 1
+    split_key = "val" if args.split == "validation" else args.split
+    dataset_cfg = cfg["Dataset"][split_key]["dataset"]["__init_params__"]
+    dataset_params = copy.deepcopy(dataset_cfg)
+    dataset_params["split"] = args.split
+    if args.data_root is not None:
+        dataset_params["root"] = args.data_root
+    if args.split_file is not None:
+        dataset_params["split_file"] = args.split_file
+    if args.atom_file is not None:
+        dataset_params["atom_file"] = args.atom_file
+    dataset = DensityDataset(**dataset_params)
+    if args.index >= len(dataset):
+        raise IndexError(
+            f"Index {args.index} exceeds dataset size {len(dataset)} for split {args.split}"
+        )
 
-    logger.info(f"Loading {mol_name} dataset")
-    dataset = SmallDensityDataset(
-        root="/home/zhoujingwen03/InfGCN-pytorch/data/md",
-        mol_name=mol_name,
-        split="test",
-    )
-    # dataset = DensityDataset(
-    #    "data/QM9", "test", "data_split.json", "./atom_info/qm9.json", "CHGCAR", "lz4"
-    # )        file_id = 24492  # indole
-    # file_id = 114514  # nonane
-    # file_id = 214  # benzene
-    # file_id = 2  # ammonia
-    # with lz4.frame.open(f"data/QM9/{file_id:06d}.CHGCAR.lz4") as f:
-    #    g, density, grid_coord, info = dataset.read_chgcar(f)
-    """
-    CUBIC_ROOT = "./data/cubic"
-    SPLIT_FILE = "./configs/data_split.json"
-    ATOM_FILE = "./atom_info/crystal.json"
+    sample_name = f"{args.split}_{args.index}"
+    g, density, grid_coord, info = dataset[args.index]
+    sample_name = info.get("file_name", sample_name)
 
-    dataset = DensityDataset(
-        root=CUBIC_ROOT,
-        split="test",
-        split_file=SPLIT_FILE,
-        atom_file=ATOM_FILE,
-        extension="json",
-        compression="xz"
-    )
+    device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
+    paddle.set_device(device)
+    logger.info(f"Running inference on device: {device}")
 
-    material_id = "mp-18062"
-    file_path = f"{CUBIC_ROOT}/{material_id}.json.xz"
-    import lzma
-    with lzma.open(file_path) as f:
-        g, density, grid_coord, info = dataset.read_json(f)
-    """
-    g, density, grid_coord, info = dataset[file_id]
-
-    g.batch = paddle.zeros_like(x=g.x)
-
+    g.batch = paddle.zeros_like(g.x)
     g = g.to(device)
     density = density.to(device)
     grid_coord = grid_coord.to(device)
 
-    logger.info("Visualizing the DFT electron density")
-    fig = draw_volume(
-        grid_coord.detach().cpu().numpy(),
-        density.detach().cpu().numpy(),
-        g.x.detach().cpu().numpy(),
-        g.pos.detach().cpu().numpy(),
-        isomin=0.05,
-        isomax=3.5,
-        surface_count=5,
-        title="DFT electron density",
-    )
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    true_density_path = os.path.join(output_dir, f"{mol_name}_true_density.png")
-    fig.write_image(true_density_path)
-    logger.info(f"DFT electron density image saved to: {true_density_path}")
-
-    if static_fig:
-        img_bytes = fig.to_image(format="png", scale=2)
-        display(Image(img_bytes))
-    else:
-        fig.show()
-
-    logger.info("Loading the pretrained model")
-    model = get_pretrained_model(
-        "./electron_density_prediction/configs/md/infgcn_md.yaml",
-        "./output/infgcn_md/step_4000.pdparams",
-    )
-    logger.info("Model loaded successfully!")
+    logger.info(f"Loading the pretrained model from {args.checkpoint}")
+    model = get_pretrained_model(args.config, args.checkpoint)
+    logger.info("Model loaded successfully.")
 
     logger.info("Starting prediction")
-    grid_batch_size = 4096
     preds, loss, mae = inference_model(
-        model, g, density, grid_coord[None], [info], grid_batch_size=grid_batch_size
+        model,
+        g,
+        density,
+        grid_coord[None],
+        [info],
+        grid_batch_size=args.grid_batch_size,
     )
-    logger.info(f"Predictiom completed, Loss: {float(loss):.6f}, MAE: {float(mae):.6f}")
+    logger.info(f"Prediction completed, Loss: {float(loss):.6f}, MAE: {float(mae):.6f}")
 
-    logger.info("Visualizing electron density difference")
-    fig = draw_volume(
-        grid_coord.detach().cpu().numpy(),
-        (density - preds).detach().cpu().numpy(),
-        g.x.detach().cpu().numpy(),
-        g.pos.detach().cpu().numpy(),
-        isomin=-0.06,
-        isomax=0.06,
-        surface_count=4,
-        title="Electron Density Difference",
-    )
+    if not args.skip_vis:
+        logger.info("Visualizing the DFT electron density")
+        fig = draw_volume(
+            grid_coord.detach().cpu().numpy(),
+            density.detach().cpu().numpy(),
+            g.x.detach().cpu().numpy(),
+            g.pos.detach().cpu().numpy(),
+            isomin=0.05,
+            isomax=3.5,
+            surface_count=5,
+            title="DFT electron density",
+        )
+        true_density_path = output_dir / f"{sample_name}_true_density.png"
+        safe_write_image(fig, true_density_path, show_plot=args.show_plot)
 
-    diff_density_path = os.path.join(output_dir, f"{mol_name}_diff_density.png")
-    fig.write_image(diff_density_path)
-    logger.info(f"Density difference image saved to: {diff_density_path}")
+        logger.info("Visualizing electron density difference")
+        fig = draw_volume(
+            grid_coord.detach().cpu().numpy(),
+            (density - preds).detach().cpu().numpy(),
+            g.x.detach().cpu().numpy(),
+            g.pos.detach().cpu().numpy(),
+            isomin=-0.06,
+            isomax=0.06,
+            surface_count=4,
+            title="Electron Density Difference",
+        )
+        diff_density_path = output_dir / f"{sample_name}_diff_density.png"
+        safe_write_image(fig, diff_density_path, show_plot=args.show_plot)
 
-    if static_fig:
-        img_bytes = fig.to_image(format="png", scale=2)
-        display(Image(img_bytes))
-    else:
-        fig.show()
+        logger.info("Visualizing predicted electron density")
+        fig = draw_volume(
+            grid_coord.detach().cpu().numpy(),
+            preds.detach().cpu().numpy(),
+            g.x.detach().cpu().numpy(),
+            g.pos.detach().cpu().numpy(),
+            isomin=0.05,
+            isomax=3.5,
+            surface_count=5,
+            title="Predicted Electron Density",
+        )
+        pred_density_path = output_dir / f"{sample_name}_pred_density.png"
+        safe_write_image(fig, pred_density_path, show_plot=args.show_plot)
 
-    logger.info("Visualizing predicted electron density")
-    fig = draw_volume(
-        grid_coord.detach().cpu().numpy(),
-        preds.detach().cpu().numpy(),
-        g.x.detach().cpu().numpy(),
-        g.pos.detach().cpu().numpy(),
-        isomin=0.05,
-        isomax=3.5,
-        surface_count=5,
-        title="Predicted Electron Density",
-    )
 
-    pred_density_path = os.path.join(output_dir, f"{mol_name}_pred_density.png")
-    fig.write_image(pred_density_path)
-    logger.info(f"Predicted density image saved to: {pred_density_path}")
-
-    if static_fig:
-        img_bytes = fig.to_image(format="png", scale=2)
-        display(Image(img_bytes))
-    else:
-        fig.show()
+if __name__ == "__main__":
+    main()
