@@ -1145,7 +1145,7 @@ class M3GNet(paddle.nn.Layer):
         atom_attr = (
             graph.node_feat["atom_types"].astype(dtype="float32").reshape([-1, 1])
         )
-        edge_index = graph.edges.astype(dtype="int64").transpose([1, 0])
+        edge_index = graph.edges.astype(dtype="int64").transpose([1, 0]).contiguous()
         three_body_indices = graph.edge_feat["three_body_indices"].astype(dtype="int64")
         num_three_body = graph.edge_feat["num_three_body"]
 
