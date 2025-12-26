@@ -1,0 +1,3 @@
+[submodule "paddle_scatter"]
+	path = paddle_scatter
+	url = https://github.com/PFCCLab/paddle_scatter.git
