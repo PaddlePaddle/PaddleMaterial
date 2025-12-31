@@ -147,6 +147,8 @@ data/*
 log/*
 
 output/*
+!output/traffic/
+!output/traffic/*
 experimental/output/*
 experimental/output
 experimental/data
@@ -156,18 +158,24 @@ experimental/log2/
 output/*experimental/data/
 experimental/output/
 experimental/
-log2/
-log3/
-log_step2/
-log_step3/
-nohup.out
+
 ppmat/models/mattersim/threebody_indices.c
-step2_latest.log_nobug
-step3_15_H_without_formular.ckpt
 pretrained/
 result*
 spectrum_elucidation/retrival_database
 test/samplers
 outputs
 
+# codex
+AGENTS.md
 
+.baidu-cc/meta.json
+.comate/mcp.json
+dataset_ES
+
+electronic_structure/configs/omol25_data_split.json
+electronic_structure/configs/omol25.json
+electronic_structure/configs/qm9_data_split.json
+electronic_structure/configs/qm9.json
+electronic_structure/configs/crystal_data_split.json
+electronic_structure/configs/crystal.json

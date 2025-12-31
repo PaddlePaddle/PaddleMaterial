@@ -13,7 +13,7 @@
 # limitations under the License.
 import copy
 import os
-import pickle
+import pickle  # noqa
 import random
 import signal
 from pathlib import Path
@@ -41,7 +41,11 @@ from ppmat.datasets.mp2024_dataset import MP2024Dataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
+from ppmat.datasets.density_dataset import DensityDataset
+from ppmat.datasets.small_density_dataset import SmallDensityDataset 
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
+from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
+from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -59,6 +63,9 @@ __all__ = [
     "HighLevelWaterDataset",
     "MSDnmrDataset",
     "MatbenchDataset",
+    "DensityDataset", 
+    "SmallDensityDataset",
+    "OMol25Dataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
@@ -90,8 +97,23 @@ def term_mp(sig_num, frame):
     print("main proc {} exit, kill process group " "{}".format(pid, pgid))
     os.killpg(pgid, signal.SIGKILL)
 
-
 def set_signal_handlers():
+    """
+    Set up signal handlers for safe process group termination.
+
+    Registers SIGINT and SIGTERM signal handlers when:
+    1. The OS supports process groups (os.getpgid exists)
+    2. The current process is the process group leader
+
+    This allows safe termination of the entire process group via:
+    - Ctrl+C (SIGINT) 
+    - Termination signals (SIGTERM)
+
+    Safety Notes:
+    - Only sets handlers when current process is group leader
+    - Prevents accidentally terminating parent processes
+    - Uses term_mp() which kills the entire process group
+    """
     pid = os.getpid()
     try:
         pgid = os.getpgid(pid)
@@ -149,9 +171,13 @@ def build_dataloader(cfg: Dict):
     num_workers = loader_config.pop("num_workers", 0)
     use_shared_memory = loader_config.pop("use_shared_memory", True)
 
-    collate_obj = getattr(
-        collate_fn, loader_config.pop("collate_fn", "DefaultCollator")
-    )()
+    # collate_obj = getattr(
+    #     collate_fn, loader_config.pop("collate_fn", "DefaultCollator")
+    # )()
+    collate_fn_name = loader_config.pop("collate_fn", "DefaultCollator")
+    collate_params = loader_config.pop("collate_params", {})
+    collate_cls = getattr(collate_fn, collate_fn_name)
+    collate_obj = collate_cls(**collate_params)
 
     # build sampler
     if cfg.get("split_dataset_ratio") is not None:
@@ -303,8 +329,10 @@ def build_dataset_infos(
 
     info_cls = INFO_CLASS_REGISTRY.get(info_class_name)
     if info_cls is None:
-        raise ValueError(f"Unknown info_class '{info_class_name}'."
-                         f"Supported classes: {list(INFO_CLASS_REGISTRY)}")
+        raise ValueError(
+            f"Unknown info_class '{info_class_name}'."
+            f"Supported classes: {list(INFO_CLASS_REGISTRY)}"
+        )
 
     # 2.Build a *new* infos instance
     if verbose:

@@ -40,6 +40,7 @@
     pip install --upgrade pip setuptools wheel
     pip install setuptools_scm
     pip install Cython
+    pip install git+https://github.com/PFCCLab/paddle_scatter.git
 
     # 以可编辑模式安装PaddleMaterials
     pip install -e .
