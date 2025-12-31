@@ -14,7 +14,7 @@
 
 from typing import Any
 from typing import List
-
+import warnings
 import numpy as np
 from ase import Atoms
 from ase import filters
@@ -54,6 +54,7 @@ OPTIMIZERS = {
     "BFGSLineSearch": BFGSLineSearch,
 }
 
+warnings.filterwarnings('ignore', message='Skipping "graph" info', category=UserWarning)
 
 class OptimizationTask:
     def __init__(
