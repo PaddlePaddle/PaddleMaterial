@@ -69,19 +69,19 @@ except ImportError:
             "Atomic Simulation Environment (ASE) is required but not installed. "
             "Please install it (e.g., pip install ase) to use QM9Dataset."
         )
-
-    read = dummy_read
-    
+    read = dummy_read  
     symbols = None
     AseAtomsAdaptor = None
     ASE_AVAILABLE = False
-
     print("Warning: ASE (Atomic Simulation Environment) not found. Data parsing functionality is disabled.")
 
 class QM9Dataset(Dataset):
     """
     QM9 (GDB-9) Dataset Handler
-    ——by wwaawwaaee
+    In order to adapt to the CHGNet model, I made a forced mapping from 'lumo' to 'energy_per_atom'. 
+    The CHGNet model is used to run machine learning potentials, and the QM9 dataset may not be very suitable. 
+    LUMO is a property. Please be aware of this when using it to avoid misunderstandings. 
+    This code is for research purposes only and does not represent the optimal approach.——by wwaawwaaee
     
     **Dataset Overview**
     this class downloads QM9 primiry(end with .xyz)and transfered into 
@@ -275,18 +275,18 @@ class QM9Dataset(Dataset):
         self.property_data = {}
         for pname in self.property_names:
         
-            # 确定实际的文件名：优先使用映射表，否则使用配置名本身
+            # Determine the actual file name: use the mapping table if available; otherwise, use the configuration name itself
             file_name = PROPERTY_FILE_MAP.get(pname, pname)
         
             file_path = osp.join(self.props_dir, f"{file_name}.pkl")
         
             if not osp.exists(file_path):
                 raise FileNotFoundError(
-                    f"[QM9 Map Error] 目标文件未找到: {file_path}. "
-                    f"(请求标签: {pname}, 实际查找文件: {file_name}.pkl)"
+                    f"[QM9 Map Error]can't find the file: {file_path}. "
+                    f"(require label: {pname}, actually find the file: {file_name}.pkl)"
                 )
         
-            # 即使文件名是 lumo.pkl，存储在字典中的键仍然是 pname (如 energy_per_atom)
+            # Although the name of file is lumo.pkl,The key stored in the dictionary is still pname (such as energy_per_atom)
             self.property_data[pname] = self._load_pickle(file_path)
 
         # self.property_data = {
@@ -494,77 +494,32 @@ class QM9Dataset(Dataset):
                 except OSError:
                     pass
 
-    # def _ensure_raw_data(self) -> str:
-    #     """
-    #     Ensures all files are present locally. Downloads missing shards.
-    #     """
-    #     # 目标文件：dsgdb9nsd.xyz
-    #     if osp.exists(self.raw_xyz_path):
-    #         return self.raw_xyz_path
-            
-    #     # 压缩包路径
-    #     tar_path = osp.join(self.root, "qm9_raw.tar.bz2")
-        
-    #     # 确保 url 是单数字符串
-    #     url = self.url
-    #     if isinstance(url, list):
-    #         url = url[0]
-            
-    #     if not osp.exists(tar_path):
-    #         if dist.get_rank() == 0:
-    #             logger.info(f"Downloading QM9 from {url}...")
-    #             import urllib.request
-    #             try:
-    #                 urllib.request.urlretrieve(url, tar_path)
-    #             except Exception as e:
-    #                 raise RuntimeError(f"Download failed: {e}")
-    #         if dist.is_initialized():
-    #             dist.barrier()
-        
-    #     # 解压
-    #     if dist.get_rank() == 0:
-    #         logger.info("Extracting QM9...")
-    #         import tarfile
-    #         try:
-    #             with tarfile.open(tar_path, "r:bz2") as tar:
-    #                 tar.extractall(path=self.root)
-    #         except Exception as e:
-    #             raise RuntimeError(f"Extraction failed: {e}")
-                
-    #     if dist.is_initialized():
-    #         dist.barrier()
-
-    #     if not osp.exists(self.raw_xyz_path):
-    #         raise RuntimeError(f"File {self.raw_xyz_path} not found after extraction!")
-            
-    #     return self.raw_xyz_path
     
     def _ensure_raw_data(self) -> str:
         """
         downloading self.url -> self.raw_xyz_path
         """
-        # 1. 如果最终文件已经存在，直接返回
+        # 1. if the final file exists , return.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
             
-        # 2. 准备下载路径 (压缩包路径)
+        # 2. prepare the path to download
         tar_filename = "qm9_raw.tar.bz2"
         tar_path = osp.join(self.raw_dir, tar_filename)
         
-        # 3. 下载逻辑
+        # 3. downloading logic
         if not osp.exists(tar_path):
             if dist.get_rank() == 0:
                 logger.info(f"Downloading QM9 from {self.url}...")
                 import urllib.request
                 try:
-                    # 【连接点】这里用到了 self.url
                     urllib.request.urlretrieve(self.url, tar_path)
                 except Exception as e:
                     raise RuntimeError(f"Download failed: {e}")
             if dist.is_initialized():
                 dist.barrier()
         
-        # 4. 解压逻辑
+        # 4. extacting logic
         if dist.get_rank() == 0:
             logger.info("Extracting QM9...")
             import tarfile
@@ -577,13 +532,13 @@ class QM9Dataset(Dataset):
         if dist.is_initialized():
             dist.barrier()
 
-        # 5. 最终检查
-        # 情况 A：单文件存在
+        # 5. final check
+        # Case A：single file exists.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
 
         
-        # 情况 B：合并多个小 xyz 文件到一个大文件
+        # Case B：merge these .xyz files into a big file.
         xyz_files = [f for f in os.listdir(self.raw_dir) if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"]
         if len(xyz_files) > 0:
             logger.info(f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz...")
@@ -592,7 +547,7 @@ class QM9Dataset(Dataset):
             if osp.exists(merged_path):
                 os.remove(merged_path)
 
-            with open(merged_path, "w") as fout: # 使用 "w" 模式从头开始写
+            with open(merged_path, "w") as fout: # use "w" model to rewrite
                 for fname in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
                     full_path = osp.join(self.raw_dir, fname)
                     try:
@@ -602,12 +557,12 @@ class QM9Dataset(Dataset):
                         if not lines: continue
                         natoms = int(lines[0].strip())
                         
-                        # 1. 写入原子数
+                        # 1. Number of atoms written
                         fout.write(f"{natoms}\n")
-                        # 2. 写入属性行 (处理科学计数法)
+                        # 2. Write attribute line 
                         prop_line = lines[1].replace('*^', 'e').replace('\t', ' ')
                         fout.write(prop_line)
-                        # 3. 写入坐标行 (只取 natoms 行)
+                        # 3. Write coordinate lines (only take natoms lines)
                         for i in range(2, 2 + natoms):
                             coord_line = lines[i].replace('*^', 'e').replace('\t', ' ')
                             fout.write(coord_line)
@@ -616,10 +571,10 @@ class QM9Dataset(Dataset):
                         logger.warning(f"Error processing {fname}: {e}")
                         continue
             return merged_path
-        # 情况 C：都没有
+        # Case C: None
         raise RuntimeError(
-            f"解压完成了，但在 {self.raw_dir} 下没找到 dsgdb9nsd.xyz 或任何 .xyz 文件！"
-            "请检查下载的压缩包里到底包含什么文件。"
+            f"Decompression is complete, but I couldn't find dsgdb9nsd.xyz or any .xyz files under {self.raw_dir}!"
+            "Please check what files are actually included in the downloaded compressed package."
         )
 
     def _count_files(self, directory: str) -> int:
@@ -641,14 +596,14 @@ class QM9Dataset(Dataset):
 
     def _build_structures_and_properties(self, raw_path: str, struct_dir: str, prop_dir: str) -> None:
         """
-        核心构建函数：解析 XYZ -> Pymatgen Structure -> Pickle
+        Core Constructor Function:analyse XYZ -> Pymatgen Structure -> Pickle
         """
         logger.info(f"Parsing {raw_path} using ASE...")
         
-        # 1. 内存中读取所有数据 (QM9 约 100MB，完全可以读入内存)
+        # 1. Read all data into memory (QM9 is about 100MB, which can easily fit into memory)
         atoms_collection = read(raw_path, index=':')
         
-        # 2. 读取文本行以解析属性 (ASE 解析属性有时不可靠，手动解析更稳)
+        # 2. Read text lines to parse attributes (ASE attribute parsing is sometimes unreliable; manual parsing is more stable)
         with open(raw_path, 'r') as f:
             lines = f.readlines()
             
@@ -664,7 +619,7 @@ class QM9Dataset(Dataset):
                 num_atoms = len(atoms)
                 prop_line = lines[current_line + 1]
                 
-                # 清洗属性行
+                # clean the property line.
                 prop_line_cleaned = prop_line.replace('*^', 'e').replace('\t', ' ')
                 raw_vals = prop_line_cleaned.split()
                 
@@ -673,31 +628,31 @@ class QM9Dataset(Dataset):
                     try:
                         vals_float.append(float(val_str))
                     except ValueError:
-                        # 对于 'gdb' 这种字符串，存为 0.0 或者跳过
+                        # for strings like 'gdb' 
                         vals_float.append(0.0) 
 
-                # 映射属性
+                # Mapping Attribute
                 for k, key in enumerate(self.PROP_ORDER):
                     if key in ['tag', 'index']: 
                         continue
                     
-                    # 对齐索引：k=2 是 "A", 对应 raw_vals[2]
+                    # Alignment index: k=2 is 'A', corresponding to raw_vals[2]
                     if k < len(vals_float):
                         prop_buffers[key].append(vals_float[k])
                     else:
                         prop_buffers[key].append(np.nan)
 
-                # --- B. 构建 Structure (伪造晶胞) ---
-                # 设置一个大盒子，避免模型因没有 Cell 报错
+                # --- B. building Structure (Fake crystal cell) ---
+                # Set up a large box to prevent the model from reporting errors due to the absence of cells
                 atoms.set_cell([20.0, 20.0, 20.0])
                 atoms.center() 
                 atoms.pbc = True 
                 structure = AseAtomsAdaptor.get_structure(atoms)
                 
-                # --- C. 保存结构 ---
+                # --- C. save the struncture ---
                 self._save_pickle(osp.join(struct_dir, f"{i:06d}.pkl"), structure)
                 
-                # 更新指针
+                # Update pointer
                 current_line += (num_atoms + 2)
                 valid_count += 1
                 pbar.update(1)
@@ -712,7 +667,7 @@ class QM9Dataset(Dataset):
         if valid_count == 0:
             raise RuntimeError("No valid samples processed from QM9 file!")
 
-        # --- D. 保存属性数组 ---
+        # --- D.Save attribute array ---
         logger.info("Saving property arrays...")
         for key, val_list in prop_buffers.items():
             self._save_pickle(
@@ -764,7 +719,7 @@ class QM9Dataset(Dataset):
             self.structures = [self.structures[i] for i in keep]
             if self.graphs:
                 self.graphs = [self.graphs[i] for i in keep]
-            # 保持 property_data 为 numpy.ndarray（用 numpy 索引）
+            # stay property_data 为 numpy.ndarray（Indexing with numpy）
             for pname in self.property_names:
                 arr = self.property_data[pname]
                 # arr may already be numpy array; this keeps dtype and shape consistent

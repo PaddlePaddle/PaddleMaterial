@@ -107,31 +107,6 @@ Metric:
       __init_params__: {}
 
 
-# Dataset:
-#   # Use QM9 dataset for prediction; property_names uses the Global.label_names (['lumo'])
-#   test:
-#     dataset:
-#       __class_name__: QM9Dataset
-#       __init_params__:
-#         # path should point to the directory where dsgdb9nsd.xyz (or extracted file) is located
-#         path: "./data/qm9"
-#         property_names: ${Global.label_names}
-#         build_structure_cfg:
-#           format: dict
-#           num_cpus: 4
-#         # use same graph converter as Global to ensure same preprocessing
-#         build_graph_cfg: ${Global.graph_converter}
-#         filter_unvalid: True
-#         transforms: []
-#       num_workers: 0
-#       use_shared_memory: False
-#     sampler:
-#       __class_name__: BatchSampler
-#       __init_params__:
-#         shuffle: False
-#         drop_last: False
-#         batch_size: 64
-
 Dataset:
   train:
     dataset:
@@ -143,7 +118,7 @@ Dataset:
         cache_path: "./data/qm9"
         overwrite: False
         filter_unvalid: True 
-        # 【删除】url_indices: QM9Dataset 不支持此参数
+        # [Delete] url_indices: QM9Dataset does not support this parameter
     num_workers: 4
     use_shared_memory: False
     sampler:
