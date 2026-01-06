@@ -11,13 +11,130 @@ Many important tasks in chemistry revolve around molecules during reactions. Thi
 
 ## Datasets:
 
+The primary datasets employed in the evaluation of ComFormer include the Materials Project (MP). The dataset provides the ground-truth labels derived from Density Functional Theory (DFT) calculations, which serve as the target for the supervised learning process. The preprocessing and partitioning of these datasets are critical for ensuring the generalizability of the model.
+
+The MP2018.6.1 dataset represents a foundational benchmark for the field, encompassing a curated set of inorganic crystals with calculated thermodynamic and electronic properties.
+
 - MP2018.6.1:
 
     The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). Following the methodology outlined in the Comformer paper, we randomly partitioned the dataset into subsets, with the specific sample sizes for each subset detailed in the table below.
 
-    |                                   Dataset                                    | Train |  Val  | Test  |
-    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  |
+    |                                   Dataset                                    | Train |  Val  | Test  | Properties |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: | :---------: |
+    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G) |
+
+## Model
+
+DimeNet++ is a directional message passing neural network designed for accurate and efficient prediction of molecular energies and forces, particularly for non-equilibrium molecular configurations. It builds upon the original DimeNet architecture by preserving its physically motivated directional message passing mechanism while substantially improving computational efficiency and predictive accuracy through architectural refinements.
+
+### Graph representation and embeddings
+
+A molecular system is represented as a graph ( G = (V, E) ), where nodes ( i \in V ) correspond to atoms and directed edges ( j \to i \in E ) correspond to interatomic interactions within a cutoff radius. Unlike conventional atom-centered GNNs, DimeNet++ associates learnable embeddings with **directed edges**, enabling explicit encoding of geometric directionality.
+
+Each directed edge ( j \to i ) is characterized by the interatomic distance ( d_{ji} ), which is expanded using a radial basis function (RBF):
+
+```math
+\mathbf{e}^{\text{RBF}}_{ji} = \text{RBF}(d_{ji})
+```
+
+To capture angular information, DimeNet++ further considers atom triplets ( k \to j \to i ), where the bond angle ( \alpha_{kji} ) together with distance ( d_{kj} ) is expanded using a spherical basis function (SBF):
+
+```math
+\mathbf{a}^{\text{SBF}}_{kji} = \text{SBF}(d_{kj}, \alpha_{kji})
+```
+
+These basis representations enable a joint encoding of distances and angles, which is essential for modeling anisotropic interactions and directional bonding effects.
+
+### Directional message passing
+
+The core of DimeNet++ is its **directional message passing** scheme, where messages are propagated along directed edges rather than between atoms. Each directed edge ( j \to i ) is associated with a message embedding ( \mathbf{m}_{ji}^{(l)} ) at layer ( l ).
+
+The update of a message embedding consists of two steps: interaction aggregation and message update. First, messages incoming to atom ( j ) from its neighbors ( k \neq i ) are aggregated through an interaction function:
+
+```math
+\mathbf{z}_{ji}^{(l)} =
+\sum_{k \in \mathcal{N}(j) \setminus \{i\}}
+f_{\text{int}}\!\left(
+\mathbf{m}_{kj}^{(l)},
+\mathbf{e}^{\text{RBF}}_{ji},
+\mathbf{a}^{\text{SBF}}_{kji}
+\right)
+```
+
+The aggregated interaction is then combined with the current message embedding to produce the updated message:
+
+```math
+\mathbf{m}_{ji}^{(l+1)} =
+f_{\text{update}}\!\left(
+\mathbf{m}_{ji}^{(l)}, \mathbf{z}_{ji}^{(l)}
+\right)
+```
+
+Here, ( f_{\text{int}} ) and ( f_{\text{update}} ) are learnable neural network modules.
+
+### Efficient interaction modeling in DimeNet++
+
+In the original DimeNet, the interaction function ( f_{\text{int}} ) relied on a bilinear transformation between message embeddings and basis representations, which incurred significant computational cost due to the large number of edge triplets. DimeNet++ replaces this bilinear layer with a more efficient **Hadamard (element-wise) product**, while maintaining expressiveness by introducing multilayer perceptrons (MLPs) applied to the basis functions:
+
+```math
+f_{\text{int}}(\mathbf{m}, \mathbf{e}, \mathbf{a})
+=
+\left( \text{MLP}_{\text{RBF}}(\mathbf{e})
+\odot
+\text{MLP}_{\text{SBF}}(\mathbf{a}) \right)
+\odot
+\mathbf{m}
+```
+
+This modification significantly reduces computational complexity while preserving or improving predictive accuracy.
+
+### Embedding hierarchy and residual connections
+
+To further improve efficiency, DimeNet++ introduces an **embedding hierarchy** through down-projection and up-projection layers. Message embeddings are projected to a lower-dimensional space during the costly interaction steps and projected back afterward:
+
+```math
+\mathbf{m}^{\downarrow} = \mathbf{W}_{\downarrow} \mathbf{m},
+\quad
+\mathbf{m}^{\uparrow} = \mathbf{W}_{\uparrow} \mathbf{m}^{\downarrow}
+```
+
+Residual connections are applied throughout the network to stabilize training and facilitate deeper architectures:
+
+```math
+\mathbf{m}_{ji}^{(l+1)} =
+\mathbf{m}_{ji}^{(l)} + \Delta \mathbf{m}_{ji}^{(l)}
+```
+
+Empirically, DimeNet++ achieves comparable or better performance using fewer interaction layers than the original DimeNet.
+
+### Atomic representations and output
+
+Although message passing is performed on directed edges, atomic representations are obtained by aggregating incoming messages for each atom:
+
+```math
+\mathbf{t}_i^{(l)} =
+\sum_{j \in \mathcal{N}(i)}
+\mathbf{W}_{\text{out}} \mathbf{m}_{ji}^{(l)}
+```
+
+The final atomic embeddings are passed through an output network to predict atomic energy contributions. The total molecular energy is computed as a sum over atoms:
+
+```math
+E = \sum_i E_i
+```
+
+Atomic forces are obtained by differentiating the predicted energy with respect to atomic positions, ensuring full energy–force consistency:
+
+```math
+\mathbf{F}_i = - \frac{\partial E}{\partial \mathbf{x}_i}
+```
+
+### Model stacking and training characteristics
+
+DimeNet++ stacks multiple directional message passing layers to enable information propagation from local to longer-range interactions. The model is trained using the Adam optimizer, and mixed precision is avoided due to numerical stability issues arising from the high accuracy requirements of energy and force predictions.
+
+Through its architectural improvements, DimeNet++ achieves up to an **8× speedup** over DimeNet while improving prediction accuracy, making it well suited for large-scale simulations of reactive and non-equilibrium molecular systems.
+
 
 ## Results
 
