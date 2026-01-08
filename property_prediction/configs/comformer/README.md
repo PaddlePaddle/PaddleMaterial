@@ -11,34 +11,45 @@ Crystal structures are characterized by atomic bases within a primitive unit cel
 
 ## Datasets:
 
+The primary datasets employed in the evaluation of ComFormer include the Materials Project (MP), JARVIS-DFT, and the Alexandria Material Project. These datasets provide the ground-truth labels derived from Density Functional Theory (DFT) calculations, which serve as the target for the supervised learning process. The preprocessing and partitioning of these datasets are critical for ensuring the generalizability of the model.
+
+The MP2018.6.1 dataset represents a foundational benchmark for the field, encompassing a curated set of inorganic crystals with calculated thermodynamic and electronic properties. The MP2024 subset significantly expands the scale of the training data, allowing for the observation of model saturation and the benefits of large-scale pre-training. JARVIS-DFT datasets are particularly valued for their high-precision calculations and the inclusion of diverse properties like the energy above the convex hull ($E_{hull}$), which is a critical indicator of material stability.
+
 - MP2018.6.1:
 
     The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). Following the methodology outlined in the Comformer paper, we randomly partitioned the dataset into subsets, with the specific sample sizes for each subset detailed in the table below.
 
-    |                                   Dataset                                    | Train |  Val  | Test  |
-    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  |
+    |                                   Dataset                                    | Train |  Val  | Test  | Properties |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: | :---------: |
+    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G) |
 
 - MP2024
 
-    |                                   Dataset                                    | Train |  Val  | Test  |
-    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2024_train_130k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip) | 130000 | 10000  | 15361  |
+    |                                   Dataset                                    | Train |  Val  | Test  | Properties |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: | :---------: |
+    | [mp2024_train_130k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip) | 130000 | 10000  | 15361  | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G) |
 
 - Jarvis
 
     The original dataset can download from [here](https://github.com/usnistgov/jarvis).
-    | Dataset | Count |
-    | :----: | :---: |
-    | dft_2d | 1109 |
-    | dft_3d_2021 | 55723 |
-    | dft_3d | 75993|
+    | Dataset | Count | Properties |
+    | :----: | :---: | :---------: |
+    | dft_2d | 1109 | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+    | dft_3d_2021 | 55723 | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+    | dft_3d | 75993| Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
 
 - Alexandria Material Project
 
-    | Dataset | Count |
-    | :---: | :---: |
-    | pbe_2d | 100000 |
+    | Dataset | Count | Properties |
+    | :---: | :---: | :---------: |
+    | pbe_2d | 100000 | Formation Energy, et al.  | 
+
+
+## Model
+
+ComFormer is an $SE(3)$ transformer framework designed specifically for crystalline materials, with its core principle involving the use of periodic patterns of unit cells to establish a lattice-based representation for each atom. By selecting lattice points with minimum non-zero norms as local coordinate axes, this mechanism ensures geometric completeness, enabling the model to uniquely distinguish various structures—including chiral crystals—and effectively resolving representation instability issues caused by the non-uniqueness of unit cell selection.
+
+The framework consists of two variants: iComFormer, which employs $SE(3)$ invariant geometric descriptors (such as Euclidean distances and angles) to predict scalar properties like formation energy and band gaps; and eComFormer, which introduces $SO(3)$ equivariant vector representations to capture more complex physical symmetries. In terms of computational performance, ComFormer optimizes node-wise and edge-wise transformer layers to integrate angular information without relying on high-complexity line graphs, maintaining a complexity of $O(nk)$ (where $n$ denotes the number of atoms and $k$ denotes the average number of neighbors) and demonstrating exceptional efficiency in large-scale material screening tasks.
 
 ## Results
 
