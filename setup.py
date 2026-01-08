@@ -42,7 +42,6 @@ if __name__ == "__main__":
         ),
         long_description=get_readme(),
         long_description_content_type="text/markdown",
-        python_requires=">=3.10",
         packages=setuptools.find_packages(
             exclude=(
                 "docs",
