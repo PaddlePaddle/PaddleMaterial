@@ -63,7 +63,7 @@ if __name__ == "__main__":
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
         ],
         install_requires=get_requirements(),
-        use_scm_version={"write_to": "ppmat/_version.py"},
-        setup_requires=["setuptools_scm[toml]"],
+        use_scm_version=True,
+        setup_requires=["setuptools_scm"],
         ext_modules=cythonize(extensions),
     )
