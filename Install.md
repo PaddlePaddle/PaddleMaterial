@@ -36,7 +36,7 @@ If you see "PaddlePaddle is installed successfully! Let's start deep learning wi
     cd PaddleMaterials
 
     # Install dependencies
-    pip install --upgrade pip setuptools wheel
+    pip install --upgrade pip setuptools==68.2.2 wheel
     pip install setuptools_scm
     pip install Cython
     pip install git+https://github.com/PFCCLab/paddle_scatter.git

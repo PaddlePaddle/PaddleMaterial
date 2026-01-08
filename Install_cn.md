@@ -37,7 +37,7 @@
     cd PaddleMaterials
 
     # 安装依赖
-    pip install --upgrade pip setuptools wheel
+    pip install --upgrade pip setuptools==68.2.2 wheel
     pip install setuptools_scm
     pip install Cython
     pip install git+https://github.com/PFCCLab/paddle_scatter.git

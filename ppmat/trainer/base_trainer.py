@@ -184,12 +184,12 @@ class BaseTrainer:
                     self.visualdl_writer = vdl.LogWriter(
                         osp.join(self.output_dir, "vdl")
                     )
-                    logger.info(
-                        "VisualDL is enabled for logging, you can view it by running:\n"
-                        f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
-                        "\n For more information about how to use VisualDL, please refer to:"
-                        "https://www.paddlepaddle.org.cn/paddle/visualdl"
-                    )
+                logger.info(
+                    "VisualDL is enabled for logging, you can view it by running:\n"
+                    f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
+                    "\n For more information about how to use VisualDL, please refer to:"
+                    "https://www.paddlepaddle.org.cn/paddle/visualdl"
+                )
 
         # 8. set WandB tool
         self.wandb_writer = None
@@ -219,10 +219,10 @@ class BaseTrainer:
                     self.tensorboard_writer = tensorboardX.SummaryWriter(
                         osp.join(self.output_dir, "tensorboard")
                     )
-                    logger.message(
-                        "TensorboardX is enabled for logging, you can view it by "
-                        f"running:\ntensorboard --logdir {self.tensorboard_writer.logdir}"
-                    )
+                logger.message(
+                    "TensorboardX is enabled for logging, you can view it by "
+                    f"running:\ntensorboard --logdir {self.tensorboard_writer.logdir}"
+                )
 
         # 10. log paddle version
         log_paddle_version()

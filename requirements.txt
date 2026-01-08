@@ -14,12 +14,11 @@ omegaconf==2.3.0
 p_tqdm==1.4.0
 packaging==25.0
 pandas==2.3.0
-paddle_scatter @ git+https://github.com/PFCCLab/paddle_scatter.git
 pgl==2.2.6
 pyarrow==15.0.2
 pymatgen==2024.7.18
-pymatgen_analysis_defects==2024.7.19
-pymatgen_analysis_diffusion==2024.7.15
+pymatgen_analysis_defects==2024.10.29
+pymatgen_analysis_diffusion==2025.1.18
 pyparsing==3.2.3
 pytest==8.3.5
 rdkit==2024.9.1
