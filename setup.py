@@ -42,6 +42,7 @@ if __name__ == "__main__":
         ),
         long_description=get_readme(),
         long_description_content_type="text/markdown",
+        python_requires=">=3.10",
         packages=setuptools.find_packages(
             exclude=(
                 "docs",
@@ -63,7 +64,7 @@ if __name__ == "__main__":
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
         ],
         install_requires=get_requirements(),
-        use_scm_version=True,
-        setup_requires=["setuptools_scm"],
+        use_scm_version={"write_to": "ppmat/_version.py"},
+        setup_requires=["setuptools_scm[toml]"],
         ext_modules=cythonize(extensions),
     )

@@ -6,13 +6,13 @@ Global:
 
 Trainer:
   # Max epochs to train
-  max_epochs: 2000
+  max_epochs: 32
   # Max iteration which equals to steps * epoches, to early stop
-  max_iter: 40000
+  max_iter: 10000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/infgcn_omol25
+  output_dir: ./output/infgcn_md17_resorcinol
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 2000
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -61,21 +61,20 @@ Trainer:
 Model:
   __class_name__: InfGCN
   __init_params__:
-    n_atom_type: 69
-    num_radial: 32
+    n_atom_type: 3
+    num_radial: 16
     num_spherical: 7
-    radial_embed_size: 32
+    radial_embed_size: 64
     radial_hidden_size: 128
     num_radial_layer: 2
     num_gcn_layer: 3
-    cutoff: 5.0
-    grid_cutoff: 5.0
-    is_fc: true
+    cutoff: 3.0
+    grid_cutoff: 3.0
+    is_fc: false
     gauss_start: 0.5
     gauss_end: 5.0
-    activation: norm
     residual: true
-    pbc: false
+
 
 Optimizer:
   __class_name__: Adam
@@ -83,113 +82,78 @@ Optimizer:
     lr:
       __class_name__: ReduceOnPlateau
       __init_params__:
-        learning_rate: 0.001
+        learning_rate: 0.005
         factor: 0.5
-        patience: 10
-        min_lr: 1.0e-05
-        by_epoch: true
-        indicator: eval_loss
-        indicator_name: loss
+        patience: 5
+        min_lr: 0.00001
+        by_epoch: True
+        indicator: "eval_loss"
+        indicator_name: "loss"
     weight_decay: 0.0
     beta1: 0.9
     beta2: 0.999
 
-# remind: just subsets of Metal Complexes of OMol25 
 Dataset:
   train:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: SmallDensityDataset
       __init_params__:
-        root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
-        atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
-        extension: cube
-        compression: lz4
-        pbc: false
-        split: train
+        root: ./data/data_md #
+        mol_name: resorcinol
+        split: "train"
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: false
-        drop_last: false
-        batch_size: 2
+        shuffle: False
+        drop_last: False
+        batch_size: 16
     loader:
-      num_workers: 0
-      use_shared_memory: false
-      collate_fn: DensityCollator
+      num_workers: 4
+      use_shared_memory: False
+      collate_fn: DensityCollator # DensityVoxelCollator # if use voxel
       collate_params:
-        n_samples: 2048
-        sampling_mode: uniform
-        uniform_random_offset: true
-        sampling_seed: 42
-        clip_max: 200.0
-        importance_sampling: true
-        importance_threshold: 1.0e-05
-        importance_ratio: 0.8
-        extreme_threshold: 100.0
-        extreme_ratio: 0.05
+        n_samples: 1024
   val:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: SmallDensityDataset
       __init_params__:
-        root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
-        atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
-        extension: cube
-        compression: lz4
-        pbc: false
-        split: validation
+        root: ./data/data_md
+        mol_name: resorcinol
+        split: "validation"
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: false
-        drop_last: false
-        batch_size: 2
+        shuffle: False
+        drop_last: False
+        batch_size: 16
     loader:
-      num_workers: 0
-      use_shared_memory: false
-      collate_fn: DensityCollator
+      num_workers: 8
+      use_shared_memory: False
+      collate_fn: DensityCollator # DensityVoxelCollator # if use voxel
       collate_params:
         n_samples: 2048
-        sampling_mode: uniform
-        uniform_random_offset: true
-        sampling_seed: 42
-        clip_max: 200.0
-        importance_sampling: true
-        importance_threshold: 1.0e-05
-        importance_ratio: 0.8
-        extreme_threshold: 100.0
-        extreme_ratio: 0.05
   test:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: SmallDensityDataset
       __init_params__:
-        root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
-        atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
-        extension: cube
-        compression: lz4
-        pbc: false
-        split: test
-        rotate: false
+        root: ./data/data_md
+        mol_name: resorcinol
+        split: "test"
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: false
-        drop_last: false
+        shuffle: False
+        drop_last: False
         batch_size: 1
     loader:
-      num_workers: 0
-      use_shared_memory: false
-      collate_fn: DensityCollator
+      num_workers: 2
+      use_shared_memory: False
+      collate_fn: DensityCollator # DensityVoxelCollator # if use voxel
       collate_params:
-        n_samples: 2048
-        sampling_mode: uniform
-        uniform_random_offset: true
-        sampling_seed: 42
-        clip_max: 200.0
-        importance_sampling: true
-        importance_threshold: 1.0e-05
-        importance_ratio: 0.8
-        extreme_threshold: 100.0
-        extreme_ratio: 0.05
+        n_samples: 2048 # recommend set blank if have enough gpu memory
+
+Predict:
+  eval_with_no_grad: True
+  num_infer: null
+  num_vis: 2
+  inf_samples: 4096

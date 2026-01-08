@@ -15,14 +15,20 @@
 
 import json
 import os
+import os.path as osp
+import pickle
 import time
 import math
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 
 from ppmat.models.common.e3nn import o3
 from ppmat.utils.paddle_aux import dim2perm
+from ppmat.utils.misc import is_equal
+from ppmat.utils import download
+from ppmat.utils import logger
 
 from ppmat.datasets.geometric_data_type.data import Data
 
@@ -31,6 +37,57 @@ Bohr = 0.529177
 
 
 class DensityDataset(paddle.io.Dataset):
+    """Density Dataset Handler
+
+    Overview
+    --------
+    Generic volumetric electron-density reader with optional auto-download and
+    cache. Supports CHGCAR / cube / json files (optionally compressed) with
+    element metadata from ``atom_file``. Caching mirrors the mp20 dataset
+    pattern: parsed samples are serialized for fast reuse and validated against
+    config to avoid stale artifacts.
+
+    Dataset layout
+    --------------
+    ``root/`` is expected to contain raw density files; ``split_file`` lists
+    filenames for each split. Atom dictionary is provided via ``atom_file``.
+    Compression is handled transparently based on the filename suffix.
+
+    Auto-download
+    -------------
+    If ``root`` is missing and ``url`` is given (``auto_download=True``), the
+    archive is fetched using :func:`ppmat.utils.download.get_datasets_path_from_url`
+    (optional ``md5`` checksum).
+
+    Caching
+    -------
+    Enable via ``enable_cache=True``. Samples are pickled under
+    ``cache_path`` (default ``<root>_cache/<split>``) with a saved config. Set
+    ``overwrite=True`` to rebuild or ``max_cache_samples`` to limit cached
+    entries.
+
+    Attributes for registry parity with other handlers
+    --------------------------------------------------
+    - name (str): optional dataset name for downstream reference
+    - url (str): download URL if provided
+    - md5 (str): md5 for download verification if provided
+
+    Common ES datasets (paths/URLs)
+    --------------------------------
+    - QM9_ES: root ``dataset_ES/data_qm9``; data
+      ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/QM9_ES/qm9_es.tar``;
+      atom dict ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/QM9_ES/qm9.json``;
+      split file ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/QM9_ES/qm9_data_split.json``.
+    - MP_ES (cubic): root ``dataset_ES/data_cubic``; data
+      ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/mp_es.tar``;
+      atom dict ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/crystal.json``;
+      split file ``https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/crystal_data_split.json``.
+    """
+
+    # Optional registry fields; can be overridden per config or subclass
+    name: str | None = None
+    url: str | None = None
+    md5: str | None = None
     def __init__(
         self,
         root,
@@ -41,6 +98,13 @@ class DensityDataset(paddle.io.Dataset):
         compression="lz4",
         rotate=False,
         pbc=False,
+        url=None,
+        md5=None,
+        auto_download=True,
+        enable_cache=False,
+        cache_path=None,
+        overwrite=False,
+        max_cache_samples=None,
     ):
         """
         The density dataset contains volumetric data of molecules.
@@ -52,18 +116,37 @@ class DensityDataset(paddle.io.Dataset):
         :param compression: raw data compression, can be 'lz4', 'xz', or None (no compression)
         :param rotate: whether to rotate the molecule and the volumetric data
         :param pbc: whether the data satisfy the periodic boundary condition
+        :param url: optional remote url for auto-download when root is missing
+        :param md5: optional md5 for downloaded archive
+        :param auto_download: download dataset automatically if root does not exist
+        :param enable_cache: if True, read/save parsed samples to cache as pickle
+        :param cache_path: cache directory; defaults to "<root>_cache/<split>"
+        :param overwrite: force rebuilding cache even if it exists
+        :param max_cache_samples: limit number of samples to cache (None means all)
         """
         super(DensityDataset, self).__init__()
-        self.root = root
+        # Prefer explicit url/md5 from arguments; fall back to class attributes.
+        dl_url = url if url is not None else self.url
+        dl_md5 = md5 if md5 is not None else self.md5
+        self.root = self._maybe_download_root(root, dl_url, dl_md5, auto_download)
         self.split = split
         self.extension = extension
         self.compression = compression
         self.rotate = rotate
         self.pbc = pbc
+        self.enable_cache = enable_cache
+        self.overwrite = overwrite
+        self.max_cache_samples = max_cache_samples
+        # Cache root, by default <root>_cache/<split>
+        self.cache_path = (
+            cache_path
+            if cache_path is not None
+            else osp.join(f"{self.root}_cache", split)
+        )
         self.file_pattern = f".{extension}"
         if compression is not None:
             self.file_pattern += f".{compression}"
-        with open(os.path.join(root, split_file)) as f:
+        with open(os.path.join(self.root, split_file)) as f:
             self.file_list = list(reversed(json.load(f)[split]))
         with open(atom_file) as f:
             atom_info = json.load(f)
@@ -97,21 +180,162 @@ class DensityDataset(paddle.io.Dataset):
         else:
             self.open = open
 
-    def __getitem__(self, item):
-        if self.compression == "lz4":
-            file_name = f"{(self.file_list[item]+1):06}{self.file_pattern}"
-        else:
-            file_name = f"{(self.file_list[item])}{self.file_pattern}"
+        self._prepare_cache()
 
-        try:
-            with self.open(os.path.join(self.root, file_name)) as f:
-                g, density, grid_coord, info = self.read_func(f)
-        except EOFError:
-            print("EOFError")
-            print(f"Error reading {file_name} in {self.split} set, try again")
-        except RuntimeError:
-            print(f"Error reading {file_name} in {self.split} set")
-            raise
+    def _maybe_download_root(self, root, url, md5, auto_download):
+        if osp.exists(root):
+            return root
+        if not auto_download or url is None:
+            logger.warning(
+                f"Dataset root {root} not found and auto_download disabled or url missing."
+            )
+            return root
+        logger.message(f"Dataset root {root} not found. Downloading from {url}.")
+        downloaded_root = download.get_datasets_path_from_url(url, md5)
+        logger.message(f"Downloaded dataset to {downloaded_root}")
+        return downloaded_root
+
+    def _prepare_cache(self):
+        self.cache_samples = []
+        if not self.enable_cache:
+            return
+
+        sample_dir = osp.join(self.cache_path, "samples")
+        cache_cfg_path = osp.join(self.cache_path, "dataset_cfg.pkl")
+        cache_exists = osp.exists(sample_dir)
+        expected_cfg = {
+            "root": self.root,
+            "split": self.split,
+            "extension": self.extension,
+            "compression": self.compression,
+            "pbc": self.pbc,
+            "rotate": self.rotate,
+            "file_pattern": self.file_pattern,
+        }
+
+        # If cache exists and no overwrite request, ensure configuration matches.
+        if cache_exists and not self.overwrite:
+            try:
+                cached_cfg = self._load_from_cache(cache_cfg_path)
+                if not is_equal(cached_cfg, expected_cfg):
+                    logger.warning(
+                        "Cache configuration differs from current settings, will rebuild."
+                    )
+                    self.overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                logger.warning("Failed to read cached config, will rebuild.")
+                self.overwrite = True
+
+        # Rebuild cache when missing or outdated.
+        if self.overwrite or not cache_exists:
+            self._build_cache(sample_dir, cache_cfg_path, expected_cfg)
+
+        if dist.is_initialized():
+            dist.barrier()
+
+        if osp.exists(sample_dir):
+            self.cache_samples = sorted(
+                [
+                    osp.join(sample_dir, f)
+                    for f in os.listdir(sample_dir)
+                    if f.endswith(".pkl")
+                ]
+            )
+        else:
+            self.cache_samples = []
+
+    def _build_cache(self, sample_dir, cache_cfg_path, expected_cfg):
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        if rank != 0:
+            return
+
+        os.makedirs(sample_dir, exist_ok=True)
+        self._save_to_cache(cache_cfg_path, expected_cfg)
+
+        # Cap number of cached samples (default: cache all).
+        num_to_cache = (
+            len(self.file_list)
+            if self.max_cache_samples is None
+            else min(len(self.file_list), int(self.max_cache_samples))
+        )
+        logger.message(
+            f"Caching {num_to_cache}/{len(self.file_list)} samples to {sample_dir}"
+        )
+        for idx in range(num_to_cache):
+            file_name = self._resolve_file_name(idx)
+            try:
+                g, density, grid_coord, info = self._read_sample(file_name)
+            except Exception as e:
+                logger.warning(f"Failed to cache {file_name}: {e}")
+                continue
+            payload = self._serialize_sample(g, density, grid_coord, info)
+            self._save_to_cache(osp.join(sample_dir, f"{idx:010d}.pkl"), payload)
+        logger.info(f"Finished caching samples to {sample_dir}")
+
+    def _serialize_sample(self, g, density, grid_coord, info):
+        """将一次读取的结果打包为可pickle的轻量对象。"""
+        payload = {
+            "atom_type": np.asarray(g.x),
+            "atom_coord": np.asarray(g.pos),
+            "density": np.asarray(density),
+            "grid_coord": np.asarray(grid_coord),
+            "info": dict(info) if isinstance(info, dict) else info,
+        }
+        if isinstance(payload["info"], dict) and "cell" in payload["info"]:
+            try:
+                payload["info"]["cell"] = np.asarray(payload["info"]["cell"])
+            except Exception:
+                pass
+        return payload
+
+    def _deserialize_sample(self, payload):
+        """从缓存还原张量与 Data 对象。"""
+        atom_type = paddle.to_tensor(payload["atom_type"], dtype="int64")
+        atom_coord = paddle.to_tensor(payload["atom_coord"], dtype="float32")
+        density = paddle.to_tensor(payload["density"], dtype="float32")
+        grid_coord = paddle.to_tensor(payload["grid_coord"], dtype="float32")
+        info = payload.get("info", {})
+        if isinstance(info, dict) and "cell" in info:
+            info["cell"] = paddle.to_tensor(info["cell"], dtype="float32")
+        g = Data(x=atom_type, pos=atom_coord)
+        return g, density, grid_coord, info
+
+    def _save_to_cache(self, cache_path: str, data):
+        os.makedirs(osp.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as f:
+            pickle.dump(data, f)
+
+    def _load_from_cache(self, cache_path: str):
+        if not osp.exists(cache_path):
+            raise FileNotFoundError(f"No such file or directory: {cache_path}")
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+
+    def _resolve_file_name(self, item):
+        if self.compression == "lz4":
+            return f"{(self.file_list[item]+1):06}{self.file_pattern}"
+        return f"{(self.file_list[item])}{self.file_pattern}"
+
+    def _read_sample(self, file_name):
+        with self.open(os.path.join(self.root, file_name)) as f:
+            g, density, grid_coord, info = self.read_func(f)
+        info["file_name"] = file_name
+        return g, density, grid_coord, info
+
+    def __getitem__(self, item):
+        file_name = self._resolve_file_name(item)
+
+        # 优先从缓存读取，缓存缺失/异常时回退到原始文件
+        if self.enable_cache and self.cache_samples and item < len(self.cache_samples):
+            try:
+                payload = self._load_from_cache(self.cache_samples[item])
+                g, density, grid_coord, info = self._deserialize_sample(payload)
+            except Exception as e:
+                logger.warning(f"Failed to load cache for {file_name}: {e}")
+                g, density, grid_coord, info = self._read_sample(file_name)
+        else:
+            g, density, grid_coord, info = self._read_sample(file_name)
 
         info["file_name"] = file_name
         if self.rotate:
@@ -150,7 +374,9 @@ class DensityDataset(paddle.io.Dataset):
             + y_coord.view(1, -1, 1, 3)
             + z_coord.view(1, 1, -1, 3)
         )
-        grid_coord = grid_coord.view(-1, 3) - origin
+        # In the CUBE format the origin marks the starting voxel; add it to the
+        # axis-aligned coordinates so grid points align with atom positions.
+        grid_coord = grid_coord.view(-1, 3) + origin
         atom_type = paddle.empty(shape=paddle.to_tensor(n_atom), dtype="int64")
         atom_coord = paddle.empty(shape=[n_atom, 3], dtype="float32")
         for i in range(n_atom):

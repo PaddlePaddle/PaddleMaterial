@@ -1,12 +1,12 @@
 Global:
   do_train: True
-  do_eval: True
-  do_test: True
+  do_eval: False
+  do_test: False
   use_voxel: False
 
 Trainer:
   # Max epochs to train
-  max_epochs: 2000
+  max_epochs: 500
   # Max iteration which equals to steps * epoches, to early stop
   max_iter: 40000
   # Random seed
@@ -68,9 +68,9 @@ Model:
     radial_hidden_size: 128
     num_radial_layer: 2
     num_gcn_layer: 3
-    cutoff: 5.0
-    grid_cutoff: 5.0
-    is_fc: true
+    cutoff: 3.0
+    grid_cutoff: 6.0
+    is_fc: false
     gauss_start: 0.5
     gauss_end: 5.0
     activation: norm
@@ -101,7 +101,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_single.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -125,7 +125,7 @@ Dataset:
         clip_max: 200.0
         importance_sampling: true
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05
   val:
@@ -133,7 +133,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_single.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -157,7 +157,7 @@ Dataset:
         clip_max: 200.0
         importance_sampling: true
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05
   test:
@@ -165,7 +165,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_single.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -190,6 +190,6 @@ Dataset:
         clip_max: 200.0
         importance_sampling: true
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05

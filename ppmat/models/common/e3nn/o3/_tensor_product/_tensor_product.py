@@ -209,7 +209,12 @@ class TensorProduct(paddle.nn.Layer):
                 tensor=paddle.randn(shape=[self.weight_numel])
             )
         else:
-            self.register_buffer(name="weight", tensor=paddle.to_tensor(data=[]))
+            # Avoid registering zero-sized tensors as buffers: Paddle DataParallel
+            # synchronizes buffers across ranks and does not support numel == 0.
+            # For cases where weights are not used (weight_numel == 0) or are
+            # provided externally (internal_weights == False), we create the
+            # appropriate empty tensor on-the-fly in forward.
+            self.weight = None
         if self.irreps_out.dim > 0:
             output_mask = paddle.concat(
                 x=[
@@ -285,7 +290,9 @@ class TensorProduct(paddle.nn.Layer):
             return weight
 
     def _get_weights(
-        self, weight: Optional[Union[paddle.Tensor, List[paddle.Tensor]]]
+        self,
+        weight: Optional[Union[paddle.Tensor, List[paddle.Tensor]]],
+        like: Optional[paddle.Tensor] = None,
     ) -> paddle.Tensor:
         weight = self._prep_weights_python(weight)
         if weight is None:
@@ -293,20 +300,22 @@ class TensorProduct(paddle.nn.Layer):
                 raise RuntimeError(
                     "Weights must be provided when the TensorProduct does not have `internal_weights`"
                 )
+            if self.weight is None:
+                dtype = getattr(like, "dtype", None)
+                place = getattr(like, "place", None)
+                return paddle.to_tensor([], dtype=dtype, place=place)
             return self.weight
+
+        if self.shared_weights:
+            assert tuple(weight.shape) == (
+                self.weight_numel,
+            ), "Invalid weight shape"
         else:
-            if self.shared_weights:
-                assert tuple(weight.shape) == (
-                    self.weight_numel,
-                ), "Invalid weight shape"
-            else:
-                assert (
-                    tuple(weight.shape)[-1] == self.weight_numel
-                ), "Invalid weight shape"
-                assert (
-                    weight.ndim > 1
-                ), "When shared weights is false, weights must have batch dimension"
-            return weight
+            assert tuple(weight.shape)[-1] == self.weight_numel, "Invalid weight shape"
+            assert (
+                weight.ndim > 1
+            ), "When shared weights is false, weights must have batch dimension"
+        return weight
 
     def right(self, y, weight=None):
         assert (
@@ -315,7 +324,7 @@ class TensorProduct(paddle.nn.Layer):
         assert (
             tuple(y.shape)[-1] == self.irreps_in2.dim
         ), f"The last dimension of y should be{self.irreps_in2.dim}"
-        real_weight = self._get_weights(weight)
+        real_weight = self._get_weights(weight, like=y)
         return self._tp_right(y, real_weight)
 
     def forward(self, x, y, weight=None):
@@ -328,7 +337,7 @@ class TensorProduct(paddle.nn.Layer):
         assert (
             tuple(y.shape)[-1] == self.irreps_in2.dim
         ), f"the last dimesion of y is {self.irreps_in2.dim}"
-        real_weight = self._get_weights(weight)
+        real_weight = self._get_weights(weight, like=x)
         return self._tp_forward(x, y, real_weight)
 
     def weight_view_for_instruction(self, instruction_idx, weight=None):

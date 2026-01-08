@@ -164,7 +164,11 @@ class Linear(CodeGenMixin, paddle.nn.Layer):
                 shape=weight_shape, default_initializer=paddle.nn.initializer.Normal()
             )
         else:
-            self.weight = paddle.zeros([0])
+            # Avoid storing zero-sized tensors on the module: Paddle DataParallel
+            # synchronizes buffers across ranks and does not support numel == 0.
+            # When weight_numel == 0 (or weights are external), we create an empty
+            # tensor on-the-fly in forward if needed.
+            self.weight = None
 
         # Generate biases
         if internal_weights and self.bias_numel > 0:
@@ -175,7 +179,7 @@ class Linear(CodeGenMixin, paddle.nn.Layer):
                 default_initializer=paddle.nn.initializer.Constant(value=0.0),
             )
         else:
-            self.bias = paddle.zeros([0])
+            self.bias = None
 
         # Compute output mask
         if self.irreps_out.dim > 0:
@@ -207,13 +211,21 @@ class Linear(CodeGenMixin, paddle.nn.Layer):
                 raise RuntimeError(
                     "Weights must be provided when internal_weights = False"
                 )
-            weight = self.weight
+            if self.weight is None:
+                weight = paddle.to_tensor(
+                    [], dtype=features.dtype, place=features.place
+                )
+            else:
+                weight = self.weight
         if bias is None:
             if self.bias_numel > 0 and not self.internal_weights:
                 raise RuntimeError(
                     "Biases must be provided when internal_weights = False"
                 )
-            bias = self.bias
+            if self.bias is None:
+                bias = paddle.to_tensor([], dtype=features.dtype, place=features.place)
+            else:
+                bias = self.bias
         return self.forward_fn(features, weight, bias)
 
 

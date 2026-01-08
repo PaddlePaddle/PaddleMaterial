@@ -13,23 +13,58 @@
 # limitations under the License.
 
 import argparse
+import json
 import os
-from typing import Optional
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Literal, Optional
+from zipfile import ZipFile
 
 import numpy as np
-import paddle
-from omegaconf import OmegaConf
+try:
+    import paddle
+except ModuleNotFoundError:
+    paddle = None
+try:
+    from omegaconf import OmegaConf
+except ModuleNotFoundError:
+    OmegaConf = None
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Composition
+from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
 
-from ppmat.datasets import build_dataloader
-from ppmat.datasets.build_structure import BuildStructure
-from ppmat.datasets.transform import build_post_transforms
-from ppmat.metrics import build_metric
-from ppmat.models import build_model
-from ppmat.models import build_model_from_name
-from ppmat.utils import logger
-from ppmat.utils import save_load
+_IMPORT_ERROR = None
+try:
+    from ppmat.datasets import build_dataloader
+    from ppmat.datasets.build_structure import BuildStructure
+    from ppmat.datasets.transform import build_post_transforms
+    from ppmat.metrics import build_metric
+    from ppmat.models import build_model
+    from ppmat.models import build_model_from_name
+    from ppmat.utils import logger
+    from ppmat.utils import save_load
+except Exception as exc:  # noqa: BLE001
+    _IMPORT_ERROR = exc
+
+    class _FallbackLogger:
+        @staticmethod
+        def info(msg):
+            print(msg)
+
+        @staticmethod
+        def warning(msg):
+            print(msg)
+
+    logger = _FallbackLogger()
+    build_dataloader = None
+    BuildStructure = None
+    build_post_transforms = None
+    build_metric = None
+    build_model = None
+    build_model_from_name = None
+    save_load = None
 
 
 class StructureSampler:
@@ -73,6 +108,20 @@ class StructureSampler:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
+        if OmegaConf is None:
+            raise ImportError(
+                "OmegaConf is required for sampling. Please install 'omegaconf' or "
+                "run with --mode compute_metric_SUN to use evaluation only."
+            )
+        if paddle is None:
+            raise ImportError(
+                "PaddlePaddle is required for sampling. Please install 'paddlepaddle' "
+                "or run with --mode compute_metric_SUN to use evaluation only."
+            )
+        if _IMPORT_ERROR is not None:
+            raise ImportError(
+                "Failed to import PaddleMaterials sampling dependencies."
+            ) from _IMPORT_ERROR
         # if model_name is not None, then config_path and checkpoint_path must be
         # provided
         if model_name is None:
@@ -109,19 +158,6 @@ class StructureSampler:
             self.post_transforms = build_post_transforms(self.post_transforms_cfg)
         else:
             self.post_transforms = None
-
-    def compute_metric(
-        self,
-        save_path=None,
-    ):
-        metrics_cfg = self.sample_config.get("metrics")
-        assert metrics_cfg is not None, "metrics config must be provided."
-        metrics_fn = build_metric(metrics_cfg)
-
-        total_results = self.sample_by_dataloader(save_path)
-
-        metric = metrics_fn(total_results)
-        return metric
 
     def post_process(self, data):
         if self.post_transforms is None:
@@ -238,6 +274,261 @@ class StructureSampler:
         # todo: implement this function
         pass
 
+    def compute_metric(
+        self,
+        save_path=None,
+    ):
+        metrics_cfg = self.sample_config.get("metrics")
+        assert metrics_cfg is not None, "metrics config must be provided."
+        metrics_fn = build_metric(metrics_cfg)
+
+        total_results = self.sample_by_dataloader(save_path)
+
+        metric = metrics_fn(total_results)
+        return metric
+
+def _extract_structures_from_folder(dirname: str) -> list[Structure]:
+    structures: list[Structure] = []
+    if not os.path.isdir(dirname):
+        raise ValueError(f"Directory {dirname} does not exist.")
+    for filename in os.listdir(dirname):
+        full_path = os.path.join(dirname, filename)
+        if filename.endswith(".cif"):
+            try:
+                structures.append(Structure.from_file(full_path))
+            except ValueError as exc:
+                logger.warning(f"Failed to read {filename} as a CIF file: {exc}")
+        elif filename.endswith(".extxyz") or filename.endswith(".xyz"):
+            try:
+                import ase.io
+                from pymatgen.io.ase import AseAtomsAdaptor
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "Reading .xyz/.extxyz requires the 'ase' package. Please install "
+                    "it or convert files to CIF."
+                ) from exc
+            ase_atoms = ase.io.read(full_path, 0)
+            structures.append(AseAtomsAdaptor.get_structure(ase_atoms))
+    return structures
+
+
+def _load_structures_local(input_path: Path) -> list[Structure]:
+    """Minimal loader for structures supporting dir, .zip, .xyz/.extxyz."""
+    if input_path.suffix in {".xyz", ".extxyz"}:
+        try:
+            import ase.io
+            from pymatgen.io.ase import AseAtomsAdaptor
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "Reading .xyz/.extxyz requires the 'ase' package. Please install it "
+                "or convert files to CIF."
+            ) from exc
+        ase_atoms = ase.io.read(input_path, ":")
+        return [AseAtomsAdaptor.get_structure(x) for x in ase_atoms]
+    if input_path.suffix == ".zip":
+        with TemporaryDirectory() as tmpdirname:
+            with ZipFile(input_path, "r") as zip_obj:
+                zip_obj.extractall(tmpdirname)
+            return _extract_structures_from_folder(tmpdirname)
+    if input_path.is_dir():
+        return _extract_structures_from_folder(str(input_path))
+    raise ValueError(f"Invalid input path {input_path}")
+
+
+def compute_metric_SUN(
+    structures_path: str,
+    relaxed_structures_path: Optional[str] = None,
+    relax: bool = False,
+    energies_path: Optional[str] = None,
+    structure_matcher: Literal["ordered", "disordered"] = "disordered",
+    save_as: Optional[str] = None,
+    metrics_cfg_path: Optional[str] = None,
+):
+    """Compute evaluation metrics with element filtering for SUN experiments."""
+    if structures_path is None:
+        raise ValueError("structures_path must be provided.")
+    if relax:
+        logger.warning("Relaxation inside compute_metric_SUN is not supported; ignoring.")
+
+    structures = _load_structures_local(Path(structures_path))
+    relaxed_structures = None
+    if relaxed_structures_path is not None:
+        relaxed_structures = _load_structures_local(Path(relaxed_structures_path))
+    energies = np.load(energies_path) if energies_path else None
+    matcher = StructureMatcher(
+        stol=0.5,
+        angle_tol=5,
+        ltol=0.2,
+        attempt_supercell=False,
+        primitive_cell=False,
+        scale=False,
+    )
+
+    reference_elements = {
+        "Sc",
+        "F",
+        "Pd",
+        "Ti",
+        "Nd",
+        "P",
+        "Ca",
+        "Ru",
+        "Sn",
+        "Sm",
+        "As",
+        "O",
+        "Be",
+        "Au",
+        "Cd",
+        "Pt",
+        "Bi",
+        "Y",
+        "Si",
+        "Se",
+        "Cu",
+        "Sb",
+        "In",
+        "Br",
+        "Hf",
+        "I",
+        "Ir",
+        "La",
+        "Ba",
+        "Er",
+        "Lu",
+        "W",
+        "Mo",
+        "Li",
+        "Ge",
+        "Pb",
+        "Hg",
+        "Tl",
+        "Ho",
+        "Ta",
+        "Co",
+        "Ga",
+        "Nb",
+        "Fe",
+        "Mg",
+        "B",
+        "N",
+        "Cr",
+        "Sr",
+        "Rh",
+        "Yb",
+        "Ce",
+        "Ni",
+        "Re",
+        "V",
+        "Os",
+        "H",
+        "Rb",
+        "Pr",
+        "Al",
+        "Eu",
+        "Cl",
+        "Gd",
+        "S",
+        "Ag",
+        "Mn",
+        "Na",
+        "K",
+        "Zn",
+        "Cs",
+        "C",
+        "Te",
+        "Tb",
+        "Dy",
+        "Tm",
+        "Zr",
+    }
+
+    filtered_structures: list[Structure] = []
+    kept_indices: list[int] = []
+    for idx, structure in enumerate(structures):
+        if all(site.specie.symbol in reference_elements for site in structure):
+            filtered_structures.append(structure)
+            kept_indices.append(idx)
+
+    logger.info(f"{len(structures)} -> {len(filtered_structures)}")
+    n_failed_jobs = len(structures) - len(filtered_structures)
+    structures = filtered_structures
+    if energies is not None:
+        energies = [float(energies[idx]) for idx in kept_indices]
+    if relaxed_structures is not None:
+        if len(relaxed_structures) != len(structures):
+            logger.warning(
+                "relaxed_structures count does not match filtered structures; "
+                "truncating to the shorter length."
+            )
+        relaxed_structures = relaxed_structures[: len(structures)]
+
+    # base metrics following compute_metric pattern
+    custom_metrics = None
+    if metrics_cfg_path is not None:
+        if OmegaConf is None or build_metric is None:
+            logger.warning(
+                "metrics_cfg_path provided but OmegaConf/build_metric unavailable; "
+                "skipping custom metric computation."
+            )
+        else:
+            try:
+                cfg = OmegaConf.to_container(OmegaConf.load(metrics_cfg_path), resolve=True)
+                metrics_fn = build_metric(cfg)
+                custom_metrics = metrics_fn(structures)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to run custom metrics: {exc}")
+
+    unique_structures: list[Structure] = []
+    for structure in structures:
+        if not any(matcher.fit(structure, uniq) for uniq in unique_structures):
+            unique_structures.append(structure)
+
+    rms_values: list[float] = []
+    if relaxed_structures is not None:
+        for pred, ref in zip(structures, relaxed_structures):
+            try:
+                rms_dist = matcher.get_rms_dist(pred, ref)
+                if rms_dist is None:
+                    continue
+                if isinstance(rms_dist, (list, tuple, np.ndarray)):
+                    rms_dist = rms_dist[0]
+                rms_values.append(float(rms_dist))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to compute RMS distance: {exc}")
+
+    metrics = {
+        "total_structures": len(structures) + n_failed_jobs,
+        "filtered_structures": len(structures),
+        "failed_jobs": n_failed_jobs,
+        "unique_count": len(unique_structures),
+        "unique_fraction": float(len(unique_structures) / len(structures))
+        if structures
+        else 0.0,
+    }
+
+    if rms_values:
+        metrics["rms_mean_relaxed"] = float(np.mean(rms_values))
+        metrics["rms_match_rate_relaxed"] = float(len(rms_values) / len(structures))
+    else:
+        metrics["rms_mean_relaxed"] = None
+        metrics["rms_match_rate_relaxed"] = 0.0
+
+    if energies is not None:
+        metrics["energies_count"] = len(energies)
+        metrics["energies_mean"] = float(np.mean(energies)) if len(energies) else None
+    if custom_metrics is not None:
+        metrics.update(custom_metrics)
+
+    if save_as is not None:
+        save_path = Path(save_as)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with save_path.open("w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+
+    logger.info(json.dumps(metrics, indent=2))
+    return metrics
+
 
 if __name__ == "__main__":
 
@@ -273,11 +564,67 @@ if __name__ == "__main__":
             "by_num_atoms",
             "by_dataloader",
             "compute_metric",
+            "compute_metric_SUN",
         ],
         default="by_chemical_formula",
     )
+    argparse.add_argument(
+        "--structures_path",
+        type=str,
+        default=None,
+        help="Path to generated structures for compute_metric_SUN.",
+    )
+    argparse.add_argument(
+        "--relaxed_structures_path",
+        type=str,
+        default=None,
+        help="Optional path to relaxed structures for compute_metric_SUN.",
+    )
+    argparse.add_argument(
+        "--relax",
+        action="store_true",
+        help="Relax structures before evaluation in compute_metric_SUN (currently ignored).",
+    )
+    argparse.add_argument(
+        "--energies_path",
+        type=str,
+        default=None,
+        help="Path to energies array for compute_metric_SUN.",
+    )
+    argparse.add_argument(
+        "--structure_matcher",
+        type=str,
+        choices=["ordered", "disordered"],
+        default="disordered",
+        help="Structure matcher type for compute_metric_SUN.",
+    )
+    argparse.add_argument(
+        "--save_as",
+        type=str,
+        default=None,
+        help="Optional save path for computed metrics.",
+    )
+    argparse.add_argument(
+        "--metrics_cfg_path",
+        type=str,
+        default=None,
+        help="Optional metrics config path; will be built with build_metric similar to compute_metric.",
+    )
 
     args = argparse.parse_args()
+
+    if args.mode == "compute_metric_SUN":
+        metrics = compute_metric_SUN(
+            structures_path=args.structures_path,
+            relaxed_structures_path=args.relaxed_structures_path,
+            relax=args.relax,
+            energies_path=args.energies_path,
+            structure_matcher=args.structure_matcher,
+            save_as=args.save_as,
+        )
+        for metric_name, metric_value in metrics.items():
+            logger.info(f"{metric_name}: {metric_value}")
+        sys.exit(0)
 
     sampler = StructureSampler(
         model_name=args.model_name,

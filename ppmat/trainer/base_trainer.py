@@ -184,12 +184,12 @@ class BaseTrainer:
                     self.visualdl_writer = vdl.LogWriter(
                         osp.join(self.output_dir, "vdl")
                     )
-            logger.info(
-                "VisualDL is enabled for logging, you can view it by running:\n"
-                f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
-                "\n For more information about how to use VisualDL, please refer to:"
-                "https://www.paddlepaddle.org.cn/paddle/visualdl"
-            )
+                    logger.info(
+                        "VisualDL is enabled for logging, you can view it by running:\n"
+                        f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
+                        "\n For more information about how to use VisualDL, please refer to:"
+                        "https://www.paddlepaddle.org.cn/paddle/visualdl"
+                    )
 
         # 8. set WandB tool
         self.wandb_writer = None
@@ -219,10 +219,10 @@ class BaseTrainer:
                     self.tensorboard_writer = tensorboardX.SummaryWriter(
                         osp.join(self.output_dir, "tensorboard")
                     )
-            logger.message(
-                "TensorboardX is enabled for logging, you can view it by "
-                f"running:\ntensorboard --logdir {self.tensorboard_writer.logdir}"
-            )
+                    logger.message(
+                        "TensorboardX is enabled for logging, you can view it by "
+                        f"running:\ntensorboard --logdir {self.tensorboard_writer.logdir}"
+                    )
 
         # 10. log paddle version
         log_paddle_version()
@@ -592,9 +592,11 @@ class BaseTrainer:
                     loss_info[key] = AverageMeter(key)
                 loss_info[key].update(float(loss_dict[key]), batch_size)
 
-            if self.compute_metric_during_train:
+            if self.compute_metric_during_train and self.compute_metric_func_dict is not None:
                 pred_dict = result.get("pred_dict", {})
                 for key, compute_metric_func in self.compute_metric_func_dict.items():
+                    if key not in pred_dict:
+                        continue
                     pred = pred_dict[key]
                     label = batch_data[key]
                     metric = compute_metric_func(pred, label)
@@ -854,19 +856,26 @@ class BaseTrainer:
                             self.lr_scheduler.indicator_name
                         ].avg
                     elif self.lr_scheduler.indicator == "eval_loss":
-                        indicator_value = eval_loss_info[
-                            self.lr_scheduler.indicator_name
-                        ].avg
+                        if eval_loss_info is None:
+                            indicator_value = None
+                        else:
+                            indicator_value = eval_loss_info[
+                                self.lr_scheduler.indicator_name
+                            ].avg
                     elif self.lr_scheduler.indicator == "eval_metric":
-                        indicator_value = eval_metric_info[
-                            self.lr_scheduler.indicator_name
-                        ].avg
+                        if eval_metric_info is None:
+                            indicator_value = None
+                        else:
+                            indicator_value = eval_metric_info[
+                                self.lr_scheduler.indicator_name
+                            ].avg
                     else:
                         raise ValueError(
                             "Unsupported lr scheduler indicator: "
                             f"{self.lr_scheduler.indicator}"
                         )
-                    self.lr_scheduler.step(metrics=indicator_value)
+                    if indicator_value is not None:
+                        self.lr_scheduler.step(metrics=indicator_value)
                 else:
                     self.lr_scheduler.step()
 

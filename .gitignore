@@ -132,6 +132,7 @@ FETCH_HEAD
 
 # auto generated version file by setuptools_scm
 ppsci/_version.py
+ppmat/_version.py
 
 __pycache__/
 stability_prediction/data_bak/*

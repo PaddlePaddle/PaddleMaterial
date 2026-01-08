@@ -19,6 +19,7 @@ import os
 import os.path as osp
 
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader

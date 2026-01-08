@@ -253,12 +253,15 @@ class InfGCN(paddle.nn.Layer):
         )
         self._criterion = paddle.nn.MSELoss(reduction="mean")
 
-    def forward(self, *args, **kwargs):
-        if len(args) == 1 and isinstance(args[0], dict):
-            return self._forward_with_batch(args[0])
-        return self._forward_density(*args, **kwargs)
-
-    def _forward_with_batch(self, batch):
+    def forward(self, batch):
+        """
+        Expect a dict batch containing:
+            - graph: PGL Batch graph with x/pos/batch
+            - grid_coord: [B, K, 3] grid coordinates
+            - density: optional labels
+            - density_mask: optional mask for sampled grid points
+            - infos: optional list of dicts, may include 'cell'
+        """
         graph = batch["graph"]
         density = batch.get(self.label_key, None)
         grid = batch["grid_coord"]
@@ -287,11 +290,17 @@ class InfGCN(paddle.nn.Layer):
                 label_masked = density * mask
                 denom = paddle.sum(mask) + self.loss_eps
                 loss = paddle.sum((masked_pred - label_masked) ** 2) / denom
-                mae = paddle.sum(paddle.abs(masked_pred - label_masked)) / denom
+                # Normalized MAE (original InfGCN):
+                #   mae = sum(|pred - density|) / sum(density)
+                mae = paddle.sum(paddle.abs(masked_pred - label_masked)) / (
+                    paddle.sum(label_masked) + self.loss_eps
+                )
             else:
                 label_masked = density
                 loss = self._criterion(pred, label_masked)
-                mae = paddle.mean(paddle.abs(pred - label_masked))
+                mae = paddle.sum(paddle.abs(pred - label_masked)) / (
+                    paddle.sum(label_masked) + self.loss_eps
+                )
             loss_dict["loss"] = loss
             loss_dict["mae"] = mae
 

@@ -1,63 +1,37 @@
 Global:
-  do_train: True
-  do_eval: True
-  do_test: True
-  use_voxel: False
-
+  do_train: true
+  do_eval: true
+  do_test: Ture
+  use_voxel: false
 Trainer:
-  # Max epochs to train
   max_epochs: 2000
-  # Max iteration which equals to steps * epoches, to early stop
   max_iter: 40000
-  # Random seed
   seed: 42
-  # Save path for checkpoints and logs
   output_dir: ./output/infgcn_omol25
-  # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 2000
-  # Logging frequency [step], for example, log_freq=10 means log every 10 steps
-  log_freq: 1
-
-  # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
+  log_freq: 1000000
   start_eval_epoch: 0
-  # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
-  eval_freq: 1 # set 0 to disable evaluation during training
-  # Pretrained model path, if null, no pretrained model will be loaded
+  eval_freq: 1
   pretrained_model_path: null
-  # Pretrained weight name, will be used when pretrained_model_path is a directory
-  pretrained_weight_name: null #'latest.pdparams'
-  # Resume from checkpoint path, useful for resuming training
+  pretrained_weight_name: null
   resume_from_checkpoint: null
-  # whether use automatic mixed precision
-  use_amp: False
-  # automatic mixed precision level
-  amp_level: 'O1'
-  # whether run a model on no_grad mode during evaluation, useful for saving memory
-  # If the model contains higher-order derivatives in the forward, it should be set to
-  # False
-  eval_with_no_grad: True
-  # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
-  # gradient accumulation every 2 forward steps
-  # Note:
-  # one complete step  = gradient_accumulation_steps * forward steps + backward steps
+  use_amp: false
+  amp_level: O1
+  eval_with_no_grad: true
   gradient_accumulation_steps: 1
-
-  # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
-  best_metric_indicator: 'eval_loss' # "train_loss", "eval_loss", "train_metric", "eval_metric"
-  # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
-  name_for_best_metric: "mae"
-  # The metric whether is better when it is greater
-  greater_is_better: False
-
-  # compute metric during training or evaluation
-  compute_metric_during_train: True # True: the metric will be calculated on train dataset
-  metric_strategy_during_eval: 'epoch' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
-
-  # whether use visualdl, wandb, tensorboard to log
-  use_visualdl: False
-  use_wandb: False
-  use_tensorboard: True
-
+  best_metric_indicator: train_loss
+  name_for_best_metric: loss
+  greater_is_better: false
+  compute_metric_during_train: true
+  metric_strategy_during_eval: epoch
+  use_visualdl: false
+  use_wandb: false
+  use_tensorboard: true
+  out_dict:
+    train:
+    - loss
+    eval:
+    - mae
 Model:
   __class_name__: InfGCN
   __init_params__:
@@ -94,14 +68,13 @@ Optimizer:
     beta1: 0.9
     beta2: 0.999
 
-# remind: just subsets of Metal Complexes of OMol25 
 Dataset:
   train:
     dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_debug10.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -125,7 +98,7 @@ Dataset:
         clip_max: 200.0
         importance_sampling: true
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05
   val:
@@ -133,7 +106,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_debug10.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -155,9 +128,9 @@ Dataset:
         uniform_random_offset: true
         sampling_seed: 42
         clip_max: 200.0
-        importance_sampling: true
+        importance_sampling: false
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05
   test:
@@ -165,7 +138,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_data_split.json
+        split_file: omol25_debug10.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -188,8 +161,8 @@ Dataset:
         uniform_random_offset: true
         sampling_seed: 42
         clip_max: 200.0
-        importance_sampling: true
+        importance_sampling: false
         importance_threshold: 1.0e-05
-        importance_ratio: 0.8
+        importance_ratio: 0.6
         extreme_threshold: 100.0
         extreme_ratio: 0.05

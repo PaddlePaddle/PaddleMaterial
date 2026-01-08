@@ -22,7 +22,7 @@ We propose a general architecture that combines the coefficient learning scheme 
         <tr>
             <th nowrap="nowrap">Model Name</th>
             <th nowrap="nowrap">Dataset</th>
-            <th nowrap="nowrap">Density MAE</th>
+            <th nowrap="nowrap">Normalized MAE of Density</th>
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
@@ -30,6 +30,60 @@ We propose a general architecture that combines the coefficient learning scheme 
         </tr>
     </thead>
     <tbody>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_benzene</td>
+            <td nowrap="nowrap">MD17_EC_Benzene</td>
+            <td nowrap="nowrap">21.2614%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">59min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_benzene.yaml">infgcn_md17_benzene</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_benzene_t_20260104_083255_s_42.zip">checkpoint | log</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_ethane</td>
+            <td nowrap="nowrap">MD17_EC_Ethane</td>
+            <td nowrap="nowrap">6.9443%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">1hour17min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_ethane.yaml">infgcn_md17_ethane</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethane_t_20260105_035402_s_42.zip">checkpoint | log</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_ethanol</td>
+            <td nowrap="nowrap">MD17_EC_Ethanol</td>
+            <td nowrap="nowrap">64.5951%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">7min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_ethanol.yaml">infgcn_md17_ethanol</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethanol_t_20260105_051323_s_42.zip">checkpoint | log</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_malonaldehyde</td>
+            <td nowrap="nowrap">MD17_EC_Malonaldehyde</td>
+            <td nowrap="nowrap">17.7947%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">1hour29min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_malonaldehyde.yaml">infgcn_md17_malonaldehyde</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_malonaldehyde_t_20260105_052204_s_42.zip">checkpoint | log</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_phenol</td>
+            <td nowrap="nowrap">MD17_EC_Phenol</td>
+            <td nowrap="nowrap">20.2144%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">1hour17min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_phenol.yaml">infgcn_md17_phenol</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_phenol_t_20260107_041611_s_42.zip">checkpoint | log</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">infgcn_md17_resorcinol</td>
+            <td nowrap="nowrap">MD17_EC_Resorcinol</td>
+            <td nowrap="nowrap">15.8850%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">1hour23min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_resorcinol.yaml">infgcn_md17_resorcinol</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_resorcinol_t_20260104_083255_s_42.zip">checkpoint | log</td>
+        </tr>
         <tr>
             <td nowrap="nowrap">infgcn_qm9</td>
             <td nowrap="nowrap">QM9_EC</td>
@@ -55,15 +109,6 @@ We propose a general architecture that combines the coefficient learning scheme 
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_omol25.yaml">infgcn_omol25</a></td>
-            <td nowrap="nowrap">TBD</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">infgcn_md</td>
-            <td nowrap="nowrap">MD17_EC (ethanol)</td>
-            <td nowrap="nowrap">TBD</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md.yaml">infgcn_md</a></td>
             <td nowrap="nowrap">TBD</td>
         </tr>
     </tbody>

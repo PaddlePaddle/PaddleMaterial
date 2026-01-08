@@ -29,6 +29,7 @@ import warnings
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
+from ppmat.datasets.geometric_data_type.data import Data
 
 
 class DefaultCollator(object):
@@ -60,6 +61,9 @@ class DefaultCollator(object):
         elif isinstance(sample, numbers.Number):
             batch = np.array(batch)
             return batch
+        elif isinstance(sample, Data):
+            # Geometric `Data` objects: batch them into a single `Batch`
+            return Batch.from_data_list(batch)
         elif isinstance(sample, (str, bytes)):
             return batch
         elif isinstance(sample, Mapping):
@@ -85,9 +89,32 @@ class DefaultCollator(object):
 
 
 class DensityCollator:
-    def __init__(self, n_samples=None, padding_value=-1.0):
+    def __init__(
+        self,
+        n_samples=None,
+        padding_value=-1.0,
+        sampling_mode: str = "uniform",  # "uniform" or "random"
+        uniform_random_offset: bool = False,
+        sampling_seed: int | None = None,
+        clip_max: float | None = None,
+        importance_sampling: bool = False,
+        importance_threshold: float = 1e-5,
+        importance_ratio: float = 0.8,
+        extreme_threshold: float | None = None,
+        extreme_ratio: float = 0.05,
+    ):
         self.n_samples = n_samples
         self.padding_value = padding_value
+        self.sampling_mode = sampling_mode.lower()
+        self.uniform_random_offset = bool(uniform_random_offset)
+        self.sampling_seed = sampling_seed
+        self._rng = np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        self.clip_max = clip_max
+        self.importance_sampling = bool(importance_sampling)
+        self.importance_threshold = importance_threshold
+        self.importance_ratio = float(importance_ratio)
+        self.extreme_threshold = extreme_threshold
+        self.extreme_ratio = float(extreme_ratio)
         self._warned_length_mismatch = False
 
     def __call__(self, batch):
@@ -115,8 +142,69 @@ class DensityCollator:
                     self._warned_length_mismatch = True
                 if total == 0:
                     raise ValueError("Empty density/grid pair encountered in batch.")
-                replace = total < target_samples
-                indices = np.random.choice(total, target_samples, replace=replace)
+                if self.importance_sampling:
+                    total_idx = np.arange(total)
+                    dense_vals = np.abs(d.numpy().reshape(-1))
+                    threshold = float(self.importance_threshold)
+                    high_mask = dense_vals >= threshold
+                    high_idx = total_idx[high_mask]
+
+                    extreme_idx = np.array([], dtype=int)
+                    if self.extreme_threshold is not None:
+                        extreme_mask = dense_vals >= self.extreme_threshold
+                        extreme_idx = total_idx[extreme_mask]
+                        # ensure extreme is subset of high
+                        extreme_idx = np.intersect1d(extreme_idx, high_idx, assume_unique=True)
+                    mid_idx = np.setdiff1d(high_idx, extreme_idx, assume_unique=True)
+
+                    high_quota = min(target_samples, max(0, int(target_samples * self.importance_ratio)))
+                    extreme_quota = min(target_samples, max(0, int(target_samples * self.extreme_ratio)))
+
+                    extreme_take = min(len(extreme_idx), extreme_quota)
+                    indices_extreme = (
+                        np.random.choice(extreme_idx, extreme_take, replace=False)
+                        if extreme_take > 0
+                        else np.array([], dtype=int)
+                    )
+
+                    remaining_high = high_quota - len(indices_extreme)
+                    mid_take = min(len(mid_idx), remaining_high)
+                    indices_mid = (
+                        np.random.choice(mid_idx, mid_take, replace=False)
+                        if mid_take > 0
+                        else np.array([], dtype=int)
+                    )
+
+                    selected = np.concatenate([indices_extreme, indices_mid])
+                    remaining = target_samples - len(selected)
+                    if remaining > 0:
+                        low_candidates = np.setdiff1d(total_idx, selected, assume_unique=False)
+                        if len(low_candidates) == 0:
+                            low_candidates = total_idx
+                        replace_low = remaining > len(low_candidates)
+                        indices_low = np.random.choice(low_candidates, remaining, replace=replace_low)
+                        indices = np.concatenate([selected, indices_low])
+                    else:
+                        indices = selected
+                else:
+                    if self.sampling_mode == "uniform":
+                        if self.uniform_random_offset:
+                            if self._rng is None:
+                                self._rng = np.random.default_rng()
+                            step = (total - 1) / max(target_samples - 1, 1)
+                            offset = float(self._rng.uniform(0, max(step, 1.0))) if step > 0 else 0.0
+                            idx = offset + step * np.arange(target_samples)
+                            indices = np.clip(np.round(idx).astype(int), 0, total - 1)
+                        else:
+                            indices = np.linspace(0, total - 1, num=target_samples, dtype=int)
+                    elif self.sampling_mode == "random":
+                        replace = target_samples > total
+                        indices = np.random.choice(total, target_samples, replace=replace)
+                    else:
+                        raise ValueError(
+                            f"Unsupported sampling_mode '{self.sampling_mode}'. "
+                            "Use 'uniform' or 'random'."
+                        )
                 indices.sort()
                 sampled_density.append(d[indices])
                 sampled_grid.append(coord[indices])
@@ -126,7 +214,10 @@ class DensityCollator:
             densities = paddle.stack(x=sampled_density, axis=0)
             grid_coord = paddle.stack(x=sampled_grid, axis=0)
             mask = paddle.stack(x=mask, axis=0)
+
         densities = densities * mask
+        if self.clip_max is not None:
+            densities = paddle.clip(densities, min=self.padding_value, max=self.clip_max)
         return {
             "density": densities,
             "density_mask": mask,
