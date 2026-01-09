@@ -10,31 +10,88 @@ The simulation of large-scale systems with complex electron interactions remains
 
 ## Datasets:
 
+CHGNet is trained and evaluated on large-scale atomistic datasets covering both crystalline bulk materials and surface reaction systems. These datasets provide high-fidelity quantum-mechanical labels, including energies, forces, stresses, and electronic properties, enabling the construction of a charge-aware universal interatomic potential.
+
+The MPtrj dataset is used for CHGNet pretraining and bulk material modeling. The OC20 S2EF dataset is used to evaluate model generalization to surface reaction systems. All dataset splits are fixed and reproducible. Reported MAE values in the Results section follow the evaluation protocol of the original CHGNet paper.
+
 - MPtrj_2022.9_full:
 
-    The original dataset can download from [here](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
+    The Materials Project Trajectory Dataset (MPtrj_2022.9) is the primary pretraining dataset for CHGNet. The original dataset can download from [here](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
-    This dataset contains 145,923 compounds, 1,580,395 structures with corresponding:
-    - 1,580,395 energies
-    - 7,944,833 magnetic moments
-    - 49,295,660 forces
+    This dataset contains long-term accumulated density functional theory (DFT) static and relaxation trajectories from the Materials Project (2022.9 release), covering a wide range of inorganic crystalline compounds.
+
+    - 145,923 unique compounds
+    - 1,580,395 crystal structures
+
+    Corresponding labels:
+    - 1,580,395 total energies
+    - 49,295,660 atomic forces
     - 14,223,555 stresses
+    - 7,944,833 magnetic moments
 
-    All data originates from GGA/GGA+U static/relaxation trajectories in the 2022.9 Materials Project release. The dataset employs a selection protocol that excludes incompatible calculations and duplicate structures.
+    All calculations are performed at the GGA / GGA+U level of theory. A strict filtering and deduplication protocol is applied to remove incompatible calculations and redundant structures, ensuring data consistency and quality.
 
-    Following the methodology outlined in the CHGNet paper, we randomly partitioned the dataset into subsets based on the mp-id, with the specific sample sizes for each subset detailed in the table below.
+    Following the CHGNet paper, the dataset is randomly partitioned based on mp-id, such that structures from the same compound do not appear across different splits.
 
     |                                   Dataset                                    | Train |  Val  | Test  |
     | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
     | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592  | 14593  |
 
+    This dataset enables CHGNet to learn a unified potential energy surface across diverse chemistries, crystal symmetries, and magnetic configurations.
+
 - OC20 S2EF
 
-    The OC20 S2EF (Structure to Energy and Force) dataset is widely used for benchmarking atomic modeling methods that predict energy and atomic forces given atomic structures. We conducted experiments based on the CHGNet model on this dataset. For more information and the download link, please visit [here](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0000.parquet).
+    The Open Catalyst 2020 (OC20) Structure-to-Energy-and-Force (S2EF) dataset is a large-scale benchmark for evaluating interatomic potentials in surface chemistry and catalysis.
+
+    OC20 S2EF focuses on predicting energies and atomic forces for adsorbate–surface systems, featuring:
+
+    - Large structural diversity
+    - Challenging out-of-equilibrium configurations
+    - Strong relevance to catalytic reaction modeling
+
+    We evaluate the CHGNet architecture on the OC20 S2EF dataset to assess its transferability beyond bulk crystalline systems. For more information and the download link, please visit [here](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/OC20/s2ef_train_2M/0000.parquet).
 
     | Dataset        | Train     | Val      | Test     |
     | :------------ | :-------- | :------- | :------- |
     | oc20_s2ef_2M  | 2,000,000 | 100,000  | 200,000  |
+
+
+## Models
+
+Given atomic coordinates and lattice vectors, CHGNet constructs three coupled graphs within a cutoff radius:
+
+* **Atom graph**: nodes represent atoms with element-dependent features
+* **Bond graph**: edges encode pairwise interactions based on interatomic distances
+* **Angle graph**: captures three-body interactions through bond angles
+
+Interatomic distances are expanded using radial basis functions:
+$$
+e_{ij,n} =
+\sqrt{\frac{2}{r_c}}
+\frac{\sin\left(\frac{n\pi r_{ij}}{r_c}\right)}{r_{ij}}.
+$$
+
+Angular information is encoded using Fourier basis functions of bond angles.
+
+### Energy and Forces
+
+The total energy is obtained by summing atomic energy contributions:
+$$
+E_{\text{tot}} = \sum_i E_i.
+$$
+
+Atomic forces are computed as energy gradients with respect to atomic positions:
+$$
+\mathbf{F}_i = -\frac{\partial E_{\text{tot}}}{\partial \mathbf{r}_i}.
+$$
+
+Stresses are derived consistently from the energy–strain relation:
+$$
+\boldsymbol{\sigma} = \frac{1}{V} \frac{\partial E_{\text{tot}}}{\partial \boldsymbol{\varepsilon}}.
+$$
+
+CHGNet provides a unified, charge-aware interatomic potential capable of modeling complex crystalline materials, including systems with magnetism and charge transfer. It is suitable for structure relaxation, molecular dynamics, and materials property prediction, offering strong transferability across diverse inorganic systems.
+
 
 ## Results
 
