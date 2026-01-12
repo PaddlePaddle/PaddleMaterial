@@ -11,34 +11,39 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
 
 ## Datasets:
 
+The primary datasets employed in the evaluation of ComFormer include the Materials Project (MP), JARVIS-DFT, and the Alexandria Material Project. These datasets provide the ground-truth labels derived from Density Functional Theory (DFT) calculations, which serve as the target for the supervised learning process. The preprocessing and partitioning of these datasets are critical for ensuring the generalizability of the model.
+
+The MP2018.6.1 dataset represents a foundational benchmark for the field, encompassing a curated set of inorganic crystals with calculated thermodynamic and electronic properties. The MP2024 subset significantly expands the scale of the training data, allowing for the observation of model saturation and the benefits of large-scale pre-training. JARVIS-DFT datasets are particularly valued for their high-precision calculations and the inclusion of diverse properties like the energy above the convex hull ($E_{hull}$), which is a critical indicator of material stability.
+
 - MP2018.6.1:
 
     The original dataset can download from [here](https://figshare.com/ndownloader/files/15087992). Following the methodology outlined in the Comformer paper, we randomly partitioned the dataset into subsets, with the specific sample sizes for each subset detailed in the table below.
 
-    |                                   Dataset                                    | Train |  Val  | Test  |
-    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  |
+    |                                   Dataset                                    | Train |  Val  | Test  | Properties |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: | :---------: |
+    | [mp2018_train_60k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2018/mp2018_train_60k.zip) | 60000 | 5000  | 4239  | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G) |
 
 - MP2024
 
-    |                                   Dataset                                    | Train |  Val  | Test  |
-    | :--------------------------------------------------------------------------: | :---: | :---: | :---: |
-    | [mp2024_train_130k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip) | 130000 | 10000  | 15361  |
+    |                                   Dataset                                    | Train |  Val  | Test  | Properties |
+    | :--------------------------------------------------------------------------: | :---: | :---: | :---: | :---------: |
+    | [mp2024_train_130k](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp2024/mp2024_train_130k.zip) | 130000 | 10000  | 15361  | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G) |
 
 - Jarvis
 
     The original dataset can download from [here](https://github.com/usnistgov/jarvis).
-    | Dataset | Count |
-    | :----: | :---: |
-    | dft_2d | 1109 |
-    | dft_3d | 75993|
-    | cfid_3d | 55723 |
-    | dft_3d_2021 | 55723 |
+    | Dataset | Count |  Properties |
+    | :----: | :---: | :---------: |
+    | dft_2d | 1109 | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+    | dft_3d | 75993| Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+    | cfid_3d | 55723 | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+    | dft_3d_2021 | 55723 | Formation Energy, Band Gap, Bulk Modulus(K), Shear Modulus(G), $E_{hull}$, et al. |
+
 - Alexandria Material Project
 
-    | Dataset | Count |
-    | :---: | :---: |
-    | pbe_2d | 100000 |
+    | Dataset | Count | Properties |
+    | :---: | :---: | :---------: |
+    | pbe_2d | 100000 | Formation Energy, et al.  | 
 
 - Matbench
 
@@ -59,6 +64,62 @@ Graph networks are a new machine learning (ML) paradigm that supports both relat
     | Dataset | Count |
     | :---: | :---: |
     | OMol25 | 4000000 |
+
+## Model
+MEGNet represents material systems as graphs composed of three fundamental elements: nodes ((V)), edges ((E)), and a global state ((u)). Nodes represent atoms and encode attributes such as atomic number, hybridization state, chirality, ring size, and aromaticity. Edges represent chemical bonds or neighborhood relationships between atoms, incorporating bond types, interatomic distances, and topological features. The global state vector stores system-level information, such as molecular weight, temperature, pressure, and entropy, enabling unified modeling of state-dependent properties such as free energy. For crystalline systems, edges are defined based on a cutoff radius to determine atomic neighborhoods, and spatial distances are expanded using Gaussian basis functions, whereas molecular systems can include richer node and edge attributes.
+
+MEGNet achieves information fusion among atoms, edges, and the global state through three successive update steps.
+
+### Edge update
+
+The updated attribute of each edge is determined by its own attributes, the attributes of the atoms it connects, and the global state:
+
+```math
+e_k' = \phi_e \left( v_{s_k} \oplus v_{r_k} \oplus e_k \oplus u \right)
+```
+
+where (\phi_e) denotes the edge update function, (\oplus) represents vector concatenation, and (s_k) and (r_k) are the indices of the two atoms connected by edge (k).
+
+### Node update
+
+The updated attribute of each node is determined by its own attributes, the updated attributes of all connected edges, and the global state. First, a local aggregation over incident edges is performed:
+
+```math
+\bar{v}_i^{\,e} = \frac{1}{N_i^e} \sum_{k=1}^{N_i^e} \left\{ e_k' \right\}_{r_k = i}
+```
+
+The aggregated edge information is then combined with the node’s original attributes and the global state to update the node features:
+
+```math
+v_i' = \phi_v \left( \bar{v}_i^{\,e} \oplus v_i \oplus u \right)
+```
+
+where (N_i^e) denotes the number of edges connected to atom (i), and (\phi_v) is the node update function. This step is equivalent to performing a local convolution on each atom, allowing its features to incorporate the influence of neighboring atoms.
+
+### Global state update
+
+The updated global state is determined by its original attributes as well as all updated atom and edge attributes in the graph. First, global aggregations over edges and nodes are computed:
+
+```math
+\bar{u}^{\,e} = \frac{1}{N^e} \sum_{k=1}^{N^e} e_k'
+```
+
+```math
+\bar{u}^{\,v} = \frac{1}{N^v} \sum_{i=1}^{N^v} v_i'
+```
+
+The global state is then updated as:
+
+```math
+u' = \phi_u \left( \bar{u}^{\,e} \oplus \bar{u}^{\,v} \oplus u \right)
+```
+
+where (N^e) and (N^v) denote the total numbers of edges and nodes, respectively. By stacking multiple MEGNet modules, information among atoms, edges, and the global state can be propagated over multiple rounds, enabling the modeling of interactions ranging from local neighborhoods to long-range effects.
+
+In terms of model architecture, two fully connected (Dense) layers are added before each MEGNet module for input preprocessing to enhance model flexibility. Residual connections are employed within the modules to support deep training and reduce the risk of overfitting. A Dense layer combined with a message-passing module constitutes one block, and multiple such blocks can be stacked to form a deep model. In the final readout stage, the set2set operation is used to encode sets of atomic and edge attributes into fixed-length vectors, which are then concatenated with the global state vector and passed through a multilayer perceptron to produce the final output. This design enables the prediction of material properties such as energy, band gap, or elastic modulus.
+
+MEGNet is trained using the Adam optimizer with an initial learning rate of 0.001, which is dynamically reduced to 0.0001 during training. Most models converge within 1,000 epochs, while free-energy-related models typically require 2,000 to 4,000 epochs.
+
 
 ## Results
 
