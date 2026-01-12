@@ -1449,11 +1449,7 @@ class CHGNet(paddle.nn.Layer):
         # Each element represents the index of two atoms
         atom_graph = graphs.edge_feat["atom_graph"]
         num_atom_graph = graphs.edge_feat["num_atom_graph"]
-<<<<<<< HEAD
-        num_atoms_cumsum = paddle.cumsum(num_atoms,dtype="int32")
-=======
         num_atoms_cumsum = paddle.cumsum(num_atoms).astype('int32')
->>>>>>> upstream/develop
         num_atoms_cumsum = paddle.concat(
             [paddle.zeros(1, dtype=num_atoms_cumsum.dtype), num_atoms_cumsum]
         )
@@ -1489,11 +1485,7 @@ class CHGNet(paddle.nn.Layer):
 
         # Accumulate the number of edges in each crystal pattern and add it as an
         # offset to the index of each edge vector
-<<<<<<< HEAD
-        num_edges_cumsum = paddle.cumsum(num_edges, dtype="int32")
-=======
         num_edges_cumsum = paddle.cumsum(num_edges).astype('int32')
->>>>>>> upstream/develop
         num_edges_cumsum = paddle.concat(
             [paddle.zeros(1, dtype=num_edges_cumsum.dtype), num_edges_cumsum]
         )
@@ -1522,13 +1514,8 @@ class CHGNet(paddle.nn.Layer):
         )
 
         undirected2directed_len_cumsum = paddle.cumsum(
-<<<<<<< HEAD
-            graphs.edge_feat["undirected2directed_len"], dtype="int32"
-        )
-=======
             graphs.edge_feat["undirected2directed_len"]
         ).astype('int32')
->>>>>>> upstream/develop
         undirected2directed_len_cumsum = paddle.concat(
             [
                 paddle.zeros(1, dtype=undirected2directed_len_cumsum.dtype),

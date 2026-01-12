@@ -135,7 +135,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: False
+        shuffle: True
         drop_last: False
         batch_size: 6 # recommend >2 <=6, on V100 16G GPU
     loader:
@@ -161,7 +161,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: False
+        shuffle: True
         drop_last: False
         batch_size: 1
     loader:

@@ -134,7 +134,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: False
+        shuffle: True
         drop_last: False
         batch_size: 16
     loader:
@@ -160,7 +160,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: False
+        shuffle: True
         drop_last: False
         batch_size: 1
     loader:
