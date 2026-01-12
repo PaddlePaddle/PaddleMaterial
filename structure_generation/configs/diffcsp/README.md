@@ -24,6 +24,7 @@ DiffCSP designs separate forward corruption processes for $(L, F)$: the lattice 
 
 #### 1) Lattice diffusion (DDPM on $L$)
 Forward diffusion:
+
 $$
 q(L_t \mid L_0) = \mathcal{N}\!\left(L_t \mid \sqrt{\bar{\alpha}_t}\,L_0,\; (1-\bar{\alpha}_t) I\right),
 \qquad
@@ -31,6 +32,7 @@ q(L_t \mid L_0) = \mathcal{N}\!\left(L_t \mid \sqrt{\bar{\alpha}_t}\,L_0,\; (1-\
 $$
 
 Reparameterized sampling:
+
 $$
 L_t = \sqrt{\bar{\alpha}_t}\,L_0 + \sqrt{1 - \bar{\alpha}_t}\,\epsilon_L,
 \qquad
@@ -38,6 +40,7 @@ L_t = \sqrt{\bar{\alpha}_t}\,L_0 + \sqrt{1 - \bar{\alpha}_t}\,\epsilon_L,
 $$
 
 Reverse (ancestral) step:
+
 $$
 p_\theta(L_{t-1} \mid M_t) = \mathcal{N}\!\left(L_{t-1} \mid \mu_\theta(M_t, t),\; \sigma_t^2 I\right),
 \qquad
@@ -45,18 +48,21 @@ M_t = (L_t, F_t, A).
 $$
 
 With mean:
+
 $$
 \mu_\theta(M_t, t) = \frac{1}{\sqrt{\alpha_t}}
 \left(L_t - \frac{\sqrt{\beta_t}}{\sqrt{1 - \bar{\alpha}_t}}\,\hat{\epsilon}_L(M_t, t)\right).
 $$
 
 Lattice denoising loss:
+
 $$
 \mathcal{L}_L = \mathbb{E}_{t,\epsilon_L}\left[\left\|\epsilon_L - \hat{\epsilon}_L(M_t, t)\right\|_F^2\right].
 $$
 
 #### 2) Fractional-coordinate diffusion on a torus (wrapped Normal / score matching)
 Because $F \in [0,1)^{3 \times N}$ is periodic, DiffCSP corrupts coordinates by adding Gaussian noise then wrapping back into the unit cell via a truncation/wrapping operator $w(\cdot)$:
+
 $$
 F_t = w(F_0 + \sigma_t \epsilon_F),
 \qquad
@@ -64,6 +70,7 @@ F_t = w(F_0 + \sigma_t \epsilon_F),
 $$
 
 This implies the wrapped Normal transition density:
+
 $$
 q(F_t \mid F_0) \propto
 \sum_{Z \in \mathbb{Z}^{3 \times N}}
@@ -75,6 +82,7 @@ $$
 As $\sigma_t$ increases sufficiently, $q(F_t \mid F_0)$ approaches the uniform distribution over $[0,1)^{3 \times N}$.
 
 Score-matching objective:
+
 $$
 \mathcal{L}_F =
 \mathbb{E}_{t, F_t}\left[
@@ -88,37 +96,47 @@ Sampling typically uses a predictor-corrector scheme: an ancestral predictor com
 
 #### 3) Periodic E(3)-aware denoiser (EGNN + periodic Fourier features)
 DiffCSP builds $\phi(L, F, A, t)$ on a fully connected atom graph. Node initialization:
+
 $$
-h_i^{(0)} = \rho\!\left(f_{\text{atom}}(a_i),\; f_{\text{pos}}(t)\right).
+h_i^{(0)} = \rho\left(f_{\text{atom}}(a_i),, f_{\text{pos}}(t)\right)
 $$
 
 Message passing at layer $s$:
+
 $$
-m_{ij}^{(s)} = \phi_m\!\left(
-h_i^{(s-1)}, h_j^{(s-1)},\; L^\top L,\; \psi_{\mathrm{FT}}(f_j - f_i)
-\right),
+m_{ij}^{(s)} = \phi_m\left(
+h_i^{(s-1)},, h_j^{(s-1)},, L^\top L,, \psi_{\mathrm{FT}}(f_j - f_i)
+\right)
 $$
+
 $$
-m_i^{(s)} = \sum_{j=1}^{N} m_{ij}^{(s)},
-\qquad
-h_i^{(s)} = h_i^{(s-1)} + \phi_h\!\left(h_i^{(s-1)}, m_i^{(s)}\right).
+m_i^{(s)} = \sum_{j=1}^{N} m_{ij}^{(s)}
+$$
+
+$$
+h_i^{(s)} = h_i^{(s-1)} + \phi_h\left(h_i^{(s-1)},, m_i^{(s)}\right)
 $$
 
 Periodic Fourier features for relative fractional coordinates $f = [f_1, f_2, f_3]^\top$:
+
 $$
 \psi_{\mathrm{FT}}(f)[c, k] =
 \begin{cases}
-\sin(2 \pi m f_c), & k = 2m \\
+\sin(2 \pi m f_c), & k = 2m \
 \cos(2 \pi m f_c), & k = 2m + 1
 \end{cases}
 $$
+
 which is periodic-translation invariant under wrapping.
 
 Outputs (noise/score predictions):
+
 $$
-\hat{\epsilon}_L = L\,\phi_L\!\left(\frac{1}{N} \sum_{i=1}^{N} h_i^{(S)}\right),
-\qquad
-\hat{\epsilon}_F[:, i] = \phi_F\!\left(h_i^{(S)}\right).
+\hat{\epsilon}L = L,\phi_L\left(\frac{1}{N} \sum{i=1}^{N} h_i^{(S)}\right)
+$$
+
+$$
+\hat{\epsilon}_F[:, i] = \phi_F\left(h_i^{(S)}\right)
 $$
 
 ---
