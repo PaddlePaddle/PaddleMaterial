@@ -22,20 +22,24 @@ InfGCN is an operator-learning model for **electron density prediction**. Given 
 
 #### 1) Atom-centered basis expansion
 The density field is expanded as a sum of atom-centered basis functions:
+
 $$
 \hat{\rho}(x) = \sum_{i=1}^{N} \sum_{n=1}^{N_r} \sum_{l=0}^{l_{\max}} \sum_{m=-l}^{l}
 c_{i,nlm}\,\phi_{nlm}(x - r_i)
 $$
 
 A common choice for $\phi_{nlm}$ is a separable radial-angular basis:
+
 $$
 \phi_{nlm}(r) = g_n(\|r\|)\,Y_{lm}\!\left(\widehat{r}\right),
 \qquad r = x - r_i
 $$
+
 where $g_n(\cdot)$ is a radial basis and $Y_{lm}$ are spherical harmonics. All learnable information is in the coefficients $c_{i,nlm}$.
 
 #### 2) SE(3)-equivariant coefficient learning
 Coefficients are updated with equivariant message passing:
+
 $$
 C_i^{(s)} = \sum_{j \in \mathcal{N}(i)} W_{ij}^{(s)} \odot C_j^{(s-1)},\qquad s = 1,\ldots,S
 $$
@@ -44,18 +48,22 @@ Edge weights $W_{ij}^{(s)}$ depend on distance and angle features (radial basis 
 
 #### 3) Residual operator layer (optional)
 A lightweight refinement adds a learnable correction on top of the base expansion:
+
 $$
 \hat{\rho}(x) = \hat{\rho}_{\text{base}}(x) + \Delta \rho_{\theta}(x)
 $$
+
 where $\Delta \rho_{\theta}$ is produced by an extra operator acting on intermediate features (for example, grid features or learned coefficients).
 
 #### 4) Training objective and metrics
 A standard regression objective minimizes an $L_2$ error over the 3D domain:
+
 $$
 \mathcal{L} = \mathbb{E}\left[\left\|\hat{\rho} - \rho\right\|_2^2\right]
 $$
 
 The density is discretized on an $n \times n \times n$ grid; grid points can be subsampled for memory efficiency. A common metric is **Normalized Mean Absolute Error (NMAE)**:
+
 $$
 \mathrm{NMAE} =
 \frac{\sum_{i=1}^{n^3}\left|\hat{\rho}(x_i) - \rho(x_i)\right|}
