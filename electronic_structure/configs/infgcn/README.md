@@ -165,20 +165,20 @@ $$
         <tr>
             <td nowrap="nowrap">infgcn_qm9</td>
             <td nowrap="nowrap">QM9_EC</td>
-            <td nowrap="nowrap">TBD</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap">~</td>
+            <td nowrap="nowrap">1.7542%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">75hour41min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_qm9.yaml">infgcn_qm9</a></td>
-            <td nowrap="nowrap">TBD</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9_t_20260107_113954_s_42.zip">checkpoint | log</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_cubic</td>
             <td nowrap="nowrap">MP_EC (cubic)</td>
-            <td nowrap="nowrap">TBD</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap">~</td>
+            <td nowrap="nowrap">47.3829%</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">12hour6min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_cubic.yaml">infgcn_cubic</a></td>
-            <td nowrap="nowrap">TBD</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_mp_t_20260108_024145_s_42.zip">checkpoint | log</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_omol25</td>
