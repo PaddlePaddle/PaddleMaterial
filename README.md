@@ -24,7 +24,7 @@
 
 ## 📣 News
 
-🔥 **2025.09.25**: The **MetaX** has supported all models of multiple tasks including MLIP, MLES, PP, SG, SE. Welcome to run PaddleMaterials on MetaX chips. To  experience the MetaX chip in a public cloud environment, please refer to this [PaddleMaterials_MetaX_README](./docs/MetaX/PaddelMaterials_MetaX_README.md). Pleare reference to [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaption information.
+🔥 **2025.09.25**: The **MetaX** has supported all models of multiple tasks including MLIP, MLES, PP, SG, SE. Welcome to run PaddleMaterials on MetaX chips. To  experience the MetaX chip in a public cloud environment, please refer to this [PaddleMaterials_MetaX_README](./docs/MetaX/PaddleMaterials_MetaX_README.md). Pleare reference to [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaption information.
 
 🔥 **2025.09.12**: The **Suzhou Laboratory** has established a novel model DiffNMR based on PaddleMaterials, a novel end-to-end framework that leverages a conditional discrete diffusion model for de novo molecular structure elucidation from NMR spectra. For more information, please refer to [DiffNMR](./research/DiffNMR/README.md).
 
