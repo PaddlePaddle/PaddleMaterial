@@ -40,10 +40,14 @@
     pip install --upgrade pip setuptools==68.2.2 wheel
     pip install setuptools_scm
     pip install Cython
-    pip install git+https://github.com/PFCCLab/paddle_scatter.git
+    # 手动安装第三方依赖paddle_scatter
+    git clone https://github.com/PFCCLab/paddle_scatter.git
+    cd paddle_scatter
+    pip install -v . --no-build-isolation
+    cd ..
 
     # 以可编辑模式安装PaddleMaterials
-    pip install -e .
+    pip install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 
 ## 2. 运行示例

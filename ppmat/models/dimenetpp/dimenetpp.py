@@ -430,9 +430,9 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         idx_kj = mat[row][mat[row] > 0] - 1
         tmp = paddle.nonzero(mat[row], as_tuple=False)
         idx_ji = tmp[:, 0]
-        idx_k = row[idx_kj]
-        idx_j = row[idx_ji]
-        idx_i = col[idx_ji]
+        idx_k = paddle.index_select(row, idx_kj, axis=0)
+        idx_j = paddle.index_select(row, idx_ji, axis=0)
+        idx_i = paddle.index_select(col, idx_ji, axis=0)
         mask2 = idx_i != idx_k
         return (
             col,
