@@ -677,7 +677,7 @@ class DiffNMR(nn.Layer):
         condition_Spectrum = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
         if self.flag_onlyH is True:
             global_H, _ = self.encoder(condition_Spectrum)
-            embeddings_spectrum, _ = global_H
+            embeddings_spectrum = global_H
         else:
             embeddings_spectrum, _ = self.encoder(condition_Spectrum)
 
