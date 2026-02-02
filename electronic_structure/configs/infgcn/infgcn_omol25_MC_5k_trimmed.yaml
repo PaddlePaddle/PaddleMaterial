@@ -1,18 +1,18 @@
 Global:
   do_train: True
-  do_eval: False
+  do_eval: True
   do_test: False
   use_voxel: False
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 100
   # Max iteration which equals to steps * epoches, to early stop
-  max_iter: 40000
+  max_iter: 1000000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/infgcn_omol25
+  output_dir: ./output/infgcn_omol25_s1_trimmed
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 2000
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
@@ -56,7 +56,7 @@ Trainer:
   # whether use visualdl, wandb, tensorboard to log
   use_visualdl: False
   use_wandb: False
-  use_tensorboard: True
+  use_tensorboard: False
 
 Model:
   __class_name__: InfGCN
@@ -101,7 +101,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_single.json
+        split_file: omol25_s1_trimmed.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -112,7 +112,7 @@ Dataset:
       __init_params__:
         shuffle: false
         drop_last: false
-        batch_size: 2
+        batch_size: 1
     loader:
       num_workers: 0
       use_shared_memory: false
@@ -133,7 +133,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_single.json
+        split_file: omol25_s1_trimmed.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
@@ -144,7 +144,7 @@ Dataset:
       __init_params__:
         shuffle: false
         drop_last: false
-        batch_size: 2
+        batch_size: 1
     loader:
       num_workers: 0
       use_shared_memory: false
@@ -165,7 +165,7 @@ Dataset:
       __class_name__: DensityDataset
       __init_params__:
         root: ./data/dataset_OMol25_MC_5k
-        split_file: omol25_single.json
+        split_file: omol25_s1_trimmed.json
         atom_file: ./data/dataset_OMol25_MC_5k/omol25.json
         extension: cube
         compression: lz4
