@@ -182,12 +182,12 @@ $$
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_omol25</td>
-            <td nowrap="nowrap">OMol25_EC</td>
-            <td nowrap="nowrap">TBD</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap">~</td>
-            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_omol25.yaml">infgcn_omol25</a></td>
-            <td nowrap="nowrap">TBD</td>
+            <td nowrap="nowrap">OMol25_EC_5k</td>
+            <td nowrap="nowrap">12.6260%</td>
+            <td nowrap="nowrap">4</td>
+            <td nowrap="nowrap">66hour28min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_omol25_trimmed.yaml">infgcn_omol25</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42.zip">checkpoint | log</td>
         </tr>
     </tbody>
 </table>
