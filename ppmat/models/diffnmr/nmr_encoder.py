@@ -247,7 +247,7 @@ class NMR_fusion(nn.Layer):
             gate = F.sigmoid(self.weighted_sum(merged))             # [B, 1]
             global_output = gate * global_H + (1 - gate) * global_C # [B, D*]
         else:
-            global_output = (global_H, global_C) 
+            global_output = (global_H, global_C)                    
 
 
         spectrum_token_enc = paddle.concat([fused_H, fused_C], axis=1) # [B, Lh+Lc, D or 2*D]
@@ -268,7 +268,7 @@ class NMR_fusion_H(nn.Layer):
         pool_mode="",
         crossmodal_fusion_mode="",
     ):
-        super(NMR_fusion_H, self).__init__()
+        super(NMR_fusion, self).__init__()
 
         # projection layer
         self.proj_h = nn.Linear(dim_h, hidden_dim)

@@ -112,7 +112,7 @@ Dataset:
       use_shared_memory: False
       collate_fn: DensityCollator # DensityVoxelCollator # if use voxel
       collate_params:
-        n_samples: 1024
+        n_samples: 2048
   val:
     dataset:
       __class_name__: SmallDensityDataset
