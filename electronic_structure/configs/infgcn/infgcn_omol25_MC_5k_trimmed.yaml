@@ -12,7 +12,7 @@ Trainer:
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
-  output_dir: ./output/infgcn_omol25_s1_trimmed
+  output_dir: ./output/infgcn_omol25_MC_5k_trimmed
   # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
   save_freq: 2000
   # Logging frequency [step], for example, log_freq=10 means log every 10 steps
