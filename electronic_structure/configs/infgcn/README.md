@@ -181,7 +181,7 @@ $$
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_mp_t_20260108_024145_s_42.zip">checkpoint | log</td>
         </tr>
         <tr>
-            <td nowrap="nowrap">infgcn_omol25</td>
+            <td nowrap="nowrap">infgcn_omol25_mc_5k</td>
             <td nowrap="nowrap">OMol25_EC_5k</td>
             <td nowrap="nowrap">12.6260%</td>
             <td nowrap="nowrap">4</td>
@@ -228,6 +228,9 @@ python electronic_structure/predict.py \
   --index 0 \
   --grid_batch_size 20000 \
   --output_dir output/infgcn_qm9_best/vis_val0
+  --save_pred_cube \ # if export cube format
+  --save_true_cube \ # if export cube format
+  --cube_dir output/infgcn_pm9_best/cubes # if export cube format
 # If your datasets live elsewhere, create a symlink to the data root (for example, ln -s /path/to/dataset_ES dataset_ES).
 # If kaleido is missing, the script writes interactive .html files instead of .png; install kaleido to export PNGs.
 ```
