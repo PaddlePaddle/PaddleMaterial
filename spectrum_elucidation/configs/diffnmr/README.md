@@ -91,6 +91,15 @@ To set up the DiffNMR environment, please follow these steps:
     </body>
 </table>
 
+Note: please refer to the following pretrained weights:
+- [DiffNMR_DiffGraphFormer_nless15_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_best.pdparams)
+- [DiffNMR_DiffGraphFormer_nless15_init.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_init.pdparams)
+- [DiffNMR_NMRNet_nless15_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_best.pdparams)
+- [DiffNMR_NMRNet_nless15_init.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_init.pdparams)
+- [DiffNMR_NMRNet_nless15_init_v2.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_init_v2.pdparams)
+- [DiffNMR_nless15_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_nless15_best.pdparams)
+- [DiffNMR_nless15_onlyH_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_nless15_onlyH_best.pdparams) 
+
 ### Training
 ```bash
 ## 2 stage pretraining

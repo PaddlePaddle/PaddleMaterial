@@ -26,8 +26,10 @@ def radius_graph(
     if batch is None:
         batch = paddle.zeros((x.shape[0],), dtype="int64")
 
+    # For small graphs (<= 1000 nodes), use simple distance matrix calculation
     if x.shape[0] <= 1000:
         return radius_graph_simple(x, r, batch, loop, max_num_neighbors)
+    # For large graphs (> 1000 nodes), use grid-based spatial partitioning for efficiency
     else:
         return radius_graph_grid(x, r, batch, loop, max_num_neighbors)
 
