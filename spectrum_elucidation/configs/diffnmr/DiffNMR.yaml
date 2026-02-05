@@ -147,6 +147,7 @@ Model:
       seq_len_C13: 75
       peakwidthemb_num: 70
       integralemb_num: 26
+      onlyH: False # True if set NMRNet only encode H Spectrum info
     decoder_cfg:
       __name__: DiffGraphFormer
       pretrained_path: "./pretrained/DiffNMR_DiffGraphFormer_nless15_best.pdparams"
