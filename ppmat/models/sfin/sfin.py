@@ -28,13 +28,20 @@ class FourierUnit(nn.Layer):
 
     def __init__(self, in_channels: int, out_channels: int):
         super(FourierUnit, self).__init__()
+        fu_bound = 1.0 / ((out_channels * 2) * 1 * 1) ** 0.5
+
         self.conv_layer = nn.Conv2D(
             in_channels=in_channels * 2 + 2,
             out_channels=out_channels * 2,
             kernel_size=1,
             stride=1,
             padding=0,
-            bias_attr=False
+            bias_attr=False,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            )
         )
         self.bn = nn.BatchNorm2D(out_channels * 2, momentum=0.1)
         self.relu = nn.ReLU()
@@ -90,9 +97,28 @@ class SpectralTransform(nn.Layer):
 
     def __init__(self, in_channels: int):
         super(SpectralTransform, self).__init__()
-        self.conv1 = nn.Conv2D(in_channels // 2, in_channels // 2, 3, padding=1)
+        st1_bias_bound = 1.0 / ((in_channels // 2) * 3 * 3) ** 0.5
+        st2_bias_bound = 1.0 / (in_channels * 3 * 3) ** 0.5
+
+        self.conv1 = nn.Conv2D(
+            in_channels // 2, in_channels // 2, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-st1_bias_bound, st1_bias_bound)
+        )
         self.fu = FourierUnit(in_channels // 2, in_channels // 2)
-        self.conv2 = nn.Conv2D(in_channels, in_channels // 2, 3, padding=1)
+        self.conv2 = nn.Conv2D(
+            in_channels, in_channels // 2, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-st2_bias_bound, st2_bias_bound)
+        )
 
     def forward(self, x):
         x1 = self.conv1(x)
@@ -106,9 +132,35 @@ class FFC(nn.Layer):
 
     def __init__(self, in_channels: int):
         super(FFC, self).__init__()
-        self.convl2l = nn.Conv2D(in_channels // 2, in_channels // 2, 3, padding=1)
-        self.convl2g = nn.Conv2D(in_channels // 2, in_channels // 2, 3, padding=1)
-        self.convg2l = nn.Conv2D(in_channels // 2, in_channels // 2, 3, padding=1)
+        ffc_bias_bound = 1.0 / ((in_channels // 2) * 3 * 3) ** 0.5
+
+        self.convl2l = nn.Conv2D(
+            in_channels // 2, in_channels // 2, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+        )
+        self.convl2g = nn.Conv2D(
+            in_channels // 2, in_channels // 2, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+        )
+        self.convg2l = nn.Conv2D(
+            in_channels // 2, in_channels // 2, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+        )
         self.convg2g = SpectralTransform(in_channels)
 
     def forward(self, x):
@@ -124,8 +176,16 @@ class SFIB(nn.Layer):
     def __init__(self, in_channels: int):
         super(SFIB, self).__init__()
         self.ffc = FFC(in_channels)
-        self.bn_l = nn.BatchNorm2D(in_channels // 2, momentum=0.1)
-        self.bn_g = nn.BatchNorm2D(in_channels // 2, momentum=0.1)
+        self.bn_l = nn.BatchNorm2D(
+            in_channels // 2, momentum=0.1,
+            weight_attr=paddle.nn.initializer.Constant(value=1.0),
+            bias_attr=paddle.nn.initializer.Constant(value=0.0)
+        )
+        self.bn_g = nn.BatchNorm2D(
+            in_channels // 2, momentum=0.1,
+            weight_attr=paddle.nn.initializer.Constant(value=1.0),
+            bias_attr=paddle.nn.initializer.Constant(value=0.0)
+        )
         self.act_l = nn.ReLU()
         self.act_g = nn.ReLU()
 
@@ -188,28 +248,28 @@ class SFIN(nn.Layer):
         self.body = nn.Sequential(*blocks)
 
         # Head and tail convolutions
-        self.head_conv = nn.Conv2D(in_channels, base_channels, 3, padding=1)
-        self.tail_conv = nn.Conv2D(base_channels, in_channels, 3, padding=1)
+        head_conv_bias_bound = 1.0 / (in_channels * 3 * 3) ** 0.5
+        tail_conv_bias_bound = 1.0 / (base_channels * 3 * 3) ** 0.5
 
-        self._initialize_weights()
+        self.head_conv = nn.Conv2D(
+            in_channels, base_channels, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-head_conv_bias_bound, head_conv_bias_bound)
+        )
 
-    def _initialize_weights(self):
-        """Initialize weights using Kaiming Uniform."""
-        for m in self.sublayers():
-            if isinstance(m, nn.Conv2D):
-                paddle.nn.initializer.KaimingUniform(
-                    negative_slope=5**0.5,  # a=sqrt(5)
-                    nonlinearity='leaky_relu'
-                )(m.weight)
-                if m.bias is not None:
-                    # Bias initialization
-                    fan_in = m._in_channels * m._kernel_size[0] * m._kernel_size[1]
-                    bound = 1.0 / (fan_in ** 0.5)
-                    paddle.nn.initializer.Uniform(-bound, bound)(m.bias)
-            elif isinstance(m, nn.BatchNorm2D):
-                # BatchNorm initialization
-                paddle.nn.initializer.Constant(value=1.0)(m.weight)
-                paddle.nn.initializer.Constant(value=0.0)(m.bias)
+        self.tail_conv = nn.Conv2D(
+            base_channels, in_channels, 3, padding=1,
+            weight_attr=paddle.nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,  # a=sqrt(5)
+                mode='fan_in',
+                nonlinearity='leaky_relu'
+            ),
+            bias_attr=paddle.nn.initializer.Uniform(-tail_conv_bias_bound, tail_conv_bias_bound)
+        )
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """
