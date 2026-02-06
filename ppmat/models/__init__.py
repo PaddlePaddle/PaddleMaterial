@@ -42,6 +42,12 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
+from ppmat.models.chemeleon2 import VAEModule
+from ppmat.models.chemeleon2 import LDMModule
+from ppmat.models.chemeleon2 import RLModule
+from ppmat.models.chemeleon2.ldm_module.dit import DiT
+from ppmat.models.chemeleon2.vae_module.encoder import TransformerEncoder
+from ppmat.models.chemeleon2.vae_module.decoder import TransformerDecoder
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -67,6 +73,12 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "VAEModule",
+    "LDMModule",
+    "RLModule",
+    "DiT",
+    "TransformerEncoder",
+    "TransformerDecoder",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

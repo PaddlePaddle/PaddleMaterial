@@ -1,0 +1,251 @@
+from enum import Enum
+import paddle
+import paddle.nn as nn
+
+
+class ConditionType(Enum):
+    COMPOSITION = "composition"
+    CHEMICAL_SYSTEM = "chemical_system"
+    VALUE = "float"
+    CATEGORICAL = "categorical"
+    TEXT = "text"
+
+
+class ConditionModule(nn.Layer):
+    def __init__(
+        self,
+        condition_type,
+        hidden_dim,
+        drop_prob,
+        stats=None,
+        **kwargs,
+    ):
+        super().__init__()
+        self.condition_type = condition_type
+        self.target_condition = list(condition_type.keys())
+        self.hidden_dim = hidden_dim
+        self.drop_prob = drop_prob
+        self.stats = stats if stats is not None else {}
+
+        self.encoders = nn.LayerDict()
+        for cond_name, cond_type in condition_type.items():
+            if cond_type == ConditionType.COMPOSITION.value:
+                self.encoders[cond_name] = CompositionEncoder(
+                    in_dim=100,
+                    hidden_dim=hidden_dim,
+                )
+            elif cond_type == ConditionType.CHEMICAL_SYSTEM.value:
+                self.encoders[cond_name] = ChemicalSystemEncoder(
+                    in_dim=100,
+                    hidden_dim=hidden_dim,
+                )
+            elif cond_type == ConditionType.VALUE.value:
+                _stats = self.stats.get(cond_name, {})
+                self.encoders[cond_name] = ValueEncoder(
+                    hidden_dim=hidden_dim,
+                    mean=_stats.get("mean", None),
+                    std=_stats.get("std", None),
+                )
+            elif cond_type == ConditionType.CATEGORICAL.value:
+                assert "num_classes" in kwargs, (
+                    "num_classes must be provided when using CLASS condition type"
+                )
+                self.encoders[cond_name] = CategoricalEncoder(
+                    in_dim=kwargs["num_classes"],
+                    hidden_dim=hidden_dim,
+                )
+            elif cond_type == ConditionType.TEXT.value:
+                self.encoders[cond_name] = TextEncoder(
+                    hidden_dim=hidden_dim,
+                )
+            else:
+                raise ValueError(f"Unsupported condition type: {cond_type}")
+
+        self.proj = nn.Sequential(
+            nn.Linear(len(self.encoders) * hidden_dim, hidden_dim, bias_attr=True),
+            nn.Silu(),
+            nn.Linear(hidden_dim, hidden_dim, bias_attr=True),
+        )
+
+    def forward(self, batch_y, training=True):
+        target_conditions = list(batch_y.keys())
+        assert set(target_conditions) == set(self.target_condition), (
+            f"Expected conditions {self.target_condition}, but got {target_conditions}"
+        )
+
+        batch_size = len(list(batch_y.values())[0])
+        if training:
+            assert self.drop_prob >= 0
+            drop_mask = paddle.rand([batch_size]) < self.drop_prob
+        else:
+            drop_mask = paddle.concat([
+                paddle.zeros([batch_size]),
+                paddle.ones([batch_size])
+            ])
+            drop_mask = drop_mask.astype('bool')
+            batch_y = {k: _duplicate(v) for k, v in batch_y.items()}
+
+        cond_embeds = []
+        for cond_name, encoder in self.encoders.items():
+            y = batch_y[cond_name]
+            embed = encoder(y, drop_mask)
+            cond_embeds.append(embed)
+
+        cond_embeds = paddle.concat(cond_embeds, axis=-1)
+        cond_embeds = self.proj(cond_embeds)
+        return cond_embeds
+
+
+def _duplicate(v):
+    if isinstance(v, paddle.Tensor):
+        return paddle.concat([v, v])
+    elif isinstance(v, list):
+        return v * 2
+    else:
+        raise ValueError(f"Unsupported type: {type(v)}")
+
+
+class BaseEncoder(nn.Layer):
+    def __init__(
+        self,
+        *,
+        in_dim,
+        hidden_dim,
+        preprocess,
+    ):
+        super().__init__()
+        self.in_dim = in_dim
+        self.hidden_dim = hidden_dim
+
+        self.preprocess = preprocess
+        self.embedding = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim, bias_attr=True),
+            nn.Silu(),
+            nn.Linear(hidden_dim, hidden_dim, bias_attr=True),
+        )
+        self.null_embed = paddle.create_parameter(
+            shape=[1, in_dim],
+            dtype='float32',
+            default_initializer=nn.initializer.Normal()
+        )
+
+    def forward(self, y, drop_mask=None):
+        y = self.preprocess(y)
+        if drop_mask is not None:
+            y = paddle.where(
+                drop_mask.unsqueeze(-1).expand_as(y),
+                self.null_embed.expand_as(y),
+                y
+            )
+        return self.embedding(y)
+
+
+class ValueEncoder(BaseEncoder):
+    def __init__(self, hidden_dim, mean=None, std=None):
+        self.mean = mean
+        self.std = std
+        
+        def preprocess(batch):
+            if isinstance(batch, list):
+                batch = paddle.to_tensor(batch, dtype='float32')
+            elif not isinstance(batch, paddle.Tensor):
+                batch = paddle.to_tensor(batch, dtype='float32')
+            
+            batch = batch.astype('float32').unsqueeze(-1)
+            if self.mean is not None and self.std is not None:
+                batch = (batch - self.mean) / self.std
+            return batch
+
+        super().__init__(
+            in_dim=1,
+            hidden_dim=hidden_dim,
+            preprocess=preprocess,
+        )
+
+
+class CategoricalEncoder(BaseEncoder):
+    def __init__(self, in_dim, hidden_dim):
+        self.num_classes = in_dim
+        
+        def preprocess(batch):
+            if isinstance(batch, list):
+                idx = paddle.to_tensor(batch, dtype='int64')
+            elif not isinstance(batch, paddle.Tensor):
+                idx = paddle.to_tensor(batch, dtype='int64')
+            else:
+                idx = batch.astype('int64')
+            
+            return paddle.nn.functional.one_hot(idx, num_classes=self.num_classes).astype('float32')
+
+        super().__init__(
+            in_dim=in_dim,
+            hidden_dim=hidden_dim,
+            preprocess=preprocess,
+        )
+
+
+class CompositionEncoder(BaseEncoder):
+    def __init__(self, in_dim, hidden_dim):
+        self._in_dim = in_dim
+        
+        def preprocess(batch):
+            vals = [self._composition_to_embeds(comp_str) for comp_str in batch]
+            return paddle.concat(vals, axis=0)
+
+        super().__init__(
+            in_dim=in_dim,
+            hidden_dim=hidden_dim,
+            preprocess=preprocess,
+        )
+
+    def _composition_to_embeds(self, comp_str):
+        try:
+            from pymatgen.core import Composition, Element
+        except ImportError:
+            raise ImportError("Pymatgen is required for CompositionEncoder. Install it with: pip install pymatgen")
+        
+        v = paddle.zeros([self._in_dim])
+        comp = Composition(comp_str).reduced_composition
+        for el, amt in comp.get_el_amt_dict().items():
+            v[Element(el).Z] = float(amt)
+        v = v / v.sum() if v.sum() > 0 else v
+        return v.unsqueeze(0)
+
+
+class ChemicalSystemEncoder(BaseEncoder):
+    def __init__(self, in_dim, hidden_dim):
+        self._in_dim = in_dim
+        
+        def preprocess(batch):
+            vals = [self._chemical_system_to_embeds(cs) for cs in batch]
+            return paddle.concat(vals, axis=0)
+
+        super().__init__(
+            in_dim=in_dim,
+            hidden_dim=hidden_dim,
+            preprocess=preprocess,
+        )
+
+    def _chemical_system_to_embeds(self, cs):
+        try:
+            from pymatgen.core import Element
+        except ImportError:
+            raise ImportError("Pymatgen is required for ChemicalSystemEncoder. Install it with: pip install pymatgen")
+        
+        v = paddle.zeros([self._in_dim])
+        elements = cs.split("-")
+        for el in elements:
+            v[Element(el).Z] = 1.0
+        return v.unsqueeze(0)
+
+
+class TextEncoder(BaseEncoder):
+    def __init__(self, hidden_dim):
+        def preprocess(batch):
+            return paddle.zeros([len(batch), 100])
+
+        super().__init__(
+            in_dim=100,
+            hidden_dim=hidden_dim,
+            preprocess=preprocess,
+        )

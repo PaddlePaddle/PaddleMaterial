@@ -1,0 +1,166 @@
+# Chemeleon2 LDM Training Configuration (Standard Format)
+
+Global:
+  do_train: True
+  do_eval: True
+  do_test: False
+
+Model:
+  __class_name__: LDMModule
+  __init_params__:
+    normalize_latent: true
+    denoiser:
+      __class_name__: DiT
+      __init_params__:
+        hidden_dim: 768
+        num_layers: 12
+        num_heads: 12
+        mlp_ratio: 4.0
+        input_dim: 8
+        learn_sigma: true
+    diffusion_configs:
+      timestep_respacing: ""
+      noise_schedule: linear
+      use_kl: false
+      sigma_small: false
+      predict_xstart: false
+      learn_sigma: true
+      rescale_learned_sigmas: false
+      diffusion_steps: 1000
+    vae:
+      __class_name__: VAEModule
+      __init_params__:
+        encoder:
+          __class_name__: TransformerEncoder
+          __init_params__:
+            max_num_elements: 100
+            d_model: 512
+            nhead: 8
+            dim_feedforward: 2048
+            activation: gelu
+            dropout: 0.0
+            num_layers: 8
+        decoder:
+          __class_name__: TransformerDecoder
+          __init_params__:
+            max_num_elements: 100
+            d_model: 512
+            nhead: 8
+            dim_feedforward: 2048
+            activation: gelu
+            dropout: 0.0
+            num_layers: 8
+        latent_dim: 8
+        loss_weights: {}
+    vae_ckpt_path: null
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: MP20Dataset
+      __init_params__:
+        path: "./data/mp_20/train.csv"
+        property_names: []
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg: null
+        cache_path: "./data/mp_20_cache/train"
+        transforms: []
+      num_workers: 4
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 32
+  val:
+    dataset:
+      __class_name__: MP20Dataset
+      __init_params__:
+        path: "./data/mp_20/val.csv"
+        property_names: []
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg: null
+        cache_path: "./data/mp_20_cache/val"
+        transforms: []
+      num_workers: 4
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+  test:
+    dataset:
+      __class_name__: MP20Dataset
+      __init_params__:
+        path: "./data/mp_20/test.csv"
+        property_names: []
+        build_structure_cfg:
+          format: cif_str
+          num_cpus: 10
+        build_graph_cfg: null
+        cache_path: "./data/mp_20_cache/test"
+        transforms: []
+      num_workers: 4
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+
+Trainer:
+  max_epochs: 100
+  seed: 42
+  output_dir: ./output/chemeleon2_ldm
+  save_freq: 500
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 100
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: 'loss'
+  greater_is_better: False
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr: 0.0001
+    weight_decay: 0.0
+
+Sample:
+  data:
+    dataset:
+      __class_name__: NumAtomsCrystalDataset
+      __init_params__:
+        total_num: 10
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 10
+  build_structure_cfg:
+    format: array
+    niggli: False
+  model_sample_params:
+    num_inference_steps: 50
