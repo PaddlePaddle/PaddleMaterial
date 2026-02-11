@@ -43,52 +43,50 @@ class FourierUnit(nn.Layer):
                 nonlinearity='leaky_relu'
             )
         )
-        self.bn = nn.BatchNorm2D(out_channels * 2, momentum=0.1)
+        self.bn = nn.BatchNorm2D(out_channels * 2, momentum=0.9)
         self.relu = nn.ReLU()
 
     def forward(self, x):
         batch = x.shape[0]
         fft_dim = (-2, -1)
-        
-        # Real FFT
-        ffted = paddle.fft.rfftn(x, axes=fft_dim, norm='ortho')
-        
-        # Stack real and imaginary parts
-        ffted_real = paddle.real(ffted)
-        ffted_imag = paddle.imag(ffted)
-        ffted = paddle.stack([ffted_real, ffted_imag], axis=-1)
-        
-        # Permute to (batch, c, 2, h, w/2+1)
-        ffted = ffted.transpose([0, 1, 4, 2, 3])
-        ffted = ffted.reshape([batch, -1] + list(ffted.shape[3:]))
-        
-        # Create coordinate grids
+
+        # Real FFT with ortho normalization
+        ffted = paddle.fft.rfftn(x, axes=fft_dim, norm='ortho')  # (B, C, H, W/2+1) complex
+
+        # Split into real/imaginary parts
+        ffted_real = paddle.real(ffted)  # (B, C, H, W/2+1)
+        ffted_imag = paddle.imag(ffted)  # (B, C, H, W/2+1)
+        ffted = paddle.stack([ffted_real, ffted_imag], axis=-1)  # (B, C, H, W/2+1, 2)
+
+        # Permute to (B, C, 2, H, W/2+1)
+        ffted = ffted.transpose([0, 1, 4, 2, 3])  # (B, C, 2, H, W/2+1)
+        ffted = ffted.reshape([batch, -1] + list(ffted.shape[3:]))  # (B, C*2, H, W/2+1)
+
+        # Create coordinate grids with DYNAMIC batch handling (critical fix)
         height, width = ffted.shape[-2:]
         coords_vert = paddle.linspace(0, 1, height).reshape([1, 1, height, 1])
-        coords_vert = coords_vert.expand([batch, 1, height, width])
+        # SAFE EXPAND: Use x.shape[0] instead of captured 'batch' variable
+        coords_vert = coords_vert.expand([x.shape[0], 1, height, width])
+
         coords_hor = paddle.linspace(0, 1, width).reshape([1, 1, 1, width])
-        coords_hor = coords_hor.expand([batch, 1, height, width])
-        
+        coords_hor = coords_hor.expand([x.shape[0], 1, height, width])
+
         # Concatenate coordinates and FFT features
-        ffted = paddle.concat([coords_vert, coords_hor, ffted], axis=1)
-        
+        ffted = paddle.concat([coords_vert, coords_hor, ffted], axis=1)  # (B, C*2+2, H, W/2+1)
+
         # Process through convolution
         ffted = self.conv_layer(ffted)
-        ffted = self.relu(self.bn(ffted))
-        
-        # Reshape back to complex format
-        ffted = ffted.reshape([batch, -1, 2] + list(ffted.shape[2:]))
-        ffted = ffted.transpose([0, 1, 3, 4, 2])
-        
+        ffted = self.relu(self.bn(ffted))  # (B, C*2, H, W/2+1)
+
+        # Reshape back to complex format: (B, C, 2, H, W/2+1) → (B, C, H, W/2+1, 2)
+        ffted = ffted.reshape([batch, -1, 2] + list(ffted.shape[2:]))  # (B, C, 2, H, W/2+1)
+        ffted = ffted.transpose([0, 1, 3, 4, 2])  # (B, C, H, W/2+1, 2)
+
         # Convert back to complex tensor
-        ffted_real = ffted[..., 0]
-        ffted_imag = ffted[..., 1]
-        ffted = paddle.complex(ffted_real, ffted_imag)
-        
-        # Inverse FFT
-        ifft_shape_slice = x.shape[-2:]
-        output = paddle.fft.irfftn(ffted, s=ifft_shape_slice, axes=fft_dim, norm='ortho')
-        
+        ffted = paddle.complex(ffted[..., 0], ffted[..., 1])  # (B, C, H, W/2+1) complex
+
+        # Inverse FFT with exact shape matching
+        output = paddle.fft.irfftn(ffted, s=x.shape[-2:], axes=fft_dim, norm='ortho')
         return output
 
 
@@ -97,27 +95,30 @@ class SpectralTransform(nn.Layer):
 
     def __init__(self, in_channels: int):
         super(SpectralTransform, self).__init__()
-        st1_bias_bound = 1.0 / ((in_channels // 2) * 3 * 3) ** 0.5
-        st2_bias_bound = 1.0 / (in_channels * 3 * 3) ** 0.5
+        st1_fan_in = (in_channels // 2) * 3 * 3
+        st1_bias_bound = 1.0 / st1_fan_in ** 0.5
+        
+        st2_fan_in = in_channels * 3 * 3  # Input: [x (C/2), x2 (C/2)] → C channels
+        st2_bias_bound = 1.0 / st2_fan_in ** 0.5
 
         self.conv1 = nn.Conv2D(
             in_channels // 2, in_channels // 2, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-st1_bias_bound, st1_bias_bound)
+            bias_attr=nn.initializer.Uniform(-st1_bias_bound, st1_bias_bound)
         )
         self.fu = FourierUnit(in_channels // 2, in_channels // 2)
         self.conv2 = nn.Conv2D(
             in_channels, in_channels // 2, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-st2_bias_bound, st2_bias_bound)
+            bias_attr=nn.initializer.Uniform(-st2_bias_bound, st2_bias_bound)
         )
 
     def forward(self, x):
@@ -132,39 +133,47 @@ class FFC(nn.Layer):
 
     def __init__(self, in_channels: int):
         super(FFC, self).__init__()
-        ffc_bias_bound = 1.0 / ((in_channels // 2) * 3 * 3) ** 0.5
+        ffc_fan_in = (in_channels // 2) * 3 * 3
+        ffc_bias_bound = 1.0 / ffc_fan_in ** 0.5
 
         self.convl2l = nn.Conv2D(
             in_channels // 2, in_channels // 2, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+            bias_attr=nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
         )
         self.convl2g = nn.Conv2D(
             in_channels // 2, in_channels // 2, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+            bias_attr=nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
         )
         self.convg2l = nn.Conv2D(
             in_channels // 2, in_channels // 2, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
+            bias_attr=nn.initializer.Uniform(-ffc_bias_bound, ffc_bias_bound)
         )
         self.convg2g = SpectralTransform(in_channels)
 
     def forward(self, x):
-        x_l, x_g = x if isinstance(x, tuple) else (x, paddle.zeros_like(x))
+        if isinstance(x, tuple):
+            x_l, x_g = x
+        else:
+            B, C, H, W = x.shape
+            x_l = x
+            # Must be C//2 channels to match local branch split later
+            x_g = paddle.zeros([B, C // 2, H, W], dtype=x.dtype)
+        
         out_xl = self.convl2l(x_l) + self.convg2l(x_g)
         out_xg = self.convl2g(x_l) + self.convg2g(x_g)
         return out_xl, out_xg
@@ -176,16 +185,8 @@ class SFIB(nn.Layer):
     def __init__(self, in_channels: int):
         super(SFIB, self).__init__()
         self.ffc = FFC(in_channels)
-        self.bn_l = nn.BatchNorm2D(
-            in_channels // 2, momentum=0.1,
-            weight_attr=paddle.nn.initializer.Constant(value=1.0),
-            bias_attr=paddle.nn.initializer.Constant(value=0.0)
-        )
-        self.bn_g = nn.BatchNorm2D(
-            in_channels // 2, momentum=0.1,
-            weight_attr=paddle.nn.initializer.Constant(value=1.0),
-            bias_attr=paddle.nn.initializer.Constant(value=0.0)
-        )
+        self.bn_l = nn.BatchNorm2D(in_channels // 2, momentum=0.9)
+        self.bn_g = nn.BatchNorm2D(in_channels // 2, momentum=0.9)
         self.act_l = nn.ReLU()
         self.act_g = nn.ReLU()
 
@@ -208,9 +209,15 @@ class ResnetBlock(nn.Layer):
     def forward(self, x):
         x_l, x_g = paddle.split(x, [self.in_channels // 2, self.in_channels // 2], axis=1)
         id_l, id_g = x_l, x_g
+        # Apply two SFIB blocks with residual connection
         x_l, x_g = self.conv1((x_l, x_g))
         x_l, x_g = self.conv2((x_l, x_g))
-        x_l, x_g = id_l + x_l, id_g + x_g
+
+        # Residual connection
+        x_l = id_l + x_l
+        x_g = id_g + x_g
+
+        # Recombine branches
         out = paddle.concat([x_l, x_g], axis=1)
         return out
 
@@ -241,34 +248,34 @@ class SFIN(nn.Layer):
         self.base_channels = base_channels
         self.num_blocks = num_blocks
 
-        # Build ResNet blocks
-        blocks = []
-        for i in range(num_blocks):
-            blocks.append(ResnetBlock(base_channels))
+        # Build ResNet blocks with proper registration
+        blocks = [ResnetBlock(base_channels) for _ in range(num_blocks)]
         self.body = nn.Sequential(*blocks)
 
-        # Head and tail convolutions
-        head_conv_bias_bound = 1.0 / (in_channels * 3 * 3) ** 0.5
-        tail_conv_bias_bound = 1.0 / (base_channels * 3 * 3) ** 0.5
-
+        # Head convolution initialization
+        head_fan_in = in_channels * 3 * 3
+        head_bias_bound = 1.0 / head_fan_in ** 0.5
         self.head_conv = nn.Conv2D(
             in_channels, base_channels, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-head_conv_bias_bound, head_conv_bias_bound)
+            bias_attr=nn.initializer.Uniform(-head_bias_bound, head_bias_bound)
         )
 
+        # Tail convolution initialization
+        tail_fan_in = base_channels * 3 * 3
+        tail_bias_bound = 1.0 / tail_fan_in ** 0.5
         self.tail_conv = nn.Conv2D(
             base_channels, in_channels, 3, padding=1,
-            weight_attr=paddle.nn.initializer.KaimingUniform(
-                negative_slope=5**0.5,  # a=sqrt(5)
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=5**0.5,
                 mode='fan_in',
                 nonlinearity='leaky_relu'
             ),
-            bias_attr=paddle.nn.initializer.Uniform(-tail_conv_bias_bound, tail_conv_bias_bound)
+            bias_attr=nn.initializer.Uniform(-tail_bias_bound, tail_bias_bound)
         )
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
