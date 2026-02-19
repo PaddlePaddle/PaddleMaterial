@@ -17,10 +17,23 @@ SFIN: Noise Calibration and Spatial-Frequency Interactive Network for STEM Image
 Paper: CVPR 2025 - https://arxiv.org/pdf/2504.02555
 """
 
+from typing import Dict
+
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
-from typing import Dict, Optional
+
+# BatchNorm semantic alignment:
+# PyTorch: running = (1 - m_torch) * running + m_torch * batch, default m_torch=0.1
+# Paddle:  running = m_paddle * running + (1 - m_paddle) * batch
+# so m_paddle = 1 - m_torch = 0.9
+TORCH_BN_MOMENTUM = 0.1
+PADDLE_BN_MOMENTUM = 1.0 - TORCH_BN_MOMENTUM
+BN_EPSILON = 1e-5
+
+
+def _bn_aligned(num_features: int) -> nn.BatchNorm2D:
+    """Create BatchNorm2D with PyTorch-aligned momentum semantics."""
+    return nn.BatchNorm2D(num_features, momentum=PADDLE_BN_MOMENTUM, epsilon=BN_EPSILON)
 
 
 class FourierUnit(nn.Layer):
@@ -43,7 +56,7 @@ class FourierUnit(nn.Layer):
                 nonlinearity='leaky_relu'
             )
         )
-        self.bn = nn.BatchNorm2D(out_channels * 2, momentum=0.9)
+        self.bn = _bn_aligned(out_channels * 2)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -185,8 +198,8 @@ class SFIB(nn.Layer):
     def __init__(self, in_channels: int):
         super(SFIB, self).__init__()
         self.ffc = FFC(in_channels)
-        self.bn_l = nn.BatchNorm2D(in_channels // 2, momentum=0.9)
-        self.bn_g = nn.BatchNorm2D(in_channels // 2, momentum=0.9)
+        self.bn_l = _bn_aligned(in_channels // 2)
+        self.bn_g = _bn_aligned(in_channels // 2)
         self.act_l = nn.ReLU()
         self.act_g = nn.ReLU()
 
@@ -241,12 +254,27 @@ class SFIN(nn.Layer):
         self,
         in_channels: int = 1,
         base_channels: int = 64,
-        num_blocks: int = 8
+        num_blocks: int = 8,
+        input_name: str = "noisy",
+        target_name: str = "gt_enhance",
+        loss_type: str = "l1",
+        loss_weight: float = 1.0,
     ):
         super(SFIN, self).__init__()
         self.in_channels = in_channels
         self.base_channels = base_channels
         self.num_blocks = num_blocks
+        self.input_name = input_name
+        self.target_name = target_name
+        self.loss_type = loss_type.lower()
+        self.loss_weight = loss_weight
+
+        if self.loss_type == "l1":
+            self.criterion = nn.L1Loss()
+        elif self.loss_type == "mse":
+            self.criterion = nn.MSELoss()
+        else:
+            raise ValueError(f"Unsupported loss_type '{loss_type}', expected 'l1' or 'mse'.")
 
         # Build ResNet blocks with proper registration
         blocks = [ResnetBlock(base_channels) for _ in range(num_blocks)]
@@ -278,9 +306,9 @@ class SFIN(nn.Layer):
             bias_attr=nn.initializer.Uniform(-tail_bias_bound, tail_bias_bound)
         )
 
-    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+    def _forward_tensor(self, x: paddle.Tensor) -> paddle.Tensor:
         """
-        Forward pass of SFIN.
+        Tensor-only forward pass of SFIN.
         
         Args:
             x: Input tensor of shape (B, C, H, W)
@@ -295,6 +323,55 @@ class SFIN(nn.Layer):
         x = self.tail_conv(x)
         return x
 
+    def _get_input_tensor(self, batch: Dict) -> paddle.Tensor:
+        key_candidates = [self.input_name, "image", "noisy", "input", "x"]
+        for key in key_candidates:
+            if key in batch and batch[key] is not None:
+                return batch[key]
+        raise KeyError(
+            f"SFIN expects one of input keys {key_candidates}, but got keys: {list(batch.keys())}"
+        )
+
+    def _get_label_tensor(self, batch: Dict):
+        key_candidates = [
+            self.target_name,
+            "gt_enhance",
+            "target",
+            "label",
+            "gt",
+            "clean",
+            "y",
+        ]
+        for key in key_candidates:
+            if key in batch and batch[key] is not None:
+                return batch[key]
+        return None
+
+    def forward(self, batch):
+        """
+        Unified forward for both:
+        1) tensor -> enhanced tensor (for direct use / legacy scripts)
+        2) dict -> trainer-ready output with loss_dict and pred_dict
+        """
+        if isinstance(batch, dict):
+            x = self._get_input_tensor(batch)
+            enhanced = self._forward_tensor(x)
+
+            pred_dict = {
+                self.target_name: enhanced,
+                "pred": enhanced,
+            }
+            loss_dict = {}
+
+            label = self._get_label_tensor(batch)
+            if label is not None:
+                loss = self.criterion(enhanced, label) * self.loss_weight
+                loss_dict["loss"] = loss
+
+            return {"loss_dict": loss_dict, "pred_dict": pred_dict}
+
+        return self._forward_tensor(batch)
+
     def predict(self, batch: Dict) -> Dict:
         """
         Prediction interface for BasePredictor.
@@ -306,13 +383,8 @@ class SFIN(nn.Layer):
             Dictionary containing 'pred' key with enhanced image
         """
         if isinstance(batch, dict):
-            x = batch.get('image', batch.get('noisy', None))
-        else:
-            x = batch
-        
-        enhanced = self.forward(x)
-        
-        if isinstance(batch, dict):
-            return {'pred': enhanced}
-        else:
-            return enhanced
+            x = self._get_input_tensor(batch)
+            enhanced = self._forward_tensor(x)
+            return {self.target_name: enhanced, "pred": enhanced}
+
+        return self._forward_tensor(batch)

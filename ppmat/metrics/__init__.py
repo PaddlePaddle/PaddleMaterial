@@ -18,11 +18,19 @@ import paddle  # noqa
 
 from ppmat.metrics.csp_metric import CSPMetric
 from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
+from ppmat.metrics.sfin_metric import PSNRMetric
+from ppmat.metrics.sfin_metric import SSIMMetric
+from ppmat.metrics.sfin_metric import calc_psnr
+from ppmat.metrics.sfin_metric import calc_ssim
 
 __all__ = [
     "build_metric",
     "CSPMetric",
     "DiffNMRStreamingAdapter",
+    "PSNRMetric",
+    "SSIMMetric",
+    "calc_psnr",
+    "calc_ssim",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
 ]
