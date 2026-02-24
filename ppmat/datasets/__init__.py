@@ -49,7 +49,6 @@ from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.IRDataset import IRDataset, IRDataLoader
 from ppmat.datasets.ECDFormerDataset import ECDFormerDataset, ECDFormerDataset_DataLoader
-from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
