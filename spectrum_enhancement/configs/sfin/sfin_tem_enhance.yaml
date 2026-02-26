@@ -68,12 +68,14 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "../sfin/data"
-        data_count: 1000
+        data_path: "./data"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
+        file_suffix: ".png"
         strict_index_naming: True
         scale_to_unit: False
+        download: True
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -89,12 +91,14 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "../sfin/data_test"
-        data_count: 100
+        data_path: "./data_test"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
+        file_suffix: ".png"
         strict_index_naming: True
         scale_to_unit: False
+        download: True
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -110,12 +114,14 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "../sfin/data_test"
-        data_count: 100
+        data_path: "./data_test"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
+        file_suffix: ".png"
         strict_index_naming: True
         scale_to_unit: False
+        download: True
     sampler:
       __class_name__: BatchSampler
       __init_params__:
