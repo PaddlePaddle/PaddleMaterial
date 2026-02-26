@@ -220,20 +220,55 @@ python electronic_structure/train.py -c electronic_structure/configs/infgcn/infg
 
 ### Prediction
 ```bash
-# Run inference with the standalone predictor (uses dataset paths from the YAML unless overridden).
+# 1) Dataset-sample inference (uses dataset paths from the YAML unless overridden).
 python electronic_structure/predict.py \
   --config electronic_structure/configs/infgcn/infgcn_qm9.yaml \
   --checkpoint output/infgcn_qm9_best/infgcn_qm9.pdparams \
   --split validation \
   --index 0 \
   --grid_batch_size 20000 \
-  --output_dir output/infgcn_qm9_best/vis_val0
-  --save_pred_cube \ # if export cube format
-  --save_true_cube \ # if export cube format
-  --cube_dir output/infgcn_pm9_best/cubes # if export cube format
-# If your datasets live elsewhere, create a symlink to the data root (for example, ln -s /path/to/dataset_ES dataset_ES).
-# If kaleido is missing, the script writes interactive .html files instead of .png; install kaleido to export PNGs.
+  --output_dir output/infgcn_qm9_best/vis_val0 \
+  --save_pred_cube \
+  --save_true_cube \
+  --cube_dir output/infgcn_qm9_best/cubes
+
+# 2) MOL-file inference (single file or directory).
+# This mode predicts electron density from molecular structure files (*.mol),
+# and can export predicted cube + html visualization.
+CUDA_VISIBLE_DEVICES=4 conda run -n ppmat python electronic_structure/predict.py \
+  --config output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/infgcn_omol25_trimmed.yaml \
+  --checkpoint output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/checkpoints/latest.pdparams \
+  --mol_input mols/Baidu_infGCN_Example_20260206 \
+  --atom_file /home/liuxuwei01/processed_output/omol25.json \
+  --output_dir output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/mol_predict_latest_gpu4 \
+  --cube_dir output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/mol_predict_latest_gpu4/cubes \
+  --save_pred_cube \
+  --save_html \
+  --grid_batch_size 4096
+
+# 3) MOL-file inference with reference (true) cube files.
+# If --mol_true_cube_dir provides matching files (<name>.cube or <name>_true.cube),
+# the script additionally writes true cube and true/diff html.
+CUDA_VISIBLE_DEVICES=4 conda run -n ppmat python electronic_structure/predict.py \
+  --config output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/infgcn_omol25_trimmed.yaml \
+  --checkpoint output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/checkpoints/latest.pdparams \
+  --mol_input mols/Baidu_infGCN_Example_20260206 \
+  --mol_true_cube_dir /path/to/true_cubes \
+  --atom_file /home/liuxuwei01/processed_output/omol25.json \
+  --output_dir output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/mol_predict_latest_gpu4 \
+  --cube_dir output/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42/mol_predict_latest_gpu4/cubes \
+  --save_true_cube \
+  --save_pred_cube \
+  --save_html \
+  --grid_batch_size 4096
 ```
+
+Notes:
+- `--mol_input` supports either one `.mol` file or a directory of `.mol` files.
+- Optional grid controls for MOL mode: `--mol_grid_shape` (default `80,80,80`) and `--mol_grid_padding` (default `6.0` Angstrom).
+- If true/reference cube is not provided, only predicted outputs are available (`*_pred.cube`, `*_pred_density.html`).
+- If kaleido/Chrome is unavailable, the script writes interactive `.html` instead of `.png`.
+- If your datasets live elsewhere, create a symlink to the data root (for example, `ln -s /path/to/dataset_ES dataset_ES`).
 
 ---
 
