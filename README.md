@@ -33,7 +33,7 @@
 ## 📑 Task
 - [MLIP-Machine Learning Interatomic Potential](interatomic_potentials/README.md)
 - [MLES-Machine Learning Electronic Structure](electronic_structure/README.md)
-- [CM-Crystal Materials](crystal_materials/README.md)
+- [SPEN-Spectrum Enhancement](spectrum_enhancement/README.md)
 - [PP-Property Prediction](property_prediction/README.md)
 - [SG-Structure Generation](structure_generation/README.md)
 - [SE-Spectrum Elucidation](spectrum_elucidation/README.md)

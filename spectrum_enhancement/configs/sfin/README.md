@@ -2,41 +2,42 @@
 
 [Noise Calibration and Spatial-Frequency Interactive Network for STEM Image Enhancement](https://arxiv.org/pdf/2504.02555)
 
-## Abstract
+## 1.Introduction
 
-We propose SFIN, a novel CNN-based model for STEM (Scanning Transmission Electron Microscopy) image enhancement in crystal materials microscopy. The model introduces a noise calibration mechanism and spatial-frequency interactive learning to effectively denoise and enhance grayscale STEM images. Given a noisy input image, SFIN produces an enhanced output with improved signal-to-noise ratio while preserving fine structural details critical for materials characterization.
+SFIN is a CNN-based model for STEM image restoration. It targets paired reconstruction from noisy grayscale inputs and supports two experimental modes (HAADF and BF), each with two training targets (`enhance`, `detect`).
 
----
+## 2.Model Description
 
-## Model Description
+SFIN takes `noisy` as input and predicts one target image (`gt_enhance` or `gt_detect`).
 
-SFIN is designed for paired image restoration tasks. The model takes a noisy grayscale STEM image as input and outputs the enhanced image. Key features include:
+- Noise calibration module for robust denoising.
+- Spatial-frequency interaction blocks for detail recovery.
+- Multi-scale feature extraction.
 
-- **Noise Calibration**: Adaptive noise estimation and calibration module
-- **Spatial-Frequency Interaction**: Joint learning in both spatial and frequency domains
-- **Multi-scale Processing**: Hierarchical feature extraction across multiple scales
-
-### Training Objective
-
-The model is trained using L1 loss between the predicted enhanced image and the ground truth:
+Training objective (L1):
 
 $$
-\mathcal{L} = \left\| \hat{I}_{enhance} - I_{gt} \right\|_1
+\mathcal{L} = \left\| \hat{I} - I_{gt} \right\|_1
 $$
 
-### Evaluation Metrics
+Evaluation metrics:
+- PSNR
+- SSIM
 
-- **PSNR (Peak Signal-to-Noise Ratio)**: Measures reconstruction quality
-- **SSIM (Structural Similarity Index)**: Measures perceptual similarity
+## 3.Configurations
 
----
+| Config | Mode | Target | Output Dir |
+| --- | --- | --- | --- |
+| `sfin_tem_enhance.yaml` | HAADF (TEM) | `gt_enhance` | `./output/sfin_tem_enhance` |
+| `sfin_tem_detect.yaml` | HAADF (TEM) | `gt_detect` | `./output/sfin_tem_detect` |
+| `sfin_bf_enhance.yaml` | BF | `gt_enhance` | `./output/sfin_bf_enhance` |
+| `sfin_bf_detect.yaml` | BF | `gt_detect` | `./output/sfin_bf_detect` |
 
-## Dataset
+## 4.Dataset
 
 ### Format
 
-SFIN supports four training settings (HAADF/BF × enhance/detect).  
-Expected directory examples:
+Expected paired directory format:
 
 ```text
 data/                      # HAADF train
@@ -60,16 +61,7 @@ bf_data_test/              # BF val/test
   gt_detect/
 ```
 
-### Configurations
-
-| Config | Mode | Target | Train Path | Val/Test Path |
-| --- | --- | --- | --- | --- |
-| `sfin_tem_enhance.yaml` | HAADF (TEM) | `gt_enhance` | `./data` | `./data_test` |
-| `sfin_tem_detect.yaml` | HAADF (TEM) | `gt_detect` | `./data` | `./data_test` |
-| `sfin_bf_enhance.yaml` | BF | `gt_enhance` | `./bf_data` | `./bf_data_test` |
-| `sfin_bf_detect.yaml` | BF | `gt_detect` | `./bf_data` | `./bf_data_test` |
-
-### Download
+### Download Links
 
 | Dataset | Train | Test | Link |
 | :---: | :---: | :---: | :---: |
@@ -78,12 +70,19 @@ bf_data_test/              # BF val/test
 | HAADF test dataset | - | 100 | [haadf_data_test.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip) |
 | BF test dataset | - | 100 | [bf_data_test.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip) |
 
-> Note: BF configs expect `./bf_data` and `./bf_data_test` under `PaddleMaterials` root.
-> The YAML files already include dataset `url`; if local data is missing, `STEMImageDataset` will auto-download and extract (`zip` or `tar.gz`).
+### Auto Download Behavior
 
----
+`STEMImageDataset` supports local loading + auto download:
 
-## Results
+- If `data_path` exists locally, data is loaded directly.
+- If `data_path` is missing and `download=True`, URL is inferred by `data_path` basename:
+  - `data` -> `haadf_data.zip`
+  - `data_test` -> `haadf_data_test.zip`
+  - `bf_data` -> `bf_data.zip`
+  - `bf_data_test` -> `bf_data_test.zip`
+- Archive formats `zip` and `tar.gz` are both supported.
+
+## 5.Results
 
 <table>
     <thead>
@@ -112,12 +111,9 @@ bf_data_test/              # BF val/test
     </tbody>
 </table>
 
----
+## 6.Command
 
-## Command
-
-Run commands from the `PaddleMaterials` root directory.  
-If `ppmat` is not installed in your environment, install once:
+Run from `PaddleMaterials` root:
 
 ```bash
 pip install -e . --no-build-isolation
@@ -141,17 +137,11 @@ python spectrum_enhancement/train.py \
 # BF detect
 python spectrum_enhancement/train.py \
   -c spectrum_enhancement/configs/sfin/sfin_bf_detect.yaml
-
-# multi GPU training (example: HAADF enhance)
-python -m paddle.distributed.launch --gpus="0,1,2,3" \
-  spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml
 ```
 
 ### Evaluation
 
 ```bash
-# switch config file to evaluate other settings
 python spectrum_enhancement/train.py \
   -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
   Global.do_train=False Global.do_eval=True Global.do_test=True \
@@ -161,7 +151,6 @@ python spectrum_enhancement/train.py \
 ### Prediction
 
 ```bash
-# switch config file to predict with other settings
 python spectrum_enhancement/predict.py \
   --config_path spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
   --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_he_500.pdparams \
@@ -169,9 +158,7 @@ python spectrum_enhancement/predict.py \
   --output_dir ./output/sfin_predictions
 ```
 
----
-
-## Citation
+## 7.Citation
 
 ```bibtex
 @inproceedings{li2025sfin,

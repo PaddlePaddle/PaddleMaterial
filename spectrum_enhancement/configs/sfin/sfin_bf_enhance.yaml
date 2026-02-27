@@ -69,7 +69,6 @@ Dataset:
       __class_name__: STEMImageDataset
       __init_params__:
         data_path: "./bf_data"
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
         file_suffix: ".png"
@@ -92,7 +91,6 @@ Dataset:
       __class_name__: STEMImageDataset
       __init_params__:
         data_path: "./bf_data_test"
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
         file_suffix: ".png"
@@ -115,7 +113,6 @@ Dataset:
       __class_name__: STEMImageDataset
       __init_params__:
         data_path: "./bf_data_test"
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip"
         noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
         file_suffix: ".png"

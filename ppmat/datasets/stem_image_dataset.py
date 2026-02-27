@@ -14,10 +14,6 @@
 
 from __future__ import annotations
 
-import os
-import tarfile
-import urllib.request
-import zipfile
 from pathlib import Path
 from typing import Dict
 from typing import List
@@ -25,16 +21,17 @@ from typing import Optional
 
 import numpy as np
 import paddle
-import paddle.distributed as dist
 from PIL import Image
 
+from ppmat.utils import download as download_utils
 from ppmat.utils import logger
 
 
 class STEMImageDataset(paddle.io.Dataset):
     """Dataset for paired STEM image restoration/enhancement.
 
-    Supports automatic download and extraction of zip/tar/tar.gz datasets.
+    Supports automatic download and extraction (zip/tar/tar.gz) through
+    ``ppmat.utils.download.get_datasets_path_from_url``.
 
     Expected directory layout after extraction:
         data_path/
@@ -69,6 +66,14 @@ class STEMImageDataset(paddle.io.Dataset):
     """
 
     name = "stem_enhancement"
+    url = None
+    md5 = None
+    _DEFAULT_URL_MAP = {
+        "data": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data.zip",
+        "data_test": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip",
+        "bf_data": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data.zip",
+        "bf_data_test": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip",
+    }
 
     def __init__(
         self,
@@ -112,17 +117,15 @@ class STEMImageDataset(paddle.io.Dataset):
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
 
-        self.url = url
-        self.md5 = md5
-
-        # Set up paths
+        self.url = url if url is not None else self._infer_default_url(data_path)
+        self.md5 = md5 if md5 is not None else self.md5
         self.data_root = Path(data_path)
-        self.raw_dir = self.data_root / "raw"
-        self.extracted_dir = self.data_root / "extracted"
+        self.downloaded_root: Optional[Path] = None
 
-        # Handle download and extraction
-        if download or force_download:
-            self._prepare_data(force_download)
+        if self._locate_data_root(self.data_root) is None and (
+            download or force_download
+        ):
+            self.downloaded_root = self._download_dataset(force_download)
 
         # Determine actual data directory based on split
         self.data_dir = self._resolve_data_dir()
@@ -140,96 +143,82 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def _resolve_data_dir(self) -> Path:
         """Resolve the actual data directory based on split configuration."""
-        data_root_candidate = self._locate_data_root(self.data_root)
-        if data_root_candidate is not None:
-            if self.split is not None and data_root_candidate == self.data_root:
-                logger.warning(
-                    f"Split '{self.split}' requested but legacy format detected. "
-                    f"Using data directly from {self.data_root}"
+        candidate_roots = [self.data_root]
+        if self.downloaded_root is not None:
+            for root in [self.downloaded_root, self.downloaded_root.parent]:
+                if root != self.data_root and root not in candidate_roots:
+                    candidate_roots.append(root)
+
+        for candidate_root in candidate_roots:
+            matches = self._find_data_roots(candidate_root)
+            if not matches:
+                continue
+            if (
+                self.downloaded_root is not None
+                and candidate_root == self.downloaded_root.parent
+                and len(matches) > 1
+            ):
+                raise FileNotFoundError(
+                    "Multiple candidate dataset roots were found under "
+                    f"'{candidate_root}': {[str(m) for m in matches]}. "
+                    "Please provide a more specific local `data_path` or explicit `url`."
                 )
+
+            data_root_candidate = matches[0]
+            if self.split is not None and self._contains_pair_dirs(data_root_candidate):
+                if data_root_candidate == candidate_root:
+                    logger.warning(
+                        f"Split '{self.split}' requested but legacy format detected. "
+                        f"Using data directly from {candidate_root}"
+                    )
             return data_root_candidate
 
-        extracted_candidate = self._locate_data_root(self.extracted_dir)
-        if extracted_candidate is not None:
-            return extracted_candidate
-
+        searched_roots = ", ".join([str(path) for path in candidate_roots])
         if self.split is not None:
             raise FileNotFoundError(
-                f"Split '{self.split}' not found under '{self.data_root}' or "
-                f"'{self.extracted_dir}'."
+                f"Split '{self.split}' not found under: {searched_roots}"
             )
-        return self.data_root
-
-    def _prepare_data(self, force_download: bool = False) -> None:
-        """Download and extract dataset if necessary."""
-        # Check if data already exists
-        if not force_download and self._data_exists():
-            logger.info(f"Dataset already exists at {self.data_root}")
-            return
-
-        # Create directories
-        os.makedirs(self.raw_dir, exist_ok=True)
-        os.makedirs(self.extracted_dir, exist_ok=True)
-
-        # Download
-        tar_path = self._download_data()
-
-        # Extract
-        self._extract_data(tar_path)
-
-    def _data_exists(self) -> bool:
-        """Check if extracted data already exists."""
-        return (
-            self._locate_data_root(self.data_root) is not None
-            or self._locate_data_root(self.extracted_dir) is not None
+        raise FileNotFoundError(
+            "Cannot locate dataset directories "
+            f"'{self.noisy_subdir}' and '{self.target_subdir}' under: {searched_roots}"
         )
 
-    def _download_data(self) -> Path:
-        """Download dataset from URL."""
-        archive_name = os.path.basename(self.url)
-        archive_path = self.raw_dir / archive_name
+    def _download_dataset(self, force_download: bool = False) -> Path:
+        """Download dataset with built-in ppmat factory utility."""
+        if not self.url:
+            candidate = ", ".join(sorted(self._DEFAULT_URL_MAP.keys()))
+            raise FileNotFoundError(
+                f"Dataset not found at '{self.data_root}', and no download URL provided. "
+                f"Auto-url is only inferred for data_path basename in [{candidate}]."
+            )
 
-        if archive_path.exists():
-            logger.info(f"Archive already downloaded: {archive_path}")
-            return archive_path
+        logger.message(
+            f"Dataset root {self.data_root} not found. Will download it now."
+        )
+        if force_download:
+            downloaded_root = download_utils.get_path_from_url(
+                self.url,
+                download_utils.DATASETS_HOME,
+                md5sum=self.md5,
+                check_exist=False,
+                decompress=True,
+            )
+        else:
+            downloaded_root = download_utils.get_datasets_path_from_url(
+                self.url, self.md5
+            )
+        logger.info(f"Dataset downloaded to: {downloaded_root}")
+        return Path(downloaded_root)
 
-        if dist.get_rank() == 0:
-            logger.info(f"Downloading dataset from {self.url}...")
-            try:
-                urllib.request.urlretrieve(self.url, archive_path)
-                logger.info(f"Downloaded to {archive_path}")
-            except Exception as e:
-                raise RuntimeError(f"Failed to download dataset: {e}")
-
-        if dist.is_initialized():
-            dist.barrier()
-
-        return archive_path
-
-    def _extract_data(self, archive_path: Path) -> None:
-        """Extract downloaded archive (zip/tar/tar.gz)."""
-        if dist.get_rank() == 0:
-            logger.info(f"Extracting {archive_path}...")
-
-            try:
-                suffix = archive_path.suffix.lower()
-                if suffix == ".zip":
-                    with zipfile.ZipFile(archive_path, "r") as zf:
-                        zf.extractall(path=self.extracted_dir)
-                elif tarfile.is_tarfile(archive_path):
-                    with tarfile.open(archive_path, "r:*") as tf:
-                        tf.extractall(path=self.extracted_dir)
-                else:
-                    raise RuntimeError(
-                        f"Unsupported archive format for '{archive_path.name}'. "
-                        "Only zip/tar/tar.gz/tgz are supported."
-                    )
-                logger.info(f"Extracted to {self.extracted_dir}")
-            except (tarfile.TarError, zipfile.BadZipFile) as e:
-                raise RuntimeError(f"Failed to extract archive: {e}")
-
-        if dist.is_initialized():
-            dist.barrier()
+    @classmethod
+    def _infer_default_url(cls, data_path: str) -> Optional[str]:
+        key = Path(data_path).name
+        url = cls._DEFAULT_URL_MAP.get(key)
+        if url is not None:
+            logger.info(
+                f"Infer dataset download URL by data_path='{data_path}': {url}"
+            )
+        return url
 
     def _contains_pair_dirs(self, root: Path) -> bool:
         return (
@@ -239,21 +228,41 @@ class STEMImageDataset(paddle.io.Dataset):
         )
 
     def _locate_data_root(self, base_root: Path) -> Optional[Path]:
-        if not base_root.exists():
+        matches = self._find_data_roots(base_root)
+        if not matches:
             return None
+        return matches[0]
 
-        # Try current directory then its first-level subdirectories.
+    def _find_data_roots(self, base_root: Path) -> List[Path]:
+        if not base_root.exists():
+            return []
+
+        # Try current directory then its first- and second-level subdirectories.
         candidate_roots = [base_root]
-        candidate_roots.extend(p for p in base_root.iterdir() if p.is_dir())
+        first_level = [p for p in base_root.iterdir() if p.is_dir()]
+        candidate_roots.extend(first_level)
+        for sub_root in first_level:
+            candidate_roots.extend(p for p in sub_root.iterdir() if p.is_dir())
 
+        matches: List[Path] = []
         for root in candidate_roots:
             if self.split is not None:
                 split_root = root / self.split
                 if self._contains_pair_dirs(split_root):
-                    return split_root
+                    matches.append(split_root)
             if self._contains_pair_dirs(root):
-                return root
-        return None
+                matches.append(root)
+
+        # Deduplicate while preserving order.
+        seen = set()
+        unique_matches = []
+        for path in matches:
+            path_str = str(path)
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+            unique_matches.append(path)
+        return unique_matches
 
     def _build_samples(self, data_count: int | None) -> List[Dict[str, str]]:
         """Build list of sample dictionaries."""
