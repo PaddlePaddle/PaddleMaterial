@@ -73,7 +73,8 @@ class GaussianOrbital(paddle.nn.Layer):
         exponent = -self.gauss * (r * r)
         poly = paddle.arange(dtype="float32", end=self.lmax + 1) * paddle.log(x=r)
         log = exponent.unsqueeze(axis=-2) + poly.unsqueeze(axis=-1)
-        radial = paddle.exp(x=log.view(*tuple(log.shape)[:-2], -1) + lognorm)
+        log_flat = log.view(*tuple(log.shape)[:-2], -1)
+        radial = paddle.exp(x=paddle.add(log_flat, lognorm))
         # Use explicit elementwise multiplication to avoid potential issues
         # with Python's `*` dispatch on Tensor-like objects.
         return paddle.multiply(self.lc2lcm(radial), self.m2lcm(spherical))
