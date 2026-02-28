@@ -1,0 +1,160 @@
+Global:
+  do_train: True
+  do_eval: True
+  do_test: True
+
+  # Paper-aligned QM9 target: U0
+  label_names: ["U0"]
+  graph_converter:
+    __class_name__: FindPointsInSpheres
+    __init_params__:
+      cutoff: 5.0
+      pbc: [0, 0, 0]
+      num_cpus: 4
+
+
+Trainer:
+  max_epochs: 1000
+  seed: 42
+  output_dir: ./output/schnet_qm9_u0_gpu_align
+  save_freq: 100
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: "O1"
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: "eval_metric"
+  name_for_best_metric: "U0"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: "epoch"
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+
+Model:
+  __class_name__: SchNet
+  __init_params__:
+    n_atom_basis: 128
+    n_interactions: 6
+    n_filters: 128
+    cutoff: 5.0
+    n_rbf: 20
+    max_z: 100
+    property_name: ${Global.label_names}
+    readout: "sum"
+    # Mean of (U0[eV] - atomref_sum[eV]) on train split split_qm9_110k_10k_seed42.npz
+    data_mean: -75.92108302166483
+    data_std: 1.0
+    atomref_path: "./data/qm9/atomref.npz"
+    atomref_index: 1
+    loss_type: "mse_loss"
+
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    weight_decay: 0.0
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 5e-4
+        indicator: "eval_loss"
+        indicator_name: "loss"
+        mode: "min"
+        factor: 0.5
+        patience: 75
+        threshold: 0.0
+        threshold_mode: "rel"
+        cooldown: 10
+        min_lr: 0.0
+        epsilon: 1e-8
+        by_epoch: True
+
+
+Metric:
+  U0:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: "./data/qm9"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/qm9"
+        overwrite: False
+        filter_unvalid: True
+        enable_unit_conversion: True
+        subset: "train"
+        split_file: "split_qm9_110k_10k_seed42.npz"
+        num_train: 110000
+        num_val: 10000
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 100
+
+  val:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: "./data/qm9"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/qm9"
+        overwrite: False
+        filter_unvalid: True
+        enable_unit_conversion: True
+        subset: "val"
+        split_file: "split_qm9_110k_10k_seed42.npz"
+        num_train: 110000
+        num_val: 10000
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 100
+
+  test:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: "./data/qm9"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/qm9"
+        overwrite: False
+        filter_unvalid: True
+        enable_unit_conversion: True
+        subset: "test"
+        split_file: "split_qm9_110k_10k_seed42.npz"
+        num_train: 110000
+        num_val: 10000
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 100
+
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True

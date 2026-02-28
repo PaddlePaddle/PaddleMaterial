@@ -18,11 +18,15 @@ import paddle  # noqa
 
 from ppmat.metrics.csp_metric import CSPMetric
 from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
+from ppmat.metrics.regression_metric import RMSEMetric
+from ppmat.metrics.regression_metric import RelativeErrorMetric
 
 __all__ = [
     "build_metric",
     "CSPMetric",
     "DiffNMRStreamingAdapter",
+    "RMSEMetric",
+    "RelativeErrorMetric",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
 ]

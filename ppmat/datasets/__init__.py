@@ -33,6 +33,7 @@ from ppmat.datasets import collate_fn
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
 from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.matbench_dataset import MatbenchDataset
+from ppmat.datasets.md17_dataset import MD17Dataset
 from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
@@ -42,10 +43,11 @@ from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.density_dataset import DensityDataset
-from ppmat.datasets.small_density_dataset import SmallDensityDataset 
+from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
 from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
+from ppmat.datasets.iso17_dataset import ISO17Dataset
 from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
@@ -67,6 +69,8 @@ __all__ = [
     "DensityDataset", 
     "SmallDensityDataset",
     "OMol25Dataset",
+    "MD17Dataset",
+    "ISO17Dataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
