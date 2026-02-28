@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import copy
+import importlib
 from pathlib import Path
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -25,6 +28,227 @@ from PIL import Image
 
 from ppmat.utils import download as download_utils
 from ppmat.utils import logger
+
+
+def _locate_class(class_name: str):
+    if "." in class_name:
+        mod, cls = class_name.rsplit(".", 1)
+        return getattr(importlib.import_module(mod), cls)
+    return globals()[class_name]
+
+
+def _build_component(
+    cfg: Optional[Dict],
+    *,
+    default_class_name: str,
+    required_methods: List[str],
+):
+    if cfg is None:
+        class_name = default_class_name
+        init_params = {}
+    else:
+        cfg = copy.deepcopy(cfg)
+        class_name = cfg.pop("__class_name__", None)
+        if not class_name:
+            raise ValueError(
+                "Factory cfg must include '__class_name__', e.g. "
+                "{'__class_name__': 'StrictIndexSampleBuilder', '__init_params__': {}}"
+            )
+        init_params = cfg.pop("__init_params__", {})
+        if cfg:
+            raise ValueError(
+                f"Unsupported keys in factory cfg for '{class_name}': {list(cfg.keys())}"
+            )
+
+    cls = _locate_class(class_name)
+    component = cls(**init_params)
+    for method_name in required_methods:
+        if not hasattr(component, method_name):
+            raise TypeError(
+                f"Component '{class_name}' must implement method '{method_name}'."
+            )
+    return component
+
+
+class StrictIndexSampleBuilder:
+    def __init__(self):
+        pass
+
+    def build(
+        self,
+        noisy_dir: Path,
+        target_dir: Path,
+        file_suffix: str,
+        data_count: Optional[int] = None,
+    ) -> List[Dict[str, str]]:
+        samples: List[Dict[str, str]] = []
+        if data_count is None:
+            available = sorted(noisy_dir.glob(f"*{file_suffix}"))
+            data_count = len(available)
+
+        for idx in range(int(data_count)):
+            name = f"{idx}{file_suffix}"
+            noisy_path = noisy_dir / name
+            target_path = target_dir / name
+            if not noisy_path.exists():
+                raise FileNotFoundError(f"Noisy image not found: {noisy_path}")
+            if not target_path.exists():
+                raise FileNotFoundError(f"Target image not found: {target_path}")
+            samples.append(
+                {
+                    "name": name,
+                    "noisy_path": str(noisy_path),
+                    "target_path": str(target_path),
+                }
+            )
+        return samples
+
+
+class MatchedNameSampleBuilder:
+    def __init__(self):
+        pass
+
+    def build(
+        self,
+        noisy_dir: Path,
+        target_dir: Path,
+        file_suffix: str,
+        data_count: Optional[int] = None,
+    ) -> List[Dict[str, str]]:
+        samples: List[Dict[str, str]] = []
+        noisy_files = {
+            p.name: p for p in noisy_dir.glob(f"*{file_suffix}") if p.is_file()
+        }
+        target_files = {
+            p.name: p for p in target_dir.glob(f"*{file_suffix}") if p.is_file()
+        }
+        common_names = sorted(set(noisy_files.keys()) & set(target_files.keys()))
+        if data_count is not None:
+            common_names = common_names[: int(data_count)]
+
+        for name in common_names:
+            samples.append(
+                {
+                    "name": name,
+                    "noisy_path": str(noisy_files[name]),
+                    "target_path": str(target_files[name]),
+                }
+            )
+        return samples
+
+
+class DefaultSTEMDatasetDownloader:
+    def __init__(self, datasets_home: Optional[str] = None):
+        self.datasets_home = datasets_home or download_utils.DATASETS_HOME
+
+    def download(
+        self, url: str, md5: Optional[str] = None, force_download: bool = False
+    ) -> Path:
+        if force_download:
+            downloaded_root = download_utils.get_path_from_url(
+                url,
+                self.datasets_home,
+                md5sum=md5,
+                check_exist=False,
+                decompress=True,
+            )
+        else:
+            downloaded_root = download_utils.get_datasets_path_from_url(url, md5)
+        return Path(downloaded_root)
+
+
+class PairDirectoryDataRootResolver:
+    def __init__(self, max_depth: int = 2):
+        if max_depth < 0:
+            raise ValueError(f"max_depth must be >= 0, but got {max_depth}")
+        self.max_depth = int(max_depth)
+
+    @staticmethod
+    def _contains_pair_dirs(root: Path, noisy_subdir: str, target_subdir: str) -> bool:
+        return (
+            root.is_dir()
+            and (root / noisy_subdir).exists()
+            and (root / target_subdir).exists()
+        )
+
+    def find_data_roots(
+        self,
+        base_root: Path,
+        split: Optional[str],
+        noisy_subdir: str,
+        target_subdir: str,
+    ) -> List[Path]:
+        if not base_root.exists():
+            return []
+
+        candidate_roots: List[Path] = [base_root]
+        frontier: List[Path] = [base_root]
+        for _ in range(self.max_depth):
+            next_frontier: List[Path] = []
+            for root in frontier:
+                for child in root.iterdir():
+                    if child.is_dir():
+                        candidate_roots.append(child)
+                        next_frontier.append(child)
+            frontier = next_frontier
+
+        matches: List[Path] = []
+        for root in candidate_roots:
+            if split is not None:
+                split_root = root / split
+                if self._contains_pair_dirs(split_root, noisy_subdir, target_subdir):
+                    matches.append(split_root)
+            if self._contains_pair_dirs(root, noisy_subdir, target_subdir):
+                matches.append(root)
+
+        seen = set()
+        unique_matches = []
+        for path in matches:
+            path_str = str(path)
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+            unique_matches.append(path)
+        return unique_matches
+
+
+def build_stem_sample_builder(
+    cfg: Optional[Dict],
+    *,
+    strict_index_naming: bool,
+):
+    default_class_name = (
+        "StrictIndexSampleBuilder"
+        if strict_index_naming
+        else "MatchedNameSampleBuilder"
+    )
+    sample_builder = _build_component(
+        cfg,
+        default_class_name=default_class_name,
+        required_methods=["build"],
+    )
+    logger.debug(f"Use sample builder: {sample_builder.__class__.__name__}")
+    return sample_builder
+
+
+def build_stem_downloader(cfg: Optional[Dict]):
+    downloader = _build_component(
+        cfg,
+        default_class_name="DefaultSTEMDatasetDownloader",
+        required_methods=["download"],
+    )
+    logger.debug(f"Use downloader: {downloader.__class__.__name__}")
+    return downloader
+
+
+def build_stem_data_root_resolver(cfg: Optional[Dict]):
+    resolver = _build_component(
+        cfg,
+        default_class_name="PairDirectoryDataRootResolver",
+        required_methods=["find_data_roots"],
+    )
+    logger.debug(f"Use data root resolver: {resolver.__class__.__name__}")
+    return resolver
 
 
 class STEMImageDataset(paddle.io.Dataset):
@@ -74,6 +298,7 @@ class STEMImageDataset(paddle.io.Dataset):
         "bf_data": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data.zip",
         "bf_data_test": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip",
     }
+    _DEFAULT_MD5_MAP: Dict[str, str] = {}
 
     def __init__(
         self,
@@ -84,6 +309,9 @@ class STEMImageDataset(paddle.io.Dataset):
         target_subdir: str = "gt_enhance",
         file_suffix: str = ".png",
         strict_index_naming: bool = True,
+        sample_builder_cfg: Optional[Dict] = None,
+        downloader_cfg: Optional[Dict] = None,
+        data_root_resolver_cfg: Optional[Dict] = None,
         scale_to_unit: bool = False,
         url: Optional[str] = None,
         md5: Optional[str] = None,
@@ -101,6 +329,15 @@ class STEMImageDataset(paddle.io.Dataset):
             target_subdir: Subdirectory name for target/ground truth images.
             file_suffix: File extension for images (e.g., '.png', '.tif').
             strict_index_naming: If True, expects files named as {idx}{suffix}.
+            sample_builder_cfg: Sample builder config in factory style:
+                {
+                    "__class_name__": "StrictIndexSampleBuilder",
+                    "__init_params__": {}
+                }
+            downloader_cfg: Downloader config in factory style.
+                Default class is "DefaultSTEMDatasetDownloader".
+            data_root_resolver_cfg: Data root resolver config in factory style.
+                Default class is "PairDirectoryDataRootResolver".
             scale_to_unit: If True, scales pixel values to [0, 1].
             url: URL to download the dataset from. Overrides default URL.
             md5: MD5 checksum for downloaded file. Optional.
@@ -116,9 +353,17 @@ class STEMImageDataset(paddle.io.Dataset):
         self.file_suffix = file_suffix
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
+        self.sample_builder = build_stem_sample_builder(
+            sample_builder_cfg,
+            strict_index_naming=strict_index_naming,
+        )
+        self.downloader = build_stem_downloader(downloader_cfg)
+        self.data_root_resolver = build_stem_data_root_resolver(data_root_resolver_cfg)
 
         self.url = url if url is not None else self._infer_default_url(data_path)
-        self.md5 = md5 if md5 is not None else self.md5
+        self.md5 = (
+            md5 if md5 is not None else self._infer_default_md5(data_path) or self.md5
+        )
         self.data_root = Path(data_path)
         self.downloaded_root: Optional[Path] = None
 
@@ -165,12 +410,11 @@ class STEMImageDataset(paddle.io.Dataset):
                 )
 
             data_root_candidate = matches[0]
-            if self.split is not None and self._contains_pair_dirs(data_root_candidate):
-                if data_root_candidate == candidate_root:
-                    logger.warning(
-                        f"Split '{self.split}' requested but legacy format detected. "
-                        f"Using data directly from {candidate_root}"
-                    )
+            if self.split is not None and data_root_candidate == candidate_root:
+                logger.warning(
+                    f"Split '{self.split}' requested but legacy format detected. "
+                    f"Using data directly from {candidate_root}"
+                )
             return data_root_candidate
 
         searched_roots = ", ".join([str(path) for path in candidate_roots])
@@ -195,18 +439,11 @@ class STEMImageDataset(paddle.io.Dataset):
         logger.message(
             f"Dataset root {self.data_root} not found. Will download it now."
         )
-        if force_download:
-            downloaded_root = download_utils.get_path_from_url(
-                self.url,
-                download_utils.DATASETS_HOME,
-                md5sum=self.md5,
-                check_exist=False,
-                decompress=True,
-            )
-        else:
-            downloaded_root = download_utils.get_datasets_path_from_url(
-                self.url, self.md5
-            )
+        downloaded_root = self.downloader.download(
+            self.url,
+            self.md5,
+            force_download=force_download,
+        )
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return Path(downloaded_root)
 
@@ -220,12 +457,15 @@ class STEMImageDataset(paddle.io.Dataset):
             )
         return url
 
-    def _contains_pair_dirs(self, root: Path) -> bool:
-        return (
-            root.is_dir()
-            and (root / self.noisy_subdir).exists()
-            and (root / self.target_subdir).exists()
-        )
+    @classmethod
+    def _infer_default_md5(cls, data_path: str) -> Optional[str]:
+        key = Path(data_path).name
+        md5 = cls._DEFAULT_MD5_MAP.get(key)
+        if md5 is not None:
+            logger.info(
+                f"Infer dataset md5 by data_path='{data_path}': {md5}"
+            )
+        return md5
 
     def _locate_data_root(self, base_root: Path) -> Optional[Path]:
         matches = self._find_data_roots(base_root)
@@ -234,85 +474,21 @@ class STEMImageDataset(paddle.io.Dataset):
         return matches[0]
 
     def _find_data_roots(self, base_root: Path) -> List[Path]:
-        if not base_root.exists():
-            return []
-
-        # Try current directory then its first- and second-level subdirectories.
-        candidate_roots = [base_root]
-        first_level = [p for p in base_root.iterdir() if p.is_dir()]
-        candidate_roots.extend(first_level)
-        for sub_root in first_level:
-            candidate_roots.extend(p for p in sub_root.iterdir() if p.is_dir())
-
-        matches: List[Path] = []
-        for root in candidate_roots:
-            if self.split is not None:
-                split_root = root / self.split
-                if self._contains_pair_dirs(split_root):
-                    matches.append(split_root)
-            if self._contains_pair_dirs(root):
-                matches.append(root)
-
-        # Deduplicate while preserving order.
-        seen = set()
-        unique_matches = []
-        for path in matches:
-            path_str = str(path)
-            if path_str in seen:
-                continue
-            seen.add(path_str)
-            unique_matches.append(path)
-        return unique_matches
+        return self.data_root_resolver.find_data_roots(
+            base_root=base_root,
+            split=self.split,
+            noisy_subdir=self.noisy_subdir,
+            target_subdir=self.target_subdir,
+        )
 
     def _build_samples(self, data_count: int | None) -> List[Dict[str, str]]:
         """Build list of sample dictionaries."""
-        samples: List[Dict[str, str]] = []
-
-        if self.strict_index_naming:
-            if data_count is None:
-                available = sorted(self.noisy_dir.glob(f"*{self.file_suffix}"))
-                data_count = len(available)
-
-            for idx in range(int(data_count)):
-                name = f"{idx}{self.file_suffix}"
-                noisy_path = self.noisy_dir / name
-                target_path = self.target_dir / name
-                if not noisy_path.exists():
-                    raise FileNotFoundError(f"Noisy image not found: {noisy_path}")
-                if not target_path.exists():
-                    raise FileNotFoundError(f"Target image not found: {target_path}")
-                samples.append(
-                    {
-                        "name": name,
-                        "noisy_path": str(noisy_path),
-                        "target_path": str(target_path),
-                    }
-                )
-            return samples
-
-        noisy_files = {
-            p.name: p
-            for p in self.noisy_dir.glob(f"*{self.file_suffix}")
-            if p.is_file()
-        }
-        target_files = {
-            p.name: p
-            for p in self.target_dir.glob(f"*{self.file_suffix}")
-            if p.is_file()
-        }
-        common_names = sorted(set(noisy_files.keys()) & set(target_files.keys()))
-        if data_count is not None:
-            common_names = common_names[: int(data_count)]
-
-        for name in common_names:
-            samples.append(
-                {
-                    "name": name,
-                    "noisy_path": str(noisy_files[name]),
-                    "target_path": str(target_files[name]),
-                }
-            )
-        return samples
+        return self.sample_builder.build(
+            noisy_dir=self.noisy_dir,
+            target_dir=self.target_dir,
+            file_suffix=self.file_suffix,
+            data_count=data_count,
+        )
 
     def __len__(self):
         return len(self.samples)
