@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
+from abc import ABC
 import paddle
 import paddle.nn as nn
 from paddle.nn import TransformerEncoder, TransformerEncoderLayer
@@ -243,16 +243,6 @@ class ECFormerBase(nn.Layer, ABC):
             }
         }
  
-    @abstractmethod
-    def get_loss(self, predictions, targets):
-        """损失函数 - 由子类实现"""
-        pass
-    
-    @abstractmethod
-    def get_metrics(self, predictions, targets):
-        """评估指标 - 由子类实现"""
-        pass
-
 def get_key_padding_mask(tokens):
     key_padding_mask = paddle.zeros(tokens.shape)
     key_padding_mask[tokens == -1] = -paddle.inf
