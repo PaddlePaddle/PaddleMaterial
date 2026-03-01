@@ -123,14 +123,14 @@ class ECFormerBase(nn.Layer, ABC):
         
         assert emb_dim % num_heads == 0, "emb_dim must be divisible by num_heads"
         
-        encoder_layer = TransformerEncoderLayer(
+        self.tf_enc_layer = TransformerEncoderLayer(
             d_model=emb_dim,
             nhead=num_heads,
             dim_feedforward=emb_dim,
             dropout=dropout,
             activation='relu',
         )
-        return TransformerEncoder(encoder_layer, num_layers=num_layers)
+        return TransformerEncoder(self.tf_enc_layer, num_layers=num_layers)
     
     def encode_molecule(
         self,
