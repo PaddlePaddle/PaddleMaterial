@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import paddle
-import numpy as np
 
 def index_transform(raw_index, batch_size):
     """将压缩的批次索引还原为每个样本的节点索引列表"""

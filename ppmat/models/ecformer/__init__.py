@@ -19,20 +19,8 @@ from .models.IR import ECFormerIR
 # 导出编码器（如需直接使用）
 from .encoders.gin_node_embedding import GINNodeEmbedding
 
-# 导出工具函数
-from .utils.graph_utils import (
-    index_transform,
-    get_key_padding_mask,
-    feat_padding_mask,
-    pad_node_features
-)
-
 __all__ = [
     'ECFormerECD',
     'ECFormerIR',
     'GINNodeEmbedding',
-    'index_transform',
-    'get_key_padding_mask',
-    'feat_padding_mask',
-    'pad_node_features',
 ]
