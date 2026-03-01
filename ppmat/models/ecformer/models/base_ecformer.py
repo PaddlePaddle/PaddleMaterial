@@ -18,7 +18,7 @@ import paddle.nn as nn
 from paddle.nn import TransformerEncoder, TransformerEncoderLayer
 
 from ..encoders.gin_node_embedding import GINNodeEmbedding
-from ..utils.graph_utils import pad_node_features, feat_padding_mask
+from ppmat.utils.graph_utils import pad_node_features, feat_padding_mask
 from paddle_geometric.nn import global_add_pool, global_mean_pool, global_max_pool, GlobalAttention, Set2Set
 
 def fix_mask_for_paddle(mask, n_head=None):
