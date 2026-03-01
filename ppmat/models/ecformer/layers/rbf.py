@@ -24,7 +24,7 @@ class RBF(nn.Layer):
                  gamma: paddle.nn.parameter.Parameter):
         super(RBF, self).__init__()
         self.centers = centers.data.reshape([1, -1])
-        self.gamma = gamma
+        self.gamma = gamma.data
     
     def forward(self, x):
         x = x.reshape([-1, 1])
