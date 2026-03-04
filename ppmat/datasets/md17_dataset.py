@@ -26,6 +26,8 @@ from paddle.io import Dataset
 from pymatgen.core import Structure
 
 from ppmat.models import build_graph_converter
+from ppmat.utils import download
+from ppmat.utils import logger
 
 MD17_MOLECULES = [
     "aspirin",
@@ -43,6 +45,9 @@ MD17_MOLECULES = [
 
 class MD17Dataset(Dataset):
     """MD17/rMD17 small-molecule dataset loader for SchNet-style training."""
+    name = "md17"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
+    md5 = None
 
     def __init__(
         self,
@@ -59,6 +64,9 @@ class MD17Dataset(Dataset):
         num_test: Optional[int] = None,
         split_file: Optional[str] = None,
         seed: int = 42,
+        url: Optional[str] = None,
+        md5: Optional[str] = None,
+        auto_download: bool = True,
     ):
         super().__init__()
         if molecule not in MD17_MOLECULES:
@@ -67,6 +75,9 @@ class MD17Dataset(Dataset):
             )
         self.path = path
         self.molecule = molecule
+        self.url = url if url is not None else self.url
+        self.md5 = md5 if md5 is not None else self.md5
+        self.auto_download = bool(auto_download)
         self.subset = subset
         self.seed = int(seed)
         self.transforms = transforms
@@ -94,17 +105,72 @@ class MD17Dataset(Dataset):
             seed=self.seed,
         )
 
-    def _load_raw_data(self, path: str, molecule: str):
-        candidates = [
-            osp.join(path, f"{molecule}.npz"),
-            osp.join(path, f"rmd17_{molecule}.npz"),
-            osp.join(path, f"md17_{molecule}.npz"),
+    @staticmethod
+    def _find_npz(paths: Sequence[str], names: Sequence[str]) -> Optional[str]:
+        for path in paths:
+            if path is None or not osp.exists(path):
+                continue
+            for name in names:
+                p = osp.join(path, name)
+                if osp.exists(p):
+                    return p
+            for root, _, files in os.walk(path):
+                for name in names:
+                    if name in files:
+                        return osp.join(root, name)
+        return None
+
+    @staticmethod
+    def _unique_paths(paths: Sequence[str]) -> list[str]:
+        uniq = []
+        for path in paths:
+            if path is None:
+                continue
+            norm_path = osp.normpath(path)
+            if norm_path not in uniq:
+                uniq.append(norm_path)
+        return uniq
+
+    def _ensure_raw_data(self, path: str, molecule: str) -> list[str]:
+        names = [
+            f"{molecule}.npz",
+            f"rmd17_{molecule}.npz",
+            f"md17_{molecule}.npz",
         ]
-        npz_path = next((p for p in candidates if osp.exists(p)), None)
+        search_roots = [path]
+        found = self._find_npz(search_roots, names)
+        if found is not None:
+            return self._unique_paths(search_roots)
+
+        if not self.auto_download:
+            return self._unique_paths(search_roots)
+        if not self.url:
+            return self._unique_paths(search_roots)
+
+        logger.message(f"MD17 data not found under {path}, downloading from {self.url}.")
+        downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
+        if osp.isfile(downloaded_root):
+            downloaded_root = osp.dirname(downloaded_root)
+        search_roots.append(downloaded_root)
+        search_roots.append(osp.join(downloaded_root, self.name))
+        return self._unique_paths(search_roots)
+
+    def _load_raw_data(self, path: str, molecule: str):
+        os.makedirs(path, exist_ok=True)
+        names = [
+            f"{molecule}.npz",
+            f"rmd17_{molecule}.npz",
+            f"md17_{molecule}.npz",
+        ]
+        search_roots = [path]
+        npz_path = self._find_npz(search_roots, names)
+        if npz_path is None:
+            search_roots = self._ensure_raw_data(path, molecule)
+            npz_path = self._find_npz(search_roots, names)
         if npz_path is None:
             raise FileNotFoundError(
                 f"Cannot find MD17 file for '{molecule}' in {path}. "
-                f"Tried: {candidates}"
+                f"Tried names: {list(names)}, searched roots: {search_roots}"
             )
 
         raw = np.load(npz_path)

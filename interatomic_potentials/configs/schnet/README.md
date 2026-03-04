@@ -18,13 +18,19 @@ Dataset sources:
 
 - **QM9 (small molecules)**:
   - Original source: https://figshare.com/ndownloader/files/3195389
-  - PaddleMaterials mirror (used by `QM9Dataset`):  
+  - PaddleMaterials packaged mirror (used by SchNet config):  
+    `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz`
+  - PaddleMaterials raw mirror (fallback / non-packaged path):  
     `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2`
 - **MD17 / rMD17 (small molecules, energy + force)**:
   - Original source: https://www.quantum-machine.org/datasets/
+  - PaddleMaterials package mirror:  
+    `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz`
   - Recommended format in this repo: `*.npz` with keys `R/Z/E/F`
 - **ISO17 (isomer generalization benchmark)**:
   - Original source: https://www.quantum-machine.org/datasets/
+  - PaddleMaterials package mirror:  
+    `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz`
   - Recommended format in this repo: `iso17.npz` with keys `R/Z/E` and optional `isomer_ids`
 
 ## Models
@@ -116,7 +122,10 @@ python test/prepare_schnet_paper_datasets.py --data_root ./data --tasks all
 
 Per PaddleMaterials delivery requirement, fill cloud links here after PR/WeChat handoff:
 
-- Dataset package link (Baidu): `to_be_filled`
+- Dataset package links:
+  - QM9: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz`
+  - MD17: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz`
+  - ISO17: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz`
 - Pretrained model link (Baidu): `to_be_filled`
 - Training/inference raw log link (Baidu): `to_be_filled`
 

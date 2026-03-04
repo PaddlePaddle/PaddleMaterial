@@ -7,15 +7,17 @@ Global:
   graph_converter:
     __class_name__: FindPointsInSpheres
     __init_params__:
+      # Paper-priority setting.
       cutoff: 5.0
       pbc: [0, 0, 0]
       num_cpus: 4
 
 
 Trainer:
-  max_epochs: 1000
+  # Not explicitly fixed in SchNet paper; follow schnetpack default trainer.
+  max_epochs: 100000
   seed: 42
-  output_dir: ./output/schnet_iso17
+  output_dir: ./output/schnet_iso17_paper
   save_freq: 100
   log_freq: 20
   start_eval_epoch: 1
@@ -40,6 +42,7 @@ Trainer:
 Model:
   __class_name__: SchNet
   __init_params__:
+    # Paper-priority setting.
     n_atom_basis: 128
     n_interactions: 6
     n_filters: 128
@@ -54,15 +57,24 @@ Model:
 
 
 Optimizer:
-  __class_name__: Adam
+  __class_name__: AdamW
   __init_params__:
+    weight_decay: 0.0
     lr:
-      __class_name__: ExponentialDecay
+      __class_name__: ReduceOnPlateau
       __init_params__:
         learning_rate: 1e-3
-        gamma: 0.96
-        decay_steps: 100000
-        by_epoch: False
+        indicator: "eval_loss"
+        indicator_name: "loss"
+        mode: "min"
+        factor: 0.5
+        patience: 75
+        threshold: 0.0
+        threshold_mode: "rel"
+        cooldown: 10
+        min_lr: 0.0
+        epsilon: 1e-8
+        by_epoch: True
 
 
 Metric:
@@ -72,11 +84,14 @@ Metric:
 
 
 Dataset:
+  # Dataset package mirror (uploaded):
+  # https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz
   train:
     dataset:
       __class_name__: ISO17Dataset
       __init_params__:
         path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
         subset: "train"
         split_file: "split_iso17_ref90_testother_seed42.npz"
         property_names: ${Global.label_names}
@@ -94,6 +109,7 @@ Dataset:
       __class_name__: ISO17Dataset
       __init_params__:
         path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
         subset: "val"
         split_file: "split_iso17_ref90_testother_seed42.npz"
         property_names: ${Global.label_names}
@@ -111,6 +127,7 @@ Dataset:
       __class_name__: ISO17Dataset
       __init_params__:
         path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
         subset: "test"
         split_file: "split_iso17_ref90_testother_seed42.npz"
         property_names: ${Global.label_names}

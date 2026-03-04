@@ -8,15 +8,17 @@ Global:
   graph_converter:
     __class_name__: FindPointsInSpheres
     __init_params__:
+      # Paper-priority setting.
       cutoff: 5.0
       pbc: [0, 0, 0]
       num_cpus: 4
 
 
 Trainer:
-  max_epochs: 1000
+  # Not explicitly fixed in SchNet paper; follow schnetpack default trainer.
+  max_epochs: 100000
   seed: 42
-  output_dir: ./output/schnet_qm9_u0_gpu_align
+  output_dir: ./output/schnet_qm9_u0_paper
   save_freq: 100
   log_freq: 20
   start_eval_epoch: 1
@@ -41,6 +43,7 @@ Trainer:
 Model:
   __class_name__: SchNet
   __init_params__:
+    # Paper-priority setting.
     n_atom_basis: 128
     n_interactions: 6
     n_filters: 128
@@ -89,6 +92,8 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
+        # SchNet case uses packaged dataset mirror first.
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
@@ -112,6 +117,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
@@ -135,6 +141,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}

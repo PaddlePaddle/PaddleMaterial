@@ -31,7 +31,6 @@ import numpy as np
 import paddle.distributed as dist
 from paddle.io import Dataset
 
-from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
@@ -137,6 +136,7 @@ class QM9Dataset(Dataset):
             Defaults to True.
     """
 
+    # Raw QM9 mirror used by default runtime pipeline.
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2"
     name = "qm9"
     md5 = "AD1EBD51EE7F5B3A6E32E974E5D54012"
@@ -198,13 +198,6 @@ class QM9Dataset(Dataset):
         **kwargs,
     ) -> None:
         super().__init__()
-
-        # Use the ASE_AVAILABLE flag and AseAtomsAdaptor presence to validate dependencies
-        if not ASE_AVAILABLE or AseAtomsAdaptor is None:
-            raise RuntimeError(
-                "QM9Dataset requires 'ase' and 'pymatgen'. "
-                "Please install them via: pip install ase pymatgen"
-            )
 
         if property_names is None:
             raise ValueError("property_names must be provided for QM9Dataset")
@@ -369,6 +362,11 @@ class QM9Dataset(Dataset):
         )
 
         if should_build:
+            if not ASE_AVAILABLE or AseAtomsAdaptor is None:
+                raise RuntimeError(
+                    "QM9Dataset requires 'ase' and 'pymatgen' when building cache. "
+                    "Please install them via: pip install ase pymatgen"
+                )
             if dist.get_rank() == 0:
                 logger.info("Building structures and properties from raw QM9 file...")
                 
@@ -561,7 +559,8 @@ class QM9Dataset(Dataset):
             logger.info("Extracting QM9...")
             import tarfile
             try:
-                with tarfile.open(tar_path, "r:bz2") as tar:
+                # Support both .tar.bz2 and .tar.gz mirrors.
+                with tarfile.open(tar_path, "r:*") as tar:
                     tar.extractall(path=self.raw_dir)
             except Exception as e:
                 raise RuntimeError(f"Extraction failed: {e}")
@@ -570,45 +569,63 @@ class QM9Dataset(Dataset):
             dist.barrier()
 
         # 5. final check
-        # Case A：single file exists.
+        # Case A: single file exists.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
 
-        
-        # Case B：merge these .xyz files into a big file.
-        xyz_files = [f for f in os.listdir(self.raw_dir) if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"]
+        # Case B: package may contain nested dsgdb9nsd.xyz.
+        nested_single_file = []
+        for root, _, files in os.walk(self.raw_dir):
+            for fname in files:
+                if fname == "dsgdb9nsd.xyz":
+                    full_path = osp.join(root, fname)
+                    if osp.abspath(full_path) != osp.abspath(self.raw_xyz_path):
+                        nested_single_file.append(full_path)
+        if len(nested_single_file) > 0:
+            src = sorted(nested_single_file)[0]
+            logger.info(f"Found nested dsgdb9nsd.xyz at {src}, copying to {self.raw_xyz_path}")
+            import shutil
+            shutil.copy2(src, self.raw_xyz_path)
+            return self.raw_xyz_path
+
+        # Case C: merge xyz shards (including nested folders) into one file.
+        xyz_files = []
+        for root, _, files in os.walk(self.raw_dir):
+            for fname in files:
+                if fname.endswith(".xyz") and fname != "dsgdb9nsd.xyz":
+                    xyz_files.append(osp.join(root, fname))
         if len(xyz_files) > 0:
             logger.info(f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz...")
             merged_path = self.raw_xyz_path
-            
+
             if osp.exists(merged_path):
                 os.remove(merged_path)
 
-            with open(merged_path, "w") as fout: # use "w" model to rewrite
-                for fname in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
-                    full_path = osp.join(self.raw_dir, fname)
+            with open(merged_path, "w") as fout:  # use "w" mode to rewrite
+                for full_path in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
                     try:
                         with open(full_path, "r") as fin:
                             lines = fin.readlines()
 
-                        if not lines: continue
+                        if not lines:
+                            continue
                         natoms = int(lines[0].strip())
-                        
+
                         # 1. Number of atoms written
                         fout.write(f"{natoms}\n")
-                        # 2. Write attribute line 
+                        # 2. Write attribute line
                         prop_line = lines[1].replace('*^', 'e').replace('\t', ' ')
                         fout.write(prop_line)
                         # 3. Write coordinate lines (only take natoms lines)
                         for i in range(2, 2 + natoms):
                             coord_line = lines[i].replace('*^', 'e').replace('\t', ' ')
                             fout.write(coord_line)
-                        
+
                     except Exception as e:
-                        logger.warning(f"Error processing {fname}: {e}")
+                        logger.warning(f"Error processing {full_path}: {e}")
                         continue
             return merged_path
-        # Case C: None
+        # Case D: None
         raise RuntimeError(
             f"Decompression is complete, but I couldn't find dsgdb9nsd.xyz or any .xyz files under {self.raw_dir}!"
             "Please check what files are actually included in the downloaded compressed package."
