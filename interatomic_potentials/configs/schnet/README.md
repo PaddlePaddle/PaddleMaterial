@@ -49,14 +49,16 @@ Config files:
 - `schnet_iso17.yaml`: ISO17 reference->test_other setting
 
 Training hyperparameters in these SchNet configs are aligned to
-SchNet-master/paper style (instead of current schnetpack defaults):
+`SchNet-master/scripts/train_energy_force.py` default style:
 
 - Optimizer: `Adam`
 - LR schedule: exponential decay (`lr=1e-3`, decay steps `100000`, gamma `0.96`)
+- Core model defaults: `interactions=6`, `basis=64`, `filters=64`, `cutoff=20.0`
 - Global-step stop: `max_iter=5000000`
 - Step-based validation/save: `eval_interval_steps=5000`, `save_interval_steps=50000`
-- QM9 train batch: `32`, val/test batch: `100`
-- QM9 split file: `split_qm9_110k_1k_seed42.npz` (`num_train=110000`, `num_val=1000`)
+- Batch defaults: train `32`, val/test `100`
+- QM9 split in PaddleMaterials case remains `split_qm9_110k_1k_seed42.npz`
+  (`num_train=110000`, `num_val=1000`) for compatibility with this repo setup.
 
 ## Results
 

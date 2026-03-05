@@ -3,13 +3,13 @@ Global:
   do_eval: True
   do_test: True
 
-  # SchNet MD17 benchmark keys
+  # SchNet-master script default style on MD17 keys
   label_names: ["energy", "force"]
   graph_converter:
     __class_name__: FindPointsInSpheres
     __init_params__:
-      # Paper-priority setting.
-      cutoff: 5.0
+      # train_energy_force.py default cutoff
+      cutoff: 20.0
       pbc: [0, 0, 0]
       num_cpus: 4
 
@@ -48,18 +48,19 @@ Trainer:
 Model:
   __class_name__: SchNet
   __init_params__:
-    # Paper-priority setting.
-    n_atom_basis: 128
+    # train_energy_force.py defaults: basis=64, filters=64, interactions=6, cutoff=20.0
+    n_atom_basis: 64
     n_interactions: 6
-    n_filters: 128
-    cutoff: 5.0
+    n_filters: 64
+    cutoff: 20.0
     n_rbf: 20
     max_z: 100
     property_name: "energy"
     force_name: "force"
     enable_force_loss: True
-    energy_weight: 0.01
-    force_weight: 0.99
+    # Script's eweight default is 1.0; keep energy/force loss in equal scale.
+    energy_weight: 1.0
+    force_weight: 1.0
     readout: "sum"
     # Train-split mean of md17_ethanol under split_ethanol_950_50_seed42.npz.
     data_mean: -97195.96034930416
