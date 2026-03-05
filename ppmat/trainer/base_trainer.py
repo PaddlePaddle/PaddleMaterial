@@ -117,6 +117,25 @@ class BaseTrainer:
         # This mirrors the historical `max_iter` semantics but is kept
         # optional to avoid affecting existing users.
         self.max_train_steps = config.get("max_iter", None)
+        # Optional step-based eval/save triggers. When set, these are used in
+        # addition to max_iter semantics to mimic historical step-driven loops.
+        self.eval_interval_steps = config.get("eval_interval_steps", None)
+        self.save_interval_steps = config.get("save_interval_steps", None)
+
+        if self.eval_interval_steps is not None and self.eval_interval_steps <= 0:
+            raise ValueError(
+                f"eval_interval_steps should be positive, got {self.eval_interval_steps}"
+            )
+        if self.save_interval_steps is not None and self.save_interval_steps <= 0:
+            raise ValueError(
+                f"save_interval_steps should be positive, got {self.save_interval_steps}"
+            )
+
+        # Cached step-eval results for epoch-end scheduler hooks when step-based
+        # eval is enabled.
+        self._did_step_eval_in_epoch = False
+        self._latest_step_eval_loss_info = None
+        self._latest_step_eval_metric_info = None
 
         self.use_visualdl = config.get("use_visualdl", False)
         self.use_wandb = config.get("use_wandb", False)
@@ -340,6 +359,9 @@ class BaseTrainer:
         # update training state
         self.state.max_steps_in_eval_epoch = len(dataloader)
         self.state.step_in_eval_epoch = 0
+        if self.state.max_steps_in_eval_epoch == 0:
+            logger.warning("Evaluation dataloader is empty, skip eval_epoch.")
+            return time_info, loss_info, metric_info
 
         num_eval_samples = len(dataloader.dataset)
 
@@ -491,13 +513,61 @@ class BaseTrainer:
 
         return batch_size
 
-    def train_epoch(self, dataloader: paddle.io.DataLoader):
+    def _run_eval_and_log(
+        self, dataloader: paddle.io.DataLoader, trigger: Literal["epoch", "step"]
+    ):
+        eval_time_info, eval_loss_info, eval_metric_info = self.eval_epoch(dataloader)
+
+        # keep existing behavior: merge additional stream metrics at trainer level
+        _extra_stream = self._compute_streaming_metrics(stage="eval")
+        for k, v in _extra_stream.items():
+            if k not in eval_metric_info:
+                eval_metric_info[k] = AverageMeter(k)
+            eval_metric_info[k].update(float(v), 1)
+
+        logs: OrderedDict[str, float] = {}
+        for name, average_meter in eval_time_info.items():
+            logs[name] = average_meter.avg
+        for name, average_meter in eval_loss_info.items():
+            logs[name + "(loss)"] = average_meter.avg
+        for name, average_meter in eval_metric_info.items():
+            logs[name + "(metric)"] = average_meter.avg
+
+        display_logs = self._filter_out_dict(logs, stage="eval")
+
+        msg = f"Eval: Epoch [{self.state.epoch}/{self.config['max_epochs']}]"
+        if trigger == "step":
+            msg += f" | GlobalStep [{self.state.global_step}]"
+        if logs is not None:
+            for key, val in display_logs.items():
+                msg += f" | {key}: {val:.6f}"
+        logger.info(msg)
+
+        logger.scalar(
+            tag=f"eval({trigger})",
+            metric_dict=logs,
+            step=self.state.global_step if trigger == "step" else self.state.epoch,
+            visualdl_writer=self.visualdl_writer,
+            tensorboard_writer=self.tensorboard_writer,
+        )
+        return eval_time_info, eval_loss_info, eval_metric_info
+
+    def train_epoch(
+        self,
+        dataloader: paddle.io.DataLoader,
+        val_dataloader: Optional[paddle.io.DataLoader] = None,
+    ):
         """Train program for one epoch.
         Args:
             dataloader (paddle.io.DataLoader): The dataloader used for training.
+            val_dataloader (Optional[paddle.io.DataLoader]): Validation dataloader
+                used by step-based evaluation hooks.
         """
         # set model to train mode
         self.model.train()
+        self._did_step_eval_in_epoch = False
+        self._latest_step_eval_loss_info = None
+        self._latest_step_eval_metric_info = None
         # initialize train loss, metric, cost info
         loss_info = {}
         metric_info = {}
@@ -649,6 +719,49 @@ class BaseTrainer:
             if self.lr_scheduler is not None and not self.lr_scheduler.by_epoch:
                 self.lr_scheduler.step()
 
+            # Optional step-based evaluation (SchNet-master style: valint).
+            if (
+                self.eval_interval_steps is not None
+                and val_dataloader is not None
+                and self.state.global_step % self.eval_interval_steps == 0
+            ):
+                _, step_eval_loss_info, step_eval_metric_info = self._run_eval_and_log(
+                    val_dataloader, trigger="step"
+                )
+                self._did_step_eval_in_epoch = True
+                self._latest_step_eval_loss_info = step_eval_loss_info
+                self._latest_step_eval_metric_info = step_eval_metric_info
+
+                # Save best as soon as step-eval is available.
+                save_best_flag = self._determine_best_metric(
+                    loss_info, metric_info, step_eval_loss_info, step_eval_metric_info
+                )
+                if save_best_flag:
+                    save_load.save_checkpoint(
+                        self.model,
+                        self.optimizer,
+                        self.state.to_dict(),
+                        self.scaler,
+                        output_dir=self.output_dir,
+                        prefix="best",
+                    )
+                # eval_epoch() switches model to eval mode.
+                self.model.train()
+
+            # Optional step-based checkpoint save (SchNet-master style: saveint).
+            if (
+                self.save_interval_steps is not None
+                and self.state.global_step % self.save_interval_steps == 0
+            ):
+                save_load.save_checkpoint(
+                    self.model,
+                    self.optimizer,
+                    self.state.to_dict(),
+                    self.scaler,
+                    output_dir=self.output_dir,
+                    prefix=f"step_{self.state.global_step}",
+                )
+
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
         return time_info, loss_info, metric_info
@@ -722,7 +835,7 @@ class BaseTrainer:
             self.state.epoch += 1
             # train one epoch
             train_time_info, train_loss_info, train_metric_info = self.train_epoch(
-                train_dataloader
+                train_dataloader, val_dataloader=val_dataloader
             )
 
             # stream metric lightweight hook
@@ -759,20 +872,23 @@ class BaseTrainer:
                 tensorboard_writer=self.tensorboard_writer,
             )
 
-            # save checkpoint when epoch is divisible by save_freq
-            if (
-                self.state.epoch % self.config["save_freq"] == 0
-                or self.state.epoch == self.config["max_epochs"]
-                or self.state.epoch == 1
-            ):
-                save_load.save_checkpoint(
-                    self.model,
-                    self.optimizer,
-                    self.state.to_dict(),
-                    self.scaler,
-                    output_dir=self.output_dir,
-                    prefix=f"epoch_{self.state.epoch}",
-                )
+            # Epoch-based checkpoint save is default behavior.
+            # If step-based save interval is configured, skip epoch checkpoints
+            # to mirror historical step-driven saving behavior.
+            if self.save_interval_steps is None:
+                if (
+                    self.state.epoch % self.config["save_freq"] == 0
+                    or self.state.epoch == self.config["max_epochs"]
+                    or self.state.epoch == 1
+                ):
+                    save_load.save_checkpoint(
+                        self.model,
+                        self.optimizer,
+                        self.state.to_dict(),
+                        self.scaler,
+                        output_dir=self.output_dir,
+                        prefix=f"epoch_{self.state.epoch}",
+                    )
 
             # Always save latest when training begins
             save_load.save_checkpoint(
@@ -785,65 +901,44 @@ class BaseTrainer:
                 print_log=(self.state.epoch == 1),
             )
 
-            # evaluate model when epoch is divisible by eval_freq
-            if (
-                self.state.epoch % self.config["eval_freq"] == 0
-                or self.state.epoch == self.config["max_epochs"]
-                or self.state.epoch == 1
-            ) and val_dataloader is not None:
-
-                eval_time_info, eval_loss_info, eval_metric_info = self.eval_epoch(
-                    val_dataloader
-                )
-
-                # stream metric lightweight hook
-                _extra_stream = self._compute_streaming_metrics(stage="eval")
-                for k, v in _extra_stream.items():
-                    if k not in eval_metric_info:
-                        eval_metric_info[k] = AverageMeter(k)
-                    eval_metric_info[k].update(float(v), 1)
-
-                # log evaluation info
-                logs: OrderedDict[str, float] = {}
-                for name, average_meter in eval_time_info.items():
-                    logs[name] = average_meter.avg
-                for name, average_meter in eval_loss_info.items():
-                    logs[name + "(loss)"] = average_meter.avg
-                for name, average_meter in eval_metric_info.items():
-                    logs[name + "(metric)"] = average_meter.avg
-
-                display_logs = self._filter_out_dict(logs, stage="eval")
-
-                msg = f"Eval: Epoch [{self.state.epoch}/{self.config['max_epochs']}]"
-                if logs is not None:
-                    for key, val in display_logs.items():
-                        msg += f" | {key}: {val:.6f}"
-                logger.info(msg)
-                # Temporary disable wandb_writer, since it is not support step less the
-                # current step(self.state.global_step)
-                logger.scalar(
-                    tag="eval(epoch)",
-                    metric_dict=logs,
-                    step=self.state.epoch,
-                    visualdl_writer=self.visualdl_writer,
-                    # wandb_writer=self.wandb_writer,
-                    tensorboard_writer=self.tensorboard_writer,
-                )
+            # Epoch-based eval is default behavior. If step-based eval interval is
+            # configured, use the latest step-eval result from this epoch.
+            if self.eval_interval_steps is None:
+                if (
+                    self.state.epoch % self.config["eval_freq"] == 0
+                    or self.state.epoch == self.config["max_epochs"]
+                    or self.state.epoch == 1
+                ) and val_dataloader is not None:
+                    _, eval_loss_info, eval_metric_info = self._run_eval_and_log(
+                        val_dataloader, trigger="epoch"
+                    )
+                else:
+                    eval_loss_info, eval_metric_info = None, None
             else:
-                eval_loss_info, eval_metric_info = None, None
-            # save best model when best_metric is better than previous best_metric
-            save_best_flag = self._determine_best_metric(
-                train_loss_info, train_metric_info, eval_loss_info, eval_metric_info
+                eval_loss_info = self._latest_step_eval_loss_info
+                eval_metric_info = self._latest_step_eval_metric_info
+
+            # Save best model when best_metric is improved.
+            # In step-based eval mode, eval-indicator best checkpoint has already been
+            # handled at step granularity.
+            best_metric_indicator = self.config.get("best_metric_indicator", None)
+            skip_epoch_best_check = (
+                self.eval_interval_steps is not None
+                and best_metric_indicator in ("eval_loss", "eval_metric")
             )
-            if save_best_flag:
-                save_load.save_checkpoint(
-                    self.model,
-                    self.optimizer,
-                    self.state.to_dict(),
-                    self.scaler,
-                    output_dir=self.output_dir,
-                    prefix="best",
+            if not skip_epoch_best_check:
+                save_best_flag = self._determine_best_metric(
+                    train_loss_info, train_metric_info, eval_loss_info, eval_metric_info
                 )
+                if save_best_flag:
+                    save_load.save_checkpoint(
+                        self.model,
+                        self.optimizer,
+                        self.state.to_dict(),
+                        self.scaler,
+                        output_dir=self.output_dir,
+                        prefix="best",
+                    )
             # update learning rate by epoch
             if self.lr_scheduler is not None and self.lr_scheduler.by_epoch:
                 if isinstance(self.lr_scheduler, ReduceOnPlateau):
@@ -894,17 +989,41 @@ class BaseTrainer:
 
         greater_is_better = self.config["greater_is_better"]
         if best_metric_indicator == "train_loss":
+            if name_for_best_metric not in train_loss_info:
+                logger.warning(
+                    "Metric key '%s' not found in train_loss info, skip saving best model.",
+                    name_for_best_metric,
+                )
+                return False
             self.state.cur_metric = train_loss_info[name_for_best_metric].avg
         elif best_metric_indicator == "train_metric":
+            if name_for_best_metric not in train_metric_info:
+                logger.warning(
+                    "Metric key '%s' not found in train_metric info, skip saving best model.",
+                    name_for_best_metric,
+                )
+                return False
             self.state.cur_metric = train_metric_info[name_for_best_metric].avg
         elif best_metric_indicator == "eval_loss":
             if eval_loss_info is not None:
+                if name_for_best_metric not in eval_loss_info:
+                    logger.warning(
+                        "Metric key '%s' not found in eval_loss info, skip saving best model.",
+                        name_for_best_metric,
+                    )
+                    return False
                 self.state.cur_metric = eval_loss_info[name_for_best_metric].avg
             else:
                 logger.warning("No eval_loss info found, skip saving best model.")
                 return False
         elif best_metric_indicator == "eval_metric":
             if eval_metric_info is not None:
+                if name_for_best_metric not in eval_metric_info:
+                    logger.warning(
+                        "Metric key '%s' not found in eval_metric info, skip saving best model.",
+                        name_for_best_metric,
+                    )
+                    return False
                 self.state.cur_metric = eval_metric_info[name_for_best_metric].avg
             else:
                 logger.warning("No eval_metric info found, skip saving best model.")
@@ -917,16 +1036,19 @@ class BaseTrainer:
         if self.state.best_metric is None:
             self.state.best_metric = self.state.cur_metric
             self.state.best_epoch = self.state.epoch
+            self.state.best_step = self.state.global_step
             return True
         elif greater_is_better:
             if self.state.cur_metric > self.state.best_metric:
                 self.state.best_metric = self.state.cur_metric
                 self.state.best_epoch = self.state.epoch
+                self.state.best_step = self.state.global_step
                 return True
         else:
             if self.state.cur_metric < self.state.best_metric:
                 self.state.best_metric = self.state.cur_metric
                 self.state.best_epoch = self.state.epoch
+                self.state.best_step = self.state.global_step
                 return True
         return False
 

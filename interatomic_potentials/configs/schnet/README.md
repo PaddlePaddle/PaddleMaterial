@@ -19,7 +19,7 @@ Dataset sources:
 - **QM9 (small molecules)**:
   - Original source: https://figshare.com/ndownloader/files/3195389
   - PaddleMaterials packaged mirror (used by SchNet config):  
-    `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz`
+    `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz`
   - PaddleMaterials raw mirror (fallback / non-packaged path):  
     `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2`
 - **MD17 / rMD17 (small molecules, energy + force)**:
@@ -47,6 +47,16 @@ Config files:
 - `schnet_qm9_lumo.yaml`: paper-aligned QM9 `U0` case (filename kept for compatibility)
 - `schnet_md17_ethanol.yaml`: MD17 ethanol energy-force joint training
 - `schnet_iso17.yaml`: ISO17 reference->test_other setting
+
+Training hyperparameters in these SchNet configs are aligned to
+SchNet-master/paper style (instead of current schnetpack defaults):
+
+- Optimizer: `Adam`
+- LR schedule: exponential decay (`lr=1e-3`, decay steps `100000`, gamma `0.96`)
+- Global-step stop: `max_iter=5000000`
+- Step-based validation/save: `eval_interval_steps=5000`, `save_interval_steps=50000`
+- QM9 train batch: `32`, val/test batch: `100`
+- QM9 split file: `split_qm9_110k_1k_seed42.npz` (`num_train=110000`, `num_val=1000`)
 
 ## Results
 
@@ -123,7 +133,7 @@ python test/prepare_schnet_paper_datasets.py --data_root ./data --tasks all
 Per PaddleMaterials delivery requirement, fill cloud links here after PR/WeChat handoff:
 
 - Dataset package links:
-  - QM9: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz`
+  - QM9: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz`
   - MD17: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz`
   - ISO17: `https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz`
 - Pretrained model link (Baidu): `to_be_filled`

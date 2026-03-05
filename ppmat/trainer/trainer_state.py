@@ -52,6 +52,8 @@ class TrainerState:
         best_metric (Optional[float]): The best metric value. Defaults to None.
         best_epoch (Optional[int]): The epoch where the best metric was reached.
             Defaults to None.
+        best_step (Optional[int]): The global step where the best metric was reached.
+            Defaults to None.
     """
 
     # training state, updated during training
@@ -66,6 +68,7 @@ class TrainerState:
     cur_metric: Optional[float] = None
     best_metric: Optional[float] = None
     best_epoch: Optional[int] = None
+    best_step: Optional[int] = None
 
     def to_dict(self):
         return dataclasses.asdict(self)

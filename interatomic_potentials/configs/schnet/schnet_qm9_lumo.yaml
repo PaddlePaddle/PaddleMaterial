@@ -15,8 +15,12 @@ Global:
 
 
 Trainer:
-  # Not explicitly fixed in SchNet paper; follow schnetpack default trainer.
+  # Paper + SchNet-master aligned training style.
   max_epochs: 100000
+  # SchNet-master style stop/eval/save by global step.
+  max_iter: 5000000
+  eval_interval_steps: 5000
+  save_interval_steps: 50000
   seed: 42
   output_dir: ./output/schnet_qm9_u0_paper
   save_freq: 100
@@ -52,7 +56,7 @@ Model:
     max_z: 100
     property_name: ${Global.label_names}
     readout: "sum"
-    # Mean of (U0[eV] - atomref_sum[eV]) on train split split_qm9_110k_10k_seed42.npz
+    # Mean of (U0[eV] - atomref_sum[eV]); keep synchronized with active split.
     data_mean: -75.92108302166483
     data_std: 1.0
     atomref_path: "./data/qm9/atomref.npz"
@@ -61,24 +65,15 @@ Model:
 
 
 Optimizer:
-  __class_name__: AdamW
+  __class_name__: Adam
   __init_params__:
-    weight_decay: 0.0
     lr:
-      __class_name__: ReduceOnPlateau
+      __class_name__: ExponentialDecay
       __init_params__:
-        learning_rate: 5e-4
-        indicator: "eval_loss"
-        indicator_name: "loss"
-        mode: "min"
-        factor: 0.5
-        patience: 75
-        threshold: 0.0
-        threshold_mode: "rel"
-        cooldown: 10
-        min_lr: 0.0
-        epsilon: 1e-8
-        by_epoch: True
+        learning_rate: 1e-3
+        gamma: 0.96
+        decay_steps: 100000
+        by_epoch: False
 
 
 Metric:
@@ -93,7 +88,7 @@ Dataset:
       __class_name__: QM9Dataset
       __init_params__:
         # SchNet case uses packaged dataset mirror first.
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
@@ -102,22 +97,22 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "train"
-        split_file: "split_qm9_110k_10k_seed42.npz"
+        split_file: "split_qm9_110k_1k_seed42.npz"
         num_train: 110000
-        num_val: 10000
+        num_val: 1000
         seed: 42
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: True
         drop_last: True
-        batch_size: 100
+        batch_size: 32
 
   val:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
@@ -126,9 +121,9 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "val"
-        split_file: "split_qm9_110k_10k_seed42.npz"
+        split_file: "split_qm9_110k_1k_seed42.npz"
         num_train: 110000
-        num_val: 10000
+        num_val: 1000
         seed: 42
     sampler:
       __class_name__: BatchSampler
@@ -141,7 +136,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9.tar.gz"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz"
         path: "./data/qm9"
         property_names: ${Global.label_names}
         build_graph_cfg: ${Global.graph_converter}
@@ -150,9 +145,9 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "test"
-        split_file: "split_qm9_110k_10k_seed42.npz"
+        split_file: "split_qm9_110k_1k_seed42.npz"
         num_train: 110000
-        num_val: 10000
+        num_val: 1000
         seed: 42
     sampler:
       __class_name__: BatchSampler

@@ -14,8 +14,12 @@ Global:
 
 
 Trainer:
-  # Not explicitly fixed in SchNet paper; follow schnetpack default trainer.
+  # Paper + SchNet-master aligned optimizer style.
   max_epochs: 100000
+  # SchNet-master style stop/eval/save by global step.
+  max_iter: 5000000
+  eval_interval_steps: 5000
+  save_interval_steps: 50000
   seed: 42
   output_dir: ./output/schnet_iso17_paper
   save_freq: 100
@@ -57,24 +61,15 @@ Model:
 
 
 Optimizer:
-  __class_name__: AdamW
+  __class_name__: Adam
   __init_params__:
-    weight_decay: 0.0
     lr:
-      __class_name__: ReduceOnPlateau
+      __class_name__: ExponentialDecay
       __init_params__:
         learning_rate: 1e-3
-        indicator: "eval_loss"
-        indicator_name: "loss"
-        mode: "min"
-        factor: 0.5
-        patience: 75
-        threshold: 0.0
-        threshold_mode: "rel"
-        cooldown: 10
-        min_lr: 0.0
-        epsilon: 1e-8
-        by_epoch: True
+        gamma: 0.96
+        decay_steps: 100000
+        by_epoch: False
 
 
 Metric:
@@ -120,7 +115,7 @@ Dataset:
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 32
+        batch_size: 100
 
   test:
     dataset:
@@ -138,7 +133,7 @@ Dataset:
       __init_params__:
         shuffle: False
         drop_last: False
-        batch_size: 32
+        batch_size: 100
 
 
 Predict:

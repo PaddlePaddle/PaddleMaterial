@@ -140,6 +140,20 @@ class QM9Dataset(Dataset):
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2"
     name = "qm9"
     md5 = "AD1EBD51EE7F5B3A6E32E974E5D54012"
+    URL_FALLBACKS = [
+        # PaddleMaterials packaged mirror (preferred if available).
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz",
+        # PaddleMaterials raw mirror.
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2",
+        # Original mirrors.
+        "https://ndownloader.figshare.com/files/3195389",
+        "https://springernature.figshare.com/ndownloader/files/3195389",
+    ]
+    RAW_URLS = {
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2",
+        "https://ndownloader.figshare.com/files/3195389",
+        "https://springernature.figshare.com/ndownloader/files/3195389",
+    }
 
     # Official QM9 second-line property order (including tag/index)
     PROP_ORDER = [
@@ -179,7 +193,7 @@ class QM9Dataset(Dataset):
     def __init__(
         self,
         path: str,
-        url: Optional[str] = None, 
+        url: Optional[Union[str, List[str]]] = None,
         property_names: Union[str, List[str]] = None,
         *,
         url_indices: Optional[List[int]] = None,
@@ -208,6 +222,7 @@ class QM9Dataset(Dataset):
 
         # Handle URLs configuration
         self.url = url if url is not None else self.url
+        self.download_urls = self._resolve_download_urls(self.url)
 
         #Path Configuration
         os.makedirs(path, exist_ok=True)
@@ -331,6 +346,56 @@ class QM9Dataset(Dataset):
         logger.info(
             f"Final QM9Dataset samples ({self.subset}): {self.num_samples}"
         )
+
+    @classmethod
+    def _resolve_download_urls(cls, url_cfg: Optional[Union[str, List[str]]]) -> List[str]:
+        # Keep legacy behavior for default/raw QM9 links to avoid affecting other cases.
+        if url_cfg is None:
+            return [cls.url]
+        if isinstance(url_cfg, str):
+            if len(url_cfg) == 0:
+                return [cls.url]
+            if url_cfg in cls.RAW_URLS:
+                return [url_cfg]
+            urls: List[str] = [url_cfg]
+            urls.extend(cls.URL_FALLBACKS)
+        elif isinstance(url_cfg, (list, tuple)):
+            urls = [one_url for one_url in url_cfg if isinstance(one_url, str) and len(one_url) > 0]
+            if len(urls) == 0:
+                return [cls.url]
+        else:
+            return [cls.url]
+
+        # Keep order and drop duplicates.
+        seen = set()
+        dedup = []
+        for one_url in urls:
+            if one_url in seen:
+                continue
+            seen.add(one_url)
+            dedup.append(one_url)
+        return dedup
+
+    def _download_qm9_archive(self, tar_path: str) -> None:
+        import urllib.request
+
+        last_error = None
+        for one_url in self.download_urls:
+            logger.info(f"Downloading QM9 from {one_url}...")
+            try:
+                if osp.exists(tar_path):
+                    os.remove(tar_path)
+                urllib.request.urlretrieve(one_url, tar_path)
+                if osp.exists(tar_path) and osp.getsize(tar_path) > 0:
+                    return
+                raise RuntimeError(f"Downloaded empty file from {one_url}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Failed to download QM9 from {one_url}: {e}")
+
+        raise RuntimeError(
+            f"Download failed for all QM9 urls: {self.download_urls}"
+        ) from last_error
 
     
     def _prepare_structures_and_properties(self, raw_file_path: str):
@@ -541,23 +606,23 @@ class QM9Dataset(Dataset):
         # 2. prepare the path to download
         tar_filename = "qm9_raw.tar.bz2"
         tar_path = osp.join(self.raw_dir, tar_filename)
-        
+
         # 3. downloading logic
         if not osp.exists(tar_path):
             if dist.get_rank() == 0:
-                logger.info(f"Downloading QM9 from {self.url}...")
-                import urllib.request
-                try:
-                    urllib.request.urlretrieve(self.url, tar_path)
-                except Exception as e:
-                    raise RuntimeError(f"Download failed: {e}")
+                self._download_qm9_archive(tar_path)
             if dist.is_initialized():
                 dist.barrier()
-        
+
         # 4. extacting logic
         if dist.get_rank() == 0:
-            logger.info("Extracting QM9...")
             import tarfile
+            if not tarfile.is_tarfile(tar_path):
+                logger.warning(
+                    f"Cached QM9 archive is invalid: {tar_path}. Re-downloading..."
+                )
+                self._download_qm9_archive(tar_path)
+            logger.info("Extracting QM9...")
             try:
                 # Support both .tar.bz2 and .tar.gz mirrors.
                 with tarfile.open(tar_path, "r:*") as tar:

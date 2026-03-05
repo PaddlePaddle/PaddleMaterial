@@ -15,9 +15,12 @@
 import argparse
 import os
 import os.path as osp
+import shutil
 from collections import defaultdict
+from typing import Dict
 from typing import Optional
 
+import numpy as np
 import paddle
 import pandas as pd
 from omegaconf import OmegaConf
@@ -28,8 +31,145 @@ from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
+from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+
+
+def _collect_qm9_urls(config: Dict) -> list[str]:
+    urls = []
+    dataset_cfg = config.get("Dataset", {})
+    for split in ("train", "val", "test"):
+        split_cfg = dataset_cfg.get(split, {})
+        ds_cfg = split_cfg.get("dataset", {})
+        if ds_cfg.get("__class_name__") != "QM9Dataset":
+            continue
+        init_params = ds_cfg.get("__init_params__", {})
+        url = init_params.get("url", None)
+        if isinstance(url, str) and len(url) > 0:
+            urls.append(url)
+
+    seen = set()
+    dedup_urls = []
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        dedup_urls.append(url)
+    return dedup_urls
+
+
+def _find_atomref_file(path: str) -> Optional[str]:
+    if not path or not osp.exists(path):
+        return None
+
+    if osp.isfile(path):
+        return path if osp.basename(path) == "atomref.npz" else None
+
+    direct_candidates = [
+        osp.join(path, "atomref.npz"),
+        osp.join(path, "qm9", "atomref.npz"),
+    ]
+    for candidate in direct_candidates:
+        if osp.exists(candidate):
+            return candidate
+
+    for root, _, files in os.walk(path):
+        if "atomref.npz" in files:
+            return osp.join(root, "atomref.npz")
+    return None
+
+
+def _build_default_qm9_atomref() -> np.ndarray:
+    atomrefs = {
+        6: [0.0, 0.0, 0.0, 0.0, 0.0],
+        7: [-13.61312172, -1029.86312267, -1485.30251237, -2042.61123593, -2713.48485589],
+        8: [-13.57459040, -1029.82456413, -1485.26398105, -2042.57270460, -2713.44632457],
+        9: [-13.54887564, -1029.79887659, -1485.23829350, -2042.54701705, -2713.42063702],
+        10: [-13.90303183, -1030.25891228, -1485.71166277, -2043.01812778, -2713.88796536],
+    }
+    atom_ref = np.zeros((100, 5), dtype=np.float32)
+    z_list = [1, 6, 7, 8, 9]
+    for col, key in enumerate([6, 7, 8, 9, 10]):
+        values = atomrefs[key]
+        for atomic_num, value in zip(z_list, values):
+            atom_ref[atomic_num, col] = value
+    return atom_ref
+
+
+def _ensure_schnet_atomref(config: Dict):
+    model_cfg = config.get("Model", {})
+    if model_cfg.get("__class_name__") != "SchNet":
+        return
+
+    model_params = model_cfg.get("__init_params__", {})
+    atomref_path = model_params.get("atomref_path", None)
+    if not atomref_path:
+        return
+    if osp.exists(atomref_path):
+        return
+
+    qm9_urls = _collect_qm9_urls(config)
+    atomref_url = model_params.get("atomref_url", None)
+    is_qm9_case = bool(qm9_urls) or ("qm9" in str(atomref_path).lower())
+    if isinstance(atomref_url, str) and len(atomref_url) > 0:
+        is_qm9_case = True
+    if not is_qm9_case:
+        return
+
+    atomref_dir = osp.dirname(atomref_path) or "."
+    os.makedirs(atomref_dir, exist_ok=True)
+
+    candidate_urls = []
+    if isinstance(atomref_url, str) and len(atomref_url) > 0:
+        candidate_urls.append(atomref_url)
+    candidate_urls.extend(qm9_urls)
+    candidate_urls.extend(
+        [
+            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz",
+        ]
+    )
+
+    seen = set()
+    urls = []
+    for url in candidate_urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+
+    for url in urls:
+        try:
+            if url.endswith(".npz"):
+                local_path = download.get_path_from_url(
+                    url,
+                    atomref_dir,
+                    md5sum=None,
+                    check_exist=True,
+                    decompress=False,
+                )
+            else:
+                local_path = download.get_datasets_path_from_url(url, md5sum=None)
+
+            source_atomref = _find_atomref_file(local_path)
+            if source_atomref is None:
+                continue
+
+            if osp.abspath(source_atomref) != osp.abspath(atomref_path):
+                shutil.copy2(source_atomref, atomref_path)
+            logger.info(
+                f"Auto prepared missing atomref file: {atomref_path} (source: {source_atomref})"
+            )
+            return
+        except Exception as e:
+            logger.warning(f"Failed to auto prepare atomref from {url}: {e}")
+
+    atomref_np = _build_default_qm9_atomref()
+    np.savez(atomref_path, atom_ref=atomref_np)
+    logger.warning(
+        f"atomref.npz not found in provided mirrors. "
+        f"Generated default QM9 atom references at {atomref_path}."
+    )
 
 
 class PotentialPredictor:
@@ -86,6 +226,8 @@ class PotentialPredictor:
 
             config = OmegaConf.load(config_path)
             config = OmegaConf.to_container(config, resolve=True)
+
+            _ensure_schnet_atomref(config)
 
             model_config = config.get("Model", None)
             assert model_config is not None, "Model config must be provided."
