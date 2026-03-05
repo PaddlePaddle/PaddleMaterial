@@ -31,6 +31,8 @@ from PIL import Image
 
 from ppmat.datasets.stem_image_dataset import STEMImageDataset
 from ppmat.models import build_model
+from ppmat.models import build_model_from_name
+from ppmat.utils import logger
 from ppmat.utils import save_load
 
 
@@ -164,8 +166,11 @@ class SFINCaseProcessor(BaseCaseProcessor):
         if args.target_subdir is not None:
             init_params["target_subdir"] = args.target_subdir
 
-        init_params["download"] = args.download
-        init_params["force_download"] = args.force_download
+        # Preserve config defaults unless CLI explicitly overrides.
+        if args.download is not None:
+            init_params["download"] = bool(args.download)
+        if args.force_download is not None:
+            init_params["force_download"] = bool(args.force_download)
         return STEMImageDataset(**init_params)
 
     def prepare_model_input(
@@ -266,18 +271,42 @@ class SpectrumPredictor:
     def __init__(
         self,
         case: str,
-        config_path: str,
-        checkpoint_path: str,
         device: str,
+        config_path: Optional[str] = None,
+        checkpoint_path: Optional[str] = None,
+        model_name: Optional[str] = None,
+        weights_name: Optional[str] = None,
     ):
         self.case = case.strip().lower()
         self.config_path = config_path
         self.checkpoint_path = checkpoint_path
+        self.model_name = model_name
+        self.weights_name = weights_name
         self.device = device
 
         paddle.set_device(device)
-        self.config = self._load_config(config_path)
-        self.model = self._build_model_and_load_checkpoint()
+
+        if self.model_name:
+            logger.info(
+                f"Loading predefined model by name: {self.model_name} "
+                f"(weights_name={self.weights_name})"
+            )
+            self.model, self.config = build_model_from_name(
+                self.model_name, self.weights_name
+            )
+            self.model.eval()
+        else:
+            if not self.config_path:
+                raise ValueError(
+                    "`config_path` is required when `model_name` is not provided."
+                )
+            if not self.checkpoint_path:
+                raise ValueError(
+                    "`checkpoint_path` is required when `model_name` is not provided."
+                )
+            self.config = self._load_config(self.config_path)
+            self.model = self._build_model_and_load_checkpoint()
+
         self.case_processor = self._build_case_processor(self.case)
         self.eval_with_no_grad = (
             self.config.get("Predict", {}).get("eval_with_no_grad", True)
@@ -304,7 +333,9 @@ class SpectrumPredictor:
         return processor_cls(self.config)
 
     @staticmethod
-    def _load_checkpoint(model, checkpoint_path: str) -> None:
+    def _load_checkpoint(model, checkpoint_path: Optional[str]) -> None:
+        if not checkpoint_path:
+            raise ValueError("`checkpoint_path` must not be empty.")
         checkpoint_loaded = False
         try:
             checkpoint = paddle.load(checkpoint_path)
@@ -372,16 +403,34 @@ def parse_args() -> argparse.Namespace:
         help="Prediction case name. Extend by registering a new case processor.",
     )
     parser.add_argument(
+        "--model_name",
+        type=str,
+        default=None,
+        help=(
+            "Optional predefined model name from MODEL_REGISTRY. "
+            "If provided, `config_path` and `checkpoint_path` are optional."
+        ),
+    )
+    parser.add_argument(
+        "--weights_name",
+        type=str,
+        default=None,
+        help=(
+            "Optional weight filename when `model_name` is used "
+            "(e.g., best.pdparams / latest.pdparams)."
+        ),
+    )
+    parser.add_argument(
         "--config_path",
         type=str,
         default="./spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml",
-        help="Path to model config yaml.",
+        help="Path to model config yaml (used when model_name is not provided).",
     )
     parser.add_argument(
         "--checkpoint_path",
         type=str,
-        required=True,
-        help="Path to checkpoint (*.pdparams).",
+        default=None,
+        help="Path or URL to checkpoint (*.pdparams) (used when model_name is not provided).",
     )
     parser.add_argument(
         "--data_path",
@@ -435,12 +484,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--download",
         action="store_true",
-        help="Auto-download dataset when data_path is missing.",
+        default=None,
+        help=(
+            "Enable auto-download when data_path is missing. "
+            "If omitted, keep dataset config default."
+        ),
     )
     parser.add_argument(
         "--force_download",
         action="store_true",
-        help="Force re-download dataset archive.",
+        default=None,
+        help=(
+            "Force re-download dataset archive. "
+            "If omitted, keep dataset config default."
+        ),
     )
     parser.add_argument(
         "--device",
@@ -458,20 +515,40 @@ def resolve_output_dir(args: argparse.Namespace, config: Dict[str, Any]) -> str:
     trainer_output_dir = config.get("Trainer", {}).get("output_dir")
     if trainer_output_dir:
         return str(Path(trainer_output_dir) / "predictions")
-    return str(Path("./output") / Path(args.config_path).stem / "predictions")
+    if args.config_path:
+        return str(Path("./output") / Path(args.config_path).stem / "predictions")
+    if args.model_name:
+        return str(Path("./output") / args.model_name / "predictions")
+    return str(Path("./output") / "spectrum_enhancement" / "predictions")
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    # Backward-compatible behavior:
+    # - Existing config+checkpoint workflow keeps working.
+    # - New model_name workflow is optional.
+    if args.model_name:
+        return
+    if not args.config_path or not args.checkpoint_path:
+        raise ValueError(
+            "Either provide `--model_name`, or provide both "
+            "`--config_path` and `--checkpoint_path`."
+        )
 
 
 def main():
     args = parse_args()
+    validate_args(args)
     predictor = SpectrumPredictor(
         case=args.case,
+        device=args.device,
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,
-        device=args.device,
+        model_name=args.model_name,
+        weights_name=args.weights_name,
     )
     args.output_dir = resolve_output_dir(args, predictor.config)
     saved_paths = predictor.run(args)
-    print(f"Saved {len(saved_paths)} predictions to {args.output_dir}")
+    logger.info(f"Saved {len(saved_paths)} predictions to {args.output_dir}")
 
 
 if __name__ == "__main__":

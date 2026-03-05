@@ -17,9 +17,11 @@ from __future__ import annotations
 import copy
 import importlib
 from pathlib import Path
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 from ppmat.utils import download as download_utils
 from ppmat.utils import logger
@@ -32,28 +34,83 @@ def _locate_class(class_name: str):
     return globals()[class_name]
 
 
+def _parse_factory_cfg(
+    cfg: Optional[Dict[str, Any] | str],
+    *,
+    default_class_name: str,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Parse factory config in a backward/forward-compatible way.
+
+    Supported patterns:
+    1) None
+       -> use default class with empty params
+    2) "ClassName" / "pkg.mod.ClassName"
+       -> use class name string with empty params
+    3) {"__class_name__": "...", "__init_params__": {...}}
+       -> current canonical style (same as many ppmat builders)
+    4) {"class_name": "...", "init_params": {...}}
+       -> compatibility alias
+    5) {"type": "...", "params": {...}}
+       -> compatibility alias
+    """
+    if cfg is None:
+        return default_class_name, {}
+
+    if isinstance(cfg, str):
+        return cfg, {}
+
+    if not isinstance(cfg, dict):
+        raise TypeError(
+            "Factory cfg must be None, str, or dict, "
+            f"but got type={type(cfg).__name__}."
+        )
+
+    cfg = copy.deepcopy(cfg)
+    class_name = (
+        cfg.pop("__class_name__", None)
+        or cfg.pop("class_name", None)
+        or cfg.pop("type", None)
+    )
+    if not class_name:
+        raise ValueError(
+            "Factory cfg must include class name key, e.g. "
+            "{'__class_name__': 'StrictIndexSampleBuilder', '__init_params__': {...}}."
+        )
+
+    init_params = (
+        cfg.pop("__init_params__", None)
+        if "__init_params__" in cfg
+        else cfg.pop("init_params", None)
+        if "init_params" in cfg
+        else cfg.pop("params", None)
+        if "params" in cfg
+        else {}
+    )
+    if init_params is None:
+        init_params = {}
+    if not isinstance(init_params, dict):
+        raise TypeError(
+            f"Factory init params must be dict, but got type={type(init_params).__name__}."
+        )
+
+    if cfg:
+        raise ValueError(
+            f"Unsupported keys in factory cfg for '{class_name}': {list(cfg.keys())}"
+        )
+    return class_name, init_params
+
+
 def _build_component(
-    cfg: Optional[Dict],
+    cfg: Optional[Dict[str, Any] | str],
     *,
     default_class_name: str,
     required_methods: List[str],
 ):
-    if cfg is None:
-        class_name = default_class_name
-        init_params = {}
-    else:
-        cfg = copy.deepcopy(cfg)
-        class_name = cfg.pop("__class_name__", None)
-        if not class_name:
-            raise ValueError(
-                "Factory cfg must include '__class_name__', e.g. "
-                "{'__class_name__': 'StrictIndexSampleBuilder', '__init_params__': {}}"
-            )
-        init_params = cfg.pop("__init_params__", {})
-        if cfg:
-            raise ValueError(
-                f"Unsupported keys in factory cfg for '{class_name}': {list(cfg.keys())}"
-            )
+    class_name, init_params = _parse_factory_cfg(
+        cfg,
+        default_class_name=default_class_name,
+    )
 
     cls = _locate_class(class_name)
     component = cls(**init_params)
@@ -202,7 +259,7 @@ class PairDirectoryDataRootResolver:
 
 
 def build_stem_sample_builder(
-    cfg: Optional[Dict],
+    cfg: Optional[Dict[str, Any] | str],
     *,
     strict_index_naming: bool,
 ):
@@ -220,7 +277,7 @@ def build_stem_sample_builder(
     return sample_builder
 
 
-def build_stem_downloader(cfg: Optional[Dict]):
+def build_stem_downloader(cfg: Optional[Dict[str, Any] | str]):
     downloader = _build_component(
         cfg,
         default_class_name="DefaultSTEMDatasetDownloader",
@@ -230,7 +287,7 @@ def build_stem_downloader(cfg: Optional[Dict]):
     return downloader
 
 
-def build_stem_data_root_resolver(cfg: Optional[Dict]):
+def build_stem_data_root_resolver(cfg: Optional[Dict[str, Any] | str]):
     resolver = _build_component(
         cfg,
         default_class_name="PairDirectoryDataRootResolver",
