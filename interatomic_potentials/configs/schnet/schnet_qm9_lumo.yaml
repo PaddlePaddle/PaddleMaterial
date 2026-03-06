@@ -97,9 +97,9 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "train"
-        split_file: "split_qm9_110k_1k_seed42.npz"
-        num_train: 110000
-        num_val: 1000
+        split_file: "split_qm9_50k_10k_seed42.npz"
+        num_train: 50000
+        num_val: 10000
         seed: 42
     sampler:
       __class_name__: BatchSampler
@@ -121,9 +121,9 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "val"
-        split_file: "split_qm9_110k_1k_seed42.npz"
-        num_train: 110000
-        num_val: 1000
+        split_file: "split_qm9_50k_10k_seed42.npz"
+        num_train: 50000
+        num_val: 10000
         seed: 42
     sampler:
       __class_name__: BatchSampler
@@ -145,9 +145,9 @@ Dataset:
         filter_unvalid: True
         enable_unit_conversion: True
         subset: "test"
-        split_file: "split_qm9_110k_1k_seed42.npz"
-        num_train: 110000
-        num_val: 1000
+        split_file: "split_qm9_50k_10k_seed42.npz"
+        num_train: 50000
+        num_val: 10000
         seed: 42
     sampler:
       __class_name__: BatchSampler
