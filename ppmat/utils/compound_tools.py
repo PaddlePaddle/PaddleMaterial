@@ -1,17 +1,3 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -159,7 +145,6 @@ $([OX2][#6])])[$([OX2H]),$([OX1-]),$([OX2][#6]),$([OX2]P)])]",
         "[F,Cl,Br,I]",
         "[F,Cl,Br,I].[F,Cl,Br,I].[F,Cl,Br,I]",
     ]
-
 
 def get_gasteiger_partial_charges(mol, n_iter=12):
     """
@@ -830,6 +815,25 @@ def predict_SMILES_info(smiles):
     AllChem.EmbedMolecule(mol)
     info_dict = mol_to_geognn_graph_data_MMFF3d(mol)
     return info_dict
+
+# ----------------Commonly-used Parameters----------------
+atom_id_names = [
+    "atomic_num", "chiral_tag", "degree", "explicit_valence",
+    "formal_charge", "hybridization", "implicit_valence",
+    "is_aromatic", "total_numHs",
+]
+bond_id_names = ["bond_dir", "bond_type", "is_in_ring"]
+full_atom_feature_dims = get_atom_feature_dims(atom_id_names)
+full_bond_feature_dims = get_bond_feature_dims(bond_id_names)
+bond_angle_float_names = ['bond_angle', 'TPSA', 'RASA', 'RPSA', 'MDEC', 'MATS']
+column_specify={
+    'ADH':[1,5,0,0],'ODH':[1,5,0,1],'IC':[0,5,1,2],'IA':[0,5,1,3],'OJH':[1,5,0,4],
+    'ASH':[1,5,0,5],'IC3':[0,3,1,6],'IE':[0,5,1,7],'ID':[0,5,1,8],'OD3':[1,3,0,9],
+    'IB':[0,5,1,10],'AD':[1,10,0,11],'AD3':[1,3,0,12],'IF':[0,5,1,13],'OD':[1,10,0,14],
+    'AS':[1,10,0,15],'OJ3':[1,3,0,16],'IG':[0,5,1,17],'AZ':[1,10,0,18],'IAH':[0,5,1,19],
+    'OJ':[1,10,0,20],'ICH':[0,5,1,21],'OZ3':[1,3,0,22],'IF3':[0,3,1,23],'IAU':[0,1.6,1,24]
+}
+bond_float_names = []
 
 if __name__ == "__main__":
     # smiles = "OCc1ccccc1CN"

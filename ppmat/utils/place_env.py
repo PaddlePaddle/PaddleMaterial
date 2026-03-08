@@ -1,66 +1,13 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import paddle
 import functools
-from contextlib import contextmanager
-
-@contextmanager
-def place_env(place):
-    """
-    上下文管理器，用于临时设置PaddlePaddle的运行设备
-    
-    Args:
-        place: paddle.CPUPlace() 或 paddle.CUDAPlace(0) 等设备对象
-    
-    用法:
-        with place_env(paddle.CPUPlace()):
-            # 这里的代码在CPU上运行
-            x = paddle.rand([2, 3])
-            print(x)
-    
-    @place_env(paddle.CUDAPlace(0))
-    def train():
-        # 这个函数在GPU上运行
-        pass
-    """
-    # 保存当前的设备设置
-    current_device = paddle.get_device()
-    
-    # 根据place类型设置设备
-    if isinstance(place, paddle.CPUPlace):
-        paddle.set_device('cpu')
-    elif isinstance(place, paddle.CUDAPlace):
-        # 获取GPU设备ID
-        device_id = place.get_device_id()
-        paddle.set_device(f'gpu:{device_id}')
-    else:
-        raise ValueError(f"不支持的place类型: {type(place)}")
-    
-    try:
-        yield
-    finally:
-        # 恢复原来的设备设置
-        paddle.set_device(current_device)
-
+from paddle._typing.device_like import PlaceLike
 
 class PlaceEnv:
     """
     类版本的上下文管理器，也支持装饰器功能
     """
     
-    def __init__(self, place):
+    def __init__(self, place: PlaceLike):
         """
         初始化PlaceEnv
         
@@ -74,16 +21,7 @@ class PlaceEnv:
         """进入上下文时调用"""
         # 保存当前的设备设置
         self.original_device = paddle.get_device()
-        
-        # 根据place类型设置设备
-        if isinstance(self.place, paddle.CPUPlace):
-            paddle.set_device('cpu')
-        elif isinstance(self.place, paddle.CUDAPlace):
-            device_id = self.place.get_device_id()
-            paddle.set_device(f'gpu:{device_id}')
-        else:
-            raise ValueError(f"不支持的place类型: {type(self.place)}")
-        
+        paddle.set_device(self.place)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -110,28 +48,12 @@ class PlaceEnv:
         return wrapper
 
 
-# 为了兼容性，也可以保留函数版本的上下文管理器
-@contextmanager
-def with_place_env(place):
-    """
-    with_place_env的别名，与place_env功能相同
-    """
-    with place_env(place):
-        yield
-
 
 # 使用示例
 if __name__ == "__main__":
     # 测试with语句
     print("=== 测试with语句 ===")
     print(f"当前设备: {paddle.get_device()}")
-    
-    with place_env(paddle.CPUPlace()):
-        print(f"with块内设备: {paddle.get_device()}")
-        x = paddle.rand([2, 3])
-        print(f"创建的张量: {x}")
-    
-    print(f"with块外设备: {paddle.get_device()}")
     
     print("\n=== 测试类版本with语句 ===")
     with PlaceEnv(paddle.CPUPlace()):
