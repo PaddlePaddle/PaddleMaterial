@@ -48,8 +48,8 @@ from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
 from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
-from ppmat.datasets.IRDataset import IRDataset, IRDataLoader
-from ppmat.datasets.ECDFormerDataset import ECDFormerDataset, ECDFormerDataset_DataLoader
+from ppmat.datasets.ir_dataset import IRDataset
+from ppmat.datasets.ecd_dataset import ECDDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -72,9 +72,7 @@ __all__ = [
     "SFINDataset",
     "OMol25Dataset",
     "IRDataset",
-    "ECDFormerDataset",
-    "IRDataLoader",
-    "ECDFormerDataset_DataLoader",
+    "ECDDataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
@@ -285,7 +283,7 @@ def set_build_sample(sampler_cfg, world_size, dataset):
             )
         batch_sampler = getattr(io, batch_sampler_cls)(
             dataset,
-            batch_size=init_params["batch_size"],
+            batch_size=2, # use default batch_size=2 to avoid error when batch_sampler is not specified
             shuffle=False,
             drop_last=False,
         )

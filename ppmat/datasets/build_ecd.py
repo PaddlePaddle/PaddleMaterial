@@ -1,55 +1,116 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-ECDFormer数据集加载模块
-"""
+from __future__ import annotations
 
 import os
-import numpy as np
-import pandas as pd
+import copy
+import importlib
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, List
 import paddle
-from paddle.io import Dataset
+import pandas as pd
+import numpy as np
+
 from paddle_geometric.data import Data
 
-from .compound_tools import get_atom_feature_dims, get_bond_feature_dims
-from .util_func import normalize_func
-from .eval_func import get_sequence_peak
-from .colored_tqdm import ColoredTqdm as tqdm
-from .place_env import PlaceEnv
-from .dataloader import ECDFormerDataset_DataLoader
+from ppmat.utils import download as download_utils
+from ppmat.utils import logger
+from ppmat.utils import ColoredTqdm as tqdm
+from ppmat.utils.compound_tools import (
+    atom_id_names, bond_id_names, bond_angle_float_names
+)
+
+def _locate_class(class_name: str):
+    if "." in class_name:
+        mod, cls = class_name.rsplit(".", 1)
+        return getattr(importlib.import_module(mod), cls)
+    return globals()[class_name]
 
 
-# ----------------Commonly-used Parameters----------------
-atom_id_names = [
-    "atomic_num", "chiral_tag", "degree", "explicit_valence",
-    "formal_charge", "hybridization", "implicit_valence",
-    "is_aromatic", "total_numHs",
-]
-bond_id_names = ["bond_dir", "bond_type", "is_in_ring"]
-full_atom_feature_dims = get_atom_feature_dims(atom_id_names)
-full_bond_feature_dims = get_bond_feature_dims(bond_id_names)
-bond_angle_float_names = ['bond_angle', 'TPSA', 'RASA', 'RPSA', 'MDEC', 'MATS']
-column_specify={
-    'ADH':[1,5,0,0],'ODH':[1,5,0,1],'IC':[0,5,1,2],'IA':[0,5,1,3],'OJH':[1,5,0,4],
-    'ASH':[1,5,0,5],'IC3':[0,3,1,6],'IE':[0,5,1,7],'ID':[0,5,1,8],'OD3':[1,3,0,9],
-    'IB':[0,5,1,10],'AD':[1,10,0,11],'AD3':[1,3,0,12],'IF':[0,5,1,13],'OD':[1,10,0,14],
-    'AS':[1,10,0,15],'OJ3':[1,3,0,16],'IG':[0,5,1,17],'AZ':[1,10,0,18],'IAH':[0,5,1,19],
-    'OJ':[1,10,0,20],'ICH':[0,5,1,21],'OZ3':[1,3,0,22],'IF3':[0,3,1,23],'IAU':[0,1.6,1,24]
-}
-bond_float_names = []
+def _parse_factory_cfg(
+    cfg: Optional[Dict[str, Any] | str],
+    *,
+    default_class_name: str,
+) -> Tuple[str, Dict[str, Any]]:
+    """解析工厂配置，兼容多种格式"""
+    if cfg is None:
+        return default_class_name, {}
 
+    if isinstance(cfg, str):
+        return cfg, {}
+
+    if not isinstance(cfg, dict):
+        raise TypeError(f"cfg must be None, str, or dict, got {type(cfg).__name__}")
+
+    cfg = copy.deepcopy(cfg)
+    class_name = cfg.pop("__class_name__", None) or cfg.pop("class_name", None) or cfg.pop("type", None)
+    if not class_name:
+        raise ValueError("Factory cfg must include class name key")
+
+    init_params = (
+        cfg.pop("__init_params__", None) or
+        cfg.pop("init_params", None) or
+        cfg.pop("params", None) or {}
+    )
+    if not isinstance(init_params, dict):
+        raise TypeError(f"init_params must be dict, got {type(init_params).__name__}")
+
+    if cfg:
+        raise ValueError(f"Unsupported keys in cfg: {list(cfg.keys())}")
+    return class_name, init_params
+
+
+class StrictIndexSampleBuilder:
+    """按严格索引构建样本（适用于 ECD 数据集）"""
+    def build(self, data_dir: Path, index_file: str, sample_path: str, data_count: Optional[int] = None):
+        import pandas as pd
+        samples = []
+        df = pd.read_csv(data_dir / index_file, encoding='gbk')
+        ids = df['Unnamed: 0'].values[:data_count] if data_count else df['Unnamed: 0'].values
+        for idx in ids:
+            samples.append({
+                'id': int(idx),
+                'smiles': df[df['Unnamed: 0'] == idx]['SMILES'].values[0],
+                'spectrum_path': str(Path(sample_path) / f"{idx}.csv")
+            })
+        return samples
+
+
+class DefaultECDDatasetDownloader:
+    """ECD 数据集下载器"""
+    def __init__(self, datasets_home: Optional[str] = None):
+        self.datasets_home = datasets_home or download_utils.DATASETS_HOME
+
+    def download(self, url: str, md5: Optional[str] = None, force_download: bool = False) -> Path:
+        if force_download:
+            downloaded_root = download_utils.get_path_from_url(
+                url, self.datasets_home, md5sum=md5, check_exist=False, decompress=True
+            )
+        else:
+            downloaded_root = download_utils.get_datasets_path_from_url(url, md5)
+        return Path(downloaded_root)
+
+def build_ecformer_downloader(cfg: Optional[Dict[str, Any] | str]):
+    """构建下载器"""
+    class_name, init_params = _parse_factory_cfg(cfg, default_class_name="DefaultECDDatasetDownloader")
+    cls = _locate_class(class_name)
+    downloader = cls(**init_params)
+    if not hasattr(downloader, 'download'):
+        raise TypeError(f"Downloader {class_name} must implement 'download' method")
+    logger.debug(f"Use downloader: {class_name}")
+    return downloader
 
 def get_key_padding_mask(tokens):
     """生成query padding mask"""
@@ -57,80 +118,36 @@ def get_key_padding_mask(tokens):
     key_padding_mask[tokens == -1] = -paddle.inf
     return key_padding_mask
 
+def normalize_func(src_list, norm_range=[-100, 100]):
+    # lihao implecation for list normalization
+    # input: src_list, normalization range
+    # output: tgt_list after normalization
+    
+    src_max, src_min = max(src_list), min(src_list)
+    norm_min, norm_max = norm_range[0], norm_range[1]
+    if src_max == 0: src_max = 1
+    if src_min == 0: src_min = -1
+    
+    tgt_list = []
+    for i in range(len(src_list)):
+        if src_list[i] >= 0:
+            tgt_list.append(src_list[i] * norm_max / src_max)
+        else:
+            tgt_list.append(src_list[i] * norm_min / src_min)
+    
+    assert len(src_list) == len(tgt_list)
+    return tgt_list
 
-def Construct_dataset(dataset, data_index, path):
-    """
-    从原始特征构建图数据
-    完全复用原型程序的Construct_dataset逻辑
-    """
-    graph_atom_bond = []
-    graph_bond_angle = []
-
-    all_descriptor = np.load(os.path.join(path, 'descriptor_all_column.npy'))  # (25847, 1826)
-
-    for i in tqdm(range(len(dataset)), desc="Constructing graphs"):
-        data = dataset[i]
-        
-        # 收集原子特征
-        atom_feature = []
-        for name in atom_id_names:
-            atom_feature.append(data[name])
-        
-        # 收集键特征
-        bond_feature = []
-        for name in bond_id_names[0:3]:
-            bond_feature.append(data[name])
-        
-        # 转换为Tensor
-        atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
-        bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
-        bond_float_feature = paddle.to_tensor(data['bond_length'].astype(np.float32))
-        bond_angle_feature = paddle.to_tensor(data['bond_angle'].astype(np.float32))
-        edge_index = paddle.to_tensor(data['edges'].T, dtype='int64')
-        bond_index = paddle.to_tensor(data['BondAngleGraph_edges'].T, dtype='int64')
-        data_index_int = paddle.to_tensor(np.array(data_index[i]), dtype='int64')
-
-        # 添加描述符特征（与原型程序完全一致）
-        TPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 820] / 100
-        RASA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 821]
-        RPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 822]
-        MDEC = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 1568]
-        MATS = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 457]
-
-        # 合并特征
-        bond_feature = paddle.concat(
-            [bond_feature.astype(bond_float_feature.dtype), 
-             bond_float_feature.reshape([-1, 1])], 
-            axis=1
-        )
-
-        bond_angle_feature = paddle.concat(
-            [bond_angle_feature.reshape([-1, 1]), TPSA.reshape([-1, 1])], 
-            axis=1
-        )
-        bond_angle_feature = paddle.concat([bond_angle_feature, RASA.reshape([-1, 1])], axis=1)
-        bond_angle_feature = paddle.concat([bond_angle_feature, RPSA.reshape([-1, 1])], axis=1)
-        bond_angle_feature = paddle.concat([bond_angle_feature, MDEC.reshape([-1, 1])], axis=1)
-        bond_angle_feature = paddle.concat([bond_angle_feature, MATS.reshape([-1, 1])], axis=1)
-
-        # 创建Data对象
-        data_atom_bond = Data(
-            x=atom_feature,
-            edge_index=edge_index,
-            edge_attr=bond_feature,
-            data_index=data_index_int,
-        )
-        data_bond_angle = Data(
-            edge_index=bond_index,
-            edge_attr=bond_angle_feature,
-            num_nodes=atom_feature.shape[0]
-        )
-        
-        graph_atom_bond.append(data_atom_bond)
-        graph_bond_angle.append(data_bond_angle)
-
-    return graph_atom_bond, graph_bond_angle
-
+def get_sequence_peak(sequence):
+    # input- seq: List
+    # output- peak_list contains peak position
+    peak_list = []
+    for i in range(1, len(sequence)-1):
+        if sequence[i-1]<sequence[i] and sequence[i]>sequence[i+1]:
+            peak_list.append(i)
+        if sequence[i-1]>sequence[i] and sequence[i]<sequence[i+1]:
+            peak_list.append(i)
+    return peak_list
 
 def read_total_ecd(sample_path, fix_length=20):
     """
@@ -247,6 +264,82 @@ def read_total_ecd(sample_path, fix_length=20):
     return ecd_final_list, ecd_original_dict
 
 
+def Construct_dataset(dataset, data_index, path):
+    """
+    从原始特征构建图数据
+    完全复用原型程序的Construct_dataset逻辑
+    """
+    graph_atom_bond = []
+    graph_bond_angle = []
+
+    all_descriptor = np.load(os.path.join(path, 'descriptor_all_column.npy'))  # (25847, 1826)
+
+    for i in tqdm(range(len(dataset)), desc="Constructing graphs"):
+        data = dataset[i]
+        
+        # 收集原子特征
+        atom_feature = []
+        for name in atom_id_names:
+            atom_feature.append(data[name])
+        
+        # 收集键特征
+        bond_feature = []
+        for name in bond_id_names[0:3]:
+            bond_feature.append(data[name])
+        
+        # 转换为Tensor
+        atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
+        bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
+        bond_float_feature = paddle.to_tensor(data['bond_length'].astype(np.float32))
+        bond_angle_feature = paddle.to_tensor(data['bond_angle'].astype(np.float32))
+        edge_index = paddle.to_tensor(data['edges'].T, dtype='int64')
+        bond_index = paddle.to_tensor(data['BondAngleGraph_edges'].T, dtype='int64')
+        data_index_int = paddle.to_tensor(np.array(data_index[i]), dtype='int64')
+
+        # 添加描述符特征（与原型程序完全一致）
+        TPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 820] / 100
+        RASA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 821]
+        RPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 822]
+        MDEC = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 1568]
+        MATS = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 457]
+
+        # 合并特征
+        bond_feature = paddle.concat(
+            [bond_feature.astype(bond_float_feature.dtype), 
+             bond_float_feature.reshape([-1, 1])], 
+            axis=1
+        )
+
+        bond_angle_feature = paddle.concat(
+            [bond_angle_feature.reshape([-1, 1]), TPSA.reshape([-1, 1])], 
+            axis=1
+        )
+        bond_angle_feature = paddle.concat([bond_angle_feature, RASA.reshape([-1, 1])], axis=1)
+        bond_angle_feature = paddle.concat([bond_angle_feature, RPSA.reshape([-1, 1])], axis=1)
+        bond_angle_feature = paddle.concat([bond_angle_feature, MDEC.reshape([-1, 1])], axis=1)
+        bond_angle_feature = paddle.concat([bond_angle_feature, MATS.reshape([-1, 1])], axis=1)
+
+        # 创建Data对象
+        data_atom_bond = Data(
+            x=atom_feature,
+            edge_index=edge_index,
+            edge_attr=bond_feature,
+            data_index=data_index_int,
+        )
+        data_bond_angle = Data(
+            edge_index=bond_index,
+            edge_attr=bond_angle_feature,
+            num_nodes=atom_feature.shape[0]
+        )
+        
+        graph_atom_bond.append(data_atom_bond)
+        graph_bond_angle.append(data_bond_angle)
+
+    return graph_atom_bond, graph_bond_angle
+
+
+
+
 def GetAtomBondAngleDataset(
     sample_path,
     dataset_all,
@@ -329,92 +422,12 @@ def GetAtomBondAngleDataset(
     return dataset_graph_atom_bond, dataset_graph_bond_angle
 
 
-_cache = None
-
-class ECDFormerDataset(Dataset):
-    """
-    ECDFormer数据集类
-    返回 (atom_bond_graph, bond_angle_graph)
-    """
-    @PlaceEnv(paddle.CPUPlace())
-    def __init__(self,
-                 path: str = "dataset/ECD",
-                 Use_geometry_enhanced: bool = True,
-                 Use_column_info: bool = False):
-        global _cache
-
-        if _cache:
-            self.graph_atom_bond, self.graph_bond_angle = _cache
-            return
-        
-        # 保存参数
-        self.path = path
-        self.Use_geometry_enhanced = Use_geometry_enhanced
-        self.Use_column_info = Use_column_info
-
-        # 1. 加载npy文件
-        print(f"Loading ECDFormer dataset from {path}")
-        self.ecd_dataset = np.load(
-            os.path.join(path, 'ecd_column_charity_new_smiles.npy'),
-            allow_pickle=True
-        ).tolist()
-        
-        # 2. 加载csv文件
-        self.ecd_info = pd.read_csv(
-            os.path.join(path, 'ecd_info.csv'),
-            encoding='gbk'
-        )
-
-        # 3. 提取info列表和索引
-        self.dataset_all = [item['info'] for item in self.ecd_dataset]
-        self.index_all = self.ecd_info['Unnamed: 0'].values
-
-        # 4. 构建手性对映射
-        self.unnamed_idx_dict, self.hand_idx_dict, self.line_idx_dict = {}, {}, {}
-        for i, itm in enumerate(self.ecd_dataset):
-            self.line_idx_dict[i] = {
-                'hand_id': itm['hand_id'],
-                'unnamed_id': itm['id'],
-                'smiles': itm['smiles']
-            }
-            
-            if itm['id'] not in self.unnamed_idx_dict:
-                self.unnamed_idx_dict[itm['id']] = {
-                    'line_number': i,
-                    'hand_id': itm['hand_id'],
-                    'smiles': itm['smiles']
-                }
-            else:
-                raise AssertionError(f"Duplicate unnamed id: {itm['id']}")
-                
-            if itm['hand_id'] not in self.hand_idx_dict:
-                self.hand_idx_dict[itm['hand_id']] = []
-            self.hand_idx_dict[itm['hand_id']].append({
-                'line_number': i,
-                'unnamed_id': itm['id'],
-                'smiles': itm['smiles']
-            })
-
-        # 5. 构建图数据集（核心调用）
-        self.graph_atom_bond, self.graph_bond_angle = GetAtomBondAngleDataset(
-            sample_path=path,
-            dataset_all=self.dataset_all,
-            index_all=self.index_all,
-            hand_idx_dict=self.hand_idx_dict,
-            line_idx_dict=self.line_idx_dict
-        )
-        
-        _cache = (self.graph_atom_bond, self.graph_bond_angle)
-        assert len(self.graph_atom_bond) == len(self.graph_bond_angle), \
-            "Mismatch between atom_bond and bond_angle graph lengths"
-
-    def __len__(self):
-        return len(self.graph_atom_bond)
-
-    def __getitem__(self, idx):
-        """
-        返回:
-            atom_bond_graph: paddle_geometric.data.Data
-            bond_angle_graph: paddle_geometric.data.Data
-        """
-        return self.graph_atom_bond[idx], self.graph_bond_angle[idx]
+def build_ecformer_sample_builder(cfg: Optional[Dict[str, Any] | str]):
+    """构建样本构建器"""
+    class_name, init_params = _parse_factory_cfg(cfg, default_class_name="StrictIndexSampleBuilder")
+    cls = _locate_class(class_name)
+    builder = cls(**init_params)
+    if not hasattr(builder, 'build'):
+        raise TypeError(f"Sample builder {class_name} must implement 'build' method")
+    logger.debug(f"Use sample builder: {class_name}")
+    return builder

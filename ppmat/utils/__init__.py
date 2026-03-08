@@ -22,6 +22,8 @@ from ppmat.utils.misc import set_random_seed
 from ppmat.utils.save_load import load_checkpoint
 from ppmat.utils.save_load import load_pretrain
 from ppmat.utils.save_load import save_checkpoint
+from ppmat.utils.place_env import PlaceEnv
+from ppmat.utils.colored_tqdm import ColoredTqdm
 
 __all__ = [
     logger,
@@ -33,4 +35,6 @@ __all__ = [
     load_checkpoint,
     load_pretrain,
     save_checkpoint,
+    PlaceEnv,
+    ColoredTqdm
 ]

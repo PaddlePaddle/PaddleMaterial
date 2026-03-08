@@ -302,3 +302,80 @@ def pad_sequence(sequences, batch_first=False, padding_value=0):
             out_tensor[:length, i, ...] = tensor
 
     return out_tensor
+
+
+class ECDCollator(DefaultCollator):
+    def __call__(self, batch: List[Any]) -> Any:
+        batch = [list(x) for x in zip(*batch)] # transpose
+        for i in range(len(batch)): # 组Batch
+            batch[i] = Batch.from_data_list(batch[i])
+
+        batch0 = batch[0]
+        batch1 = batch[1]
+
+        # Data解包到Tensor字典
+        batch_atom_bond, batch_bond_angle = batch0, batch1
+        x, edge_index, edge_attr, query_mask =batch_atom_bond.x,batch_atom_bond.edge_index,batch_atom_bond.edge_attr,batch_atom_bond.query_mask
+        ba_edge_index, ba_edge_attr = batch_bond_angle.edge_index,batch_bond_angle.edge_attr
+        batch_data = batch_atom_bond.batch
+        pos_gt = batch_atom_bond.peak_position 
+        height_gt = batch_atom_bond.peak_height
+        num_gt = batch_atom_bond.peak_num      
+        return \
+        {
+        "x"               : x             ,
+        "edge_index"      : edge_index    ,
+        "edge_attr"       : edge_attr     ,
+        "batch_data"      : batch_data    ,
+        "ba_edge_index"   : ba_edge_index ,
+        "ba_edge_attr"    : ba_edge_attr  ,
+        "query_mask"      : query_mask
+        },     \
+        {
+        "peak_number_gt"  : num_gt        ,
+        "peak_position_gt": pos_gt        ,
+        "peak_height_gt"  : height_gt
+        }
+
+
+class IRCollator(DefaultCollator):
+    """IR 数据集专用 collator，返回 Tensor 字典"""
+    
+    def __call__(self, batch: List[Any]) -> Any:        
+        batch = [list(x) for x in zip(*batch)]  # transpose
+        for i in range(len(batch)):
+            batch[i] = Batch.from_data_list(batch[i])
+        
+        batch_atom_bond, batch_bond_angle = batch[0], batch[1]
+        
+        x, edge_index, edge_attr, query_mask = (
+            batch_atom_bond.x,
+            batch_atom_bond.edge_index,
+            batch_atom_bond.edge_attr,
+            batch_atom_bond.query_mask,
+        )
+        ba_edge_index, ba_edge_attr = (
+            batch_bond_angle.edge_index,
+            batch_bond_angle.edge_attr,
+        )
+        batch_data = batch_atom_bond.batch
+        pos_gt = batch_atom_bond.peak_position
+        height_gt = batch_atom_bond.peak_height
+        num_gt = batch_atom_bond.peak_num
+        
+        return (
+            {
+                "x": x,
+                "edge_index": edge_index,
+                "edge_attr": edge_attr,
+                "batch_data": batch_data,
+                "ba_edge_index": ba_edge_index,
+                "ba_edge_attr": ba_edge_attr,
+                "query_mask": query_mask,
+            },
+            {
+                "peak_number_gt": num_gt,
+                "peak_position_gt": pos_gt,
+                "peak_height_gt": height_gt,
+            }
+        )
