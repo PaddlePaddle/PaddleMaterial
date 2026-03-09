@@ -176,7 +176,7 @@ class ECFormerBase(nn.Layer, ABC):
         
         # 5. 生成padding mask
         node_padding_mask = feat_padding_mask(node_index, self.max_node_num)
-        pooling_padding_mask = paddle.zeros([node_padding_mask.shape[0], 1], dtype='float32')
+        pooling_padding_mask = paddle.zeros([node_padding_mask.shape[0], 1], dtype=paddle.get_default_dtype())
         total_padding_mask = paddle.concat([pooling_padding_mask, node_padding_mask], axis=1)
         
         return total_node_feat, total_padding_mask, node_padding_mask
