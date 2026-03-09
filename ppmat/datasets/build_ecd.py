@@ -290,8 +290,8 @@ def Construct_dataset(dataset, data_index, path):
         # 转换为Tensor
         atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
         bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
-        bond_float_feature = paddle.to_tensor(data['bond_length'].astype(np.float32))
-        bond_angle_feature = paddle.to_tensor(data['bond_angle'].astype(np.float32))
+        bond_float_feature = paddle.to_tensor(data['bond_length'].astype(paddle.get_default_dtype()))
+        bond_angle_feature = paddle.to_tensor(data['bond_angle'].astype(paddle.get_default_dtype()))
         edge_index = paddle.to_tensor(data['edges'].T, dtype='int64')
         bond_index = paddle.to_tensor(data['BondAngleGraph_edges'].T, dtype='int64')
         data_index_int = paddle.to_tensor(np.array(data_index[i]), dtype='int64')
