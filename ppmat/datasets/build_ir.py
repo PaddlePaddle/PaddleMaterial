@@ -192,8 +192,8 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
         atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
         bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
         
-        bond_float_feature = paddle.to_tensor(data.get('bond_length', np.zeros(data['edges'].shape[0])).astype(np.float32))
-        bond_angle_feature = paddle.to_tensor(data.get('bond_angle', np.zeros(data.get('BondAngleGraph_edges', np.zeros((0,2))).shape[0])).astype(np.float32))
+        bond_float_feature = paddle.to_tensor(data.get('bond_length', np.zeros(data['edges'].shape[0])).astype(paddle.get_default_dtype()))
+        bond_angle_feature = paddle.to_tensor(data.get('bond_angle', np.zeros(data.get('BondAngleGraph_edges', np.zeros((0,2))).shape[0])).astype(paddle.get_default_dtype()))
         
         edge_index = paddle.to_tensor(data['edges'].T, dtype='int64')
         bond_index = paddle.to_tensor(data.get('BondAngleGraph_edges', np.zeros((0,2))).T, dtype='int64')
