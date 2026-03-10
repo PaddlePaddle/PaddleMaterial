@@ -31,7 +31,7 @@ class GINConv(MessagePassing):
         )
         self.eps = paddle.create_parameter(
             shape=[1], 
-            dtype='float32',
+            dtype=paddle.get_default_dtype(),
             default_initializer=nn.initializer.Assign(paddle.to_tensor([0.]))
         )
     
