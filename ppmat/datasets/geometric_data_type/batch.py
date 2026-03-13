@@ -56,7 +56,7 @@ class Batch(Data):
         Additionally, creates assignment batch vectors for each key in
         :obj:`follow_batch`.
         Will exclude any keys given in :obj:`exclude_keys`."""
-        keys = list(set(data_list[0].keys()) - set(exclude_keys))
+        keys = list(set(data_list[0].keys) - set(exclude_keys))
         assert "batch" not in keys and "ptr" not in keys
         batch = cls()
         for key in data_list[0].__dict__.keys():

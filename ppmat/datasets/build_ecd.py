@@ -23,7 +23,7 @@ import paddle
 import pandas as pd
 import numpy as np
 
-from paddle_geometric.data import Data
+from ppmat.datasets.geometric_data_type.data import Data
 
 from ppmat.utils import download as download_utils
 from ppmat.utils import logger

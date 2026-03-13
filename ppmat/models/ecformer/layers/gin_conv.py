@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddle_geometric.nn import MessagePassing
+from ppmat.models.common.message_passing.message_passing import MessagePassing
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
