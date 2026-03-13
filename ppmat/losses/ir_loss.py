@@ -48,7 +48,7 @@ class IRLoss(nn.Layer):
                 - peak_position (Tensor): [batch_size, max_peaks, num_position_classes] logits for positions
                 - peak_height (Tensor, optional): [batch_size, max_peaks] predicted intensity values
             targets (dict): Ground truth containing:
-                - peak_num (Tensor): [batch_size] true peak counts
+                - peak_number (Tensor): [batch_size] true peak counts
                 - peak_position (Tensor): [batch_size, max_peaks] true position labels
                 - peak_height (Tensor): [batch_size, max_peaks] true intensity values
         
@@ -56,16 +56,16 @@ class IRLoss(nn.Layer):
             dict: Loss components and total loss
         """
         # Peak number loss
-        loss_num = self.ce_loss(predictions['peak_number'], targets['peak_num'])
+        loss_num = self.ce_loss(predictions['peak_number'], targets['peak_number'])
         
-        batch_size = targets['peak_num'].shape[0]
+        batch_size = targets['peak_number'].shape[0]
         
         loss_pos_total = 0.0
         loss_height_total = 0.0
         valid_samples = 0
         
         for i in range(batch_size):
-            n_peaks = int(targets['peak_num'][i])
+            n_peaks = int(targets['peak_number'][i])
             if n_peaks == 0:
                 continue
             

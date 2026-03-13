@@ -332,9 +332,9 @@ class ECDCollator(DefaultCollator):
         "query_mask"      : query_mask
         },     \
         {
-        "peak_number_gt"  : num_gt        ,
-        "peak_position_gt": pos_gt        ,
-        "peak_height_gt"  : height_gt
+        "peak_number"  : num_gt        ,
+        "peak_position": pos_gt        ,
+        "peak_height"  : height_gt
         }
 
 
@@ -374,8 +374,8 @@ class IRCollator(DefaultCollator):
                 "query_mask": query_mask,
             },
             {
-                "peak_number_gt": num_gt,
-                "peak_position_gt": pos_gt,
-                "peak_height_gt": height_gt,
+                "peak_number": num_gt,
+                "peak_position": pos_gt,
+                "peak_height": height_gt,
             }
         )

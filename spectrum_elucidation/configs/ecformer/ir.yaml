@@ -1,0 +1,123 @@
+# ECFormer IR Task Configuration
+# Task: Infrared Spectrum Prediction
+
+Global:
+  do_train: True
+  do_eval: True
+  do_test: True
+  label_names: ["peak_number", "peak_position", "peak_height"]
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: IRDataset
+      __init_params__:
+        data_path: ./datasets/IR
+        data_count: null
+        use_geometry_enhanced: True
+    loader:
+      num_workers: 4
+      collate_fn: IRCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 32
+        shuffle: True
+  
+  val:
+    dataset:
+      __class_name__: IRDataset
+      __init_params__:
+        data_path: ./datasets/IR
+        data_count: null
+        use_geometry_enhanced: True
+    loader:
+      num_workers: 4
+      collate_fn: IRCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 32
+        shuffle: False
+
+  test:
+    dataset:
+      __class_name__: IRDataset
+      __init_params__:
+        data_path: ./datasets/IR
+        data_count: null
+        use_geometry_enhanced: True
+    loader:
+      num_workers: 4
+      collate_fn: IRCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 32
+        shuffle: False
+
+Model:
+  __class_name__: ECFormerIR
+  __init_params__:
+    # Atom feature dimensions (consistent with ECD)
+    full_atom_feature_dims: [119, 9, 12, 14, 17, 9, 14, 2, 10]
+    # Bond feature dimensions (consistent with ECD)
+    full_bond_feature_dims: [8, 23, 3]
+    bond_float_names: ['bond_length']
+    bond_angle_float_names: ['bond_angle', 'TPSA', 'RASA', 'RPSA', 'MDEC', 'MATS']
+    bond_id_names: ['bond_dir', 'bond_type', 'is_in_ring']
+    
+    # GNN parameters
+    num_layers: 5
+    emb_dim: 128  # IR task can use smaller embedding dimension
+    drop_ratio: 0.0
+    graph_pooling: 'sum'
+    use_geometry_enhanced: True
+    max_node_num: 63  # Maximum number of atoms (consistent with ECD)
+    
+    # Transformer parameters
+    num_heads: 4
+    tf_layers: 2
+    tf_dropout: 0.1
+    
+    # IR-specific parameters
+    max_peaks: 15  # IR spectra have up to 15 peaks
+    num_position_classes: 36  # IR position classes (wavenumber range)
+    use_height_prediction: True  # IR uses intensity prediction (regression)
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    lr: 0.001
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1e-8
+    weight_decay: 0.01
+
+Metric:
+  __class_name__: IRMetrics
+  __init_params__:
+    use_height_prediction: True  # Consistent with model
+
+Trainer:
+  output_dir: ./output/ecformer_ir
+  max_epochs: 100
+  log_freq: 10
+  save_freq: 5
+  eval_freq: 1
+  seed: 42
+  use_amp: False
+  start_eval_epoch: 1
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'epoch'  # 'epoch' recommended for streaming metrics
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+  
+  # The following parameters can be passed to trainer (override model settings if needed)
+  loss_weight_height: 1.0  # Optional, override in trainer layer
+  max_peaks: 15  # Optional
+  num_position_classes: 36  # Optional
+  height_classes: 1  # IR intensity is regression task, output dimension is 1
