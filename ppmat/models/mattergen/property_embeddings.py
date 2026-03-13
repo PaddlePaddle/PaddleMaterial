@@ -1,9 +1,9 @@
-# 版权所有（C）苏州国家实验室、百度飞桨团队
+# 版权所有（C）2026 苏州国家实验室、百度飞桨团队
 # 本代码由苏州国家实验室与百度飞桨团队合作开发完成。
 # 其中，苏州国家实验室提供模型框架设计思路，百度飞桨团队负责代码实现。
 # 双方对本代码及相关成果享有同等权利。
 
-# Copyright (C) Suzhou National Laboratory and Baidu PaddlePaddle team
+# Copyright (C) 2026 Suzhou National Laboratory and Baidu PaddlePaddle team
 # This code was jointly developed by Suzhou National Laboratory and Baidu PaddlePaddle team.
 # Suzhou National Laboratory provided the design concept for the model framework,
 # and Baidu PaddlePaddle team was responsible for the code implementation.
