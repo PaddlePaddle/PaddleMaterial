@@ -57,16 +57,16 @@ class ECDLoss(nn.Layer):
             dict: Loss components and total loss
         """
         # Peak number loss
-        loss_num = self.ce_loss(predictions['peak_number'], targets['peak_num'])
+        loss_num = self.ce_loss(predictions['peak_number'], targets['peak_number'])
         
-        batch_size = targets['peak_num'].shape[0]
+        batch_size = targets['peak_number'].shape[0]
         
         loss_pos_total = 0.0
         loss_height_total = 0.0
         valid_samples = 0
         
         for i in range(batch_size):
-            n_peaks = int(targets['peak_num'][i])
+            n_peaks = int(targets['peak_number'][i])
             if n_peaks == 0:
                 continue
             

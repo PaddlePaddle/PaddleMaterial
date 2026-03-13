@@ -14,8 +14,7 @@
 
 import paddle
 import paddle.nn as nn
-import numpy as np
-from typing import Dict, Optional, Any
+from typing import Dict
 
 
 # =========================
