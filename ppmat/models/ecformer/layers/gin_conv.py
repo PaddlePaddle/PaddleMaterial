@@ -18,7 +18,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 
 class GINConv(MessagePassing):
-    """图同构卷积层"""
+    """Graph Isomorphism Convolution Layer"""
     
     def __init__(self, emb_dim):
         super(GINConv, self).__init__(aggr="add")

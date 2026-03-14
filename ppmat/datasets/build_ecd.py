@@ -44,7 +44,7 @@ def _parse_factory_cfg(
     *,
     default_class_name: str,
 ) -> Tuple[str, Dict[str, Any]]:
-    """解析工厂配置，兼容多种格式"""
+    """Parse factory configuration, compatible with multiple formats"""
     if cfg is None:
         return default_class_name, {}
 
@@ -73,7 +73,7 @@ def _parse_factory_cfg(
 
 
 class StrictIndexSampleBuilder:
-    """按严格索引构建样本（适用于 ECD 数据集）"""
+    """Build samples by strict index (for ECD dataset)"""
     def build(self, data_dir: Path, index_file: str, sample_path: str, data_count: Optional[int] = None):
         import pandas as pd
         samples = []
@@ -89,7 +89,7 @@ class StrictIndexSampleBuilder:
 
 
 class DefaultECDDatasetDownloader:
-    """ECD 数据集下载器"""
+    """ECD dataset downloader"""
     def __init__(self, datasets_home: Optional[str] = None):
         self.datasets_home = datasets_home or download_utils.DATASETS_HOME
 
@@ -103,7 +103,7 @@ class DefaultECDDatasetDownloader:
         return Path(downloaded_root)
 
 def build_ecformer_downloader(cfg: Optional[Dict[str, Any] | str]):
-    """构建下载器"""
+    """Build downloader"""
     class_name, init_params = _parse_factory_cfg(cfg, default_class_name="DefaultECDDatasetDownloader")
     cls = _locate_class(class_name)
     downloader = cls(**init_params)
@@ -113,7 +113,7 @@ def build_ecformer_downloader(cfg: Optional[Dict[str, Any] | str]):
     return downloader
 
 def get_key_padding_mask(tokens):
-    """生成query padding mask"""
+    """Generate query padding mask"""
     key_padding_mask = paddle.zeros(tokens.shape)
     key_padding_mask[tokens == -1] = -paddle.inf
     return key_padding_mask
@@ -151,8 +151,8 @@ def get_sequence_peak(sequence):
 
 def read_total_ecd(sample_path, fix_length=20):
     """
-    读取所有ECD光谱文件，提取峰值信息
-    完全复用原型程序的read_total_ecd逻辑
+    Read all ECD spectrum files, extract peak information
+    Completely reuse the read_total_ecd logic from the prototype program
     """
     filepaths = [
         os.path.join(sample_path, "500ECD/data/"),
@@ -178,10 +178,10 @@ def read_total_ecd(sample_path, fix_length=20):
             wavelengths_o, mdegs_o = ECD_info['Wavelength (nm)'], ECD_info['ECD (Mdeg)']
             
             wavelengths = [int(i) for i in wavelengths_o]
-            # 将小值置零
+            # Set small values to zero
             mdegs = [int(i) if abs(i) > 1 else 0 for i in mdegs_o]
             
-            # 去除前后零值
+            # Remove leading and trailing zeros
             begin, end = 0, 0
             for i in range(len(mdegs)):
                 if mdegs[i] != 0:
@@ -201,23 +201,23 @@ def read_total_ecd(sample_path, fix_length=20):
                 'ecd': mdegs,
             }
 
-    # 处理光谱序列，提取峰值
+    # Process spectrum sequences, extract peaks
     ecd_final_list = []
     for key, itm in ecd_dict.items():
-        # 等间隔采样
+        # Uniform sampling
         distance = int(len(itm['ecd']) / (fix_length - 1))
         sequence_org = [itm['ecd'][i] for i in range(0, len(itm['ecd']), distance)][:fix_length]
         
-        # 归一化
+        # Normalize
         sequence = normalize_func(sequence_org, norm_range=[-100, 100])
         
-        # padding到固定长度
+        # Pad to fixed length
         if len(sequence) < fix_length:
             sequence.extend([0] * (fix_length - len(sequence)))
             sequence_org.extend([0] * (fix_length - len(sequence_org)))
         assert len(sequence) == fix_length
 
-        # 生成峰值掩码
+        # Generate peak mask
         peak_mask = [0] * len(sequence)
         for i in range(1, len(sequence) - 1):
             if sequence[i - 1] < sequence[i] and sequence[i] > sequence[i + 1]:
@@ -233,17 +233,17 @@ def read_total_ecd(sample_path, fix_length=20):
                 if peak_mask[i + 1] != 2:
                     peak_mask[i + 1] = 1
 
-        # 提取峰值位置
+        # Extract peak positions
         peak_position_list = get_sequence_peak(sequence)
         peak_number = len(peak_position_list)
         assert peak_number < 9, f"Peak number {peak_number} >= 9"
 
-        # 峰值符号
+        # Peak signs
         peak_height_list = []
         for i in peak_position_list:
             peak_height_list.append(1 if sequence[i] >= 0 else 0)
 
-        # padding到9个峰
+        # Pad to 9 peaks
         peak_position_list = peak_position_list + [-1] * (9 - peak_number)
         peak_height_list = peak_height_list + [-1] * (9 - peak_number)
         query_padding_mask = get_key_padding_mask(paddle.to_tensor(peak_position_list))
@@ -266,8 +266,8 @@ def read_total_ecd(sample_path, fix_length=20):
 
 def Construct_dataset(dataset, data_index, path):
     """
-    从原始特征构建图数据
-    完全复用原型程序的Construct_dataset逻辑
+    Construct graph data from raw features
+    Completely reuse the Construct_dataset logic from the prototype program
     """
     graph_atom_bond = []
     graph_bond_angle = []
@@ -277,17 +277,17 @@ def Construct_dataset(dataset, data_index, path):
     for i in tqdm(range(len(dataset)), desc="Constructing graphs"):
         data = dataset[i]
         
-        # 收集原子特征
+        # Collect atom features
         atom_feature = []
         for name in atom_id_names:
             atom_feature.append(data[name])
         
-        # 收集键特征
+        # Collect bond features
         bond_feature = []
         for name in bond_id_names[0:3]:
             bond_feature.append(data[name])
         
-        # 转换为Tensor
+        # Convert to Tensor
         atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
         bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
         bond_float_feature = paddle.to_tensor(data['bond_length'].astype(paddle.get_default_dtype()))
@@ -296,14 +296,14 @@ def Construct_dataset(dataset, data_index, path):
         bond_index = paddle.to_tensor(data['BondAngleGraph_edges'].T, dtype='int64')
         data_index_int = paddle.to_tensor(np.array(data_index[i]), dtype='int64')
 
-        # 添加描述符特征（与原型程序完全一致）
+        # Add descriptor features (exactly the same as prototype program)
         TPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 820] / 100
         RASA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 821]
         RPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 822]
         MDEC = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 1568]
         MATS = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 457]
 
-        # 合并特征
+        # Merge features
         bond_feature = paddle.concat(
             [bond_feature.astype(bond_float_feature.dtype), 
              bond_float_feature.reshape([-1, 1])], 
@@ -319,7 +319,7 @@ def Construct_dataset(dataset, data_index, path):
         bond_angle_feature = paddle.concat([bond_angle_feature, MDEC.reshape([-1, 1])], axis=1)
         bond_angle_feature = paddle.concat([bond_angle_feature, MATS.reshape([-1, 1])], axis=1)
 
-        # 创建Data对象
+        # Create Data objects
         data_atom_bond = Data(
             x=atom_feature,
             edge_index=edge_index,
@@ -348,36 +348,36 @@ def GetAtomBondAngleDataset(
     line_idx_dict
 ):
     """
-    核心函数：构建并返回切好的图数据集
+    Core function: build and return the processed graph dataset
     
     Args:
-        sample_path: ECD光谱文件路径
-        dataset_all: 从npy加载的info列表
-        index_all: 索引列表
-        hand_idx_dict: 手性对映射
-        line_idx_dict: 行号映射
+        sample_path: ECD spectrum file path
+        dataset_all: info list loaded from npy
+        index_all: index list
+        hand_idx_dict: chiral pair mapping
+        line_idx_dict: line number mapping
     
     Returns:
-        dataset_graph_atom_bond: atom-bond图列表
-        dataset_graph_bond_angle: bond-angle图列表
+        dataset_graph_atom_bond: atom-bond graph list
+        dataset_graph_bond_angle: bond-angle graph list
     """
-    # 1. 读取ECD光谱序列
+    # 1. Read ECD spectrum sequences
     ecd_sequences, ecd_original_sequences = read_total_ecd(sample_path)
 
-    # 2. 构建图数据
+    # 2. Construct graph data
     total_graph_atom_bond, total_graph_bond_angle = Construct_dataset(
         dataset_all, index_all, sample_path
     )
     print("Case Before Process = ", len(total_graph_atom_bond), len(total_graph_bond_angle))
 
-    # 3. 将光谱序列信息附加到图数据上
+    # 3. Attach spectrum sequence information to graph data
     dataset_graph_atom_bond, dataset_graph_bond_angle = [], []
 
     for itm in ecd_sequences:
         line_num = itm['id'] - 1
         atom_bond = total_graph_atom_bond[line_num]
 
-        # 附加光谱信息
+        # Attach spectrum information
         atom_bond.sequence = paddle.to_tensor([itm['seq']])
         atom_bond.ecd_id = paddle.to_tensor(itm['id'])
         atom_bond.seq_mask = paddle.to_tensor([itm['seq_mask']])
@@ -390,7 +390,7 @@ def GetAtomBondAngleDataset(
         dataset_graph_atom_bond.append(atom_bond)
         dataset_graph_bond_angle.append(total_graph_bond_angle[line_num])
 
-        # 4. 对映体增强：添加对映体样本
+        # 4. Enantiomer enhancement: add enantiomer samples
         hand_id, unnamed_id = line_idx_dict[line_num]['hand_id'], line_idx_dict[line_num]['unnamed_id']
         another_line_num = -1
         
@@ -401,7 +401,7 @@ def GetAtomBondAngleDataset(
                 
         assert another_line_num != -1, f"cannot find the hand info of {line_num}"
 
-        # 对映体：光谱取反
+        # Enantiomer: invert the spectrum
         atom_bond_oppo = total_graph_atom_bond[another_line_num]
         atom_bond_oppo.sequence = paddle.neg(paddle.to_tensor([itm['seq']]))
         atom_bond_oppo.ecd_id = paddle.to_tensor(another_line_num + 1)
@@ -423,7 +423,7 @@ def GetAtomBondAngleDataset(
 
 
 def build_ecformer_sample_builder(cfg: Optional[Dict[str, Any] | str]):
-    """构建样本构建器"""
+    """Build sample builder"""
     class_name, init_params = _parse_factory_cfg(cfg, default_class_name="StrictIndexSampleBuilder")
     cls = _locate_class(class_name)
     builder = cls(**init_params)

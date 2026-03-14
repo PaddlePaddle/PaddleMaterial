@@ -30,7 +30,7 @@ from spectrum_elucidation.ecformer.trainer import ECDFormerTrainer
 
 
 def main():
-    # 解析参数
+    # Parse arguments
     parser = argparse.ArgumentParser(description="ECDFormer for ECD Spectrum Prediction")
     parser.add_argument(
         "-c", "--config",
@@ -63,12 +63,12 @@ def main():
 
     args, dynamic_args = parser.parse_known_args()
 
-    # 加载配置
+    # Load configuration
     config = OmegaConf.load(args.config)
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
     
-    # 根据命令行参数覆盖Global配置
+    # Override Global configuration based on command line arguments
     if args.eval_only:
         config.Global.do_train = False
         config.Global.do_eval = True
@@ -84,30 +84,30 @@ def main():
         config.Global.do_predict = True
         config.Dataset.predict.data_path = args.predict
 
-    # 保存配置
+    # Save configuration
     if dist.get_rank() == 0:
         os.makedirs(config.Trainer.output_dir, exist_ok=True)
         config_name = os.path.basename(args.config)
         OmegaConf.save(config, osp.join(config.Trainer.output_dir, config_name))
 
-    # 转换为字典
+    # Convert to dictionary
     config = OmegaConf.to_container(config, resolve=True)
 
-    # 初始化日志
+    # Initialize logging
     logger_path = osp.join(config["Trainer"]["output_dir"], "run.log")
     logger.init_logger(log_file=logger_path)
     logger.info(f"Logger saved to {logger_path}")
     logger.info(f"Config: {config}")
 
-    # 设置随机种子
+    # Set random seed
     seed = config["Trainer"].get("seed", 42)
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 
-    # 设置信号处理
+    # Set signal handlers
     set_signal_handlers()
 
-    # 构建数据加载器
+    # Build data loaders
     dataloaders = {}
     
     if config["Global"].get("do_train", True):
@@ -136,18 +136,18 @@ def main():
         dataloaders["predict"] = build_dataloader(predict_cfg)
         logger.info(f"Prediction dataset loaded, size: {len(dataloaders['predict'].dataset)}")
 
-    # 构建模型
+    # Build model
     model_cfg = config["Model"]
     model = build_model(model_cfg)
     logger.info(f"Model built: {model_cfg['__class_name__']}")
     
-    # 打印模型参数量
+    # Print model parameters count
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if not p.stop_gradient)
     logger.info(f"Total parameters: {total_params / 1e6:.2f}M")
     logger.info(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
 
-    # 构建优化器和学习率调度器
+    # Build optimizer and learning rate scheduler
     optimizer = None
     lr_scheduler = None
     
@@ -163,7 +163,7 @@ def main():
         )
         logger.info(f"Optimizer built: {config['Optimizer']['__class_name__']}")
 
-    # 构建训练器
+    # Build trainer
     trainer = ECDFormerTrainer(
         config=config["Trainer"],
         model=model,
@@ -173,7 +173,7 @@ def main():
         lr_scheduler=lr_scheduler,
     )
 
-    # 恢复检查点
+    # Resume from checkpoint
     if args.resume is not None:
         logger.info(f"Resuming from checkpoint: {args.resume}")
         save_load.load_checkpoint(
@@ -183,7 +183,7 @@ def main():
             trainer.scaler,
         )
 
-    # 执行训练/评估/预测
+    # Execute training/evaluation/prediction
     if config["Global"].get("do_train", True):
         logger.info("Starting training...")
         trainer.train()
@@ -193,7 +193,7 @@ def main():
         if "val" in dataloaders:
             time_info, loss_info, metric_info = trainer.eval(dataloaders["val"])
             
-            # 打印详细指标
+            # Print detailed metrics
             msg = "Validation Results:"
             for key, meter in metric_info.items():
                 msg += f" | {key}: {meter.avg:.6f}"
@@ -218,7 +218,7 @@ def main():
         if "predict" in dataloaders:
             results = trainer.predict(dataloaders["predict"])
             
-            # 保存预测结果
+            # Save prediction results
             import json
             output_path = osp.join(config["Trainer"]["output_dir"], "predictions.json")
             with open(output_path, "w") as f:

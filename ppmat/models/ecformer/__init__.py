@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# 导出模型类
+# export model calss
 from .models.ECD import ECFormerECD
 from .models.IR import ECFormerIR
 
-# 导出编码器（如需直接使用）
+# export encoder（if want to use directly）
 from .encoders.gin_node_embedding import GINNodeEmbedding
 
 __all__ = [

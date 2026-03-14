@@ -15,7 +15,7 @@
 import paddle
 
 def index_transform(raw_index, batch_size):
-    """将压缩的批次索引还原为每个样本的节点索引列表"""
+    """Convert compressed batch indices to a list of node indices for each sample"""
     
     def get_index1(lst=None, batch_num=-1):
         return [index for (index, value) in enumerate(lst) if value == batch_num]
@@ -28,14 +28,14 @@ def index_transform(raw_index, batch_size):
 
 
 def get_key_padding_mask(tokens):
-    """生成key padding mask"""
+    """Generate key padding mask"""
     key_padding_mask = paddle.zeros(tokens.shape)
     key_padding_mask[tokens == -1] = -paddle.inf
     return key_padding_mask
 
 
 def feat_padding_mask(index, max_node_num):
-    """根据节点索引生成特征padding mask"""
+    """Generate feature padding mask based on node indices"""
     new_index = []
     for itm_list in index:
         new_index.append(itm_list + [-1] * (max_node_num - len(itm_list)))
@@ -44,7 +44,7 @@ def feat_padding_mask(index, max_node_num):
 
 
 def pad_node_features(molecule_features, batch_index, this_batch_size, max_node_num, emb_dim):
-    """将压缩的节点特征padding为 [batch, max_node, emb_dim] 格式"""
+    """Pad compressed node features to [batch, max_node, emb_dim] format"""
     index_list = index_transform(batch_index, this_batch_size)
     
     new_batch_list = []

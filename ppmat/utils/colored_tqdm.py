@@ -1,45 +1,45 @@
 from tqdm import tqdm
 import time
-import os;os.system("") #兼容windows
+import os;os.system("") # Compatible with Windows
 
 def hex_to_ansi(hex_color: str, background: bool = False) -> str:
     """
-    将十六进制颜色转换为ANSI转义序列
+    Convert hexadecimal color to ANSI escape sequence
     
     Args:
-        hex_color: 十六进制颜色，如 '#dda0a0' 或 'dda0a0'
-        background: True表示背景色，False表示前景色
+        hex_color: Hexadecimal color, e.g., '#dda0a0' or 'dda0a0'
+        background: True for background color, False for foreground color
     
     Returns:
-        ANSI转义序列字符串，如 '\033[38;2;221;160;160m'
+        ANSI escape sequence string, e.g., '\033[38;2;221;160;160m'
     
     Example:
         >>> print(f"{hex_to_ansi('#dda0a0')}Hello{hex_to_ansi('#000000')} World")
-        >>> print(f"{hex_to_ansi('dda0a0', background=True)}背景色{hex_to_ansi.reset()}")
+        >>> print(f"{hex_to_ansi('dda0a0', background=True)}Background color{hex_to_ansi.reset()}")
     """
-    # 移除#号并转换为小写
+    # Remove # symbol and convert to lowercase
     hex_color = hex_color.lower().lstrip('#')
     
-    # 处理简写形式 (#fff -> ffffff)
+    # Handle shorthand form (#fff -> ffffff)
     if len(hex_color) == 3:
         hex_color = ''.join([c * 2 for c in hex_color])
     
-    # 转换为RGB值
+    # Convert to RGB values
     r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
     b = int(hex_color[4:6], 16)
     
-    # ANSI真彩色序列
-    # 38;2;R;G;B 为前景色，48;2;R;G;B 为背景色
+    # ANSI true color sequence
+    # 38;2;R;G;B for foreground, 48;2;R;G;B for background
     code = 48 if background else 38
     return f'\033[{code};2;{r};{g};{b}m'
 
 def rgb_to_ansi(r: int, g: int, b: int, background: bool = False) -> str:
-    """RGB值直接转ANSI"""
+    """Convert RGB values directly to ANSI"""
     code = 48 if background else 38
     return f'\033[{code};2;{r};{g};{b}m'
 
-# 重置颜色的ANSI码
+# ANSI code to reset color
 hex_to_ansi.reset = '\033[0m'
 
 class ColoredTqdm(tqdm):
@@ -74,7 +74,7 @@ class ColoredTqdm(tqdm):
 
 
 if __name__ == "__main__":
-    # 使用示例
-    for i in ColoredTqdm(range(10), desc="🌈 彩虹渐变", leave = False):
-        for j in ColoredTqdm(range(100), desc="🌈 彩虹渐变", leave = False):
+    # Usage example
+    for i in ColoredTqdm(range(10), desc="🌈 Rainbow gradient", leave = False):
+        for j in ColoredTqdm(range(100), desc="🌈 Rainbow gradient", leave = False):
             time.sleep(0.01)

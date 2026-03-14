@@ -23,7 +23,7 @@ from ..layers.gin_conv import GINConv
 
 
 class GINNodeEmbedding(nn.Layer):
-    """GIN节点嵌入模块 - 支持几何增强的双图结构"""
+    """GIN node embedding module - supports geometry-enhanced dual graph structure"""
     
     def __init__(
         self,
@@ -51,13 +51,13 @@ class GINNodeEmbedding(nn.Layer):
         if self.num_layers < 2:
             raise ValueError("Number of GNN layers must be greater than 1.")
         
-        # 编码器
+        # Encoders
         self.atom_encoder = AtomEncoder(full_atom_feature_dims, emb_dim)
         self.bond_encoder = BondEncoder(full_bond_feature_dims, emb_dim)
         self.bond_float_encoder = BondFloatRBF(bond_float_names, emb_dim)
         self.bond_angle_encoder = BondAngleFloatRBF(bond_angle_float_names, emb_dim)
         
-        # GNN层列表
+        # GNN layer lists
         self.convs = nn.LayerList()
         self.convs_bond_angle = nn.LayerList()
         self.convs_bond_embedding = nn.LayerList()
@@ -78,17 +78,17 @@ class GINNodeEmbedding(nn.Layer):
         
     def forward(
         self,
-        x,                    # [N, F] 原子特征
-        edge_index,           # [2, E] 边索引
-        edge_attr,            # [E, D] 边特征
-        # 几何增强相关输入
-        ba_edge_index=None,   # [2, E_ba] 键角图边索引
-        ba_edge_attr=None,   # [E_ba, D_ba] 键角图边特征
+        x,                    # [N, F] atom features
+        edge_index,           # [2, E] edge indices
+        edge_attr,            # [E, D] edge features
+        # Geometry enhancement related inputs
+        ba_edge_index=None,   # [2, E_ba] bond-angle graph edge indices
+        ba_edge_attr=None,   # [E_ba, D_ba] bond-angle graph edge features
     ):
         """
-        前向传播
+        Forward pass
         """
-        # 1. 原子特征编码
+        # 1. Atom feature encoding
         if x.dtype != paddle.int64:
             x = x.astype(paddle.int64)
         h_list = [self.atom_encoder(x)]
@@ -105,11 +105,11 @@ class GINNodeEmbedding(nn.Layer):
     
     def _forward_enhanced(self, h_list, edge_index, edge_attr, 
                           ba_edge_index, ba_edge_attr):
-        """几何增强前向传播"""
+        """Geometry-enhanced forward pass"""
         
         bond_id_len = len(self.bond_id_names)
         
-        # 初始化边表示
+        # Initialize edge representations
         h_list_ba = [self.bond_float_encoder(
             edge_attr[:, bond_id_len:edge_attr.shape[1]+1].astype('float32')
         ) + self.bond_encoder(
@@ -117,10 +117,10 @@ class GINNodeEmbedding(nn.Layer):
         )]
         
         for layer in range(self.num_layers):
-            # 节点更新
+            # Node update
             h = self.convs[layer](h_list[layer], edge_index, h_list_ba[layer])
             
-            # 边更新
+            # Edge update
             cur_h_ba = self.convs_bond_embedding[layer](
                 edge_attr[:, 0:bond_id_len].astype('int64')
             ) + self.convs_bond_float[layer](
@@ -129,7 +129,7 @@ class GINNodeEmbedding(nn.Layer):
             cur_angle_hidden = self.convs_angle_float[layer](ba_edge_attr)
             h_ba = self.convs_bond_angle[layer](cur_h_ba, ba_edge_index, cur_angle_hidden)
             
-            # Dropout和残差
+            # Dropout and residual
             if layer == self.num_layers - 1:
                 h = F.dropout(h, self.drop_ratio, training=self.training)
                 h_ba = F.dropout(h_ba, self.drop_ratio, training=self.training)
@@ -144,7 +144,7 @@ class GINNodeEmbedding(nn.Layer):
             h_list.append(h)
             h_list_ba.append(h_ba)
         
-        # JK连接策略
+        # JK connection strategy
         if self.JK == "last":
             node_representation = h_list[-1]
             edge_representation = h_list_ba[-1]
@@ -155,7 +155,7 @@ class GINNodeEmbedding(nn.Layer):
         return node_representation, edge_representation
     
     def _forward_simple(self, h_list, edge_index, edge_attr):
-        """简化前向传播"""
+        """Simplified forward pass"""
         bond_id_len = len(self.bond_id_names)
         
         for layer in range(self.num_layers):

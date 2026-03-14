@@ -14,20 +14,16 @@
 
 from __future__ import annotations
 
-import os
 import numpy as np
 import paddle
 from paddle.io import Dataset
-from paddle_geometric.data import Data
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional
 
-from ppmat.utils import ColoredTqdm as tqdm
 from ppmat.utils import PlaceEnv
 from ppmat.datasets.build_ir import (
     build_ir_sample_builder,
     build_ir_downloader,
-    GetIRDataset,
     read_ir_spectra_by_ids,
     Construct_IR_Dataset,
 )
@@ -37,12 +33,12 @@ _cache = {}
 
 class IRDataset(Dataset):
     """
-    ECFormer IR 光谱预测数据集
+    ECFormer IR Spectrum Prediction Dataset
     
-    支持三种预加载模式：
-    - '100': 100个样本的小数据集（默认，用于快速测试）
-    - '10000': 1万个样本的中等数据集
-    - 'all': 全部样本（可能很大）
+    Supports three preloading modes:
+    - '100': Small dataset with 100 samples (default, for quick testing)
+    - '10000': Medium dataset with 10,000 samples
+    - 'all': All samples (may be very large)
     """
     
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/IR/IR.tar.gz"
@@ -72,7 +68,7 @@ class IRDataset(Dataset):
         
         cache_key = f"{data_path}_{mode}_{use_geometry_enhanced}"
         
-        # 如果启用缓存且命中，直接返回
+        # If cache is enabled and hit, return directly
         if use_cache and cache_key in _cache:
             cached_data = _cache[cache_key]
             self.graph_atom_bond = cached_data['atom_bond']
@@ -80,21 +76,21 @@ class IRDataset(Dataset):
             self.smiles_list = cached_data.get('smiles', [])
             return
         
-        # 构建组件
+        # Build components
         self.sample_builder = build_ir_sample_builder(sample_builder_cfg)
         self.downloader = build_ir_downloader(downloader_cfg)
         
-        # 处理下载
+        # Handle download
         if force_download or (not self._check_files() and download):
             self.downloaded_root = self.downloader.download(
                 self.url, self.md5, force_download=force_download
             )
             self.data_path = self.downloaded_root
         
-        # 加载数据
+        # Load data
         self._load_data()
         
-        # 存入缓存
+        # Store in cache
         if use_cache:
             _cache[cache_key] = {
                 'atom_bond': self.graph_atom_bond,
@@ -103,7 +99,7 @@ class IRDataset(Dataset):
             }
     
     def _check_files(self):
-        """检查必要的文件是否存在"""
+        """Check if necessary files exist"""
         meta_path = self.data_path / f'ir_column_charity_{self.mode}.npy'
         spectra_path = self.data_path / 'qm9_ir_spec'
         
@@ -114,8 +110,8 @@ class IRDataset(Dataset):
         return True
 
     def _load_data(self):
-        """加载所有数据"""
-        # 1. 加载元数据文件
+        """Load all data"""
+        # 1. Load metadata file
         meta_path = self.data_path / f'ir_column_charity_{self.mode}.npy'
         if not meta_path.exists():
             raise FileNotFoundError(f"IR meta file {meta_path} not found")
@@ -127,13 +123,13 @@ class IRDataset(Dataset):
         
         print(f"Loaded meta data: {len(index_all)} samples")
         
-        # 2. 按需读取IR光谱
+        # 2. Read IR spectra on demand
         spectra_path = self.data_path / 'qm9_ir_spec'
         self.ir_sequences = read_ir_spectra_by_ids(str(spectra_path), index_all)
         
         print(f"Loaded {len(self.ir_sequences)} IR spectra")
         
-        # 3. 构建图数据
+        # 3. Construct graph data
         descriptor_path = self.data_path / 'descriptor_all_column.npy'
         if not descriptor_path.exists():
             descriptor_path = None
@@ -142,7 +138,7 @@ class IRDataset(Dataset):
             dataset_all, index_all, descriptor_path
         )
         
-        # 4. 将光谱信息附加到图数据
+        # 4. Attach spectrum information to graph data
         self.graph_atom_bond = []
         self.graph_bond_angle = []
         self.smiles_list = []
@@ -168,5 +164,5 @@ class IRDataset(Dataset):
     
     @PlaceEnv(paddle.CPUPlace())
     def __getitem__(self, idx):
-        """返回 (atom_bond_graph, bond_angle_graph)"""
+        """Returns (atom_bond_graph, bond_angle_graph)"""
         return self.graph_atom_bond[idx], self.graph_bond_angle[idx]

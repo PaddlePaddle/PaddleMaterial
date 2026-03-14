@@ -17,7 +17,7 @@ import paddle.nn as nn
 import numpy as np
 
 class RBF(nn.Layer):
-    """径向基函数"""
+    """Radial Basis Function"""
     
     def __init__(self,
                  centers: paddle.nn.parameter.Parameter,
@@ -32,7 +32,7 @@ class RBF(nn.Layer):
 
 
 class BondFloatRBF(nn.Layer):
-    """连续键特征RBF编码器"""
+    """RBF encoder for continuous bond features"""
     
     def __init__(self, bond_float_names, embed_dim, rbf_params=None):
         super(BondFloatRBF, self).__init__()
@@ -72,7 +72,7 @@ class BondFloatRBF(nn.Layer):
 
 
 class BondAngleFloatRBF(nn.Layer):
-    """键角连续特征RBF编码器"""
+    """RBF encoder for continuous bond angle features"""
     
     def __init__(self, bond_angle_float_names, embed_dim, rbf_params=None):
         super(BondAngleFloatRBF, self).__init__()

@@ -23,15 +23,15 @@ from paddle_geometric.nn import global_add_pool, global_mean_pool, global_max_po
 
 def fix_mask_for_paddle(mask, n_head=None):
     """
-    简单直接的掩码修复函数
+    Simple and direct mask repair function
     
     Args:
-        mask: 输入掩码
-        n_head: 注意力头数 (attention mask 时需要)
+        mask: input mask
+        n_head: number of attention heads (needed for attention mask)
     """
     shape = mask.shape
     assert len(shape) == 2
-    # 如果是 [batch_size, src_len] 但想用作 attention mask
+    # If [batch_size, src_len] but intended to be used as attention mask
     batch_size, s_len = shape
     # [32, 73] -> [32, 1, 73, 73]
     if n_head:
@@ -41,11 +41,11 @@ def fix_mask_for_paddle(mask, n_head=None):
 
 
 class ECFormerBase(nn.Layer, ABC):
-    """ECFormer基类 - 所有谱图预测模型的抽象接口"""
+    """ECFormer Base Class - Abstract interface for all spectrum prediction models"""
     
     def __init__(
         self,
-        # GNN参数
+        # GNN parameters
         full_atom_feature_dims,
         full_bond_feature_dims,
         bond_float_names,
@@ -59,7 +59,7 @@ class ECFormerBase(nn.Layer, ABC):
         graph_pooling="attention",
         use_geometry_enhanced=True,
         max_node_num=63,
-        # Transformer参数
+        # Transformer parameters
         num_heads=4,
         tf_layers=2,
         tf_dropout=0.1,
@@ -72,7 +72,7 @@ class ECFormerBase(nn.Layer, ABC):
         self.max_peaks = max_peaks
         self.use_geometry_enhanced = use_geometry_enhanced
         
-        # 1. GNN节点编码器
+        # 1. GNN node encoder
         self.gnn_node = GINNodeEmbedding(
             full_atom_feature_dims=full_atom_feature_dims,
             full_bond_feature_dims=full_bond_feature_dims,
@@ -87,17 +87,17 @@ class ECFormerBase(nn.Layer, ABC):
             use_geometry_enhanced=use_geometry_enhanced
         )
         
-        # 2. 图池化层
+        # 2. Graph pooling layer
         self.pool = self._build_pooling(graph_pooling, emb_dim)
         
-        # 3. Query嵌入（峰查询向量）
+        # 3. Query embedding (peak query vectors)
         self.query_embed = nn.Embedding(max_peaks, emb_dim)
         
-        # 4. Transformer编码器
+        # 4. Transformer encoder
         self.tf_encoder = self._build_transformer(emb_dim, num_heads, tf_layers, tf_dropout)
     
     def _build_pooling(self, graph_pooling, emb_dim):
-        """构建图池化层"""
+        """Build graph pooling layer"""
         if graph_pooling == "sum":
             return global_add_pool
         elif graph_pooling == "mean":
@@ -119,7 +119,7 @@ class ECFormerBase(nn.Layer, ABC):
             raise ValueError(f"Invalid graph pooling type: {graph_pooling}")
     
     def _build_transformer(self, emb_dim, num_heads, num_layers, dropout):
-        """构建Transformer编码器"""
+        """Build Transformer encoder"""
         
         assert emb_dim % num_heads == 0, "emb_dim must be divisible by num_heads"
         
@@ -134,17 +134,17 @@ class ECFormerBase(nn.Layer, ABC):
     
     def encode_molecule(
         self,
-        x,                    # [N, F] 原子特征
-        edge_index,           # [2, E] 边索引
-        edge_attr,            # [E, D] 边特征
-        batch_data,           # [N] 批次信息
-        # 几何增强相关
-        ba_edge_index=None,   # [2, E_ba] 键角图边索引
-        ba_edge_attr=None,   # [E_ba, D_ba] 键角图边特征
+        x,                    # [N, F] atom features
+        edge_index,           # [2, E] edge indices
+        edge_attr,            # [E, D] edge features
+        batch_data,           # [N] batch information
+        # Geometry enhancement related
+        ba_edge_index=None,   # [2, E_ba] bond-angle graph edge indices
+        ba_edge_attr=None,   # [E_ba, D_ba] bond-angle graph edge features
     ):
-        """分子编码器 - 纯Tensor输入"""
+        """Molecule encoder - pure Tensor input"""
 
-        # 1. GNN编码
+        # 1. GNN encoding
         if self.use_geometry_enhanced and ba_edge_index is not None:
             h_node, _ = self.gnn_node(
                 x=x,
@@ -160,21 +160,21 @@ class ECFormerBase(nn.Layer, ABC):
                 edge_attr=edge_attr,
             )
         
-        # 2. 节点特征padding（需要batch信息）
+        # 2. Node feature padding (requires batch information)
         batch_size = batch_data[-1] + 1
 
         node_feat, node_index = pad_node_features(
             h_node, batch_data, batch_size, self.max_node_num, self.emb_dim
         )
         
-        # 3. 图池化
+        # 3. Graph pooling
         h_graph = self.pool(h_node, batch_data).unsqueeze(1)
         
-        # 4. 拼接图特征和节点特征
+        # 4. Concatenate graph features and node features
 
         total_node_feat = paddle.concat([h_graph, node_feat], axis=1)
         
-        # 5. 生成padding mask
+        # 5. Generate padding mask
         node_padding_mask = feat_padding_mask(node_index, self.max_node_num)
         pooling_padding_mask = paddle.zeros([node_padding_mask.shape[0], 1], dtype=paddle.get_default_dtype())
         total_padding_mask = paddle.concat([pooling_padding_mask, node_padding_mask], axis=1)
@@ -189,21 +189,21 @@ class ECFormerBase(nn.Layer, ABC):
                 ba_edge_index: paddle.Tensor = None,
                 ba_edge_attr: paddle.Tensor = None,
                 query_mask: paddle.Tensor = None):
-        # 0. 数据类型检查
+        # 0. Data type check
         if batch_data.dtype != paddle.int64:
             batch_data = batch_data.astype(paddle.int64)
 
-        # 1. 分子编码
+        # 1. Molecule encoding
         node_feat, padding_mask, node_padding_mask = self.encode_molecule(x, edge_index, edge_attr,batch_data, ba_edge_index, ba_edge_attr)
         
-        # 2. 峰数预测（从图特征）
+        # 2. Peak number prediction (from graph features)
         graph_feat = node_feat[:, 0, :]
         pred_number = self.pred_number_layer(graph_feat)
         
-        # 3. Query准备
+        # 3. Query preparation
         query_feat = self.query_embed.weight.unsqueeze(0).tile([node_feat.shape[0], 1, 1])
         
-        # 推理时根据预测峰数生成query mask
+        # Generate query mask based on predicted peak number during inference
         if not self.training:
             pred_peak_num = pred_number.argmax(axis=1)
             peak_position = [
@@ -213,18 +213,18 @@ class ECFormerBase(nn.Layer, ABC):
             peak_position = paddle.to_tensor(peak_position)
             query_mask = get_key_padding_mask(peak_position)
         
-        # 4. Transformer编码
+        # 4. Transformer encoding
         encoder_input = paddle.concat([node_feat, query_feat], axis=1)
         encoder_padding_mask = paddle.concat([padding_mask, query_mask], axis=1)
         
         encoder_output = self.tf_encoder(encoder_input, fix_mask_for_paddle(encoder_padding_mask))
         
-        # 5. 峰位置和符号预测
+        # 5. Peak position and sign prediction
         query_output = encoder_output[:, node_feat.shape[1]:, :]
         pred_position = self.pred_position_layer(query_output)
         pred_height = self.pred_height_layer(query_output)
         
-        # 6. 注意力权重（用于可视化）
+        # 6. Attention weights (for visualization)
         node_feat_output = encoder_output[:, :node_feat.shape[1], :]
         attn_weights = paddle.einsum("bid,bjd->bij", 
             node_feat_output, 

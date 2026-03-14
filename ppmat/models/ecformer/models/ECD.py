@@ -18,7 +18,7 @@ from .base_ecformer import ECFormerBase
 
 
 class ECFormerECD(ECFormerBase):
-    """ECFormer for ECD光谱预测 - 峰属性解耦版本"""
+    """ECFormer for ECD spectrum prediction - peak attribute decoupling version"""
     
     def __init__(
         self,
@@ -28,21 +28,21 @@ class ECFormerECD(ECFormerBase):
     ):
         super().__init__(**kwargs)
         
-        # 峰数预测头
+        # Peak number prediction head
         self.pred_number_layer = nn.Sequential(
             nn.Linear(self.emb_dim, self.emb_dim * 2),
             nn.ReLU(),
             nn.Linear(self.emb_dim * 2, self.max_peaks)
         )
         
-        # 峰位置预测头
+        # Peak position prediction head
         self.pred_position_layer = nn.Sequential(
             nn.Linear(self.emb_dim, self.emb_dim // 4),
             nn.ReLU(),
             nn.Linear(self.emb_dim // 4, num_position_classes)
         )
         
-        # 峰符号预测头
+        # Peak sign prediction head
         self.pred_height_layer = nn.Sequential(
             nn.Linear(self.emb_dim, self.emb_dim // 4),
             nn.ReLU(),
