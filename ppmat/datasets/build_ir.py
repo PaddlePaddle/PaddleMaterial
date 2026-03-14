@@ -48,7 +48,7 @@ def _parse_factory_cfg(
     *,
     default_class_name: str,
 ) -> Tuple[str, Dict[str, Any]]:
-    """解析工厂配置，兼容多种格式"""
+    """Parse factory configuration, compatible with multiple formats"""
     if cfg is None:
         return default_class_name, {}
 
@@ -77,9 +77,9 @@ def _parse_factory_cfg(
 
 
 class IRStrictIndexSampleBuilder:
-    """按严格索引构建IR样本"""
+    """Build IR samples by strict index"""
     def build(self, data_dir: Path, meta_file: str, spectra_dir: str, data_count: Optional[int] = None):
-        """构建样本列表"""
+        """Build sample list"""
         samples = []
         meta_path = data_dir / meta_file
         data = np.load(meta_path, allow_pickle=True).item()
@@ -96,7 +96,7 @@ class IRStrictIndexSampleBuilder:
 
 
 class DefaultIRDatasetDownloader:
-    """IR 数据集下载器"""
+    """IR dataset downloader"""
     def __init__(self, datasets_home: Optional[str] = None):
         self.datasets_home = datasets_home or download_utils.DATASETS_HOME
 
@@ -111,7 +111,7 @@ class DefaultIRDatasetDownloader:
 
 
 def build_ir_downloader(cfg: Optional[Dict[str, Any] | str]):
-    """构建下载器"""
+    """Build downloader"""
     class_name, init_params = _parse_factory_cfg(cfg, default_class_name="DefaultIRDatasetDownloader")
     cls = _locate_class(class_name)
     downloader = cls(**init_params)
@@ -122,7 +122,7 @@ def build_ir_downloader(cfg: Optional[Dict[str, Any] | str]):
 
 
 def build_ir_sample_builder(cfg: Optional[Dict[str, Any] | str]):
-    """构建样本构建器"""
+    """Build sample builder"""
     class_name, init_params = _parse_factory_cfg(cfg, default_class_name="IRStrictIndexSampleBuilder")
     cls = _locate_class(class_name)
     builder = cls(**init_params)
@@ -132,7 +132,7 @@ def build_ir_sample_builder(cfg: Optional[Dict[str, Any] | str]):
     return builder
 
 
-# ==================== IR 特定工具函数 ====================
+# ==================== IR Specific Utility Functions ====================
 
 IR_WAVELENGTH_MIN = 500
 IR_WAVELENGTH_MAX = 4000
@@ -141,20 +141,20 @@ DEFAULT_MAX_PEAKS = 15
 
 
 def get_key_padding_mask(tokens):
-    """生成query padding mask"""
+    """Generate query padding mask"""
     key_padding_mask = paddle.zeros(tokens.shape)
     key_padding_mask[tokens == -1] = -paddle.inf
     return key_padding_mask
 
 
 def x_bin_position(real_x, distance=IR_STEP):
-    """将实际波数转换为箱ID"""
+    """Convert actual wavenumber to bin ID"""
     return int((real_x - IR_WAVELENGTH_MIN) / distance)
 
 
 def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
     """
-    从原始特征构建IR图数据
+    Construct IR graph data from raw features
     """
     graph_atom_bond = []
     graph_bond_angle = []
@@ -166,7 +166,7 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
     for i in tqdm(range(len(dataset)), desc="Constructing IR graphs"):
         data = dataset[i]
         
-        # 收集原子特征
+        # Collect atom features
         atom_feature = []
         for name in atom_id_names:
             if name in data:
@@ -177,7 +177,7 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
                 num_atoms = data.get('atomic_num', np.zeros(1)).shape[0]
                 atom_feature.append(np.zeros(num_atoms))
         
-        # 收集键特征
+        # Collect bond features
         bond_feature = []
         for name in bond_id_names:
             if name in data:
@@ -188,7 +188,7 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
                 num_bonds = data.get('bond_dir', np.zeros(1)).shape[0]
                 bond_feature.append(np.zeros(num_bonds))
         
-        # 转换为Tensor
+        # Convert to Tensor
         atom_feature = paddle.to_tensor(np.array(atom_feature).T, dtype='int64')
         bond_feature = paddle.to_tensor(np.array(bond_feature).T, dtype='int64')
         
@@ -201,19 +201,19 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
         data_index_int = paddle.to_tensor(np.array(int(data_index[i])), dtype='int64')
         num_atoms = atom_feature.shape[0]
         
-        # 合并键特征
+        # Merge bond features
         bond_feature = paddle.concat(
             [bond_feature.astype(bond_float_feature.dtype), 
              bond_float_feature.reshape([-1, 1])], 
             axis=1
         )
         
-        # 处理键角特征 - 确保输出6维！
+        # Process bond angle features - ensure output is 6-dim
         if bond_angle_feature.shape[0] > 0:
-            # 基础特征：bond_angle
+            # Base feature: bond_angle
             features = [bond_angle_feature.reshape([-1, 1])]
             
-            # 如果有描述符，添加5个描述符特征
+            # If descriptors exist，add 5 descriptor features
             if all_descriptor is not None and i < all_descriptor.shape[0]:
                 TPSA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 820] / 100
                 RASA = paddle.ones([bond_angle_feature.shape[0]]) * all_descriptor[i, 821]
@@ -229,14 +229,14 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
                     MATS.reshape([-1, 1])
                 ])
             else:
-                # 如果没有描述符，用0填充剩下的5维
+                # If no descriptors, fill the remaining 5 dimensions with zeros
                 for _ in range(5):
                     features.append(paddle.zeros([bond_angle_feature.shape[0], 1]))
             
-            # 拼接成 [E_ba, 6]
+            # Concatenate to [E_ba, 6]
             bond_angle_feature = paddle.concat(features, axis=1)
         else:
-            # 如果没有键角，创建全0的 [0, 6]
+            # If no bond angles, create all-zero [0, 6]
             bond_angle_feature = paddle.zeros([0, 6])
         
         data_atom_bond = Data(
@@ -260,7 +260,7 @@ def Construct_IR_Dataset(dataset, data_index, descriptor_path=None):
 
 def read_ir_spectra_by_ids(sample_path, index_all, max_peak=DEFAULT_MAX_PEAKS):
     """
-    按需读取IR光谱文件
+    Read IR spectrum files on demand
     """
     ir_final_list = []
     
@@ -320,24 +320,24 @@ def GetIRDataset(
     index_all,
 ):
     """
-    核心函数：构建并返回IR图数据集
+    Core function: build and return IR graph dataset
     """
-    # 1. 读取IR光谱序列
+    # 1. Read IR spectrum sequences
     ir_sequences = read_ir_spectra_by_ids(sample_path, index_all)
 
-    # 2. 构建图数据
+    # 2. Construct graph data
     total_graph_atom_bond, total_graph_bond_angle = Construct_IR_Dataset(
         dataset_all, index_all, sample_path
     )
     print("Case Before Process = ", len(total_graph_atom_bond), len(total_graph_bond_angle))
 
-    # 3. 将光谱信息附加到图数据上
+    # 3. Attach spectrum information to graph data
     dataset_graph_atom_bond, dataset_graph_bond_angle = [], []
 
     for i, itm in enumerate(ir_sequences):
         atom_bond = total_graph_atom_bond[i]
 
-        # 附加光谱信息
+        # Attach spectrum information
         atom_bond.sequence = paddle.to_tensor([itm['seq_40']])
         atom_bond.ir_id = paddle.to_tensor(int(itm['id']))
         atom_bond.peak_num = paddle.to_tensor([itm['peak_num']])

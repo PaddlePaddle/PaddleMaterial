@@ -19,11 +19,9 @@ import numpy as np
 import pandas as pd
 import paddle
 from paddle.io import Dataset
-from paddle_geometric.data import Data
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional
 
-from ppmat.utils import ColoredTqdm as tqdm
 from ppmat.utils import PlaceEnv
 from ppmat.utils.compound_tools import get_atom_feature_dims, get_bond_feature_dims
 from ppmat.datasets.build_ecd import build_ecformer_sample_builder
@@ -34,9 +32,9 @@ _cache = ()
 
 class ECDDataset(Dataset):
     """
-    ECDFormer ECD 光谱预测数据集
+    ECDFormer ECD Spectrum Prediction Dataset
     
-    数据来源：https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ECD/ECD.tar.gz
+    Data source: https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ECD/ECD.tar.gz
     """
     
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ECD/ECD.tar.gz"
@@ -62,22 +60,22 @@ class ECDDataset(Dataset):
         self.use_geometry_enhanced = use_geometry_enhanced
         self.use_column_info = use_column_info
         
-        # 构建组件
+        # Build components
         self.sample_builder = build_ecformer_sample_builder(sample_builder_cfg)
         self.downloader = build_ecformer_downloader(downloader_cfg)
         
-        # 处理下载
+        # Handle download
         if force_download or (not self._check_files() and download):
             self.downloaded_root = self.downloader.download(
                 self.url, self.md5, force_download=force_download
             )
             self.data_path = self.downloaded_root
         
-        # 加载数据
+        # Load data
         self._load_data()
     
     def _check_files(self):
-        """检查必要的文件是否存在"""
+        """Check if necessary files exist"""
         npy_path = self.data_path / 'ecd_column_charity_new_smiles.npy'
         csv_path = self.data_path / 'ecd_info.csv'
         
@@ -88,34 +86,34 @@ class ECDDataset(Dataset):
         return True
 
     def _load_data(self):
-        """加载所有数据"""
-        # 1. 加载 npy 文件
+        """Load all data"""
+        # 1. Load npy file
         npy_path = self.data_path / 'ecd_column_charity_new_smiles.npy'
         if not npy_path.exists():
             raise FileNotFoundError(f"npy file not found: {npy_path}")
         
         self.ecd_dataset = np.load(npy_path, allow_pickle=True).tolist()
         
-        # 2. 加载 csv 文件
+        # 2. Load csv file
         csv_path = self.data_path / 'ecd_info.csv'
         if not csv_path.exists():
             raise FileNotFoundError(f"csv file not found: {csv_path}")
         
         self.ecd_info = pd.read_csv(csv_path, encoding='gbk')
         
-        # 3. 提取数据
+        # 3. Extract data
         self.dataset_all = [item['info'] for item in self.ecd_dataset]
         self.smiles_all = [item['smiles'] for item in self.ecd_dataset]
         self.index_all = self.ecd_info['Unnamed: 0'].values
         
-        # 4. 构建手性对映射
+        # 4. Build chiral pair mapping
         self._build_chiral_mapping()
         
-        # 5. 构建图数据集
+        # 5. Build graph dataset
         self._build_graph_dataset()
     
     def _build_chiral_mapping(self):
-        """构建手性对映体映射"""
+        """Build chiral enantiomer mapping"""
         self.hand_idx_dict = {}
         self.line_idx_dict = {}
         
@@ -136,7 +134,7 @@ class ECDDataset(Dataset):
     
     @PlaceEnv(paddle.CPUPlace())
     def _build_graph_dataset(self):
-        """构建图数据集"""       
+        """Build graph dataset"""       
         global _cache
 
         if len(_cache) > 0:
@@ -160,5 +158,5 @@ class ECDDataset(Dataset):
     
     @PlaceEnv(paddle.CPUPlace())
     def __getitem__(self, idx):
-        """返回 (atom_bond_graph, bond_angle_graph)"""
+        """Returns (atom_bond_graph, bond_angle_graph)"""
         return self.graph_atom_bond[idx], self.graph_bond_angle[idx]

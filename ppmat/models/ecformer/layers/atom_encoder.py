@@ -15,7 +15,7 @@
 import paddle.nn as nn
 
 class AtomEncoder(nn.Layer):
-    """原子特征编码器 - 将离散原子特征映射为连续向量"""
+    """Atomic Feature Encoder - Maps discrete atomic features to continuous vectors"""
     
     def __init__(self, full_atom_feature_dims, emb_dim):
         super(AtomEncoder, self).__init__()

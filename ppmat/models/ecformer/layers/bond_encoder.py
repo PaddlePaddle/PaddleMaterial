@@ -15,7 +15,7 @@
 import paddle.nn as nn
 
 class BondEncoder(nn.Layer):
-    """键特征编码器 - 将离散键特征映射为连续向量"""
+    """Bond feature encoder - maps discrete bond features to continuous vectors"""
     
     def __init__(self, full_bond_feature_dims, emb_dim):
         super(BondEncoder, self).__init__()

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Dict, Optional, List, Any, Union
+from typing import Dict, Optional, Any
 
 import numpy as np
 import paddle
