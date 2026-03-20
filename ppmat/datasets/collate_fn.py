@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import numbers
+import warnings
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -24,12 +25,12 @@ from typing import List
 import numpy as np
 import paddle
 import pgl
-import warnings
 
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
+from ppmat.models.gdinn.utils.graph_utils import generate_empty_solvsys
 
 
 class DefaultCollator(object):
@@ -108,7 +109,9 @@ class DensityCollator:
         self.sampling_mode = sampling_mode.lower()
         self.uniform_random_offset = bool(uniform_random_offset)
         self.sampling_seed = sampling_seed
-        self._rng = np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        self._rng = (
+            np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        )
         self.clip_max = clip_max
         self.importance_sampling = bool(importance_sampling)
         self.importance_threshold = importance_threshold
@@ -154,11 +157,18 @@ class DensityCollator:
                         extreme_mask = dense_vals >= self.extreme_threshold
                         extreme_idx = total_idx[extreme_mask]
                         # ensure extreme is subset of high
-                        extreme_idx = np.intersect1d(extreme_idx, high_idx, assume_unique=True)
+                        extreme_idx = np.intersect1d(
+                            extreme_idx, high_idx, assume_unique=True
+                        )
                     mid_idx = np.setdiff1d(high_idx, extreme_idx, assume_unique=True)
 
-                    high_quota = min(target_samples, max(0, int(target_samples * self.importance_ratio)))
-                    extreme_quota = min(target_samples, max(0, int(target_samples * self.extreme_ratio)))
+                    high_quota = min(
+                        target_samples,
+                        max(0, int(target_samples * self.importance_ratio)),
+                    )
+                    extreme_quota = min(
+                        target_samples, max(0, int(target_samples * self.extreme_ratio))
+                    )
 
                     extreme_take = min(len(extreme_idx), extreme_quota)
                     indices_extreme = (
@@ -178,11 +188,15 @@ class DensityCollator:
                     selected = np.concatenate([indices_extreme, indices_mid])
                     remaining = target_samples - len(selected)
                     if remaining > 0:
-                        low_candidates = np.setdiff1d(total_idx, selected, assume_unique=False)
+                        low_candidates = np.setdiff1d(
+                            total_idx, selected, assume_unique=False
+                        )
                         if len(low_candidates) == 0:
                             low_candidates = total_idx
                         replace_low = remaining > len(low_candidates)
-                        indices_low = np.random.choice(low_candidates, remaining, replace=replace_low)
+                        indices_low = np.random.choice(
+                            low_candidates, remaining, replace=replace_low
+                        )
                         indices = np.concatenate([selected, indices_low])
                     else:
                         indices = selected
@@ -192,14 +206,22 @@ class DensityCollator:
                             if self._rng is None:
                                 self._rng = np.random.default_rng()
                             step = (total - 1) / max(target_samples - 1, 1)
-                            offset = float(self._rng.uniform(0, max(step, 1.0))) if step > 0 else 0.0
+                            offset = (
+                                float(self._rng.uniform(0, max(step, 1.0)))
+                                if step > 0
+                                else 0.0
+                            )
                             idx = offset + step * np.arange(target_samples)
                             indices = np.clip(np.round(idx).astype(int), 0, total - 1)
                         else:
-                            indices = np.linspace(0, total - 1, num=target_samples, dtype=int)
+                            indices = np.linspace(
+                                0, total - 1, num=target_samples, dtype=int
+                            )
                     elif self.sampling_mode == "random":
                         replace = target_samples > total
-                        indices = np.random.choice(total, target_samples, replace=replace)
+                        indices = np.random.choice(
+                            total, target_samples, replace=replace
+                        )
                     else:
                         raise ValueError(
                             f"Unsupported sampling_mode '{self.sampling_mode}'. "
@@ -208,16 +230,16 @@ class DensityCollator:
                 indices.sort()
                 sampled_density.append(d[indices])
                 sampled_grid.append(coord[indices])
-                mask.append(
-                    paddle.ones_like(x=sampled_density[-1], dtype="float32")
-                )
+                mask.append(paddle.ones_like(x=sampled_density[-1], dtype="float32"))
             densities = paddle.stack(x=sampled_density, axis=0)
             grid_coord = paddle.stack(x=sampled_grid, axis=0)
             mask = paddle.stack(x=mask, axis=0)
 
         densities = densities * mask
         if self.clip_max is not None:
-            densities = paddle.clip(densities, min=self.padding_value, max=self.clip_max)
+            densities = paddle.clip(
+                densities, min=self.padding_value, max=self.clip_max
+            )
         return {
             "density": densities,
             "density_mask": mask,
@@ -281,6 +303,97 @@ class DensityVoxelCollator:
             "graph": g,
             "infos": list(infos),
         }
+
+
+class BinaryActivityCollator:
+    """Collator for GDI-NN binary activity coefficient dataset.
+
+    This collator handles batching of binary solvent mixture data and generates
+    the empty_solvsys graph for global interaction during the collation process.
+
+    The collated batch contains:
+        - g1: Batched molecular graph for solvent 1
+        - g2: Batched molecular graph for solvent 2
+        - x1: Composition of solvent 1 [batch_size, 1]
+        - x2: Composition of solvent 2 [batch_size, 1]
+        - gamma1: ln(activity coefficient) for solvent 1 [batch_size, 1]
+        - gamma2: ln(activity coefficient) for solvent 2 [batch_size, 1]
+        - intra_hb1: Intra-molecular hydrogen bonds for solvent 1 [batch_size, 1]
+        - intra_hb2: Intra-molecular hydrogen bonds for solvent 2 [batch_size, 1]
+        - inter_hb: Inter-molecular hydrogen bonds [batch_size, 1]
+        - empty_solvsys: Empty solvent system graph for global interaction
+        - solv1_id: List of solvent 1 IDs
+        - solv2_id: List of solvent 2 IDs
+
+    This matches the GDI-NN training format where empty_solvsys is generated
+    based on batch_size during data collation.
+    """
+
+    def __init__(self):
+        """Initialize BinaryActivityCollator."""
+        pass
+
+    def __call__(self, batch: List[dict]) -> dict:
+        """Collate a batch of binary activity samples.
+
+        Args:
+            batch: List of sample dictionaries from BinaryActivityDataset
+
+        Returns:
+            Collated batch dictionary with batched graphs and tensors
+        """
+        if len(batch) == 0:
+            raise ValueError("Cannot collate empty batch")
+
+        batch_size = len(batch)
+
+        # Batch molecular graphs
+        g1_list = [sample["g1"] for sample in batch]
+        g2_list = [sample["g2"] for sample in batch]
+        g1 = pgl.Graph.batch(g1_list)
+        g2 = pgl.Graph.batch(g2_list)
+
+        # Stack numerical tensors
+        x1 = paddle.stack([paddle.to_tensor(sample["x1"]) for sample in batch], axis=0)
+        x2 = paddle.stack([paddle.to_tensor(sample["x2"]) for sample in batch], axis=0)
+        gamma1 = paddle.stack(
+            [paddle.to_tensor(sample["gamma1"]) for sample in batch], axis=0
+        )
+        gamma2 = paddle.stack(
+            [paddle.to_tensor(sample["gamma2"]) for sample in batch], axis=0
+        )
+        intra_hb1 = paddle.stack(
+            [paddle.to_tensor(sample["intra_hb1"]) for sample in batch], axis=0
+        )
+        intra_hb2 = paddle.stack(
+            [paddle.to_tensor(sample["intra_hb2"]) for sample in batch], axis=0
+        )
+        inter_hb = paddle.stack(
+            [paddle.to_tensor(sample["inter_hb"]) for sample in batch], axis=0
+        )
+
+        # Generate empty_solvsys for global interaction
+        empty_solvsys = generate_empty_solvsys(batch_size)
+
+        # Collect solvent IDs (keep as list for reference)
+        solv1_ids = [sample["solv1_id"] for sample in batch]
+        solv2_ids = [sample["solv2_id"] for sample in batch]
+
+        return {
+            "g1": g1,
+            "g2": g2,
+            "x1": x1,
+            "x2": x2,
+            "gamma1": gamma1,
+            "gamma2": gamma2,
+            "intra_hb1": intra_hb1,
+            "intra_hb2": intra_hb2,
+            "inter_hb": inter_hb,
+            "empty_solvsys": empty_solvsys,
+            "solv1_id": solv1_ids,
+            "solv2_id": solv2_ids,
+        }
+
 
 # utils DensityCollator
 def pad_sequence(sequences, batch_first=False, padding_value=0):

@@ -30,6 +30,8 @@ from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
+from ppmat.datasets.binary_activity_dataset import BinaryActivityDataset
+from ppmat.datasets.density_dataset import DensityDataset
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
 from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.matbench_dataset import MatbenchDataset
@@ -41,12 +43,11 @@ from ppmat.datasets.mp2024_dataset import MP2024Dataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
-from ppmat.datasets.density_dataset import DensityDataset
-from ppmat.datasets.small_density_dataset import SmallDensityDataset 
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
-from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
+from ppmat.datasets.qm9_dataset import QM9Dataset  # noqa
+from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -64,9 +65,10 @@ __all__ = [
     "HighLevelWaterDataset",
     "MSDnmrDataset",
     "MatbenchDataset",
-    "DensityDataset", 
+    "DensityDataset",
     "SmallDensityDataset",
     "OMol25Dataset",
+    "BinaryActivityDataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
@@ -98,6 +100,7 @@ def term_mp(sig_num, frame):
     print("main proc {} exit, kill process group " "{}".format(pid, pgid))
     os.killpg(pgid, signal.SIGKILL)
 
+
 def set_signal_handlers():
     """
     Set up signal handlers for safe process group termination.
@@ -107,7 +110,7 @@ def set_signal_handlers():
     2. The current process is the process group leader
 
     This allows safe termination of the entire process group via:
-    - Ctrl+C (SIGINT) 
+    - Ctrl+C (SIGINT)
     - Termination signals (SIGTERM)
 
     Safety Notes:
