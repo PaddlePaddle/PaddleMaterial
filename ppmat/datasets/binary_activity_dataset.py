@@ -464,3 +464,57 @@ class BinaryActivityDataset(Dataset):
         ]
 
         return [[solv1_match, solv2_match], indices]
+
+    @staticmethod
+    def generate_solvsys(batch_size: int) -> pgl.Graph:
+        """Generate an empty solvent system graph for global interaction.
+
+        This creates a bipartite graph connecting solvent 1 and solvent 2 representations
+        for each batch sample, matching the original GDI-NN architecture.
+
+        The graph has:
+        - 2 * batch_size nodes (two solvent nodes per batch)
+        - Bidirectional edges between solvent pairs
+        - Self-loops on each node
+
+        Args:
+            batch_size: Number of samples in the batch
+
+        Returns:
+            pgl.Graph with the solvent system topology
+        """
+        import paddle
+
+        n_solv = 2
+        num_nodes = n_solv * batch_size
+
+        # Create edges matching original DGL order:
+        #   src = arange(batch_size)           -> [0, 1, ..., batch-1]
+        #   dst = arange(batch_size, 2*batch)  -> [batch, batch+1, ..., 2*batch-1]
+        #   add_edges(cat(src, dst), cat(dst, src))  -> all src->dst then all dst->src
+        #   add_edges(arange(2*batch), arange(2*batch))  -> self-loops
+        #
+        # Edge order matters because hb_features are indexed by position:
+        #   [0..batch-1]: inter_hb (solv1->solv2)
+        #   [batch..2*batch-1]: inter_hb (solv2->solv1)
+        #   [2*batch..3*batch-1]: intra_hb1 (self-loops on solv1)
+        #   [3*batch..4*batch-1]: intra_hb2 (self-loops on solv2)
+        src_range = paddle.arange(batch_size, dtype="int64")
+        dst_range = paddle.arange(batch_size, num_nodes, dtype="int64")
+        all_range = paddle.arange(num_nodes, dtype="int64")
+
+        # Bidirectional edges: cat(src, dst) -> cat(dst, src)
+        edge_src = paddle.concat([paddle.concat([src_range, dst_range]), all_range])
+        edge_dst = paddle.concat([paddle.concat([dst_range, src_range]), all_range])
+
+        # Convert to list of tuples for pgl.Graph
+        edges = list(zip(edge_src.tolist(), edge_dst.tolist()))
+
+        graph = pgl.Graph(
+            num_nodes=num_nodes,
+            edges=edges,
+            node_feat={"h": paddle.zeros([num_nodes, 1])},  # Dummy features
+            edge_feat={"e": paddle.zeros([len(edges), 1])},  # Dummy edge features
+        )
+
+        return graph

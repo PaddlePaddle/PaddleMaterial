@@ -26,11 +26,11 @@ import numpy as np
 import paddle
 import pgl
 
+from ppmat.datasets.binary_activity_dataset import BinaryActivityDataset
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
-from ppmat.models.gdinn.utils.graph_utils import generate_empty_solvsys
 
 
 class DefaultCollator(object):
@@ -373,7 +373,7 @@ class BinaryActivityCollator:
         )
 
         # Generate empty_solvsys for global interaction
-        empty_solvsys = generate_empty_solvsys(batch_size)
+        empty_solvsys = BinaryActivityDataset.generate_solvsys(batch_size)
 
         # Collect solvent IDs (keep as list for reference)
         solv1_ids = [sample["solv1_id"] for sample in batch]
