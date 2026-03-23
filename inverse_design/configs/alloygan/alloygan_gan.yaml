@@ -1,0 +1,48 @@
+Global:
+  do_train: True
+  do_eval: False
+
+Trainer:
+  seed: 42
+  output_dir: ./output/alloygan_gan
+  generator_iters: 10000
+  d_steps: 1
+  save_freq: 1000
+  log_freq: 100
+  pretrained_model_path: null
+
+Optimizer:
+  lr_g: 0.0005
+  lr_d: 0.0005
+  beta1: 0.5
+  beta2: 0.999
+
+Model:
+  __class_name__: AlloyGAN
+  __init_params__:
+    noise_dim: 100
+    hidden_dim_g: 512
+    hidden_dim_d: 1024
+    comp_dim: 40
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: AlloyDataset
+      __init_params__:
+        path: ./data/alloy/Alloy_train.csv
+        categories:
+          - Cu
+          - Fe
+          - Ti
+          - Zr
+        normalize: true
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: true
+        drop_last: false
+        batch_size: 64
