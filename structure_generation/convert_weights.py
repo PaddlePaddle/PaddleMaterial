@@ -49,8 +49,15 @@ def convert_pytorch_to_paddle(input_path, output_path):
 
     paddle_state = {}
     for key, tensor in pt_state.items():
+        # Strip torch.compile prefix: _orig_mod.transformer. or _orig_mod.
+        clean_key = key
+        if clean_key.startswith("_orig_mod.transformer."):
+            clean_key = clean_key[len("_orig_mod.transformer."):]
+        elif clean_key.startswith("_orig_mod."):
+            clean_key = clean_key[len("_orig_mod."):]
+
         # Skip lm_head.weight — our model uses weight tying via matmul with wte.weight
-        if key == "lm_head.weight":
+        if clean_key == "lm_head.weight":
             continue
 
         np_array = tensor.numpy()
@@ -59,7 +66,7 @@ def convert_pytorch_to_paddle(input_path, output_path):
         # Linear weights in pytorch: [out, in], paddle: [in, out]
         # Skip embedding weights (wte.weight, wpe.weight) and 1D params
         needs_transpose = (
-            np_array.ndim == 2 and "wte.weight" not in key and "wpe.weight" not in key
+            np_array.ndim == 2 and "wte.weight" not in clean_key and "wpe.weight" not in clean_key
         )
 
         if needs_transpose:
@@ -67,8 +74,7 @@ def convert_pytorch_to_paddle(input_path, output_path):
 
         # Map PyTorch key names to Paddle conventions
         # The model structure is identical, just framework prefix differences
-        paddle_key = key
-        paddle_state[paddle_key] = np_array
+        paddle_state[clean_key] = np_array
 
     paddle.save(paddle_state, output_path)
     print(f"Converted {len(paddle_state)} parameters")

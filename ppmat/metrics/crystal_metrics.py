@@ -64,10 +64,10 @@ def bond_length_reasonableness_score(structure):
 
                 # Expected length from average of radii
                 try:
-                    r_cov_i = element_i.atomic_radius or 0
-                    r_cov_j = element_j.atomic_radius or 0
-                    r_ionic_i = element_i.average_ionic_radius or 0
-                    r_ionic_j = element_j.average_ionic_radius or 0
+                    r_cov_i = float(element_i.atomic_radius or 0)
+                    r_cov_j = float(element_j.atomic_radius or 0)
+                    r_ionic_i = float(element_i.average_ionic_radius or 0)
+                    r_ionic_j = float(element_j.average_ionic_radius or 0)
                     expected = (r_cov_i + r_cov_j + r_ionic_i + r_ionic_j) / 2
                 except Exception:
                     expected = 2.0  # fallback

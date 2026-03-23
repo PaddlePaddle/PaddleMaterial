@@ -296,18 +296,23 @@ class CrystalLLM(nn.Layer):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
+        stop_token: Optional[int] = None,
     ) -> paddle.Tensor:
-        """Autoregressive generation. Stops on double newline (\\n\\n).
+        """Autoregressive generation.
 
         Args:
             idx: (B, T) starting token indices.
             max_new_tokens: maximum tokens to generate.
             temperature: sampling temperature.
             top_k: if set, only sample from top-k tokens.
+            stop_token: if set, stop when last two generated tokens both equal
+                this value (double-token stop). Requires ≥2 new tokens before
+                checking. Default ``None`` means generate full ``max_new_tokens``.
 
         Returns:
             (B, T + generated) tensor of token indices.
         """
+        initial_len = idx.shape[1]
         for _ in range(max_new_tokens):
             # crop to block_size
             idx_cond = (
@@ -332,9 +337,9 @@ class CrystalLLM(nn.Layer):
             idx_next = paddle.multinomial(probs, num_samples=1)
             idx = paddle.concat([idx, idx_next], axis=1)
 
-            # stop on double newline (token 10 = '\n')
-            if idx.shape[1] >= 2:
-                if idx[0, -1].item() == 10 and idx[0, -2].item() == 10:
+            # stop on double token (only after generating at least 2 new tokens)
+            if stop_token is not None and idx.shape[1] >= initial_len + 2:
+                if idx[0, -1].item() == stop_token and idx[0, -2].item() == stop_token:
                     break
 
         return idx
