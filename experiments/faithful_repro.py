@@ -79,12 +79,12 @@ def train_and_eval(epochs=50, batch_size=64, lr=0.0002, weight_decay=1e-5,
     n_samples = len(ds)
     print(f"Dataset: {n_samples} samples", flush=True)
 
-    # ---- Model (exact original architecture) ----
+    # ---- Model (Softmax output — forces comp fractions to sum to 1.0) ----
     G = nn.Sequential(
         nn.Linear(5 + 26, 512),
         nn.LeakyReLU(0.2),
         nn.Linear(512, 40),
-        nn.Sigmoid(),
+        nn.Softmax(axis=-1),
     )
     D = nn.Sequential(
         nn.Linear(66, 1024),

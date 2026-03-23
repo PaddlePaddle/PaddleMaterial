@@ -39,7 +39,7 @@ class AlloyGenerator(nn.Layer):
             nn.Linear(input_dim, hidden_dim),
             nn.LeakyReLU(negative_slope=0.2),
             nn.Linear(hidden_dim, output_dim),
-            nn.Sigmoid(),
+            nn.Softmax(axis=-1),
         )
 
     def forward(self, z):
