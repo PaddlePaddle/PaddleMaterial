@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, List, Any, Union
 
 import numpy as np
 import paddle
 from paddle import nn
 from paddle import optimizer as optim
 from paddle.distributed import fleet
+from tqdm import tqdm
 
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
@@ -34,9 +35,9 @@ from ppmat.losses.ecd_loss import ECDLoss
 from ppmat.losses.ir_loss import IRLoss
 
 
-class ECDFormerTrainer(BaseTrainer):
+class ECFormerTrainer(BaseTrainer):
     """
-    ECDFormer trainer supporting both ECD and IR tasks with dedicated metrics.
+    ECFormer trainer supporting both ECD and IR tasks with dedicated metrics.
     
     Features:
     - Automatic task detection from model class name
@@ -100,6 +101,9 @@ class ECDFormerTrainer(BaseTrainer):
         # Initialize task-specific metrics (will be attached via attach_metrics)
         self.train_metrics = None
         self.eval_metrics = None
+        
+        # Cache for dataset building to avoid repeated decompression
+        self._dataset_cache = {}
     
     def attach_metrics(self, metric_cfg=None, **runtime_objs):
         """
@@ -147,6 +151,19 @@ class ECDFormerTrainer(BaseTrainer):
         # Update training state
         self.state.max_steps_in_train_epoch = len(dataloader)
         self.state.step_in_train_epoch = 0
+        
+        # Determine if this is the main process for progress bar
+        is_main_process = paddle.distributed.get_rank() == 0 if paddle.distributed.is_initialized() else True
+        
+        # Create progress bar only on main process
+        if is_main_process:
+            pbar = tqdm(
+                total=len(dataloader),
+                desc=f"Epoch {self.state.epoch}/{self.max_epochs}",
+                unit="batch",
+                ncols=100,
+                leave=True
+            )
         
         # Timers
         reader_tic = time.perf_counter()
@@ -213,10 +230,31 @@ class ECDFormerTrainer(BaseTrainer):
             if self.lr_scheduler is not None and not self.lr_scheduler.by_epoch:
                 self.lr_scheduler.step()
             
-            # Logging
-            if (self.state.step_in_train_epoch % self.log_freq == 0 or
-                self.state.step_in_train_epoch == self.state.max_steps_in_train_epoch):
+            # Update progress bar on main process
+            if is_main_process:
+                # Prepare current metrics for display
+                current_metrics = {}
+                current_metrics["lr"] = f"{self.optimizer.get_lr():.2e}"
+                for name, meter in loss_info.items():
+                    # Show only the most important metrics
+                    if "loss" == name.lower() or "acc" in name.lower():
+                        current_metrics[name] = f"{meter.val:.4f}"
                 
+                # Add streaming metrics if available (only show a few key metrics to avoid clutter)
+                stream_metrics = self._compute_streaming_metrics(stage='train')
+                for name, value in stream_metrics.items():
+                    if isinstance(value, (int, float)):
+                        # Show only the most important metrics
+                        if "loss" == name.lower() or "acc" in name.lower():
+                            short_name = name.split('/')[-1] if '/' in name else name
+                            current_metrics[short_name] = f"{value:.4f}"
+                
+                # Update progress bar postfix
+                pbar.set_postfix(current_metrics, refresh=False)
+                pbar.update(1)
+            
+            # Write to visualization tools (every log_freq steps)
+            if self.state.step_in_train_epoch % self.log_freq == 0:
                 logs = OrderedDict()
                 logs["lr"] = self.optimizer.get_lr()
                 for name, meter in time_info.items():
@@ -224,7 +262,7 @@ class ECDFormerTrainer(BaseTrainer):
                 for name, meter in loss_info.items():
                     logs[name] = meter.val
                 
-                # Add streaming metrics if available
+                # Add streaming metrics
                 stream_metrics = self._compute_streaming_metrics(stage='train')
                 for name, value in stream_metrics.items():
                     if isinstance(value, (int, float)):
@@ -233,15 +271,7 @@ class ECDFormerTrainer(BaseTrainer):
                             metric_info[name] = AverageMeter(name)
                         metric_info[name].update(float(value), 1)
                 
-                display_logs = self._filter_out_dict(logs, stage="train")
-                
-                msg = f"Train: Epoch [{self.state.epoch}/{self.max_epochs}]"
-                msg += f" | Step: [{self.state.step_in_train_epoch}/{self.state.max_steps_in_train_epoch}]"
-                for key, val in display_logs.items():
-                    msg += f" | {key}: {val:.6f}"
-                logger.info(msg)
-                
-                # Write to visualization tools
+                # Write to visualization tools (not to console)
                 logger.scalar(
                     tag="train(step)",
                     metric_dict=logs,
@@ -254,6 +284,10 @@ class ECDFormerTrainer(BaseTrainer):
             batch_tic = time.perf_counter()
             reader_tic = time.perf_counter()
         
+        # Close progress bar
+        if is_main_process:
+            pbar.close()
+        
         # Compute epoch-level streaming metrics
         epoch_stream_metrics = self._compute_streaming_metrics(stage='train')
         for name, value in epoch_stream_metrics.items():
@@ -261,6 +295,9 @@ class ECDFormerTrainer(BaseTrainer):
                 if name not in metric_info:
                     metric_info[name] = AverageMeter(name)
                 metric_info[name].update(float(value), 1)
+        
+        # Log epoch summary to file (not to console)
+        logger.info(f"Epoch {self.state.epoch} completed. Avg Loss: {loss_info.get('loss', AverageMeter('loss')).avg:.4f}")
         
         return time_info, loss_info, metric_info
     
@@ -290,6 +327,19 @@ class ECDFormerTrainer(BaseTrainer):
         for _, m in self.metric_modules.items():
             if hasattr(m, 'reset'):
                 m.reset()
+        
+        # Determine if this is the main process for progress bar
+        is_main_process = paddle.distributed.get_rank() == 0 if paddle.distributed.is_initialized() else True
+        
+        # Create progress bar only on main process
+        if is_main_process:
+            pbar = tqdm(
+                total=len(dataloader),
+                desc=f"Eval Epoch {self.state.epoch}/{self.max_epochs}",
+                unit="batch",
+                ncols=80,
+                leave=False
+            )
         
         reader_tic = time.perf_counter()
         batch_tic = time.perf_counter()
@@ -342,26 +392,22 @@ class ECDFormerTrainer(BaseTrainer):
                 
                 self.state.step_in_eval_epoch += 1
                 
-                # Logging
-                if (self.state.step_in_eval_epoch % self.log_freq == 0 or
-                    self.state.step_in_eval_epoch == self.state.max_steps_in_eval_epoch):
-                    
-                    logs = OrderedDict()
-                    for name, meter in time_info.items():
-                        logs[name] = meter.val
+                # Update progress bar on main process
+                if is_main_process:
+                    current_metrics = {}
                     for name, meter in loss_info.items():
-                        logs[name] = meter.val
-                    
-                    display_logs = self._filter_out_dict(logs, stage="eval")
-                    
-                    msg = f"Eval: Epoch [{self.state.epoch}/{self.max_epochs}]"
-                    msg += f" | Step: [{self.state.step_in_eval_epoch}/{self.state.max_steps_in_eval_epoch}]"
-                    for key, val in display_logs.items():
-                        msg += f" | {key}: {val:.6f}"
-                    logger.info(msg)
+                        # Show only the most important metrics
+                        if "loss" == name.lower() or "acc" in name.lower():
+                            current_metrics[name] = f"{meter.val:.4f}"
+                    pbar.set_postfix(current_metrics, refresh=False)
+                    pbar.update(1)
                 
                 batch_tic = time.perf_counter()
                 reader_tic = time.perf_counter()
+        
+        # Close progress bar
+        if is_main_process:
+            pbar.close()
         
         # Compute epoch-level metrics from streaming accumulators
         epoch_metrics = self._compute_streaming_metrics(stage='eval')
@@ -370,6 +416,9 @@ class ECDFormerTrainer(BaseTrainer):
                 if name not in metric_info:
                     metric_info[name] = AverageMeter(name)
                 metric_info[name].update(float(value), len(dataloader.dataset))
+        
+        # Log evaluation summary to file (not to console)
+        logger.info(f"Eval Epoch {self.state.epoch} completed. Avg Loss: {loss_info.get('loss', AverageMeter('loss')).avg:.4f}")
         
         return time_info, loss_info, metric_info
     
@@ -390,8 +439,21 @@ class ECDFormerTrainer(BaseTrainer):
         all_attn_weights = []
         all_peak_nums = []
         
+        # Determine if this is the main process for progress bar
+        is_main_process = paddle.distributed.get_rank() == 0 if paddle.distributed.is_initialized() else True
+        
+        # Create progress bar only on main process
+        if is_main_process:
+            pbar = tqdm(
+                total=len(dataloader),
+                desc="Predicting",
+                unit="batch",
+                ncols=80,
+                leave=True
+            )
+        
         with paddle.no_grad():
-            for batch in dataloader:
+            for batch in pbar if is_main_process else dataloader:
                 model_inputs, _ = batch  # No targets needed for inference
                 
                 predictions = self.model(
@@ -437,6 +499,10 @@ class ECDFormerTrainer(BaseTrainer):
                             'weights': predictions['attention']['weights'][i],
                             'mask': predictions['attention']['mask'][i] if predictions['attention']['mask'] else None
                         })
+        
+        # Close progress bar
+        if is_main_process:
+            pbar.close()
         
         return {
             'peak_number': all_peak_nums,

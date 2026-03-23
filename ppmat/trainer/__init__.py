@@ -1,6 +1,7 @@
 from ppmat.trainer.base_trainer import BaseTrainer
+from ppmat.trainer.ecformer_trainer import ECFormerTrainer
 
-__all__ = ["BaseTrainer", "build_trainer"]
+__all__ = ["BaseTrainer", "build_trainer", "ECFormerTrainer"]
 
 
 def build_trainer(cfg, **kwargs):

@@ -25,8 +25,9 @@ from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.utils import save_load
 
-from spectrum_elucidation.ecformer.trainer import ECDFormerTrainer
+from ppmat.trainer import ECFormerTrainer
 
 
 def main():
@@ -35,7 +36,7 @@ def main():
     parser.add_argument(
         "-c", "--config",
         type=str,
-        default="./spectrum_elucidation/ecformer/configs/ecd.yaml",
+        default="../configs/ecformer/ecd.yaml",
         help="Path to config file",
     )
     parser.add_argument(
@@ -141,7 +142,7 @@ def main():
     model = build_model(model_cfg)
     logger.info(f"Model built: {model_cfg['__class_name__']}")
     
-    # Print model parameters count
+    # Print model parameter count
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if not p.stop_gradient)
     logger.info(f"Total parameters: {total_params / 1e6:.2f}M")
@@ -164,7 +165,7 @@ def main():
         logger.info(f"Optimizer built: {config['Optimizer']['__class_name__']}")
 
     # Build trainer
-    trainer = ECDFormerTrainer(
+    trainer = ECFormerTrainer(
         config=config["Trainer"],
         model=model,
         train_dataloader=dataloaders.get("train"),
@@ -183,7 +184,7 @@ def main():
             trainer.scaler,
         )
 
-    # Execute training/evaluation/prediction
+    # Execute training / evaluation / prediction
     if config["Global"].get("do_train", True):
         logger.info("Starting training...")
         trainer.train()
