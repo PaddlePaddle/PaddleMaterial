@@ -251,16 +251,7 @@ def train_gan(config, model, train_loader):
                     paddle.concat([fake_comp, conditions], axis=1)
                 )
                 d_output_c = paddle.clip(d_output, _EPS, 1.0 - _EPS)
-                g_adv_loss = loss_fn(d_output_c, ones)
-
-                # Composition sum penalty: comps should sum to ~1.0 (normalized)
-                sum_penalty_weight = trainer_cfg.get("sum_penalty", 0.0)
-                if sum_penalty_weight > 0:
-                    comp_sums = fake_comp.sum(axis=1)
-                    sum_penalty = paddle.mean((comp_sums - 1.0) ** 2)
-                    g_loss = g_adv_loss + sum_penalty_weight * sum_penalty
-                else:
-                    g_loss = g_adv_loss
+                g_loss = loss_fn(d_output_c, ones)
 
                 opt_d.clear_grad()
                 opt_g.clear_grad()
@@ -349,9 +340,20 @@ def train_gan(config, model, train_loader):
 
 
 def evaluate_cgan(config, model, test_loader, output_dir):
-    """Generate compositions using trained CGAN conditioned on test set properties."""
+    """Generate compositions using trained CGAN and compute Wasserstein distance.
+
+    Reports WD on the original paper's scale (compositions as fractions [0,1])
+    and also per-category WD for comparison with Table 1 (WD=0.41 for Cu).
+    """
     model.eval()
     comp_dim = model.comp_dim
+
+    ELEMENTS = [
+        "Cu", "Zr", "Al", "Ni", "Ti", "Ag", "Fe", "Mg", "B", "Si",
+        "Nb", "Y", "Ca", "La", "Co", "Be", "C", "Mo", "Pd", "P",
+        "Sn", "Cr", "Hf", "Zn", "Gd", "Ce", "Er", "Ga", "Au", "Nd",
+        "Dy", "W", "Pr", "Ta", "Sc", "Li", "Sm", "S", "Pt", "Mn",
+    ]
 
     all_real = []
     all_fake = []
@@ -388,12 +390,32 @@ def evaluate_cgan(config, model, test_loader, output_dir):
     # Compute Wasserstein distance (per-column earth mover's distance)
     from scipy.stats import wasserstein_distance
 
+    # Overall WD
     wd_per_col = []
     for i in range(comp_dim):
         wd = wasserstein_distance(all_real[:, i], all_fake[:, i])
         wd_per_col.append(wd)
     avg_wd = np.mean(wd_per_col)
-    logger.info(f"Wasserstein distance (avg over {comp_dim} cols): {avg_wd:.4f}")
+    logger.info(f"Overall WD (fraction scale): {avg_wd:.4f}")
+
+    # Per-category WD (paper reports WD=0.41 for Cu on fraction scale)
+    real_dom = all_real.argmax(axis=1)
+    for cat_name, cat_idx in [("Cu", 0), ("Fe", 6), ("Ti", 4), ("Zr", 1)]:
+        mask = real_dom == cat_idx
+        n = mask.sum()
+        if n > 0:
+            cat_wd = np.mean([
+                wasserstein_distance(all_real[mask, i], all_fake[mask, i])
+                for i in range(comp_dim)
+            ])
+            logger.info(f"  {cat_name} (n={n}): WD={cat_wd:.4f}")
+
+    # Composition sum stats
+    sums = all_fake.sum(axis=1)
+    logger.info(
+        f"Composition sums: mean={sums.mean():.4f} std={sums.std():.4f} "
+        f"(target: 1.0 on fraction scale)"
+    )
 
     return avg_wd
 

@@ -39,8 +39,9 @@ class AlloyDataset(Dataset):
         path: Path to Alloy_train.csv.
         categories: Optional list of dominant-element categories to filter
             (e.g., ["Cu", "Fe", "Ti", "Zr"]). Default uses all entries.
-        normalize: Whether to normalize composition fractions to [0, 1].
-            Default True (divides compositions by 100).
+        normalize: Whether to normalize composition fractions to [0, 1]
+            by dividing by 100. Conditions are left raw (matching original
+            AlloyGAN code which feeds raw Tg/Tx/Tl/GFA into the network).
     """
 
     # Top 40 elements in order (matches CSV columns 0-39)
@@ -74,21 +75,20 @@ class AlloyDataset(Dataset):
 
         data = df.values.astype(np.float32)
 
-        # Normalize compositions (cols 0-39) to [0,1] by dividing by 100,
-        # and conditions (cols 40+) via min-max to [0,1].
-        # This puts all features on the same scale as G's Sigmoid output,
-        # preventing D's Sigmoid from saturating on large condition values.
+        # Normalize compositions (cols 0-39) to [0,1] by dividing by 100.
+        # Conditions (cols 40+) are MinMax-scaled to [0,1].
+        # G's Sigmoid output range [0,1] matches normalized comp fractions.
+        # Original GAN version uses sklearn MinMaxScaler on full data;
+        # CGAN version's CSV was likely pre-normalized.
         if normalize:
             data[:, :40] = data[:, :40] / 100.0
+            # MinMax normalize conditions for training stability
             cond = data[:, 40:]
-            self.cond_min = cond.min(axis=0)
-            self.cond_max = cond.max(axis=0)
-            denom = self.cond_max - self.cond_min
-            denom[denom == 0] = 1.0  # avoid div-by-zero for constant cols
-            data[:, 40:] = (cond - self.cond_min) / denom
-        else:
-            self.cond_min = None
-            self.cond_max = None
+            cond_min = cond.min(axis=0, keepdims=True)
+            cond_max = cond.max(axis=0, keepdims=True)
+            denom = cond_max - cond_min
+            denom[denom == 0] = 1.0  # constant columns stay 0
+            data[:, 40:] = (cond - cond_min) / denom
 
         self.data = data
 

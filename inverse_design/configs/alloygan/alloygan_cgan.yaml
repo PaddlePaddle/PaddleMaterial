@@ -1,6 +1,6 @@
 Global:
   do_train: True
-  do_eval: False
+  do_eval: True
 
 Trainer:
   seed: 42
@@ -32,11 +32,8 @@ Dataset:
       __class_name__: AlloyDataset
       __init_params__:
         path: ./data/alloy/Alloy_train.csv
-        categories:
-          - Cu
-          - Fe
-          - Ti
-          - Zr
+        # No category filtering — train on all data (matches original)
+        # normalize: comp/100, conditions MinMax → all [0,1]
         normalize: true
     loader:
       num_workers: 0
@@ -44,6 +41,22 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
+        batch_size: 64
         shuffle: true
         drop_last: false
-        batch_size: 64
+  # Test uses same data as train (matching original AlloyGAN: dataset[:, :])
+  test:
+    dataset:
+      __class_name__: AlloyDataset
+      __init_params__:
+        path: ./data/alloy/Alloy_train.csv
+        normalize: true
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1253
+        shuffle: false
+        drop_last: false
