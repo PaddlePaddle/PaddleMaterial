@@ -1,0 +1,90 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+
+Trainer:
+  max_iters: 48000
+  seed: 1337
+  output_dir: ./output/crystalllm_mp20_large
+  save_freq: 250
+  log_freq: 1
+  eval_freq: 250
+  eval_iters: 200
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: False
+  compute_metric_during_train: False
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: CrystalLLM
+  __init_params__:
+    vocab_size: 371
+    block_size: 2048
+    n_layer: 16
+    n_head: 16
+    n_embd: 1024
+    dropout: 0.1
+    bias: True
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.99
+    weight_decay: 0.1
+    lr:
+      __class_name__: CosineAnnealingDecay
+      __init_params__:
+        learning_rate: 0.001
+        T_max: 48000
+        eta_min: 0.0001
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: CIFTokenDataset
+      __init_params__:
+        data_path: "./data/crystalllm/mp-20/train.bin"
+        block_size: 2048
+        starts_path: "./data/crystalllm/mp-20/train_starts.pkl"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 16
+  val:
+    dataset:
+      __class_name__: CIFTokenDataset
+      __init_params__:
+        data_path: "./data/crystalllm/mp-20/val.bin"
+        block_size: 2048
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 16
+
+Sample:
+  num_samples: 10000
+  max_new_tokens: 3000
+  temperature: 0.8
+  top_k: 10
+  metrics:
+    __class_name__: CrystalMetrics
+    __init_params__: {}
