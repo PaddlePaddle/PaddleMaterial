@@ -265,7 +265,8 @@ def evaluate(
             batch_time = now - last_log
             print(f"  [{i+1:>6}/{num_samples}] {rate:.1f} samples/s | "
                   f"elapsed {elapsed:.0f}s | ETA {eta:.0f}s | "
-                  f"last {batch_log_interval} in {batch_time:.1f}s")
+                  f"last {batch_log_interval} in {batch_time:.1f}s",
+                  flush=True)
             last_log = now
 
     total_time = time.time() - start_time
