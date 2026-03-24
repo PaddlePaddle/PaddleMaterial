@@ -144,14 +144,15 @@ def is_sensible(
 def bond_length_reasonableness_score(cif_str, tolerance=0.32, h_factor=2.5):
     """Compute fraction of reasonable bonds (upstream-aligned).
 
-    Uses Structure.from_str() directly. Bond length expectation is based on
-    electronegativity difference: if |X_i - X_j| >= 1.7, use ionic radii;
-    otherwise use atomic (covalent) radii. Hydrogen bonds get a wider tolerance.
+    Uses CrystalNN for neighbor detection. Bond length expectation based on
+    electronegativity difference: if |X_i - X_j| >= 1.7, use directed ionic
+    radii (cationic + anionic); otherwise use atomic (covalent) radii.
+    Hydrogen bonds use upper-bound-only check (bond_ratio < h_factor).
 
     Args:
         cif_str: Raw CIF text string.
         tolerance: Fractional deviation allowed (default 0.32 = 32%).
-        h_factor: Tolerance multiplier for H-containing bonds.
+        h_factor: Upper bound ratio for H-containing bonds (default 2.5).
 
     Returns:
         float: fraction of reasonable bonds (0.0 to 1.0).
@@ -166,54 +167,64 @@ def bond_length_reasonableness_score(cif_str, tolerance=0.32, h_factor=2.5):
     try:
         from pymatgen.analysis.local_env import CrystalNN
         nn = CrystalNN()
-        all_bonds = 0
-        reasonable_bonds = 0
+        min_ratio = 1 - tolerance
+        max_ratio = 1 + tolerance
+        total = 0
+        score = 0
 
-        for i in range(len(structure)):
+        for i, site in enumerate(structure):
             try:
                 neighbors = nn.get_nn_info(structure, i)
             except Exception:
                 continue
-            element_i = structure[i].specie
             for neighbor in neighbors:
-                element_j = neighbor["site"].specie
-                distance = neighbor["site"].distance(structure[i])
+                j = neighbor["site_index"]
+                if i == j:
+                    continue
 
-                try:
-                    x_i = float(element_i.X) if not math.isnan(element_i.X) else 0.0
-                    x_j = float(element_j.X) if not math.isnan(element_j.X) else 0.0
-                except (TypeError, AttributeError):
-                    x_i, x_j = 0.0, 0.0
+                connected_site = neighbor["site"]
+                bond_length = site.distance(connected_site)
 
-                # Choose ionic vs covalent based on electronegativity difference
-                en_diff = abs(x_i - x_j)
+                en_diff = abs(site.specie.X - connected_site.specie.X)
                 if en_diff >= 1.7:
-                    # Ionic bond: use ionic radii
-                    try:
-                        r_i = float(element_i.average_ionic_radius or element_i.atomic_radius or 0)
-                        r_j = float(element_j.average_ionic_radius or element_j.atomic_radius or 0)
-                    except Exception:
-                        r_i, r_j = 0.0, 0.0
+                    # Ionic bond: cation (lower EN) + anion (higher EN)
+                    if site.specie.X < connected_site.specie.X:
+                        expected_length = float(
+                            site.specie.average_cationic_radius
+                            + connected_site.specie.average_anionic_radius
+                        )
+                    else:
+                        expected_length = float(
+                            site.specie.average_anionic_radius
+                            + connected_site.specie.average_cationic_radius
+                        )
                 else:
-                    # Covalent bond: use atomic radii
-                    try:
-                        r_i = float(element_i.atomic_radius or 0)
-                        r_j = float(element_j.atomic_radius or 0)
-                    except Exception:
-                        r_i, r_j = 0.0, 0.0
+                    # Covalent bond: atomic radii
+                    expected_length = float(
+                        site.specie.atomic_radius
+                        + connected_site.specie.atomic_radius
+                    )
 
-                expected = r_i + r_j
-                if expected > 0:
-                    ratio = abs(distance - expected) / expected
-                    # Wider tolerance for H-containing bonds
-                    tol = tolerance
-                    if str(element_i) == "H" or str(element_j) == "H":
-                        tol = tolerance * h_factor
-                    if ratio <= tol:
-                        reasonable_bonds += 1
-                all_bonds += 1
+                if expected_length <= 0:
+                    total += 1
+                    continue
 
-        return reasonable_bonds / all_bonds if all_bonds > 0 else 0.0
+                bond_ratio = bond_length / expected_length
+                is_h_bond = (
+                    site.specie.symbol == "H"
+                    or connected_site.specie.symbol == "H"
+                )
+
+                if is_h_bond:
+                    if bond_ratio < h_factor:
+                        score += 1
+                else:
+                    if min_ratio < bond_ratio < max_ratio:
+                        score += 1
+
+                total += 1
+
+        return score / total if total > 0 else 0.0
     except Exception:
         return 0.0
 
