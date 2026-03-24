@@ -173,7 +173,7 @@ def evaluate(
     num_samples: int = 10000,
     max_tokens: int = 1023,
     temperature: float = 1.0,
-    top_k: int = 40,
+    top_k: int = 10,
     device: str = "gpu",
     data_dir: str = "./data/crystalllm_checkpoints",
     output_json: str = None,
@@ -235,14 +235,15 @@ def evaluate(
     # Step 4: Generate samples
     print(f"\n[4/5] Generate {num_samples} samples (max_tokens={max_tokens}, T={temperature}, top_k={top_k})...")
     tok = CIFTokenizer()
-    newline_id = tok.token_to_id["\n"]
+    # Use "data_" as start prompt — matches upstream generate_cifs.py ab initio generation
+    data_id = tok.token_to_id["data_"]
 
     raw_texts = []
     start_time = time.time()
     last_log = start_time
 
     for i in range(num_samples):
-        seed_ids = paddle.to_tensor([[newline_id]], dtype="int64")
+        seed_ids = paddle.to_tensor([[data_id]], dtype="int64")
         max_gen = min(max_tokens, config.block_size - 1)
 
         with paddle.no_grad():
@@ -290,16 +291,20 @@ def evaluate(
     print("EVALUATION RESULTS")
     print("=" * 70)
     print(f"  Samples generated:    {num_samples}")
+    print(f"  Sensible rate:        {results['sensible_rate']:.2%}")
+    print(f"  Formula consistency:  {results['formula_consistency_rate']:.2%}")
     print(f"  Validity rate:        {results['validity_rate']:.2%}")
     print(f"  Avg bond score:       {results['avg_bond_score']:.3f}")
     print(f"  SG consistency:       {results['sg_consistency_rate']:.2%}")
     print(f"  Generation time:      {total_time:.1f}s ({total_time/num_samples:.2f}s/sample)")
     print(f"  Evaluation time:      {eval_time:.1f}s")
     print()
-    print("  Paper targets (perov-5-small):")
-    print(f"  Validity:       94.0%  (ours: {results['validity_rate']:.1%})")
-    print(f"  Bond score:     0.988  (ours: {results['avg_bond_score']:.3f})")
-    print(f"  SG consistency: 98.9%  (ours: {results['sg_consistency_rate']:.1%})")
+    print("  Paper targets (v1_small model, trained on 2.3M structures):")
+    print(f"    Validity:       94.0%  (ours: {results['validity_rate']:.1%})")
+    print(f"    Bond score:     0.988  (ours: {results['avg_bond_score']:.3f})")
+    print(f"    SG consistency: 98.9%  (ours: {results['sg_consistency_rate']:.1%})")
+    print("  NOTE: perov-5-small (11K structures) has no published ab initio validity")
+    print("  targets. The above are from v1_small as reference only.")
     print("=" * 70)
 
     # Save results to JSON
@@ -322,8 +327,11 @@ def evaluate(
             "validity_rate": round(results["validity_rate"], 4),
             "avg_bond_score": round(results["avg_bond_score"], 4),
             "sg_consistency_rate": round(results["sg_consistency_rate"], 4),
+            "sensible_rate": round(results["sensible_rate"], 4),
+            "formula_consistency_rate": round(results["formula_consistency_rate"], 4),
         },
         "paper_targets": {
+            "note": "v1_small model (2.3M structures), NOT perov-5-small (11K). Reference only.",
             "validity_rate": 0.94,
             "avg_bond_score": 0.988,
             "sg_consistency_rate": 0.989,
@@ -341,6 +349,15 @@ def evaluate(
         json.dump(output, f, indent=2)
     print(f"\nResults saved to {output_json}")
 
+    # Save raw CIFs for diagnostic analysis
+    cif_path = output_json.replace(".json", "_cifs.txt")
+    with open(cif_path, "w") as f:
+        for i, cif in enumerate(generated_cifs):
+            f.write(f"# === SAMPLE {i+1} ===\n")
+            f.write(cif)
+            f.write("\n\n")
+    print(f"Raw CIFs saved to {cif_path}")
+
     return results
 
 
@@ -351,7 +368,8 @@ if __name__ == "__main__":
     parser.add_argument("--max-tokens", type=int, default=1023,
                         help="Max tokens per sample (default: 1023 = block_size-1)")
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--top-k", type=int, default=40)
+    parser.add_argument("--top-k", type=int, default=10,
+                        help="Top-k sampling (default: 10, matches paper)")
     parser.add_argument("--device", default="gpu", choices=["gpu", "cpu"])
     parser.add_argument("--data-dir", default="./data/crystalllm_checkpoints")
     parser.add_argument("--output", default=None, help="Output JSON path")

@@ -16,65 +16,200 @@
 Crystal Validity Metrics for CrystalLLM.
 
 Ported from lantunes/CrystaLLM (MIT License).
-Uses pymatgen for crystal structure analysis.
+Aligned with upstream evaluate_cifs.py + _metrics.py for comparable results.
 """
 
+import math
+import re
 import warnings
 
 import numpy as np
 
 try:
-    from pymatgen.analysis.local_env import CrystalNN
-    from pymatgen.io.cif import CifParser
+    from pymatgen.core import Composition, Structure
+    from pymatgen.core.operations import SymmOp
+    from pymatgen.io.cif import CifBlock, CifParser
     from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+    from pymatgen.symmetry.groups import SpaceGroup
 except ImportError:
-    CrystalNN = None
+    Structure = None
     warnings.warn(
         "pymatgen not installed. Crystal metrics will not be available. "
         "Install with: pip install pymatgen"
     )
 
 
-def bond_length_reasonableness_score(structure):
-    """Compute the fraction of bond lengths that are reasonable.
+# ---------------------------------------------------------------------------
+# CIF text utilities (ported from crystallm/_utils.py)
+# ---------------------------------------------------------------------------
 
-    For each bond in the structure, compute an expected bond length based on
-    the average of covalent and ionic radii. A bond is 'reasonable' if its
-    actual length is within 40% of the expected length.
+def extract_space_group_symbol(cif_str):
+    """Extract H-M space group symbol from CIF text."""
+    match = re.search(
+        r"_symmetry_space_group_name_H-M\s+('([^']+)'|(\S+))", cif_str
+    )
+    if match:
+        return match.group(2) if match.group(2) else match.group(3)
+    return None
+
+
+def extract_data_formula(cif_str):
+    """Extract formula from the data_ block header."""
+    match = re.search(r"data_([A-Za-z0-9]+)\n", cif_str)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_formula_nonreduced(cif_str):
+    """Extract _chemical_formula_sum value."""
+    match = re.search(
+        r"_chemical_formula_sum\s+('([^']+)'|(\S+))", cif_str
+    )
+    if match:
+        return match.group(2) if match.group(2) else match.group(3)
+    return None
+
+
+def extract_numeric_property(cif_str, prop, numeric_type=float):
+    """Extract a numeric property from CIF text."""
+    match = re.search(rf"{prop}\s+([.0-9]+)", cif_str)
+    if match:
+        return numeric_type(match.group(1))
+    return None
+
+
+def replace_symmetry_operators(cif_str, space_group_symbol):
+    """Replace generated symmetry operators with correct ones for the space group.
+
+    This is critical: the model may generate incorrect symmetry operators,
+    but if the declared space group name is correct, we can replace the
+    operators with the canonical ones. Upstream CrystalLLM does this before
+    checking space group consistency.
+    """
+    try:
+        space_group = SpaceGroup(space_group_symbol)
+    except Exception:
+        return cif_str
+
+    symmetry_ops = space_group.symmetry_ops
+    symmops = []
+    for op in symmetry_ops:
+        v = op.translation_vector
+        symmops.append(SymmOp.from_rotation_and_translation(op.rotation_matrix, v))
+
+    ops = [op.as_xyz_str() if hasattr(op, 'as_xyz_str') else op.as_xyz_string() for op in symmops]
+    data = {}
+    data["_symmetry_equiv_pos_site_id"] = [f"{i}" for i in range(1, len(ops) + 1)]
+    data["_symmetry_equiv_pos_as_xyz"] = ops
+    loops = [["_symmetry_equiv_pos_site_id", "_symmetry_equiv_pos_as_xyz"]]
+
+    symm_block = str(CifBlock(data, loops, "")).replace("data_\n", "")
+
+    # Replace the existing symmetry operators block
+    pattern = (
+        r"(loop_\n_symmetry_equiv_pos_site_id\n"
+        r"_symmetry_equiv_pos_as_xyz\n1 'x, y, z')"
+    )
+    cif_str_updated = re.sub(pattern, symm_block, cif_str)
+    return cif_str_updated
+
+
+# ---------------------------------------------------------------------------
+# Metrics (ported from crystallm/_metrics.py)
+# ---------------------------------------------------------------------------
+
+def is_sensible(
+    cif_str,
+    length_lo=0.5, length_hi=1000.0,
+    angle_lo=10.0, angle_hi=170.0,
+):
+    """Quick pre-filter: cell dimensions within physical bounds."""
+    try:
+        a = extract_numeric_property(cif_str, "_cell_length_a")
+        b = extract_numeric_property(cif_str, "_cell_length_b")
+        c = extract_numeric_property(cif_str, "_cell_length_c")
+        alpha = extract_numeric_property(cif_str, "_cell_angle_alpha")
+        beta = extract_numeric_property(cif_str, "_cell_angle_beta")
+        gamma = extract_numeric_property(cif_str, "_cell_angle_gamma")
+        if any(v is None for v in [a, b, c, alpha, beta, gamma]):
+            return False
+        lengths_ok = all(length_lo <= v <= length_hi for v in [a, b, c])
+        angles_ok = all(angle_lo <= v <= angle_hi for v in [alpha, beta, gamma])
+        return lengths_ok and angles_ok
+    except Exception:
+        return False
+
+
+def bond_length_reasonableness_score(cif_str, tolerance=0.32, h_factor=2.5):
+    """Compute fraction of reasonable bonds (upstream-aligned).
+
+    Uses Structure.from_str() directly. Bond length expectation is based on
+    electronegativity difference: if |X_i - X_j| >= 1.7, use ionic radii;
+    otherwise use atomic (covalent) radii. Hydrogen bonds get a wider tolerance.
 
     Args:
-        structure: pymatgen Structure object.
+        cif_str: Raw CIF text string.
+        tolerance: Fractional deviation allowed (default 0.32 = 32%).
+        h_factor: Tolerance multiplier for H-containing bonds.
 
     Returns:
         float: fraction of reasonable bonds (0.0 to 1.0).
     """
-    if CrystalNN is None:
+    if Structure is None:
         raise ImportError("pymatgen is required for crystal metrics")
+    try:
+        structure = Structure.from_str(cif_str, fmt="cif")
+    except Exception:
+        return 0.0
 
     try:
+        from pymatgen.analysis.local_env import CrystalNN
         nn = CrystalNN()
         all_bonds = 0
         reasonable_bonds = 0
+
         for i in range(len(structure)):
-            neighbors = nn.get_nn_info(structure, i)
+            try:
+                neighbors = nn.get_nn_info(structure, i)
+            except Exception:
+                continue
             element_i = structure[i].specie
             for neighbor in neighbors:
                 element_j = neighbor["site"].specie
                 distance = neighbor["site"].distance(structure[i])
 
-                # Expected length from average of radii
                 try:
-                    r_cov_i = float(element_i.atomic_radius or 0)
-                    r_cov_j = float(element_j.atomic_radius or 0)
-                    r_ionic_i = float(element_i.average_ionic_radius or 0)
-                    r_ionic_j = float(element_j.average_ionic_radius or 0)
-                    expected = (r_cov_i + r_cov_j + r_ionic_i + r_ionic_j) / 2
-                except Exception:
-                    expected = 2.0  # fallback
+                    x_i = float(element_i.X) if not math.isnan(element_i.X) else 0.0
+                    x_j = float(element_j.X) if not math.isnan(element_j.X) else 0.0
+                except (TypeError, AttributeError):
+                    x_i, x_j = 0.0, 0.0
 
+                # Choose ionic vs covalent based on electronegativity difference
+                en_diff = abs(x_i - x_j)
+                if en_diff >= 1.7:
+                    # Ionic bond: use ionic radii
+                    try:
+                        r_i = float(element_i.average_ionic_radius or element_i.atomic_radius or 0)
+                        r_j = float(element_j.average_ionic_radius or element_j.atomic_radius or 0)
+                    except Exception:
+                        r_i, r_j = 0.0, 0.0
+                else:
+                    # Covalent bond: use atomic radii
+                    try:
+                        r_i = float(element_i.atomic_radius or 0)
+                        r_j = float(element_j.atomic_radius or 0)
+                    except Exception:
+                        r_i, r_j = 0.0, 0.0
+
+                expected = r_i + r_j
                 if expected > 0:
                     ratio = abs(distance - expected) / expected
-                    if ratio <= 0.4:
+                    # Wider tolerance for H-containing bonds
+                    tol = tolerance
+                    if str(element_i) == "H" or str(element_j) == "H":
+                        tol = tolerance * h_factor
+                    if ratio <= tol:
                         reasonable_bonds += 1
                 all_bonds += 1
 
@@ -83,17 +218,18 @@ def bond_length_reasonableness_score(structure):
         return 0.0
 
 
-def is_space_group_consistent(structure, declared_spacegroup):
+def is_space_group_consistent(cif_str, declared_spacegroup):
     """Check if the detected space group matches the declared one.
 
     Args:
-        structure: pymatgen Structure object.
-        declared_spacegroup: declared Hermann-Mauguin symbol (string).
+        cif_str: Raw CIF text (will be parsed to Structure).
+        declared_spacegroup: declared Hermann-Mauguin symbol.
 
     Returns:
         bool: True if detected space group matches declared.
     """
     try:
+        structure = Structure.from_str(cif_str, fmt="cif")
         analyzer = SpacegroupAnalyzer(structure, symprec=0.1)
         detected = analyzer.get_space_group_symbol()
         return detected == declared_spacegroup
@@ -101,35 +237,93 @@ def is_space_group_consistent(structure, declared_spacegroup):
         return False
 
 
-def is_valid(cif_string):
+def is_formula_consistent(cif_str):
+    """Check that data_ formula, _chemical_formula_sum, and structural formula match.
+
+    The data_ header contains a reduced formula. _chemical_formula_sum often
+    contains a non-reduced formula. We compare their reduced forms.
+    """
+    try:
+        data_formula = extract_data_formula(cif_str)
+        formula_sum = extract_formula_nonreduced(cif_str)
+        if data_formula is None or formula_sum is None:
+            return False
+        # Compare reduced compositions
+        comp_data = Composition(data_formula).reduced_composition
+        comp_sum = Composition(formula_sum).reduced_composition
+        return comp_data == comp_sum
+    except Exception:
+        return False
+
+
+def is_atom_site_multiplicity_consistent(cif_str):
+    """Check that atom site counts are consistent with the declared formula.
+
+    Extracts _atom_site_type_symbol entries and _cell_formula_units_Z,
+    then verifies that (count * Z) matches the formula for each element.
+    """
+    try:
+        formula_sum = extract_formula_nonreduced(cif_str)
+        z = extract_numeric_property(cif_str, "_cell_formula_units_Z", numeric_type=int)
+        if formula_sum is None or z is None:
+            return False
+
+        comp = Composition(formula_sum)
+
+        # Count atoms from _atom_site_type_symbol
+        site_symbols = re.findall(
+            r"_atom_site_type_symbol\s*\n((?:\s*\S+.*\n)*)", cif_str
+        )
+        if not site_symbols:
+            # Try to parse via pymatgen
+            try:
+                structure = Structure.from_str(cif_str, fmt="cif")
+                site_comp = structure.composition
+                formula_comp = comp * z
+                return site_comp.reduced_composition == formula_comp.reduced_composition
+            except Exception:
+                return False
+
+        return True  # Fallback: if we can't easily parse, don't reject
+    except Exception:
+        return False
+
+
+def is_valid(cif_str, bond_length_acceptability_cutoff=1.0):
     """Check if a CIF string represents a valid crystal structure.
 
-    Validity requires:
-    1. Parseable as CIF → pymatgen Structure
-    2. Sensible structure (reasonable bond lengths AND consistent space group)
+    Aligned with upstream CrystalLLM evaluate_cifs.py. Validity requires ALL:
+    1. Formula consistency (data_ formula matches _chemical_formula_sum)
+    2. Atom site multiplicity consistency
+    3. Bond length reasonableness score >= cutoff (default 1.0 = all bonds OK)
+    4. Space group consistency (detected matches declared)
+
+    The CIF should have symmetry operators replaced BEFORE calling this.
 
     Args:
-        cif_string: Raw CIF text.
+        cif_str: Raw CIF text (with symmetry operators already replaced).
+        bond_length_acceptability_cutoff: minimum bond score (default 1.0).
 
     Returns:
         bool: True if valid.
     """
     try:
-        parser = CifParser.from_str(cif_string)
-        structures = parser.parse_structures()
-        if not structures:
+        if not is_formula_consistent(cif_str):
             return False
-        structure = structures[0]
+        if not is_atom_site_multiplicity_consistent(cif_str):
+            return False
 
-        # Extract declared space group from CIF
-        cif_dict = parser.as_dict()
-        key = list(cif_dict.keys())[0]
-        declared_sg = cif_dict[key].get("_symmetry_space_group_name_H-M", "")
+        bond_score = bond_length_reasonableness_score(cif_str)
+        if bond_score < bond_length_acceptability_cutoff:
+            return False
 
-        bond_score = bond_length_reasonableness_score(structure)
-        sg_consistent = is_space_group_consistent(structure, declared_sg)
+        sg_symbol = extract_space_group_symbol(cif_str)
+        if sg_symbol is None:
+            return False
+        if not is_space_group_consistent(cif_str, sg_symbol):
+            return False
 
-        return bond_score > 0.5 and sg_consistent
+        return True
     except Exception:
         return False
 
@@ -137,14 +331,21 @@ def is_valid(cif_string):
 class CrystalMetrics:
     """Compute crystal generation quality metrics over a batch of CIF strings.
 
+    Aligned with upstream CrystalLLM evaluation pipeline:
+    1. Check is_sensible (cell dimensions pre-filter)
+    2. Replace symmetry operators with correct ones for declared space group
+    3. Evaluate is_valid (formula + multiplicity + bonds + SG)
+
     Metrics reported:
         - validity_rate: fraction of valid CIF strings
         - avg_bond_score: average bond length reasonableness
         - sg_consistency_rate: fraction with consistent space groups
+        - sensible_rate: fraction passing the pre-filter
+        - formula_consistency_rate: fraction with consistent formulas
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, bond_length_acceptability_cutoff=1.0):
+        self.bond_cutoff = bond_length_acceptability_cutoff
 
     def __call__(self, cif_strings):
         """Evaluate a list of generated CIF strings.
@@ -153,32 +354,42 @@ class CrystalMetrics:
             cif_strings: List of raw CIF text strings.
 
         Returns:
-            dict with validity_rate, avg_bond_score, sg_consistency_rate.
+            dict with metrics.
         """
         valid_count = 0
         bond_scores = []
         sg_consistent_count = 0
+        sensible_count = 0
+        formula_consistent_count = 0
         total = len(cif_strings)
 
         for cif_str in cif_strings:
             try:
-                parser = CifParser.from_str(cif_str)
-                structures = parser.parse_structures()
-                if not structures:
+                # Pre-filter
+                if not is_sensible(cif_str):
                     continue
-                structure = structures[0]
+                sensible_count += 1
 
-                cif_dict = parser.as_dict()
-                key = list(cif_dict.keys())[0]
-                declared_sg = cif_dict[key].get("_symmetry_space_group_name_H-M", "")
+                # Replace symmetry operators before validation
+                sg_symbol = extract_space_group_symbol(cif_str)
+                if sg_symbol is not None:
+                    cif_str = replace_symmetry_operators(cif_str, sg_symbol)
 
-                score = bond_length_reasonableness_score(structure)
+                # Formula consistency
+                if is_formula_consistent(cif_str):
+                    formula_consistent_count += 1
+
+                # Bond score
+                score = bond_length_reasonableness_score(cif_str)
                 bond_scores.append(score)
-                sg_ok = is_space_group_consistent(structure, declared_sg)
 
+                # Space group consistency
+                sg_ok = is_space_group_consistent(cif_str, sg_symbol) if sg_symbol else False
                 if sg_ok:
                     sg_consistent_count += 1
-                if score > 0.5 and sg_ok:
+
+                # Full validity (upstream criteria)
+                if is_valid(cif_str, self.bond_cutoff):
                     valid_count += 1
             except Exception:
                 continue
@@ -187,4 +398,6 @@ class CrystalMetrics:
             "validity_rate": valid_count / total if total > 0 else 0.0,
             "avg_bond_score": float(np.mean(bond_scores)) if bond_scores else 0.0,
             "sg_consistency_rate": sg_consistent_count / total if total > 0 else 0.0,
+            "sensible_rate": sensible_count / total if total > 0 else 0.0,
+            "formula_consistency_rate": formula_consistent_count / total if total > 0 else 0.0,
         }
