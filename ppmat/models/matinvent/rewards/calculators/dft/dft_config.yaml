@@ -1,0 +1,25 @@
+machine: remote
+scheduler: slurm
+hostname: YOUR_REMOTE_HOSTNAME
+username: YOUR_USERNAME
+port: 22
+remote_dir: YOUR_FOLDER_PATH_TO_RUN_JOBS_ON_REMOTE
+scheduler_cmd: |
+  #!/bin/bash
+  #SBATCH -N 1
+  #SBATCH -n 1
+  #SBATCH -c 72
+  #SBATCH -t 2:0:0
+  #SBATCH -p standard
+  #SBATCH -J dft_score
+
+  module load intel/2021.6.0 intel-oneapi-mpi/2021.6.0 intel-oneapi-mkl/2022.1.0
+  export PATH="[YOUR_VASP_PATH]":$PATH
+  ulimit -s unlimited
+
+  source ~/software/miniconda3/bin/activate dft_score_mat
+
+vasp_settings:
+  VASP_CMD: "mpirun -np 72 vasp_std"
+  VASP_INCAR_UPDATES:
+    KPAR: 18
