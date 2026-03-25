@@ -40,18 +40,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 # All 11 checkpoints from Zenodo record 10642388
+# NOTE: Zenodo filenames use underscores (perov_5, carbon_24, mp_20, mpts_52)
 CHECKPOINTS=(
     "crystallm_v1_small"
     "crystallm_v1_large"
-    "crystallm_v1_large_full"
-    "crystallm_perov-5_small"
-    "crystallm_perov-5_large"
-    "crystallm_carbon-24_small"
-    "crystallm_carbon-24_large"
-    "crystallm_mp-20_small"
-    "crystallm_mp-20_large"
-    "crystallm_mpts-52_small"
-    "crystallm_mpts-52_large"
+    "crystallm_v1_minus_mpts_52_small"
+    "crystallm_perov_5_small"
+    "crystallm_perov_5_large"
+    "crystallm_carbon_24_small"
+    "crystallm_carbon_24_large"
+    "crystallm_mp_20_small"
+    "crystallm_mp_20_large"
+    "crystallm_mpts_52_small"
+    "crystallm_mpts_52_large"
 )
 
 echo "=== CrystalLLM Netdisk Preparation ==="
@@ -66,11 +67,11 @@ if [ "$SKIP_DOWNLOAD" = false ]; then
     for ckpt in "${CHECKPOINTS[@]}"; do
         tarfile="${ckpt}.tar.gz"
         dest="$OUTPUT_DIR/pytorch_checkpoints/$tarfile"
-        if [ -f "$dest" ]; then
+        if [ -f "$dest" ] && [ -s "$dest" ]; then
             echo "  [skip] $tarfile (already exists)"
         else
             echo "  [download] $tarfile ..."
-            wget -q --show-progress -O "$dest" "${ZENODO_BASE}/${tarfile}"
+            wget -O "$dest" "${ZENODO_BASE}/${tarfile}"
         fi
     done
     echo ""
