@@ -43,6 +43,24 @@ except ImportError:
 # CIF text utilities (ported from crystallm/_utils.py)
 # ---------------------------------------------------------------------------
 
+
+def get_unit_cell_volume(a, b, c, alpha, beta, gamma):
+    """Compute unit cell volume from lattice parameters (Å, degrees)."""
+    alpha_r = math.radians(alpha)
+    beta_r = math.radians(beta)
+    gamma_r = math.radians(gamma)
+    cos_a, cos_b, cos_g = math.cos(alpha_r), math.cos(beta_r), math.cos(gamma_r)
+    val = 1.0 - cos_a**2 - cos_b**2 - cos_g**2 + 2.0 * cos_a * cos_b * cos_g
+    if val <= 0:
+        raise ValueError(f"Invalid lattice parameters: volume factor {val} <= 0")
+    return a * b * c * math.sqrt(val)
+
+
+def remove_atom_props_block(cif_str):
+    """Remove _atom_type block (electronegativity, radius, etc.) from CIF text."""
+    return re.sub(r"loop_\n(_atom_type_\w+\n)+([\S ]+\n)+", "", cif_str)
+
+
 def extract_space_group_symbol(cif_str):
     """Extract H-M space group symbol from CIF text."""
     match = re.search(
