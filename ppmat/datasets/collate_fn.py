@@ -302,3 +302,42 @@ def pad_sequence(sequences, batch_first=False, padding_value=0):
             out_tensor[:length, i, ...] = tensor
 
     return out_tensor
+
+
+class PolymerChempropCollator:
+    """Collator for PolymerChempropDataset.
+
+    Batches MolGraph objects into BatchMolGraph and stacks targets.
+    """
+
+    def __call__(self, batch):
+        from ppmat.models.polymer_chemprop.featurization import BatchMolGraph
+
+        num_molecules = len(batch[0]["mol_graphs"])
+
+        # Transpose: group mol_graphs by molecule slot
+        batch_graphs = []
+        for i in range(num_molecules):
+            graphs = [sample["mol_graphs"][i] for sample in batch]
+            batch_graphs.append(BatchMolGraph(graphs))
+
+        targets = np.stack([s["targets"] for s in batch])
+        target_mask = np.stack([s["target_mask"] for s in batch])
+
+        result = {
+            "batch_graphs": batch_graphs,
+            "labels": paddle.to_tensor(targets, dtype='float32'),
+            "label_mask": paddle.to_tensor(target_mask, dtype='float32'),
+            "smiles": [s["smiles"] for s in batch],
+        }
+
+        # Handle optional features
+        if batch[0]["features"] is not None:
+            features = np.stack([s["features"] for s in batch])
+            result["features"] = paddle.to_tensor(features, dtype='float32')
+        else:
+            result["features"] = None
+
+        result["atom_descriptors_batch"] = None
+
+        return result

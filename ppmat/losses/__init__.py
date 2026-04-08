@@ -14,6 +14,8 @@
 
 import copy
 
+from ppmat.losses.bce_loss import BCEWithLogitsLoss
+from ppmat.losses.bce_loss import MaskedMSELoss
 from ppmat.losses.l1_loss import HuberLoss
 from ppmat.losses.l1_loss import L1Loss
 from ppmat.losses.l1_loss import MAELoss
@@ -28,6 +30,8 @@ __all__ = [
     "MAELoss",
     "HuberLoss",
     "LossWarper",
+    "BCEWithLogitsLoss",
+    "MaskedMSELoss",
     "build_loss",
 ]
 
