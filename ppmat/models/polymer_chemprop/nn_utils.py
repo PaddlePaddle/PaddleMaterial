@@ -27,17 +27,17 @@ def get_activation_function(activation: str) -> nn.Layer:
     :param activation: The name of the activation function.
     :return: The activation function module.
     """
-    if activation == 'ReLU':
+    if activation == "ReLU":
         return nn.ReLU()
-    elif activation == 'LeakyReLU':
+    elif activation == "LeakyReLU":
         return nn.LeakyReLU(0.1)
-    elif activation == 'PReLU':
+    elif activation == "PReLU":
         return nn.PReLU()
-    elif activation == 'tanh':
+    elif activation == "tanh":
         return nn.Tanh()
-    elif activation == 'SELU':
+    elif activation == "SELU":
         return nn.SELU()
-    elif activation == 'ELU':
+    elif activation == "ELU":
         return nn.ELU()
     else:
         raise ValueError(f'Activation "{activation}" not supported.')

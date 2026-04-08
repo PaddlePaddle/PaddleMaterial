@@ -15,14 +15,12 @@
 from __future__ import annotations
 
 import csv
-import os
-from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 
 import numpy as np
 from paddle.io import Dataset
+
 
 class PolymerChempropDataset(Dataset):
     """Dataset for polymer-chemprop model.
@@ -78,8 +76,8 @@ class PolymerChempropDataset(Dataset):
             targets = []
             mask = []
             for col in self.target_columns:
-                val = row.get(col, '')
-                if val == '' or val is None:
+                val = row.get(col, "")
+                if val == "" or val is None:
                     targets.append(0.0)
                     mask.append(0.0)
                 else:

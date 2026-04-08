@@ -1,12 +1,10 @@
-from typing import List, Optional
-
-import numpy as np
 import paddle
 import paddle.nn as nn
 
+from ppmat.models.polymer_chemprop.featurization import FeaturizationConfig
 from ppmat.models.polymer_chemprop.mpn import MPN
-from ppmat.models.polymer_chemprop.featurization import BatchMolGraph, FeaturizationConfig
-from ppmat.models.polymer_chemprop.nn_utils import get_activation_function, initialize_weights
+from ppmat.models.polymer_chemprop.nn_utils import get_activation_function
+from ppmat.models.polymer_chemprop.nn_utils import initialize_weights
 
 
 class PolymerChempropModel(nn.Layer):
@@ -14,24 +12,37 @@ class PolymerChempropModel(nn.Layer):
     for molecular property prediction, ported from polymer-chemprop (PyTorch) to PaddlePaddle.
     """
 
-    def __init__(self, hidden_size: int = 300, depth: int = 3, dropout: float = 0.0,
-                 activation: str = 'ReLU',
-                 undirected: bool = False, atom_messages: bool = False, bias: bool = False,
-                 aggregation: str = 'mean', aggregation_norm: int = 100,
-                 ffn_num_layers: int = 2, ffn_hidden_size: int = 300,
-                 num_tasks: int = 1, dataset_type: str = 'regression',
-                 number_of_molecules: int = 1, mpn_shared: bool = False,
-                 features_only: bool = False, features_size: int = 0,
-                 use_input_features: bool = False,
-                 atom_descriptors: str = None, atom_descriptors_size: int = 0,
-                 multiclass_num_classes: int = 3,
-                 property_name: str = 'target',
-                 featurization_config: FeaturizationConfig = None):
+    def __init__(
+        self,
+        hidden_size: int = 300,
+        depth: int = 3,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        undirected: bool = False,
+        atom_messages: bool = False,
+        bias: bool = False,
+        aggregation: str = "mean",
+        aggregation_norm: int = 100,
+        ffn_num_layers: int = 2,
+        ffn_hidden_size: int = 300,
+        num_tasks: int = 1,
+        dataset_type: str = "regression",
+        number_of_molecules: int = 1,
+        mpn_shared: bool = False,
+        features_only: bool = False,
+        features_size: int = 0,
+        use_input_features: bool = False,
+        atom_descriptors: str = None,
+        atom_descriptors_size: int = 0,
+        multiclass_num_classes: int = 3,
+        property_name: str = "target",
+        featurization_config: FeaturizationConfig = None,
+    ):
         super(PolymerChempropModel, self).__init__()
 
         self.dataset_type = dataset_type
-        self.classification = dataset_type == 'classification'
-        self.multiclass = dataset_type == 'multiclass'
+        self.classification = dataset_type == "classification"
+        self.multiclass = dataset_type == "multiclass"
         self.num_tasks = num_tasks
         self.multiclass_num_classes = multiclass_num_classes
         self.property_name = property_name
@@ -68,33 +79,31 @@ class PolymerChempropModel(nn.Layer):
             if use_input_features:
                 first_linear_dim += features_size
 
-        if atom_descriptors == 'descriptor':
+        if atom_descriptors == "descriptor":
             first_linear_dim += atom_descriptors_size
 
         dropout_layer = nn.Dropout(dropout)
         act = get_activation_function(activation)
 
         if ffn_num_layers == 1:
-            ffn = [
-                dropout_layer,
-                nn.Linear(first_linear_dim, self.output_size)
-            ]
+            ffn = [dropout_layer, nn.Linear(first_linear_dim, self.output_size)]
         else:
-            ffn = [
-                dropout_layer,
-                nn.Linear(first_linear_dim, ffn_hidden_size)
-            ]
+            ffn = [dropout_layer, nn.Linear(first_linear_dim, ffn_hidden_size)]
             for _ in range(ffn_num_layers - 2):
-                ffn.extend([
+                ffn.extend(
+                    [
+                        act,
+                        dropout_layer,
+                        nn.Linear(ffn_hidden_size, ffn_hidden_size),
+                    ]
+                )
+            ffn.extend(
+                [
                     act,
                     dropout_layer,
-                    nn.Linear(ffn_hidden_size, ffn_hidden_size),
-                ])
-            ffn.extend([
-                act,
-                dropout_layer,
-                nn.Linear(ffn_hidden_size, self.output_size),
-            ])
+                    nn.Linear(ffn_hidden_size, self.output_size),
+                ]
+            )
 
         self.ffn = nn.Sequential(*ffn)
 
@@ -109,16 +118,21 @@ class PolymerChempropModel(nn.Layer):
         :param return_prediction: Whether to return predictions.
         :return: A dict with 'loss_dict' and 'pred_dict'.
         """
-        assert return_loss or return_prediction, \
-            "At least one of return_loss or return_prediction must be True."
+        assert (
+            return_loss or return_prediction
+        ), "At least one of return_loss or return_prediction must be True."
 
         batch_graphs = data["batch_graphs"]
         features = data.get("features")
         atom_descriptors_batch = data.get("atom_descriptors_batch")
 
-        output = self.ffn(self.encoder(batch_graphs,
-                                       features_batch=features,
-                                       atom_descriptors_batch=atom_descriptors_batch))
+        output = self.ffn(
+            self.encoder(
+                batch_graphs,
+                features_batch=features,
+                atom_descriptors_batch=atom_descriptors_batch,
+            )
+        )
 
         # Multiclass reshape
         if self.multiclass:
@@ -130,24 +144,35 @@ class PolymerChempropModel(nn.Layer):
             labels = data["labels"]
             label_mask = data.get("label_mask")
 
-            if self.dataset_type == 'regression':
+            if self.dataset_type == "regression":
                 if label_mask is not None:
-                    loss = paddle.nn.functional.mse_loss(
-                        output * label_mask, labels * label_mask, reduction='sum') / label_mask.sum()
+                    loss = (
+                        paddle.nn.functional.mse_loss(
+                            output * label_mask, labels * label_mask, reduction="sum"
+                        )
+                        / label_mask.sum()
+                    )
                 else:
                     loss = paddle.nn.functional.mse_loss(output, labels)
-            elif self.dataset_type == 'classification':
+            elif self.dataset_type == "classification":
                 if label_mask is not None:
-                    loss = paddle.nn.functional.binary_cross_entropy_with_logits(
-                        output * label_mask, labels * label_mask, reduction='sum') / label_mask.sum()
+                    loss = (
+                        paddle.nn.functional.binary_cross_entropy_with_logits(
+                            output * label_mask, labels * label_mask, reduction="sum"
+                        )
+                        / label_mask.sum()
+                    )
                 else:
-                    loss = paddle.nn.functional.binary_cross_entropy_with_logits(output, labels)
-            elif self.dataset_type == 'multiclass':
-                labels_long = labels.astype('int64')
+                    loss = paddle.nn.functional.binary_cross_entropy_with_logits(
+                        output, labels
+                    )
+            elif self.dataset_type == "multiclass":
+                labels_long = labels.astype("int64")
                 loss = paddle.nn.functional.cross_entropy(
                     output.reshape([-1, self.multiclass_num_classes]),
                     labels_long.reshape([-1]),
-                    reduction='mean')
+                    reduction="mean",
+                )
             else:
                 raise ValueError(f'Dataset type "{self.dataset_type}" not supported.')
 
@@ -155,7 +180,7 @@ class PolymerChempropModel(nn.Layer):
 
         if return_prediction:
             pred = output
-            if self.dataset_type == 'classification':
+            if self.dataset_type == "classification":
                 pred = paddle.nn.functional.sigmoid(output)
             elif self.multiclass:
                 pred = paddle.nn.functional.softmax(output, axis=2)

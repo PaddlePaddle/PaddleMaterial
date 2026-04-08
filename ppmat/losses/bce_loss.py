@@ -55,7 +55,7 @@ class MaskedMSELoss(nn.Layer):
 
     def forward(self, pred, label, mask=None) -> paddle.Tensor:
         if mask is not None:
-            loss = F.mse_loss(pred * mask, label * mask, reduction='sum') / mask.sum()
+            loss = F.mse_loss(pred * mask, label * mask, reduction="sum") / mask.sum()
         else:
             loss = F.mse_loss(pred, label)
         return loss

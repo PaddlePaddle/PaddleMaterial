@@ -1,17 +1,19 @@
-from typing import List, Tuple, Union
-from dataclasses import dataclass, field
-from itertools import zip_longest
-from copy import deepcopy
 from collections import Counter
+from copy import deepcopy
+from dataclasses import dataclass
+from itertools import zip_longest
+from typing import List
+from typing import Tuple
+from typing import Union
 
-from rdkit import Chem
-import paddle
 import numpy as np
-
+import paddle
+from rdkit import Chem
 
 # ---------------------------------------------------------------------------
 # RDKit helpers (ported from chemprop/rdkit.py)
 # ---------------------------------------------------------------------------
+
 
 def make_mol(s: str, keep_h: bool, add_h: bool):
     """
@@ -24,7 +26,11 @@ def make_mol(s: str, keep_h: bool, add_h: bool):
     """
     if keep_h:
         mol = Chem.MolFromSmiles(s, sanitize=False)
-        Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL ^ Chem.SanitizeFlags.SANITIZE_ADJUSTHS)
+        Chem.SanitizeMol(
+            mol,
+            sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL
+            ^ Chem.SanitizeFlags.SANITIZE_ADJUSTHS,
+        )
     else:
         mol = Chem.MolFromSmiles(s)
     if add_h:
@@ -42,16 +48,18 @@ def make_polymer_mol(smiles: str, keep_h: bool, add_h: bool, fragment_weights: l
     :param fragment_weights: List of monomer fractions for each fragment.
     :return: RDKit molecule.
     """
-    num_frags = len(smiles.split('.'))
+    num_frags = len(smiles.split("."))
     if len(fragment_weights) != num_frags:
-        raise ValueError(f'number of input monomers/fragments ({num_frags}) does not match number of '
-                         f'input number of weights ({len(fragment_weights)})')
+        raise ValueError(
+            f"number of input monomers/fragments ({num_frags}) does not match number of "
+            f"input number of weights ({len(fragment_weights)})"
+        )
 
     mols = []
-    for s, w in zip(smiles.split('.'), fragment_weights):
+    for s, w in zip(smiles.split("."), fragment_weights):
         m = make_mol(s, keep_h, add_h)
         for a in m.GetAtoms():
-            a.SetDoubleProp('w_frag', float(w))
+            a.SetDoubleProp("w_frag", float(w))
         mols.append(m)
 
     mol = mols.pop(0)
@@ -66,6 +74,7 @@ def make_polymer_mol(smiles: str, keep_h: bool, add_h: bool, fragment_weights: l
 # Featurization configuration (replaces global PARAMS)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FeaturizationConfig:
     max_atomic_num: int = 100
@@ -79,20 +88,22 @@ class FeaturizationConfig:
 
     def __post_init__(self):
         self.ATOM_FEATURES = {
-            'atomic_num': list(range(self.max_atomic_num)),
-            'degree': [0, 1, 2, 3, 4, 5],
-            'formal_charge': [-1, -2, 1, 2, 0],
-            'chiral_tag': [0, 1, 2, 3],
-            'num_Hs': [0, 1, 2, 3, 4],
-            'hybridization': [
+            "atomic_num": list(range(self.max_atomic_num)),
+            "degree": [0, 1, 2, 3, 4, 5],
+            "formal_charge": [-1, -2, 1, 2, 0],
+            "chiral_tag": [0, 1, 2, 3],
+            "num_Hs": [0, 1, 2, 3, 4],
+            "hybridization": [
                 Chem.rdchem.HybridizationType.SP,
                 Chem.rdchem.HybridizationType.SP2,
                 Chem.rdchem.HybridizationType.SP3,
                 Chem.rdchem.HybridizationType.SP3D,
-                Chem.rdchem.HybridizationType.SP3D2
+                Chem.rdchem.HybridizationType.SP3D2,
             ],
         }
-        self.ATOM_FDIM = sum(len(choices) + 1 for choices in self.ATOM_FEATURES.values()) + 2
+        self.ATOM_FDIM = (
+            sum(len(choices) + 1 for choices in self.ATOM_FEATURES.values()) + 2
+        )
         self.BOND_FDIM = 14
 
 
@@ -110,26 +121,35 @@ def _get_default_config() -> FeaturizationConfig:
 # Dimension helpers
 # ---------------------------------------------------------------------------
 
-def get_atom_fdim(config: FeaturizationConfig = None,
-                  overwrite_default_atom: bool = False) -> int:
+
+def get_atom_fdim(
+    config: FeaturizationConfig = None, overwrite_default_atom: bool = False
+) -> int:
     if config is None:
         config = _get_default_config()
     return (not overwrite_default_atom) * config.ATOM_FDIM + config.extra_atom_fdim
 
 
-def get_bond_fdim(config: FeaturizationConfig = None,
-                  atom_messages: bool = False,
-                  overwrite_default_bond: bool = False,
-                  overwrite_default_atom: bool = False) -> int:
+def get_bond_fdim(
+    config: FeaturizationConfig = None,
+    atom_messages: bool = False,
+    overwrite_default_bond: bool = False,
+    overwrite_default_atom: bool = False,
+) -> int:
     if config is None:
         config = _get_default_config()
-    return ((not overwrite_default_bond) * config.BOND_FDIM + config.extra_bond_fdim +
-            (not atom_messages) * get_atom_fdim(config, overwrite_default_atom=overwrite_default_atom))
+    return (
+        (not overwrite_default_bond) * config.BOND_FDIM
+        + config.extra_bond_fdim
+        + (not atom_messages)
+        * get_atom_fdim(config, overwrite_default_atom=overwrite_default_atom)
+    )
 
 
 # ---------------------------------------------------------------------------
 # Feature functions
 # ---------------------------------------------------------------------------
+
 
 def onek_encoding_unk(value: int, choices: List[int]) -> List[int]:
     """
@@ -141,9 +161,11 @@ def onek_encoding_unk(value: int, choices: List[int]) -> List[int]:
     return encoding
 
 
-def atom_features(atom: Chem.rdchem.Atom,
-                  functional_groups: List[int] = None,
-                  config: FeaturizationConfig = None) -> List[Union[bool, int, float]]:
+def atom_features(
+    atom: Chem.rdchem.Atom,
+    functional_groups: List[int] = None,
+    config: FeaturizationConfig = None,
+) -> List[Union[bool, int, float]]:
     """
     Builds a feature vector for an atom.
     """
@@ -152,21 +174,34 @@ def atom_features(atom: Chem.rdchem.Atom,
     if atom is None:
         features = [0] * config.ATOM_FDIM
     else:
-        features = (onek_encoding_unk(atom.GetAtomicNum() - 1, config.ATOM_FEATURES['atomic_num']) +
-                     onek_encoding_unk(atom.GetTotalDegree(), config.ATOM_FEATURES['degree']) +
-                     onek_encoding_unk(atom.GetFormalCharge(), config.ATOM_FEATURES['formal_charge']) +
-                     onek_encoding_unk(int(atom.GetChiralTag()), config.ATOM_FEATURES['chiral_tag']) +
-                     onek_encoding_unk(int(atom.GetTotalNumHs()), config.ATOM_FEATURES['num_Hs']) +
-                     onek_encoding_unk(int(atom.GetHybridization()), config.ATOM_FEATURES['hybridization']) +
-                     [1 if atom.GetIsAromatic() else 0] +
-                     [atom.GetMass() * 0.01])
+        features = (
+            onek_encoding_unk(
+                atom.GetAtomicNum() - 1, config.ATOM_FEATURES["atomic_num"]
+            )
+            + onek_encoding_unk(atom.GetTotalDegree(), config.ATOM_FEATURES["degree"])
+            + onek_encoding_unk(
+                atom.GetFormalCharge(), config.ATOM_FEATURES["formal_charge"]
+            )
+            + onek_encoding_unk(
+                int(atom.GetChiralTag()), config.ATOM_FEATURES["chiral_tag"]
+            )
+            + onek_encoding_unk(
+                int(atom.GetTotalNumHs()), config.ATOM_FEATURES["num_Hs"]
+            )
+            + onek_encoding_unk(
+                int(atom.GetHybridization()), config.ATOM_FEATURES["hybridization"]
+            )
+            + [1 if atom.GetIsAromatic() else 0]
+            + [atom.GetMass() * 0.01]
+        )
         if functional_groups is not None:
             features += functional_groups
     return features
 
 
-def bond_features(bond: Chem.rdchem.Bond,
-                  config: FeaturizationConfig = None) -> List[Union[bool, int, float]]:
+def bond_features(
+    bond: Chem.rdchem.Bond, config: FeaturizationConfig = None
+) -> List[Union[bool, int, float]]:
     """
     Builds a feature vector for a bond.
     """
@@ -183,7 +218,7 @@ def bond_features(bond: Chem.rdchem.Bond,
             bt == Chem.rdchem.BondType.TRIPLE,
             bt == Chem.rdchem.BondType.AROMATIC,
             (bond.GetIsConjugated() if bt is not None else 0),
-            (bond.IsInRing() if bt is not None else 0)
+            (bond.IsInRing() if bt is not None else 0),
         ]
         fbond += onek_encoding_unk(int(bond.GetStereo()), list(range(6)))
     return fbond
@@ -192,6 +227,7 @@ def bond_features(bond: Chem.rdchem.Bond,
 # ---------------------------------------------------------------------------
 # Polymer helpers
 # ---------------------------------------------------------------------------
+
 
 def tag_atoms_in_repeating_unit(mol):
     """
@@ -204,33 +240,33 @@ def tag_atoms_in_repeating_unit(mol):
     r_bond_types = {}
 
     for atom in atoms:
-        if '*' in atom.GetSmarts():
+        if "*" in atom.GetSmarts():
             neighbors = atom.GetNeighbors()
             assert len(neighbors) == 1
             neighbor_idx = neighbors[0].GetIdx()
-            r_tag = atom.GetSmarts().strip('[]').replace(':', '')
+            r_tag = atom.GetSmarts().strip("[]").replace(":", "")
             neighbor_map[r_tag] = neighbor_idx
-            atom.SetBoolProp('core', False)
+            atom.SetBoolProp("core", False)
             bond = mol.GetBondBetweenAtoms(atom.GetIdx(), neighbor_idx)
             r_bond_types[r_tag] = bond.GetBondType()
         else:
-            atom.SetBoolProp('core', True)
+            atom.SetBoolProp("core", True)
 
     for atom in atoms:
         if atom.GetIdx() in neighbor_map.values():
             r_tags = [k for k, v in neighbor_map.items() if v == atom.GetIdx()]
-            atom.SetProp('R', ''.join(r_tags))
+            atom.SetProp("R", "".join(r_tags))
         else:
-            atom.SetProp('R', '')
+            atom.SetProp("R", "")
 
     return mol, r_bond_types
 
 
 def remove_wildcard_atoms(rwmol):
-    indices = [a.GetIdx() for a in rwmol.GetAtoms() if '*' in a.GetSmarts()]
+    indices = [a.GetIdx() for a in rwmol.GetAtoms() if "*" in a.GetSmarts()]
     while len(indices) > 0:
         rwmol.RemoveAtom(indices[0])
-        indices = [a.GetIdx() for a in rwmol.GetAtoms() if '*' in a.GetSmarts()]
+        indices = [a.GetIdx() for a in rwmol.GetAtoms() if "*" in a.GetSmarts()]
     Chem.SanitizeMol(rwmol, Chem.SanitizeFlags.SANITIZE_ALL)
     return rwmol
 
@@ -239,45 +275,51 @@ def parse_polymer_rules(rules):
     polymer_info = []
     counter = Counter()
 
-    if '~' in rules[-1]:
-        Xn = float(rules[-1].split('~')[1])
-        rules[-1] = rules[-1].split('~')[0]
+    if "~" in rules[-1]:
+        Xn = float(rules[-1].split("~")[1])
+        rules[-1] = rules[-1].split("~")[0]
     else:
-        Xn = 1.
+        Xn = 1.0
 
     for rule in rules:
         if rule == "":
             continue
-        if len(rule.split(':')) != 3:
+        if len(rule.split(":")) != 3:
             raise ValueError(f'incorrect format for input information "{rule}"')
-        idx1, idx2 = rule.split(':')[0].split('-')
-        w12 = float(rule.split(':')[1])
-        w21 = float(rule.split(':')[2])
+        idx1, idx2 = rule.split(":")[0].split("-")
+        w12 = float(rule.split(":")[1])
+        w21 = float(rule.split(":")[2])
         polymer_info.append((idx1, idx2, w12, w21))
         counter[idx1] += float(w21)
         counter[idx2] += float(w12)
 
     for k, v in counter.items():
         if np.isclose(v, 1.0) is False:
-            raise ValueError(f'sum of weights of incoming stochastic edges should be 1 -- found {v} for [*:{k}]')
-    return polymer_info, 1. + np.log10(Xn)
+            raise ValueError(
+                f"sum of weights of incoming stochastic edges should be 1 -- found {v} for [*:{k}]"
+            )
+    return polymer_info, 1.0 + np.log10(Xn)
 
 
 # ---------------------------------------------------------------------------
 # MolGraph
 # ---------------------------------------------------------------------------
 
+
 class MolGraph:
     """
     A MolGraph represents the graph structure and featurization of a single molecule.
     """
 
-    def __init__(self, mol: Union[str, Chem.Mol, Tuple[Chem.Mol, Chem.Mol]],
-                 atom_features_extra: np.ndarray = None,
-                 bond_features_extra: np.ndarray = None,
-                 overwrite_default_atom_features: bool = False,
-                 overwrite_default_bond_features: bool = False,
-                 config: FeaturizationConfig = None):
+    def __init__(
+        self,
+        mol: Union[str, Chem.Mol, Tuple[Chem.Mol, Chem.Mol]],
+        atom_features_extra: np.ndarray = None,
+        bond_features_extra: np.ndarray = None,
+        overwrite_default_atom_features: bool = False,
+        overwrite_default_bond_features: bool = False,
+        config: FeaturizationConfig = None,
+    ):
         """
         :param mol: A SMILES or an RDKit molecule.
         :param atom_features_extra: Additional atom features as numpy array.
@@ -300,11 +342,19 @@ class MolGraph:
         # Convert SMILES to RDKit molecule if necessary
         if type(mol) == str:
             if self.is_reaction:
-                raise NotImplementedError('Reaction mode is not supported in this port.')
+                raise NotImplementedError(
+                    "Reaction mode is not supported in this port."
+                )
             elif self.is_polymer:
-                mol = (make_polymer_mol(mol.split("|")[0], self.is_explicit_h, self.is_adding_hs,
-                                        fragment_weights=mol.split("|")[1:-1]),
-                       mol.split("<")[1:])
+                mol = (
+                    make_polymer_mol(
+                        mol.split("|")[0],
+                        self.is_explicit_h,
+                        self.is_adding_hs,
+                        fragment_weights=mol.split("|")[1:-1],
+                    ),
+                    mol.split("<")[1:],
+                )
             else:
                 mol = make_mol(mol, self.is_explicit_h, self.is_adding_hs)
 
@@ -325,18 +375,28 @@ class MolGraph:
         # Standard mode
         # =============
         if not self.is_reaction and not self.is_polymer:
-            self.f_atoms = [atom_features(atom, config=config) for atom in mol.GetAtoms()]
-            self.w_atoms = [1.] * len(mol.GetAtoms())
+            self.f_atoms = [
+                atom_features(atom, config=config) for atom in mol.GetAtoms()
+            ]
+            self.w_atoms = [1.0] * len(mol.GetAtoms())
             if atom_features_extra is not None:
                 if overwrite_default_atom_features:
                     self.f_atoms = [descs.tolist() for descs in atom_features_extra]
                 else:
-                    self.f_atoms = [f_atoms + descs.tolist() for f_atoms, descs in zip(self.f_atoms, atom_features_extra)]
+                    self.f_atoms = [
+                        f_atoms + descs.tolist()
+                        for f_atoms, descs in zip(self.f_atoms, atom_features_extra)
+                    ]
 
             self.n_atoms = len(self.f_atoms)
-            if atom_features_extra is not None and len(atom_features_extra) != self.n_atoms:
-                raise ValueError(f'The number of atoms in {Chem.MolToSmiles(mol)} is different from the length of '
-                                 f'the extra atom features')
+            if (
+                atom_features_extra is not None
+                and len(atom_features_extra) != self.n_atoms
+            ):
+                raise ValueError(
+                    f"The number of atoms in {Chem.MolToSmiles(mol)} is different from the length of "
+                    f"the extra atom features"
+                )
 
             for _ in range(self.n_atoms):
                 self.a2b.append([])
@@ -370,9 +430,14 @@ class MolGraph:
                     self.w_bonds.extend([1.0, 1.0])
                     self.n_bonds += 2
 
-            if bond_features_extra is not None and len(bond_features_extra) != self.n_bonds / 2:
-                raise ValueError(f'The number of bonds in {Chem.MolToSmiles(mol)} is different from the length of '
-                                 f'the extra bond features')
+            if (
+                bond_features_extra is not None
+                and len(bond_features_extra) != self.n_bonds / 2
+            ):
+                raise ValueError(
+                    f"The number of bonds in {Chem.MolToSmiles(mol)} is different from the length of "
+                    f"the extra bond features"
+                )
 
         # ============
         # Polymer mode
@@ -385,21 +450,35 @@ class MolGraph:
             rwmol, r_bond_types = tag_atoms_in_repeating_unit(rwmol)
 
             # Get atom features
-            self.f_atoms = [atom_features(atom, config=config)
-                            for atom in rwmol.GetAtoms() if atom.GetBoolProp('core') is True]
-            self.w_atoms = [atom.GetDoubleProp('w_frag')
-                            for atom in rwmol.GetAtoms() if atom.GetBoolProp('core') is True]
+            self.f_atoms = [
+                atom_features(atom, config=config)
+                for atom in rwmol.GetAtoms()
+                if atom.GetBoolProp("core") is True
+            ]
+            self.w_atoms = [
+                atom.GetDoubleProp("w_frag")
+                for atom in rwmol.GetAtoms()
+                if atom.GetBoolProp("core") is True
+            ]
 
             if atom_features_extra is not None:
                 if overwrite_default_atom_features:
                     self.f_atoms = [descs.tolist() for descs in atom_features_extra]
                 else:
-                    self.f_atoms = [f_atoms + descs.tolist() for f_atoms, descs in zip(self.f_atoms, atom_features_extra)]
+                    self.f_atoms = [
+                        f_atoms + descs.tolist()
+                        for f_atoms, descs in zip(self.f_atoms, atom_features_extra)
+                    ]
 
             self.n_atoms = len(self.f_atoms)
-            if atom_features_extra is not None and len(atom_features_extra) != self.n_atoms:
-                raise ValueError(f'The number of atoms in {Chem.MolToSmiles(rwmol)} is different from the length of '
-                                 f'the extra atom features')
+            if (
+                atom_features_extra is not None
+                and len(atom_features_extra) != self.n_atoms
+            ):
+                raise ValueError(
+                    f"The number of atoms in {Chem.MolToSmiles(rwmol)} is different from the length of "
+                    f"the extra atom features"
+                )
 
             rwmol = remove_wildcard_atoms(rwmol)
 
@@ -438,8 +517,8 @@ class MolGraph:
 
             # Bond features for bonds between repeating units
             rwmol_copy = deepcopy(rwmol)
-            _ = [a.SetBoolProp('OrigMol', True) for a in rwmol.GetAtoms()]
-            _ = [a.SetBoolProp('OrigMol', False) for a in rwmol_copy.GetAtoms()]
+            _ = [a.SetBoolProp("OrigMol", True) for a in rwmol.GetAtoms()]
+            _ = [a.SetBoolProp("OrigMol", False) for a in rwmol_copy.GetAtoms()]
             cm = Chem.CombineMols(rwmol, rwmol_copy)
             cm = Chem.RWMol(cm)
 
@@ -448,24 +527,29 @@ class MolGraph:
                 a2 = None
                 _a2 = None
                 for atom in cm.GetAtoms():
-                    if f'*{r1}' in atom.GetProp('R') and atom.GetBoolProp('OrigMol') is True:
+                    if (
+                        f"*{r1}" in atom.GetProp("R")
+                        and atom.GetBoolProp("OrigMol") is True
+                    ):
                         a1 = atom.GetIdx()
-                    if f'*{r2}' in atom.GetProp('R'):
-                        if atom.GetBoolProp('OrigMol') is True:
+                    if f"*{r2}" in atom.GetProp("R"):
+                        if atom.GetBoolProp("OrigMol") is True:
                             a2 = atom.GetIdx()
-                        elif atom.GetBoolProp('OrigMol') is False:
+                        elif atom.GetBoolProp("OrigMol") is False:
                             _a2 = atom.GetIdx()
 
                 if a1 is None:
-                    raise ValueError(f'cannot find atom attached to [*:{r1}]')
+                    raise ValueError(f"cannot find atom attached to [*:{r1}]")
                 if a2 is None or _a2 is None:
-                    raise ValueError(f'cannot find atom attached to [*:{r2}]')
+                    raise ValueError(f"cannot find atom attached to [*:{r2}]")
 
-                order1 = r_bond_types[f'*{r1}']
-                order2 = r_bond_types[f'*{r2}']
+                order1 = r_bond_types[f"*{r1}"]
+                order2 = r_bond_types[f"*{r2}"]
                 if order1 != order2:
-                    raise ValueError(f'two atoms are trying to be bonded with different bond types: '
-                                     f'{order1} vs {order2}')
+                    raise ValueError(
+                        f"two atoms are trying to be bonded with different bond types: "
+                        f"{order1} vs {order2}"
+                    )
                 cm.AddBond(a1, _a2, order=order1)
                 Chem.SanitizeMol(cm, Chem.SanitizeFlags.SANITIZE_ALL)
 
@@ -495,14 +579,20 @@ class MolGraph:
                 cm.RemoveBond(a1, _a2)
                 Chem.SanitizeMol(cm, Chem.SanitizeFlags.SANITIZE_ALL)
 
-            if bond_features_extra is not None and len(bond_features_extra) != self.n_bonds / 2:
-                raise ValueError(f'The number of bonds in {Chem.MolToSmiles(rwmol)} is different from the length of '
-                                 f'the extra bond features')
+            if (
+                bond_features_extra is not None
+                and len(bond_features_extra) != self.n_bonds / 2
+            ):
+                raise ValueError(
+                    f"The number of bonds in {Chem.MolToSmiles(rwmol)} is different from the length of "
+                    f"the extra bond features"
+                )
 
 
 # ---------------------------------------------------------------------------
 # BatchMolGraph
 # ---------------------------------------------------------------------------
+
 
 class BatchMolGraph:
     """
@@ -510,14 +600,22 @@ class BatchMolGraph:
     """
 
     def __init__(self, mol_graphs: List[MolGraph]):
-        self.overwrite_default_atom_features = mol_graphs[0].overwrite_default_atom_features
-        self.overwrite_default_bond_features = mol_graphs[0].overwrite_default_bond_features
+        self.overwrite_default_atom_features = mol_graphs[
+            0
+        ].overwrite_default_atom_features
+        self.overwrite_default_bond_features = mol_graphs[
+            0
+        ].overwrite_default_bond_features
 
         config = mol_graphs[0].config
-        self.atom_fdim = get_atom_fdim(config, overwrite_default_atom=self.overwrite_default_atom_features)
-        self.bond_fdim = get_bond_fdim(config,
-                                       overwrite_default_bond=self.overwrite_default_bond_features,
-                                       overwrite_default_atom=self.overwrite_default_atom_features)
+        self.atom_fdim = get_atom_fdim(
+            config, overwrite_default_atom=self.overwrite_default_atom_features
+        )
+        self.bond_fdim = get_bond_fdim(
+            config,
+            overwrite_default_bond=self.overwrite_default_bond_features,
+            overwrite_default_atom=self.overwrite_default_atom_features,
+        )
 
         self.n_atoms = 1  # start at 1 b/c need index 0 as padding
         self.n_bonds = 1
@@ -556,15 +654,19 @@ class BatchMolGraph:
 
         self.max_num_bonds = max(1, max(len(in_bonds) for in_bonds in a2b))
 
-        self.f_atoms = paddle.to_tensor(f_atoms, dtype='float32')
-        self.f_bonds = paddle.to_tensor(f_bonds, dtype='float32')
-        self.w_atoms = paddle.to_tensor(w_atoms, dtype='float32')
-        self.w_bonds = paddle.to_tensor(w_bonds, dtype='float32')
+        self.f_atoms = paddle.to_tensor(f_atoms, dtype="float32")
+        self.f_bonds = paddle.to_tensor(f_bonds, dtype="float32")
+        self.w_atoms = paddle.to_tensor(w_atoms, dtype="float32")
+        self.w_bonds = paddle.to_tensor(w_bonds, dtype="float32")
         self.a2b = paddle.to_tensor(
-            [a2b[a] + [0] * (self.max_num_bonds - len(a2b[a])) for a in range(self.n_atoms)],
-            dtype='int64')
-        self.b2a = paddle.to_tensor(b2a, dtype='int64')
-        self.b2revb = paddle.to_tensor(b2revb, dtype='int64')
+            [
+                a2b[a] + [0] * (self.max_num_bonds - len(a2b[a]))
+                for a in range(self.n_atoms)
+            ],
+            dtype="int64",
+        )
+        self.b2a = paddle.to_tensor(b2a, dtype="int64")
+        self.b2revb = paddle.to_tensor(b2revb, dtype="int64")
         self.b2b = None
         self.a2a = None
 
@@ -573,22 +675,35 @@ class BatchMolGraph:
         Returns the components of the BatchMolGraph.
         """
         if atom_messages:
-            f_bonds = self.f_bonds[:, -get_bond_fdim(
-                config=None,
-                atom_messages=atom_messages,
-                overwrite_default_atom=self.overwrite_default_atom_features,
-                overwrite_default_bond=self.overwrite_default_bond_features):]
+            f_bonds = self.f_bonds[
+                :,
+                -get_bond_fdim(
+                    config=None,
+                    atom_messages=atom_messages,
+                    overwrite_default_atom=self.overwrite_default_atom_features,
+                    overwrite_default_bond=self.overwrite_default_bond_features,
+                ) :,
+            ]
         else:
             f_bonds = self.f_bonds
 
-        return (self.f_atoms, f_bonds, self.w_atoms, self.w_bonds,
-                self.a2b, self.b2a, self.b2revb,
-                self.a_scope, self.b_scope, self.degree_of_polym)
+        return (
+            self.f_atoms,
+            f_bonds,
+            self.w_atoms,
+            self.w_bonds,
+            self.a2b,
+            self.b2a,
+            self.b2revb,
+            self.a_scope,
+            self.b_scope,
+            self.degree_of_polym,
+        )
 
     def get_b2b(self) -> paddle.Tensor:
         if self.b2b is None:
             b2b = self.a2b[self.b2a]
-            revmask = (b2b != self.b2revb.unsqueeze(1).expand_as(b2b)).astype('int64')
+            revmask = (b2b != self.b2revb.unsqueeze(1).expand_as(b2b)).astype("int64")
             self.b2b = b2b * revmask
         return self.b2b
 
@@ -602,12 +717,15 @@ class BatchMolGraph:
 # mol2graph
 # ---------------------------------------------------------------------------
 
-def mol2graph(mols: Union[List[str], List[Chem.Mol], List[Tuple[Chem.Mol, Chem.Mol]]],
-              atom_features_batch: List[np.array] = (None,),
-              bond_features_batch: List[np.array] = (None,),
-              overwrite_default_atom_features: bool = False,
-              overwrite_default_bond_features: bool = False,
-              config: FeaturizationConfig = None) -> BatchMolGraph:
+
+def mol2graph(
+    mols: Union[List[str], List[Chem.Mol], List[Tuple[Chem.Mol, Chem.Mol]]],
+    atom_features_batch: List[np.array] = (None,),
+    bond_features_batch: List[np.array] = (None,),
+    overwrite_default_atom_features: bool = False,
+    overwrite_default_bond_features: bool = False,
+    config: FeaturizationConfig = None,
+) -> BatchMolGraph:
     """
     Converts a list of SMILES or RDKit molecules to a BatchMolGraph.
 
@@ -619,9 +737,18 @@ def mol2graph(mols: Union[List[str], List[Chem.Mol], List[Tuple[Chem.Mol, Chem.M
     :param config: A FeaturizationConfig instance (uses default if None).
     :return: A BatchMolGraph containing the combined molecular graph.
     """
-    return BatchMolGraph([MolGraph(mol, af, bf,
-                                   overwrite_default_atom_features=overwrite_default_atom_features,
-                                   overwrite_default_bond_features=overwrite_default_bond_features,
-                                   config=config)
-                          for mol, af, bf
-                          in zip_longest(mols, atom_features_batch, bond_features_batch)])
+    return BatchMolGraph(
+        [
+            MolGraph(
+                mol,
+                af,
+                bf,
+                overwrite_default_atom_features=overwrite_default_atom_features,
+                overwrite_default_bond_features=overwrite_default_bond_features,
+                config=config,
+            )
+            for mol, af, bf in zip_longest(
+                mols, atom_features_batch, bond_features_batch
+            )
+        ]
+    )
