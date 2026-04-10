@@ -1,11 +1,11 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -28,13 +28,22 @@ Solvent List Format:
 Reference: GDI-NN (https://git.rwth-aachen.de/avt-svt/public/GDI-NN)
 """
 
+from __future__ import absolute_import
+from __future__ import annotations
+
 import csv
+import math
 import os
+import os.path as osp
+import pickle
 from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
 
+import numpy as np
+import paddle
+import paddle.distributed as dist
 import pgl
 from paddle.io import Dataset
 from rdkit.Chem import rdMolDescriptors
@@ -42,6 +51,31 @@ from rdkit.Chem import rdMolDescriptors
 from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models.gdinn.utils.atom_feat_encoding import CanonicalAtomFeaturizer
 from ppmat.models.gdinn.utils.molecular_graph import mol_to_bigraph
+from ppmat.utils import logger
+
+
+def _default_graph_converter(mol, add_self_loop: bool = True):
+    """Default graph converter using CanonicalAtomFeaturizer.
+
+    This matches the GDI-NN implementation for converting RDKit molecules
+    to PGL graph representations.
+
+    Args:
+        mol: RDKit molecule object.
+        add_self_loop: Whether to add self-loops to the graph.
+
+    Returns:
+        pgl.Graph object.
+    """
+    return mol_to_bigraph(
+        mol,
+        add_self_loop=add_self_loop,
+        node_featurizer=CanonicalAtomFeaturizer(),
+        edge_featurizer=None,
+        canonical_atom_order=False,
+        explicit_hydrogens=False,
+        num_virtual_nodes=0,
+    )
 
 
 class BinaryActivityDataset(Dataset):
@@ -59,14 +93,52 @@ class BinaryActivityDataset(Dataset):
         solvent_name, solvent_id, smiles_can
         "1,1,1-TRICHLOROETHANE", solvent_1, CC(Cl)(Cl)Cl
 
+    **__getitem__ Sample Contract**
+    ---------------------------------
+    - 'g1': pgl.Graph - Molecular graph for solvent 1.
+    - 'g2': pgl.Graph - Molecular graph for solvent 2.
+    - 'x1': np.ndarray (dtype=float32) - Mole fraction of solvent 1.
+    - 'x2': np.ndarray (dtype=float32) - Mole fraction of solvent 2.
+    - 'gamma1': np.ndarray (dtype=float32) - ln(activity coefficient) for solvent 1.
+    - 'gamma2': np.ndarray (dtype=float32) - ln(activity coefficient) for solvent 2.
+    - 'intra_hb1': np.ndarray (dtype=float32) - Intra-molecular H-bond capacity for solvent 1.
+    - 'intra_hb2': np.ndarray (dtype=float32) - Intra-molecular H-bond capacity for solvent 2.
+    - 'inter_hb': np.ndarray (dtype=float32) - Inter-molecular H-bond capacity.
+    - 'solv1_id': str - Solvent 1 ID.
+    - 'solv2_id': str - Solvent 2 ID.
+    - 'solv1_x': np.ndarray (dtype=float32) - Same as x1, for GDI-NN compatibility.
+    - 'id': int - Sample index.
+
     Args:
-        data_path: Path to CSV file containing binary mixture data (GDI-NN format)
-        solvent_list_path: Path to file containing list of solvents
-            Format: solvent_name, solvent_id, smiles_can
-        graph_converter: Function to convert molecules to graphs like mol_to_bigraph (default:None)
-        add_self_loop: Whether to add self-loops to graphs (default: True)
-        preload_graphs: Whether to preload all graphs into memory (default: False)
+        data_path (str): Path to CSV file containing binary mixture data (GDI-NN format).
+        solvent_list_path (Optional[str]): Path to file containing list of solvents.
+            Format: solvent_name, solvent_id, smiles_can. Defaults to None.
+        graph_converter (Optional[Callable]): Function to convert molecules to graphs.
+            If None, uses default converter with CanonicalAtomFeaturizer.
+            Defaults to None.
+        add_self_loop (bool): Whether to add self-loops to graphs. Defaults to True.
+        preload_graphs (bool): Whether to preload all graphs into memory.
+            Defaults to False.
+        transforms (Optional[Callable]): Preprocessing function to apply to each
+            sample dictionary. Defaults to None.
+        cache_path (Optional[str]): Path for disk cache of molecular graphs and
+            solvent data. If set, parsed data will be saved/loaded from this path.
+            Defaults to None.
+        overwrite (bool): Whether to overwrite existing cache. Defaults to False.
+        filter_unvalid (bool): Whether to filter out samples with invalid property
+            values (NaN, Inf, or unparseable). Defaults to True.
+        **kwargs: Additional keyword arguments for compatibility.
     """
+
+    # Required CSV columns for data validation
+    REQUIRED_COLUMNS = [
+        "solv1",
+        "solv2",
+        "solv1_x",
+        "solv2_x",
+        "solv1_gamma",
+        "solv2_gamma",
+    ]
 
     def __init__(
         self,
@@ -75,34 +147,26 @@ class BinaryActivityDataset(Dataset):
         graph_converter: Optional[Callable] = None,
         add_self_loop: bool = True,
         preload_graphs: bool = False,
+        transforms: Optional[Callable] = None,
+        cache_path: Optional[str] = None,
+        overwrite: bool = False,
+        filter_unvalid: bool = True,
+        **kwargs,
     ):
-        """Initialize Binary Activity Dataset.
-
-        Args:
-            data_path: Path to CSV file containing binary mixture data (GDI-NN format)
-            solvent_list_path: Path to file containing list of solvents
-                Format: solvent_name, solvent_id, smiles_can
-            graph_converter: Function to convert molecules to graphs like mol_to_bigraph (default: None)
-            add_self_loop: Whether to add self-loops to graphs (default: True)
-            preload_graphs: Whether to preload all graphs into memory (default: False)
-        """
+        """Initialize Binary Activity Dataset."""
         super().__init__()
         self.data_path = data_path
         self.solvent_list_path = solvent_list_path
         self.add_self_loop = add_self_loop
         self.preload_graphs = preload_graphs
+        self.transforms = transforms
+        self.overwrite = overwrite
+        self.filter_unvalid = filter_unvalid
 
-        # Set default graph converter with CanonicalAtomFeaturizer
-        # This matches the GDI-NN implementation
+        # Set default graph converter
         if graph_converter is None:
-            self.graph_converter = lambda mol: mol_to_bigraph(
-                mol,
-                add_self_loop=add_self_loop,
-                node_featurizer=CanonicalAtomFeaturizer(),
-                edge_featurizer=None,
-                canonical_atom_order=False,
-                explicit_hydrogens=False,
-                num_virtual_nodes=0,
+            self.graph_converter = lambda mol: _default_graph_converter(
+                mol, add_self_loop=add_self_loop
             )
         else:
             self.graph_converter = graph_converter
@@ -116,34 +180,80 @@ class BinaryActivityDataset(Dataset):
             kekulize=False,
         )
 
+        # Determine cache path
+        if cache_path is not None:
+            self.cache_path = cache_path
+        else:
+            self.cache_path = osp.join(
+                osp.split(data_path)[0] + "_cache",
+                osp.splitext(osp.basename(data_path))[0],
+            )
+        logger.info(f"Cache path: {self.cache_path}")
+
         # Load solvent list for caching molecular graphs
         self.solvent_info = {}  # solvent_id -> {name, smiles}
         self.solvent_smiles = {}  # solvent_id -> smiles
         if solvent_list_path and os.path.exists(solvent_list_path):
             self._load_solvent_list(solvent_list_path)
         elif solvent_list_path:
-            print(f"Warning: Solvent list not found: {solvent_list_path}")
+            logger.warning(f"Solvent list not found: {solvent_list_path}")
 
         # Load data
         self.data = self._load_csv(data_path)
+        self.num_samples = len(self.data)
+        logger.info(f"Load {self.num_samples} samples from {data_path}")
 
         # Solvent data cache: solvent_id -> [graph, hba, hbd, intra_hb]
         self.solvent_data = {}
-
-        # Preload graphs if requested
         self.graph_cache = {}
-        if preload_graphs:
-            self._preload_graphs()
-            self._generate_all_solvent_data()
+
+        # Check cache and build if needed
+        cache_exists = osp.exists(self.cache_path)
+        if cache_exists and not overwrite:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "settings used match your current settings."
+            )
+            try:
+                self._load_from_cache()
+                logger.info(
+                    "Successfully loaded molecular graphs and solvent data from cache."
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load from cache: {e}. Will rebuild cache.")
+                overwrite = True
+
+        if overwrite or not cache_exists:
+            # Build cache (only rank 0 does the conversion)
+            if dist.get_rank() == 0:
+                if preload_graphs:
+                    self._preload_graphs()
+                    self._generate_all_solvent_data()
+
+                os.makedirs(self.cache_path, exist_ok=True)
+                self._save_to_cache()
+                logger.info(f"Saved cache to {self.cache_path}")
+
+            if dist.is_initialized():
+                dist.barrier()
+
+            # All ranks load from cache built by rank 0
+            if overwrite and cache_exists:
+                self._load_from_cache()
+
+        # Filter invalid samples
+        if filter_unvalid:
+            self._filter_unvalid_by_property()
 
     def _load_csv(self, data_path: str) -> List[Dict]:
         """Load CSV data file.
 
         Args:
-            data_path: Path to CSV file
+            data_path: Path to CSV file.
 
         Returns:
-            List of dictionaries, each representing a row
+            List of dictionaries, each representing a row.
         """
         if not os.path.exists(data_path):
             raise FileNotFoundError(f"Data file not found: {data_path}")
@@ -151,6 +261,16 @@ class BinaryActivityDataset(Dataset):
         data = []
         with open(data_path, "r") as f:
             reader = csv.DictReader(f)
+            # Validate required columns
+            if reader.fieldnames is not None:
+                missing_cols = [
+                    col for col in self.REQUIRED_COLUMNS if col not in reader.fieldnames
+                ]
+                if missing_cols:
+                    raise ValueError(
+                        f"CSV file is missing required columns: {missing_cols}. "
+                        f"Expected columns include: {self.REQUIRED_COLUMNS}"
+                    )
             for row in reader:
                 data.append(row)
 
@@ -162,7 +282,7 @@ class BinaryActivityDataset(Dataset):
         GDI-NN format: solvent_name, solvent_id, smiles_can
 
         Args:
-            solvent_list_path: Path to solvent list file
+            solvent_list_path: Path to solvent list file.
         """
         try:
             with open(solvent_list_path, "r") as f:
@@ -177,13 +297,53 @@ class BinaryActivityDataset(Dataset):
                             "smiles": smiles,
                         }
                         self.solvent_smiles[solvent_id] = smiles
-            print(f"Loaded {len(self.solvent_info)} solvents from solvent list")
+            logger.info(f"Loaded {len(self.solvent_info)} solvents from solvent list")
         except Exception as e:
-            print(f"Warning: Failed to load solvent list: {e}")
+            logger.warning(f"Failed to load solvent list: {e}")
+
+    def _save_to_cache(self):
+        """Save molecular graphs and solvent data to disk cache."""
+        graphs_path = osp.join(self.cache_path, "graphs.pkl")
+        solvent_data_path = osp.join(self.cache_path, "solvent_data.pkl")
+        solvent_smiles_path = osp.join(self.cache_path, "solvent_smiles.pkl")
+
+        with open(graphs_path, "wb") as f:
+            pickle.dump(self.graph_cache, f)
+        with open(solvent_data_path, "wb") as f:
+            pickle.dump(self.solvent_data, f)
+        with open(solvent_smiles_path, "wb") as f:
+            pickle.dump(self.solvent_smiles, f)
+
+    def _load_from_cache(self):
+        """Load molecular graphs and solvent data from disk cache."""
+        graphs_path = osp.join(self.cache_path, "graphs.pkl")
+        solvent_data_path = osp.join(self.cache_path, "solvent_data.pkl")
+        solvent_smiles_path = osp.join(self.cache_path, "solvent_smiles.pkl")
+
+        if not osp.exists(graphs_path) or not osp.exists(solvent_data_path):
+            raise FileNotFoundError("Cache files not found.")
+
+        with open(graphs_path, "rb") as f:
+            self.graph_cache = pickle.load(f)
+        with open(solvent_data_path, "rb") as f:
+            self.solvent_data = pickle.load(f)
+        # Optionally reload solvent_smiles from cache if available
+        if osp.exists(solvent_smiles_path):
+            with open(solvent_smiles_path, "rb") as f:
+                cached_smiles = pickle.load(f)
+                # Merge: cache overwrites only if not already loaded
+                for k, v in cached_smiles.items():
+                    if k not in self.solvent_smiles:
+                        self.solvent_smiles[k] = v
+
+        logger.info(
+            f"Loaded {len(self.graph_cache)} graphs and "
+            f"{len(self.solvent_data)} solvent data from cache"
+        )
 
     def _preload_graphs(self):
         """Preload all molecular graphs into memory."""
-        print("Preloading molecular graphs...")
+        logger.info("Preloading molecular graphs...")
 
         # Use solvent_smiles dictionary to preload
         if self.solvent_smiles:
@@ -195,8 +355,8 @@ class BinaryActivityDataset(Dataset):
                             self.graph_cache[smiles] = self.graph_converter(mol)
                             self.graph_cache[solvent_id] = self.graph_cache[smiles]
                     except Exception as e:
-                        print(
-                            f"Warning: Failed to convert SMILES to graph: {smiles}, {e}"
+                        logger.warning(
+                            f"Failed to convert SMILES to graph: {smiles}, {e}"
                         )
         else:
             # Fallback: collect all unique SMILES from data
@@ -216,11 +376,11 @@ class BinaryActivityDataset(Dataset):
                         if mol is not None:
                             self.graph_cache[smiles] = self.graph_converter(mol)
                     except Exception as e:
-                        print(
-                            f"Warning: Failed to convert SMILES to graph: {smiles}, {e}"
+                        logger.warning(
+                            f"Failed to convert SMILES to graph: {smiles}, {e}"
                         )
 
-        print(f"Preloaded {len(self.graph_cache)} molecular graphs")
+        logger.info(f"Preloaded {len(self.graph_cache)} molecular graphs")
 
     def _generate_all_solvent_data(self):
         """Generate all solvent data including graph, HBA, HBD, and intra_hb.
@@ -253,20 +413,20 @@ class BinaryActivityDataset(Dataset):
                 self.solvent_data[solvent_id] = [graph, hba, hbd, intra_hb]
 
             except Exception as e:
-                print(f"Warning: Failed to generate data for solvent {solvent_id}: {e}")
+                logger.warning(f"Failed to generate data for solvent {solvent_id}: {e}")
 
-        print(f"Generated data for {len(self.solvent_data)} solvents")
+        logger.info(f"Generated data for {len(self.solvent_data)} solvents")
 
     def _get_molecular_graph(self, smiles: str) -> pgl.Graph:
         """Get molecular graph for a SMILES string.
 
         Args:
-            smiles: SMILES string
+            smiles: SMILES string.
 
         Returns:
-            pgl.Graph object
+            pgl.Graph object.
         """
-        if self.preload_graphs and smiles in self.graph_cache:
+        if smiles in self.graph_cache:
             return self.graph_cache[smiles]
 
         try:
@@ -275,10 +435,7 @@ class BinaryActivityDataset(Dataset):
                 raise ValueError(f"Invalid SMILES: {smiles}")
 
             graph = self.graph_converter(mol)
-
-            if self.preload_graphs:
-                self.graph_cache[smiles] = graph
-
+            self.graph_cache[smiles] = graph
             return graph
         except Exception as e:
             raise ValueError(f"Failed to convert SMILES to graph: {smiles}, {e}")
@@ -287,10 +444,10 @@ class BinaryActivityDataset(Dataset):
         """Get SMILES for a solvent ID.
 
         Args:
-            solvent_id: Solvent ID (e.g., 'solvent_587')
+            solvent_id: Solvent ID (e.g., 'solvent_587').
 
         Returns:
-            SMILES string
+            SMILES string.
         """
         if solvent_id in self.solvent_smiles:
             return self.solvent_smiles[solvent_id]
@@ -307,48 +464,77 @@ class BinaryActivityDataset(Dataset):
         """Parse string value to float, handling special cases.
 
         Args:
-            value: String value
+            value: String value.
 
         Returns:
-            Float value
+            Float value. Returns float('nan') for unparseable values.
         """
+        if value is None:
+            return float("nan")
         try:
             return float(value)
         except (ValueError, TypeError):
-            value_lower = str(value).lower()
-            if value_lower == "inf":
+            value_lower = str(value).strip().lower()
+            if value_lower in ("inf", "+inf"):
                 return float("inf")
             elif value_lower == "-inf":
                 return float("-inf")
-            elif value_lower == "nan":
+            elif value_lower in ("nan", "na", ""):
                 return float("nan")
             else:
-                return 0.0
+                logger.warning(f"Unparseable value '{value}', treating as NaN")
+                return float("nan")
+
+    def _filter_unvalid_by_property(self):
+        """Filter out samples with invalid property values (NaN, Inf).
+
+        This method updates self.data and self.num_samples.
+        """
+        reserve_idx = []
+        for i, row in enumerate(self.data):
+            is_valid = True
+            for key in ["solv1_x", "solv2_x", "solv1_gamma", "solv2_gamma"]:
+                val = self._parse_value(row.get(key, ""))
+                if val is None or math.isnan(val) or math.isinf(val):
+                    is_valid = False
+                    break
+            if is_valid:
+                reserve_idx.append(i)
+
+        if len(reserve_idx) < self.num_samples:
+            dropped = self.num_samples - len(reserve_idx)
+            self.data = [self.data[i] for i in reserve_idx]
+            self.num_samples = len(self.data)
+            logger.warning(
+                f"Filtered out {dropped} samples with invalid properties. "
+                f"Remaining {self.num_samples} samples."
+            )
 
     def __len__(self) -> int:
         """Return number of samples in dataset."""
-        return len(self.data)
+        return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict:
         """Get a sample from the dataset.
 
         Args:
-            idx: Sample index
+            idx: Sample index.
 
         Returns:
             Dictionary containing:
                 - g1: Molecular graph for solvent 1
                 - g2: Molecular graph for solvent 2
-                - x1: Composition of solvent 1 (mole fraction, solv1_x)
-                - x2: Composition of solvent 2 (mole fraction, solv2_x)
-                - gamma1: ln(activity coefficient) for solvent 1
-                - gamma2: ln(activity coefficient) for solvent 2
-                - intra_hb1: Intra-molecular hydrogen bonding capacity for solvent 1
-                - intra_hb2: Intra-molecular hydrogen bonding capacity for solvent 2
-                - inter_hb: Inter-molecular hydrogen bonding capacity
+                - x1: np.ndarray - Composition of solvent 1 (mole fraction)
+                - x2: np.ndarray - Composition of solvent 2 (mole fraction)
+                - gamma1: np.ndarray - ln(activity coefficient) for solvent 1
+                - gamma2: np.ndarray - ln(activity coefficient) for solvent 2
+                - intra_hb1: np.ndarray - Intra-molecular H-bond capacity for solvent 1
+                - intra_hb2: np.ndarray - Intra-molecular H-bond capacity for solvent 2
+                - inter_hb: np.ndarray - Inter-molecular H-bond capacity
                 - solv1_id: Solvent 1 ID
                 - solv2_id: Solvent 2 ID
-                - solv1_x: Composition of solvent 1 (same as x1, for GDI-NN compatibility)
+                - solv1_x: np.ndarray - Same as x1, for GDI-NN compatibility
+                - id: Sample index
         """
         row = self.data[idx]
 
@@ -372,20 +558,26 @@ class BinaryActivityDataset(Dataset):
         sample = {
             "g1": solv1[0],  # graph
             "g2": solv2[0],  # graph
-            "x1": x1,
-            "x2": x2,
-            "gamma1": gamma1,
-            "gamma2": gamma2,
+            "x1": np.array(x1, dtype="float32"),
+            "x2": np.array(x2, dtype="float32"),
+            "gamma1": np.array(gamma1, dtype="float32"),
+            "gamma2": np.array(gamma2, dtype="float32"),
             "solv1_id": solv1_id,
             "solv2_id": solv2_id,
-            "solv1_x": x1,  # GDI-NN uses 'solv1_x' key
+            "solv1_x": np.array(x1, dtype="float32"),  # GDI-NN uses 'solv1_x' key
             # Hydrogen bond features (computed from cached HBA/HBD values)
             # intra_hb = min(HBA, HBD)
-            "intra_hb1": solv1[3],  # min(hba, hbd)
-            "intra_hb2": solv2[3],  # min(hba, hbd)
+            "intra_hb1": np.array(solv1[3], dtype="float32"),  # min(hba, hbd)
+            "intra_hb2": np.array(solv2[3], dtype="float32"),  # min(hba, hbd)
             # inter_hb = min(HBA1, HBD2) + min(HBD1, HBA2)
-            "inter_hb": min(solv1[1], solv2[2]) + min(solv1[2], solv2[1]),
+            "inter_hb": np.array(
+                min(solv1[1], solv2[2]) + min(solv1[2], solv2[1]), dtype="float32"
+            ),
+            "id": idx,
         }
+
+        if self.transforms is not None:
+            sample = self.transforms(sample)
 
         return sample
 
@@ -396,10 +588,10 @@ class BinaryActivityDataset(Dataset):
         cached with format: [graph, hba, hbd, intra_hb].
 
         Args:
-            solvent_id: Solvent ID (e.g., 'solvent_587')
+            solvent_id: Solvent ID (e.g., 'solvent_587').
 
         Returns:
-            List containing [graph, hba, hbd, intra_hb]
+            List containing [graph, hba, hbd, intra_hb].
         """
         if solvent_id in self.solvent_data:
             return self.solvent_data[solvent_id]
@@ -425,14 +617,14 @@ class BinaryActivityDataset(Dataset):
         """Search for a chemical by name.
 
         Args:
-            chemical_name: Name of the chemical to search for
+            chemical_name: Name of the chemical to search for.
 
         Returns:
-            List containing solvent_id and indices of matching rows
+            List containing solvent_id and indices of matching rows.
         """
         for solvent_id, info in self.solvent_info.items():
             if chemical_name.lower() == info["name"].lower():
-                print(f"{solvent_id}, {info['name']}, {info['smiles']}")
+                logger.info(f"{solvent_id}, {info['name']}, {info['smiles']}")
                 indices = [
                     i
                     for i, row in enumerate(self.data)
@@ -445,10 +637,10 @@ class BinaryActivityDataset(Dataset):
         """Search for a pair of chemicals.
 
         Args:
-            chemical_list: List of two chemical names
+            chemical_list: List of two chemical names.
 
         Returns:
-            List containing solvent IDs and indices of matching rows
+            List containing solvent IDs and indices of matching rows.
         """
         solv1_match = self.search_chemical(chemical_list[0])[0]
         solv2_match = self.search_chemical(chemical_list[1])[0]
@@ -478,13 +670,11 @@ class BinaryActivityDataset(Dataset):
         - Self-loops on each node
 
         Args:
-            batch_size: Number of samples in the batch
+            batch_size: Number of samples in the batch.
 
         Returns:
-            pgl.Graph with the solvent system topology
+            pgl.Graph with the solvent system topology.
         """
-        import paddle
-
         n_solv = 2
         num_nodes = n_solv * batch_size
 
