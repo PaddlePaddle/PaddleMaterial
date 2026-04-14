@@ -1,0 +1,62 @@
+Global:
+  do_train: True
+  do_eval: True
+
+Trainer:
+  seed: 42
+  output_dir: ./output/alloygan_cgan
+  epochs: 50
+  batch_size: 64
+  save_freq: 500
+  log_freq: 10
+  pretrained_model_path: null
+
+Optimizer:
+  lr: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  weight_decay: 0.00001
+
+Model:
+  __class_name__: AlloyCGAN
+  __init_params__:
+    noise_dim: 5
+    cond_dim: 26
+    hidden_dim_g: 512
+    hidden_dim_d: 1024
+    comp_dim: 40
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: AlloyDataset
+      __init_params__:
+        path: ./data/alloy/Alloy_train.csv
+        # No category filtering — train on all data (matches original)
+        # normalize: comp/100, conditions MinMax → all [0,1]
+        normalize: true
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 64
+        shuffle: true
+        drop_last: false
+  # Test uses same data as train (matching original AlloyGAN: dataset[:, :])
+  test:
+    dataset:
+      __class_name__: AlloyDataset
+      __init_params__:
+        path: ./data/alloy/Alloy_train.csv
+        normalize: true
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1253
+        shuffle: false
+        drop_last: false
