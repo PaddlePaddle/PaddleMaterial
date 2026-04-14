@@ -1,0 +1,113 @@
+Global:
+  label_names: ["formation_energy_peratom"]
+  do_train: True
+  do_eval: False
+  do_test: False
+
+  graph_converter:
+    # NOTE: ComformerGraphConverter is from the Comformer model. CrystalFormer
+    # builds its own lattice graph internally, so this converter only needs to
+    # provide basic structure data. A dedicated CrystalFormerGraphConverter may
+    # be needed if the ComformerGraphConverter output is incompatible.
+    __class_name__: ComformerGraphConverter
+    __init_params__:
+      cutoff: 8.0
+      num_cpus: 10
+
+Dataset:
+  dataset:
+    __class_name__: MP2018Dataset
+    __init_params__:
+      path: "./data/mp2018"
+      property_names: ${Global.label_names}
+      build_structure_cfg:
+        format: cif_str
+        num_cpus: 10
+      build_graph_cfg: ${Global.graph_converter}
+      cache_path: "./data/mp2018"
+    num_workers: 4
+    use_shared_memory: False
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+  transform:
+    __class_name__: mean_std_scaling
+    __init_params__: {}
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: True
+      drop_last: False
+      batch_size: 64
+  val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 64
+  test_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 64
+
+Model:
+  __class_name__: CrystalFormer
+  __init_params__:
+    atom_feat_dim: 98
+    model_dim: 128
+    n_heads: 8
+    ff_dim: 512
+    n_layers: 4
+    n_gaussians: 50
+    cutoff: 8.0
+    lattice_range: 2
+    pooling: max
+    embedding_dim: [256, 128]
+    dropout: 0.1
+    loss_type: mse_loss
+    property_names: ${Global.label_names}
+
+Trainer:
+  max_epochs: 500
+  seed: 42
+  output_dir: ./output/crystalformer_mp2018_train_60k_e_form
+  save_freq: 100
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "formation_energy_peratom"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    lr:
+      __class_name__: OneCycleLR
+      __init_params__:
+        max_learning_rate: 0.001
+        by_epoch: True
+
+Metric:
+  formation_energy_peratom:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True
