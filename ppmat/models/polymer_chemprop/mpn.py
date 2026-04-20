@@ -6,7 +6,7 @@ import paddle
 import paddle.nn as nn
 
 from ppmat.models.polymer_chemprop.featurization import BatchMolGraph
-from ppmat.models.polymer_chemprop.featurization import FeaturizationConfig
+from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
 from ppmat.models.polymer_chemprop.featurization import get_atom_fdim
 from ppmat.models.polymer_chemprop.featurization import get_bond_fdim
 from ppmat.models.polymer_chemprop.nn_utils import get_activation_function
@@ -196,12 +196,12 @@ class MPN(nn.Layer):
         atom_descriptors_size: int = 0,
         number_of_molecules: int = 1,
         mpn_shared: bool = False,
-        featurization_config: FeaturizationConfig = None,
+        featurization_config: Featurization_parameters = None,
     ):
         super(MPN, self).__init__()
 
         if featurization_config is None:
-            featurization_config = FeaturizationConfig()
+            featurization_config = Featurization_parameters()
         self.featurization_config = featurization_config
 
         self.atom_fdim = atom_fdim or get_atom_fdim(config=featurization_config)

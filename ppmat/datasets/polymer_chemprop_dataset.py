@@ -40,12 +40,12 @@ class PolymerChempropDataset(Dataset):
         self.path = path
 
         # Build featurization config (lazy import to avoid hard dependency at module load)
-        from ppmat.models.polymer_chemprop.featurization import FeaturizationConfig
+        from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
 
         if featurization_config is not None:
-            self.feat_config = FeaturizationConfig(**featurization_config)
+            self.feat_config = Featurization_parameters(**featurization_config)
         else:
-            self.feat_config = FeaturizationConfig()
+            self.feat_config = Featurization_parameters()
 
         # Read CSV
         with open(path) as f:

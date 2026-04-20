@@ -1,7 +1,7 @@
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.polymer_chemprop.featurization import FeaturizationConfig
+from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
 from ppmat.models.polymer_chemprop.mpn import MPN
 from ppmat.models.polymer_chemprop.nn_utils import get_activation_function
 from ppmat.models.polymer_chemprop.nn_utils import initialize_weights
@@ -36,7 +36,7 @@ class PolymerChempropModel(nn.Layer):
         atom_descriptors_size: int = 0,
         multiclass_num_classes: int = 3,
         property_name: str = "target",
-        featurization_config: FeaturizationConfig = None,
+        featurization_config: Featurization_parameters = None,
     ):
         super(PolymerChempropModel, self).__init__()
 
