@@ -165,6 +165,9 @@ class NewtonNet(paddle.nn.Module):
     def update_by_train_loader(self, train_loader):
         from .scalers import set_scaler_by_string
 
+        # If just test without training.
+        if train_loader is None:
+            return
         fit_scalers = {"fit_scale": True, "fit_shift": True}
         stats_calc = MolecularStatistics()
         batch_size = len(train_loader.dataset)
