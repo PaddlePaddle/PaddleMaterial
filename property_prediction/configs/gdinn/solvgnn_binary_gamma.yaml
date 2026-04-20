@@ -14,12 +14,7 @@
 
 Global:
   seed: 42
-  device: "gpu"
   label_names: ["gamma1", "gamma2"]
-  output_keys: ["gamma1", "gamma2"]
-  use_fp16: false
-  log_interval: 10
-  save_interval: 5
   do_train: true
   do_eval: true
   do_test: false
@@ -35,6 +30,7 @@ Model:
     mpnn_activation: "relu"
     num_step_message_passing: 1
     pinn_lambda: 1.0
+    property_name: ${Global.label_names}
 
 Loss:
   __class_name__: "GibbsDuhemLoss"
@@ -77,6 +73,8 @@ Dataset:
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
@@ -84,8 +82,6 @@ Dataset:
         shuffle: false
         drop_last: false
     loader:
-      num_workers: 0
-      use_shared_memory: false
       collate_fn: "BinaryActivityCollator"
 
   val:
@@ -96,6 +92,8 @@ Dataset:
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
@@ -103,8 +101,6 @@ Dataset:
         shuffle: false
         drop_last: false
     loader:
-      num_workers: 0
-      use_shared_memory: false
       collate_fn: "BinaryActivityCollator"
 
   test:
@@ -115,6 +111,8 @@ Dataset:
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
@@ -122,8 +120,6 @@ Dataset:
         shuffle: false
         drop_last: false
     loader:
-      num_workers: 0
-      use_shared_memory: false
       collate_fn: "BinaryActivityCollator"
 
 Trainer:
@@ -159,5 +155,5 @@ Evaluator:
       - __class_name__: "RMSE"
       - __class_name__: "R2"
 
-Inference:
-  batch_size: 8
+Predict:
+  eval_with_no_grad: true
