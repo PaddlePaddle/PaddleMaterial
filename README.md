@@ -84,9 +84,9 @@ For more information on how to use PaddleMaterials to train and fine tune a mode
 ## 👩‍👩‍👧‍👦 Cooperation
 
 <p align="left">
- <img src="docs/suzhoulab.png" align="middle" width = "200"/>
- <img src="docs/zhonghua.jpeg" align="middle" width = "240"/>
- <img src="docs/MetaX.png" align="middle" width = "240"/>
+ <img src="docs/logo_SZNL_2.jpeg" align="middle" width = "240"/>
+ <img src="docs/logo_SinochemDI_2.jpeg" align="middle" width = "240"/>
+ <img src="docs/logo_MetaX.png" align="middle" width = "240"/>
 <p align="left">
 
 ## 👩‍👩‍👧‍👦 Community
