@@ -265,7 +265,7 @@ class GraphConv(nn.Layer):
         # Message passing
         if self.norm:
             # Symmetric normalization: D^(-1/2) * A * D^(-1/2)
-            deg = graph.indegree().cast("float32")
+            deg = paddle.to_tensor(graph.indegree(), dtype="float32")
             norm_coeff = paddle.pow(deg, -0.5)
             norm_coeff = paddle.where(
                 paddle.isinf(norm_coeff), paddle.zeros_like(norm_coeff), norm_coeff

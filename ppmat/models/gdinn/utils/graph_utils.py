@@ -18,6 +18,8 @@ Graph utilities for molecular graphs using PGL (Paddle Graph Learning).
 This module provides graph utilities that replace DGL functionality for PaddlePaddle.
 """
 
+import typing
+
 import numpy as np
 import paddle
 import pgl
@@ -54,7 +56,9 @@ def mean_nodes(graph: pgl.Graph, feat_name: str = "h") -> paddle.Tensor:
 
 
 def segment_sum(
-    data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: int
+    data: paddle.Tensor,
+    segment_ids: typing.Union[paddle.Tensor, np.ndarray],
+    num_segments: int,
 ) -> paddle.Tensor:
     """Sum data along segments defined by segment_ids.
 
@@ -62,7 +66,8 @@ def segment_sum(
 
     Args:
         data: Input tensor of shape [N, ...]
-        segment_ids: Segment indices of shape [N], values in [0, num_segments)
+        segment_ids: Segment indices of shape [N], values in [0, num_segments).
+            Can be a paddle Tensor or numpy array.
         num_segments: Number of segments
 
     Returns:
@@ -78,7 +83,7 @@ def segment_sum(
     else:
         feat_dim = 1
 
-    segment_ids = segment_ids.reshape([-1])
+    segment_ids = paddle.to_tensor(segment_ids).reshape([-1])
 
     # Create one-hot encoding
     one_hot = paddle.nn.functional.one_hot(segment_ids, num_segments).cast("float32")
@@ -94,13 +99,16 @@ def segment_sum(
 
 
 def segment_mean(
-    data: paddle.Tensor, segment_ids: paddle.Tensor, num_segments: int
+    data: paddle.Tensor,
+    segment_ids: typing.Union[paddle.Tensor, np.ndarray],
+    num_segments: int,
 ) -> paddle.Tensor:
     """Compute mean of data along segments defined by segment_ids.
 
     Args:
         data: Input tensor of shape [N, ...]
-        segment_ids: Segment indices of shape [N], values in [0, num_segments)
+        segment_ids: Segment indices of shape [N], values in [0, num_segments).
+            Can be a paddle Tensor or numpy array.
         num_segments: Number of segments
 
     Returns:
@@ -109,6 +117,7 @@ def segment_mean(
     sums = segment_sum(data, segment_ids, num_segments)
 
     # Count elements per segment
+    segment_ids = paddle.to_tensor(segment_ids)
     counts = paddle.zeros([num_segments], dtype=data.dtype)
     for i in range(num_segments):
         counts[i] = paddle.sum(segment_ids == i).cast(data.dtype)

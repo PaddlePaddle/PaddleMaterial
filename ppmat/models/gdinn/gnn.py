@@ -133,8 +133,8 @@ class SolvGNN(nn.Layer):
         g1 = batch_data["g1"]
         g2 = batch_data["g2"]
 
-        h1 = g1.node_feat["h"].cast("float32")
-        h2 = g2.node_feat["h"].cast("float32")
+        h1 = paddle.to_tensor(g1.node_feat["h"], dtype="float32")
+        h2 = paddle.to_tensor(g2.node_feat["h"], dtype="float32")
 
         solv1_x = batch_data["x1"]
         solv1_x.stop_gradient = False
@@ -329,8 +329,8 @@ class SolvGNNxMLP(nn.Layer):
         solv1_x = batch_data["x1"]
         solv1_x.stop_gradient = False
 
-        h1 = g1.node_feat["h"].cast("float32")
-        h2 = g2.node_feat["h"].cast("float32")
+        h1 = paddle.to_tensor(g1.node_feat["h"], dtype="float32")
+        h2 = paddle.to_tensor(g2.node_feat["h"], dtype="float32")
 
         h1 = F.relu(self.conv1(g1, h1))
         h1 = F.relu(self.conv2(g1, h1))
@@ -484,8 +484,8 @@ class GEGNN(nn.Layer):
         solv1_x = batch_data["x1"]
         solv1_x.stop_gradient = False
 
-        h1 = g1.node_feat["h"].cast("float32")
-        h2 = g2.node_feat["h"].cast("float32")
+        h1 = paddle.to_tensor(g1.node_feat["h"], dtype="float32")
+        h2 = paddle.to_tensor(g2.node_feat["h"], dtype="float32")
 
         h1 = F.relu(self.conv1(g1, h1))
         h1 = F.relu(self.conv2(g1, h1))

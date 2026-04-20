@@ -49,16 +49,17 @@ from paddle.io import Dataset
 from rdkit.Chem import rdMolDescriptors
 
 from ppmat.datasets.build_molecule import BuildMolecule
+from ppmat.models.common.graph_converter import MolecularGraphConverter
+from ppmat.models.gdinn.utils.atom_feat_encoding import GDINN_ATOM_TYPES
 from ppmat.models.gdinn.utils.atom_feat_encoding import CanonicalAtomFeaturizer
-from ppmat.models.gdinn.utils.molecular_graph import mol_to_bigraph
 from ppmat.utils import logger
 
 
 def _default_graph_converter(mol, add_self_loop: bool = True):
-    """Default graph converter using CanonicalAtomFeaturizer.
+    """Default graph converter using MolecularGraphConverter with rich atom features.
 
-    This matches the GDI-NN implementation for converting RDKit molecules
-    to PGL graph representations.
+    This uses MolecularGraphConverter for graph topology (bidirectional edges,
+    self-loops) and CanonicalAtomFeaturizer for 74-dimensional node features.
 
     Args:
         mol: RDKit molecule object.
@@ -67,15 +68,22 @@ def _default_graph_converter(mol, add_self_loop: bool = True):
     Returns:
         pgl.Graph object.
     """
-    return mol_to_bigraph(
-        mol,
-        add_self_loop=add_self_loop,
-        node_featurizer=CanonicalAtomFeaturizer(),
-        edge_featurizer=None,
-        canonical_atom_order=False,
-        explicit_hydrogens=False,
-        num_virtual_nodes=0,
+    _gdinn_atom_vocab = {
+        atom: idx
+        for idx, atom in enumerate(atom for atom in GDINN_ATOM_TYPES if atom != "H")
+    }
+
+    converter = MolecularGraphConverter(
+        atom_vocab=_gdinn_atom_vocab,
+        add_self_loops=add_self_loop,
     )
+    graph = converter(mol)
+
+    # Replace simple one-hot node features with 74-dim canonical features
+    node_feat = CanonicalAtomFeaturizer()(mol)
+    graph.node_feat["h"] = node_feat["h"]
+
+    return graph
 
 
 class BinaryActivityDataset(Dataset):
