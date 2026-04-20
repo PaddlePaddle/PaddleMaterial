@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from typing import TYPE_CHECKING
@@ -214,6 +215,11 @@ def load_checkpoint(
     return metric_dict
 
 
+def paddle_save_fix(obj, path):
+    obj = copy.deepcopy(obj)
+    paddle.save(obj, path)
+
+
 def save_checkpoint(
     model: nn.Layer,
     optimizer: Optional[optimizer.Optimizer],
@@ -251,15 +257,15 @@ def save_checkpoint(
     ckpt_path = os.path.join(ckpt_dir, prefix)
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    paddle.save(model.state_dict(), f"{ckpt_path}.pdparams")
+    paddle_save_fix(model.state_dict(), f"{ckpt_path}.pdparams")
     if optimizer:
-        paddle.save(optimizer.state_dict(), f"{ckpt_path}.pdopt")
-    paddle.save(metric, f"{ckpt_path}.pdstates")
+        paddle_save_fix(optimizer.state_dict(), f"{ckpt_path}.pdopt")
+    paddle_save_fix(metric, f"{ckpt_path}.pdstates")
     if grad_scaler is not None:
-        paddle.save(grad_scaler.state_dict(), f"{ckpt_path}.pdscaler")
+        paddle_save_fix(grad_scaler.state_dict(), f"{ckpt_path}.pdscaler")
 
     if ema_model:
-        paddle.save(ema_model.state_dict(), f"{ckpt_path}_ema.pdparams")
+        paddle_save_fix(ema_model.state_dict(), f"{ckpt_path}_ema.pdparams")
 
     if print_log:
         log_str = f"Finish saving checkpoint to: {ckpt_path}"

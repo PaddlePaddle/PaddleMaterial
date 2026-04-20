@@ -1,0 +1,121 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: True
+
+  prim_eager_enabled: True
+  prim_backward_white_list: ['erf_grad']
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: AspirinCcsdDataset
+      __init_params__:
+        root: "./example_data/aspirin/ccsd_train"
+        precision: "float64"
+        dataset_size: 950
+    num_workers: 4
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 50
+  test:
+    dataset:
+      __class_name__: AspirinCcsdDataset
+      __init_params__:
+        root: "./example_data/aspirin/ccsd_test"
+        precision: "float64"
+        # dataset_size: 500
+    num_workers: 2
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 1000
+
+Trainer:
+  # Max epochs to train
+  max_epochs: 5
+  # Random seed
+  seed: 42
+  # Save path for checkpoints and logs
+  output_dir: ./output/newtonnet
+  # Save frequency [epoch], for example, save_freq=10 means save checkpoints every 10 epochs
+  save_freq: 5 # set 0 to disable saving during training
+  # Logging frequency [step], for example, log_freq=10 means log every 10 steps
+  log_freq: 1 # log frequency [step]
+
+  # Start evaluation epoch, for example, start_eval_epoch=10 means start evaluation from epoch 10
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
+  eval_freq: 1 # set 0 to disable evaluation during training
+  # Pretrained model path, if null, no pretrained model will be loaded
+  pretrained_model_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/newtonnet/newtonnet.pdparams
+  # Pretrained weight name, will be used when pretrained_model_path is a directory
+  pretrained_weight_name:  #'latest.pdparams'
+  # whether update pretrained model by train loader
+  pretrained_need_update_by_train_loader: True
+  # whether use gradient clipping
+  clip_grad: 1.0
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  # whether use automatic mixed precision
+  use_amp: False
+  # automatic mixed precision level
+  amp_level: 'O1'
+  # whether run a model on no_grad mode during evaluation, useful for saving memory
+  # If the model contains higher-order derivatives in the forward, it should be set to
+  # False
+  eval_with_no_grad: False
+  # gradient accumulation steps, for example, gradient_accumulation_steps=2 means
+  # gradient accumulation every 2 forward steps
+  # Note:
+  # one complete step  = gradient_accumulation_steps * forward steps + backward steps
+  gradient_accumulation_steps: 1
+
+  # best metric indicator, you can choose from "train_loss", "eval_loss", "train_metric", "eval_metric"
+  best_metric_indicator: 'eval_loss' # "train_loss", "eval_loss", "train_metric", "eval_metric"
+  # The name of the best metric, since you may have multiple metrics, such as "mae", "rmse", "mape"
+  name_for_best_metric: "energy"
+  # The metric whether is better when it is greater
+  greater_is_better: False
+
+  # compute metric during training or evaluation
+  compute_metric_during_train: True # True: the metric will be calculated on train dataset
+  metric_strategy_during_eval: 'epoch' # step or epoch, compute metric after step or epoch, if set to 'step', the metric will be calculated after every step, else after epoch
+
+  # whether use visualdl, wandb, tensorboard to log
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+
+Model:
+  __class_name__: NewtonNet
+  __init_params__:
+    cutoff: 5.0    # cutoff radius for the moleculear graph, in Ang
+    n_basis: 20    # number of radial basis functions
+    n_features: 128    # number of features in the message passing and output layers
+    n_interactions: 3    # number of message passing layers
+    activation: swish    # activation function
+    layer_norm: False    # use layer normalization in the message passing layers
+    output_properties: ['charge', 'energy', 'gradient_force']    # output properties of the model, energy, gradient_force, direct_force, stress
+  precision: 'float64'
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 1.0e-3
+        patience: 15    # patience of the scheduler
+        factor: 0.7    # reduction factor of the scheduler
+        min_lr: 1.0e-5    # minimum learning rate
+        indicator: "train_loss"
+        indicator_name: "loss"

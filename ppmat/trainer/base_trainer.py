@@ -62,10 +62,10 @@ class BaseTrainer:
             Scheduler. Defaults to None.
         compute_metric_func_dict (Optional[Dict], optional): Compute metric function
             dictionary. Defaults to None.
-    
+
     Notice:
         support 2 types metric integration method. recommend metric module first. if
-        metirc calc is complicated using multipul inputs and outputs of models, could 
+        metirc calc is complicated using multipul inputs and outputs of models, could
         use stream metric.
     """
 
@@ -103,6 +103,7 @@ class BaseTrainer:
         self.seed = config["seed"]
         self.pretrained_model_path = config.get("pretrained_model_path", None)
         self.pretrained_weight_name = config.get("pretrained_weight_name", None)
+        self.clip_grad = config.get("clip_grad", 0)
         self.resume_from_checkpoint = config.get("resume_from_checkpoint", None)
         self.compute_metric_during_train = config["compute_metric_during_train"]
         self.use_amp = config.get("use_amp", False)
@@ -146,6 +147,9 @@ class BaseTrainer:
                 self.model, self.pretrained_model_path, self.pretrained_weight_name
             )
 
+        if config.get("pretrained_need_update_by_train_loader", False):
+            self.model.update_by_train_loader(train_dataloader)
+
         # 5. set automatic mixed precision(AMP) configuration
         self.scaler = paddle.amp.GradScaler(True) if self.use_amp else None
         if self.use_amp:
@@ -187,8 +191,8 @@ class BaseTrainer:
                 logger.info(
                     "VisualDL is enabled for logging, you can view it by running:\n"
                     f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
-                    "\n For more information about how to use VisualDL, please refer to:"
-                    "https://www.paddlepaddle.org.cn/paddle/visualdl"
+                    "\n For more information about how to use VisualDL, please refer "
+                    "to: https://www.paddlepaddle.org.cn/paddle/visualdl"
                 )
 
         # 8. set WandB tool
@@ -453,7 +457,6 @@ class BaseTrainer:
             # concatenate gathered tensors and compute
             for key, compute_metric_func in self.compute_metric_func_dict.items():
 
-
                 pred = paddle.concat(all_pred_dict[key])[:num_eval_samples]
                 label = paddle.concat(all_label_dict[key])[:num_eval_samples]
                 metric = compute_metric_func(pred, label)
@@ -573,6 +576,11 @@ class BaseTrainer:
                 # fuse + allreduce manually before optimization if use DDP + no_sync
                 hpu.fused_allreduce_gradients(list(self.model.parameters()), None)
 
+            if self.clip_grad > 0:
+                paddle.nn.utils.clip_grad_norm_(
+                    parameters=self.model.parameters(), max_norm=self.clip_grad
+                )
+
             # update parameters
             if self.use_amp:
                 self.scaler.minimize(self.optimizer, loss_scaled)
@@ -592,7 +600,10 @@ class BaseTrainer:
                     loss_info[key] = AverageMeter(key)
                 loss_info[key].update(float(loss_dict[key]), batch_size)
 
-            if self.compute_metric_during_train and self.compute_metric_func_dict is not None:
+            if (
+                self.compute_metric_during_train
+                and self.compute_metric_func_dict is not None
+            ):
                 pred_dict = result.get("pred_dict", {})
                 for key, compute_metric_func in self.compute_metric_func_dict.items():
                     if key not in pred_dict:

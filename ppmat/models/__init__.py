@@ -35,13 +35,14 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
+from ppmat.models.newtonnet.newtonnet import NewtonNet
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -67,6 +68,7 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "NewtonNet",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
@@ -191,6 +193,9 @@ def build_model(
             )
 
     model = cls(**params)
+    precision = cfg.pop("precision", None)
+    if precision is not None:
+        model = model.to(dtype=precision)
     logger.debug(str(model))
 
     return model
