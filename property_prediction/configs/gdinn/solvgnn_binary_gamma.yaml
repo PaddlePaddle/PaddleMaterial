@@ -73,7 +73,7 @@ Dataset:
     dataset:
       __class_name__: "BinaryActivityDataset"
       __init_params__:
-        data_path: "train_binary.csv"
+        path: "train_binary.csv"
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false
@@ -92,7 +92,7 @@ Dataset:
     dataset:
       __class_name__: "BinaryActivityDataset"
       __init_params__:
-        data_path: "val_binary.csv"
+        path: "val_binary.csv"
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false
@@ -111,7 +111,7 @@ Dataset:
     dataset:
       __class_name__: "BinaryActivityDataset"
       __init_params__:
-        data_path: "test_binary.csv"
+        path: "test_binary.csv"
         solvent_list_path: "solvent_list.csv"
         add_self_loop: true
         preload_graphs: false

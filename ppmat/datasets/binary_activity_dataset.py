@@ -118,7 +118,7 @@ class BinaryActivityDataset(Dataset):
     - 'id': int - Sample index.
 
     Args:
-        data_path (str): Path to CSV file containing binary mixture data (GDI-NN format).
+        path (str): Path to CSV file containing binary mixture data (GDI-NN format).
         solvent_list_path (Optional[str]): Path to file containing list of solvents.
             Format: solvent_name, solvent_id, smiles_can. Defaults to None.
         graph_converter (Optional[Callable]): Function to convert molecules to graphs.
@@ -150,7 +150,7 @@ class BinaryActivityDataset(Dataset):
 
     def __init__(
         self,
-        data_path: str,
+        path: str,
         solvent_list_path: Optional[str] = None,
         graph_converter: Optional[Callable] = None,
         add_self_loop: bool = True,
@@ -163,7 +163,7 @@ class BinaryActivityDataset(Dataset):
     ):
         """Initialize Binary Activity Dataset."""
         super().__init__()
-        self.data_path = data_path
+        self.path = path
         self.solvent_list_path = solvent_list_path
         self.add_self_loop = add_self_loop
         self.preload_graphs = preload_graphs
@@ -193,8 +193,8 @@ class BinaryActivityDataset(Dataset):
             self.cache_path = cache_path
         else:
             self.cache_path = osp.join(
-                osp.split(data_path)[0] + "_cache",
-                osp.splitext(osp.basename(data_path))[0],
+                osp.split(path)[0] + "_cache",
+                osp.splitext(osp.basename(path))[0],
             )
         logger.info(f"Cache path: {self.cache_path}")
 
@@ -207,9 +207,9 @@ class BinaryActivityDataset(Dataset):
             logger.warning(f"Solvent list not found: {solvent_list_path}")
 
         # Load data
-        self.data = self._load_csv(data_path)
+        self.data = self._load_csv(path)
         self.num_samples = len(self.data)
-        logger.info(f"Load {self.num_samples} samples from {data_path}")
+        logger.info(f"Load {self.num_samples} samples from {path}")
 
         # Solvent data cache: solvent_id -> [graph, hba, hbd, intra_hb]
         self.solvent_data = {}
@@ -254,20 +254,20 @@ class BinaryActivityDataset(Dataset):
         if filter_unvalid:
             self._filter_unvalid_by_property()
 
-    def _load_csv(self, data_path: str) -> List[Dict]:
+    def _load_csv(self, path: str) -> List[Dict]:
         """Load CSV data file.
 
         Args:
-            data_path: Path to CSV file.
+            path: Path to CSV file.
 
         Returns:
             List of dictionaries, each representing a row.
         """
-        if not os.path.exists(data_path):
-            raise FileNotFoundError(f"Data file not found: {data_path}")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Data file not found: {path}")
 
         data = []
-        with open(data_path, "r") as f:
+        with open(path, "r") as f:
             reader = csv.DictReader(f)
             # Validate required columns
             if reader.fieldnames is not None:
