@@ -78,6 +78,9 @@ python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_fo
 
 For more information on how to use PaddleMaterials to train and fine tune a model, please refer to the [documentation](get_started.md).
 
+## ⭐️ Star History
+[![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterilas&type=date&legend=top-left)
+
 ## 👩‍👩‍👧‍👦 Cooperation
 
 <p align="left">
