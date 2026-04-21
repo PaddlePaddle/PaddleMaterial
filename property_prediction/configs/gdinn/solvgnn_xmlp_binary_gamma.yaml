@@ -78,7 +78,7 @@ Dataset:
     sampler:
       __class_name__: "BatchSampler"
       __init_params__:
-        batch_size: 8
+        batch_size: 256
         shuffle: false
         drop_last: false
     loader:
@@ -123,11 +123,11 @@ Dataset:
       collate_fn: "BinaryActivityCollator"
 
 Trainer:
-  max_epochs: 200
+  max_epochs: 10
   seed: 42
   output_dir: ./output/solvgnn_xmlp_binary_gamma
-  save_freq: 5
-  log_freq: 10
+  save_freq: 1
+  log_freq: 100
   start_eval_epoch: 1
   eval_freq: 1
   pretrained_model_path: null
