@@ -85,6 +85,8 @@ Dataset:
         drop_last: false
     loader:
       collate_fn: "BinaryActivityCollator"
+      collate_params:
+        for_mcm: true
 
   val:
     dataset:
@@ -104,6 +106,8 @@ Dataset:
         drop_last: false
     loader:
       collate_fn: "BinaryActivityCollator"
+      collate_params:
+        for_mcm: true
 
   test:
     dataset:
@@ -123,6 +127,8 @@ Dataset:
         drop_last: false
     loader:
       collate_fn: "BinaryActivityCollator"
+      collate_params:
+        for_mcm: true
 
 Trainer:
   max_epochs: 200

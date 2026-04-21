@@ -322,16 +322,25 @@ class BinaryActivityCollator:
         - intra_hb2: Intra-molecular hydrogen bonds for solvent 2 [batch_size, 1]
         - inter_hb: Inter-molecular hydrogen bonds [batch_size, 1]
         - empty_solvsys: Empty solvent system graph for global interaction
-        - solv1_id: List of solvent 1 IDs
-        - solv2_id: List of solvent 2 IDs
+        - solv1_id: Solvent 1 IDs (list or tensor depending on for_mcm flag)
+        - solv2_id: Solvent 2 IDs (list or tensor depending on for_mcm flag)
 
     This matches the GDI-NN training format where empty_solvsys is generated
     based on batch_size during data collation.
+
+    Args:
+        for_mcm: If True, extract numeric IDs from string format for MCM model.
+            If False, keep solvent IDs as strings. Defaults to False.
     """
 
-    def __init__(self):
-        """Initialize BinaryActivityCollator."""
-        pass
+    def __init__(self, for_mcm: bool = False):
+        """Initialize BinaryActivityCollator.
+
+        Args:
+            for_mcm: If True, extract numeric IDs from string format for MCM model.
+                If False, keep solvent IDs as strings. Defaults to False.
+        """
+        self.for_mcm = for_mcm
 
     def __call__(self, batch: List[dict]) -> dict:
         """Collate a batch of binary activity samples.
@@ -375,9 +384,34 @@ class BinaryActivityCollator:
         # Generate empty_solvsys for global interaction
         empty_solvsys = BinaryActivityDataset.generate_solvsys(batch_size)
 
-        # Collect solvent IDs (keep as list for reference)
-        solv1_ids = [sample["solv1_id"] for sample in batch]
-        solv2_ids = [sample["solv2_id"] for sample in batch]
+        # Collect solvent IDs
+        solv1_ids_str = [sample["solv1_id"] for sample in batch]
+        solv2_ids_str = [sample["solv2_id"] for sample in batch]
+
+        # Process solvent IDs based on for_mcm flag
+        if self.for_mcm:
+            # Extract numeric IDs from string format for MCM model
+            # String format: "solvent_587" or "solute_604" -> extract 587 or 604
+            solv1_ids = []
+            solv2_ids = []
+            for sid1, sid2 in zip(solv1_ids_str, solv2_ids_str):
+                # Handle string format like "solvent_587" or "solute_604"
+                if isinstance(sid1, str) and "_" in sid1:
+                    solv1_ids.append(int(sid1.split("_")[-1]))
+                else:
+                    solv1_ids.append(int(sid1))
+                if isinstance(sid2, str) and "_" in sid2:
+                    solv2_ids.append(int(sid2.split("_")[-1]))
+                else:
+                    solv2_ids.append(int(sid2))
+
+            # Convert to tensors
+            solv1_ids = paddle.to_tensor(solv1_ids, dtype="int64")
+            solv2_ids = paddle.to_tensor(solv2_ids, dtype="int64")
+        else:
+            # Keep as list for other models
+            solv1_ids = solv1_ids_str
+            solv2_ids = solv2_ids_str
 
         return {
             "g1": g1,
