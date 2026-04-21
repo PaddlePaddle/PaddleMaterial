@@ -195,8 +195,15 @@ class MCM_MultiMLP(nn.Layer):
         solv1_x.stop_gradient = False
 
         # Get solvent and solute IDs
-        solv1_id = batch_data["solv1_id"].cast("int64")
-        solv2_id = batch_data["solv2_id"].cast("int64")
+        # Convert from list to tensor if necessary
+        solv1_id = batch_data["solv1_id"]
+        solv2_id = batch_data["solv2_id"]
+        if isinstance(solv1_id, list):
+            solv1_id = paddle.to_tensor(solv1_id, dtype="int64")
+            solv2_id = paddle.to_tensor(solv2_id, dtype="int64")
+        else:
+            solv1_id = solv1_id.cast("int64")
+            solv2_id = solv2_id.cast("int64")
 
         # Embedding
         x_solvent = self.solvent_emb(solv1_id)  # [batch_size, dim_hidden]
