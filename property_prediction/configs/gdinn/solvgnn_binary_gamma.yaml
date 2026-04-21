@@ -30,7 +30,6 @@ Model:
     mpnn_activation: "relu"
     num_step_message_passing: 1
     pinn_lambda: 1.0
-    property_name: ${Global.label_names}
 
 Loss:
   __class_name__: "GibbsDuhemLoss"
