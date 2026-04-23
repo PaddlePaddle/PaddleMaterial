@@ -1,0 +1,63 @@
+model:
+  name: MACE
+  hidden_dim: 128
+  num_layers: 3
+  num_basis: 8
+  r_max: 5.0
+  num_elements: 100
+
+dataset:
+  name: XYZDataset
+  train_path: data/train.xyz
+  valid_path: data/valid.xyz
+  test_path: data/test.xyz
+  r_max: 5.0
+
+dataloader:
+  batch_size: 32
+  num_workers: 4
+  shuffle: true
+
+optimizer:
+  name: Adam
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+lr_scheduler:
+  name: StepLR
+  step_size: 100
+  gamma: 0.5
+
+loss:
+  name: MSELoss
+  force_weight: 100.0
+
+metric:
+  name: MAE
+  energy_weight: 1.0
+  force_weight: 0.1
+
+trainer:
+  name: MACETrainer
+  max_epochs: 1000
+  save_dir: checkpoints
+  log_dir: logs
+  save_interval: 10
+  eval_interval: 5
+
+predictor:
+  name: MACEPredictor
+  model_path: checkpoints/mace_best.pdparams
+
+save:
+  save_best: true
+  save_last: true
+  save_interval: 10
+
+log:
+  log_interval: 100
+  log_level: info
+
+eval:
+  eval_interval: 5
+  eval_metrics: ["MAE"]
