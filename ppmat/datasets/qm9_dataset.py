@@ -31,7 +31,6 @@ import numpy as np
 import paddle.distributed as dist
 from paddle.io import Dataset
 
-from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
@@ -74,6 +73,9 @@ except ImportError:
     AseAtomsAdaptor = None
     ASE_AVAILABLE = False
     print("Warning: ASE (Atomic Simulation Environment) not found. Data parsing functionality is disabled.")
+
+
+HARTREE_TO_EV = 27.211386245988
 
 class QM9Dataset(Dataset):
     """
@@ -134,9 +136,24 @@ class QM9Dataset(Dataset):
             Defaults to True.
     """
 
+    # Raw QM9 mirror used by default runtime pipeline.
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2"
     name = "qm9"
     md5 = "AD1EBD51EE7F5B3A6E32E974E5D54012"
+    URL_FALLBACKS = [
+        # PaddleMaterials packaged mirror (preferred if available).
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.tar.gz",
+        # PaddleMaterials raw mirror.
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2",
+        # Original mirrors.
+        "https://ndownloader.figshare.com/files/3195389",
+        "https://springernature.figshare.com/ndownloader/files/3195389",
+    ]
+    RAW_URLS = {
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2",
+        "https://ndownloader.figshare.com/files/3195389",
+        "https://springernature.figshare.com/ndownloader/files/3195389",
+    }
 
     # Official QM9 second-line property order (including tag/index)
     PROP_ORDER = [
@@ -158,11 +175,25 @@ class QM9Dataset(Dataset):
         "G",      # free energy at 298.15 K (Hartree)
         "Cv",     # heat capacity at 298.15 K (cal/mol/K)
     ]
+    PROPERTY_FILE_MAP = {
+        "energy_per_atom": "lumo",
+    }
+    PROPERTY_UNIT_SCALE = {
+        "homo": HARTREE_TO_EV,
+        "lumo": HARTREE_TO_EV,
+        "gap": HARTREE_TO_EV,
+        "zpve": HARTREE_TO_EV,
+        "U0": HARTREE_TO_EV,
+        "U": HARTREE_TO_EV,
+        "H": HARTREE_TO_EV,
+        "G": HARTREE_TO_EV,
+        "energy_per_atom": HARTREE_TO_EV,
+    }
 
     def __init__(
         self,
         path: str,
-        url: Optional[str] = None, 
+        url: Optional[Union[str, List[str]]] = None,
         property_names: Union[str, List[str]] = None,
         *,
         url_indices: Optional[List[int]] = None,
@@ -171,16 +202,16 @@ class QM9Dataset(Dataset):
         cache_path: Optional[str] = None,
         overwrite: bool = False,
         filter_unvalid: bool = True,
+        enable_unit_conversion: bool = False,
+        subset: str = "all",
+        split_file: Optional[str] = None,
+        num_train: Optional[int] = None,
+        num_val: Optional[int] = None,
+        num_test: Optional[int] = None,
+        seed: int = 42,
         **kwargs,
     ) -> None:
         super().__init__()
-
-        # Use the ASE_AVAILABLE flag and AseAtomsAdaptor presence to validate dependencies
-        if not ASE_AVAILABLE or AseAtomsAdaptor is None:
-            raise RuntimeError(
-                "QM9Dataset requires 'ase' and 'pymatgen'. "
-                "Please install them via: pip install ase pymatgen"
-            )
 
         if property_names is None:
             raise ValueError("property_names must be provided for QM9Dataset")
@@ -191,6 +222,7 @@ class QM9Dataset(Dataset):
 
         # Handle URLs configuration
         self.url = url if url is not None else self.url
+        self.download_urls = self._resolve_download_urls(self.url)
 
         #Path Configuration
         os.makedirs(path, exist_ok=True)
@@ -218,7 +250,17 @@ class QM9Dataset(Dataset):
         self.transforms = transforms
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
+        # Keep legacy QM9 behavior by default to avoid impacting existing cases.
+        self.enable_unit_conversion = bool(enable_unit_conversion)
         self.build_graph_cfg = build_graph_cfg
+        self.subset = subset
+        self.split_file = split_file
+        self.num_train = num_train
+        self.num_val = num_val
+        self.num_test = num_test
+        self.seed = int(seed)
+        if self.split_file is not None and not osp.isabs(self.split_file):
+            self.split_file = osp.join(path, self.split_file)
 
         # define sub-directories for cache
         self.structures_dir = osp.join(self.cache_path, "structures")
@@ -251,9 +293,6 @@ class QM9Dataset(Dataset):
             if dist.is_initialized():
                 dist.barrier()
         
-        PROPERTY_FILE_MAP = {          
-        "energy_per_atom": "lumo", # cheat the model of the way it gets the data   
-        }
         # 4) Load file lists and property data into memory
         self.structures = [
             osp.join(self.structures_dir, f)
@@ -274,9 +313,7 @@ class QM9Dataset(Dataset):
         
         self.property_data = {}
         for pname in self.property_names:
-        
-            # Determine the actual file name: use the mapping table if available; otherwise, use the configuration name itself
-            file_name = PROPERTY_FILE_MAP.get(pname, pname)
+            file_name = self.PROPERTY_FILE_MAP.get(pname, pname)
         
             file_path = osp.join(self.props_dir, f"{file_name}.pkl")
         
@@ -304,8 +341,61 @@ class QM9Dataset(Dataset):
         # 6) Ensure data length consistency across all arrays
         self._ensure_length_consistency()
 
-        self.num_samples = len(self.structures)
-        logger.info(f"Final QM9Dataset samples: {self.num_samples}")
+        self.indices = self._resolve_split_indices(len(self.structures))
+        self.num_samples = len(self.indices)
+        logger.info(
+            f"Final QM9Dataset samples ({self.subset}): {self.num_samples}"
+        )
+
+    @classmethod
+    def _resolve_download_urls(cls, url_cfg: Optional[Union[str, List[str]]]) -> List[str]:
+        # Keep legacy behavior for default/raw QM9 links to avoid affecting other cases.
+        if url_cfg is None:
+            return [cls.url]
+        if isinstance(url_cfg, str):
+            if len(url_cfg) == 0:
+                return [cls.url]
+            if url_cfg in cls.RAW_URLS:
+                return [url_cfg]
+            urls: List[str] = [url_cfg]
+            urls.extend(cls.URL_FALLBACKS)
+        elif isinstance(url_cfg, (list, tuple)):
+            urls = [one_url for one_url in url_cfg if isinstance(one_url, str) and len(one_url) > 0]
+            if len(urls) == 0:
+                return [cls.url]
+        else:
+            return [cls.url]
+
+        # Keep order and drop duplicates.
+        seen = set()
+        dedup = []
+        for one_url in urls:
+            if one_url in seen:
+                continue
+            seen.add(one_url)
+            dedup.append(one_url)
+        return dedup
+
+    def _download_qm9_archive(self, tar_path: str) -> None:
+        import urllib.request
+
+        last_error = None
+        for one_url in self.download_urls:
+            logger.info(f"Downloading QM9 from {one_url}...")
+            try:
+                if osp.exists(tar_path):
+                    os.remove(tar_path)
+                urllib.request.urlretrieve(one_url, tar_path)
+                if osp.exists(tar_path) and osp.getsize(tar_path) > 0:
+                    return
+                raise RuntimeError(f"Downloaded empty file from {one_url}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Failed to download QM9 from {one_url}: {e}")
+
+        raise RuntimeError(
+            f"Download failed for all QM9 urls: {self.download_urls}"
+        ) from last_error
 
     
     def _prepare_structures_and_properties(self, raw_file_path: str):
@@ -318,7 +408,12 @@ class QM9Dataset(Dataset):
         
         # Check if all property files exist
         props_exist = all(
-            osp.exists(osp.join(self.props_dir, f"{p}.pkl"))
+            osp.exists(
+                osp.join(
+                    self.props_dir,
+                    f"{self.PROPERTY_FILE_MAP.get(p, p)}.pkl",
+                )
+            )
             for p in self.property_names
         )
 
@@ -332,6 +427,11 @@ class QM9Dataset(Dataset):
         )
 
         if should_build:
+            if not ASE_AVAILABLE or AseAtomsAdaptor is None:
+                raise RuntimeError(
+                    "QM9Dataset requires 'ase' and 'pymatgen' when building cache. "
+                    "Please install them via: pip install ase pymatgen"
+                )
             if dist.get_rank() == 0:
                 logger.info("Building structures and properties from raw QM9 file...")
                 
@@ -506,25 +606,26 @@ class QM9Dataset(Dataset):
         # 2. prepare the path to download
         tar_filename = "qm9_raw.tar.bz2"
         tar_path = osp.join(self.raw_dir, tar_filename)
-        
+
         # 3. downloading logic
         if not osp.exists(tar_path):
             if dist.get_rank() == 0:
-                logger.info(f"Downloading QM9 from {self.url}...")
-                import urllib.request
-                try:
-                    urllib.request.urlretrieve(self.url, tar_path)
-                except Exception as e:
-                    raise RuntimeError(f"Download failed: {e}")
+                self._download_qm9_archive(tar_path)
             if dist.is_initialized():
                 dist.barrier()
-        
+
         # 4. extacting logic
         if dist.get_rank() == 0:
-            logger.info("Extracting QM9...")
             import tarfile
+            if not tarfile.is_tarfile(tar_path):
+                logger.warning(
+                    f"Cached QM9 archive is invalid: {tar_path}. Re-downloading..."
+                )
+                self._download_qm9_archive(tar_path)
+            logger.info("Extracting QM9...")
             try:
-                with tarfile.open(tar_path, "r:bz2") as tar:
+                # Support both .tar.bz2 and .tar.gz mirrors.
+                with tarfile.open(tar_path, "r:*") as tar:
                     tar.extractall(path=self.raw_dir)
             except Exception as e:
                 raise RuntimeError(f"Extraction failed: {e}")
@@ -533,45 +634,63 @@ class QM9Dataset(Dataset):
             dist.barrier()
 
         # 5. final check
-        # Case A：single file exists.
+        # Case A: single file exists.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
 
-        
-        # Case B：merge these .xyz files into a big file.
-        xyz_files = [f for f in os.listdir(self.raw_dir) if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"]
+        # Case B: package may contain nested dsgdb9nsd.xyz.
+        nested_single_file = []
+        for root, _, files in os.walk(self.raw_dir):
+            for fname in files:
+                if fname == "dsgdb9nsd.xyz":
+                    full_path = osp.join(root, fname)
+                    if osp.abspath(full_path) != osp.abspath(self.raw_xyz_path):
+                        nested_single_file.append(full_path)
+        if len(nested_single_file) > 0:
+            src = sorted(nested_single_file)[0]
+            logger.info(f"Found nested dsgdb9nsd.xyz at {src}, copying to {self.raw_xyz_path}")
+            import shutil
+            shutil.copy2(src, self.raw_xyz_path)
+            return self.raw_xyz_path
+
+        # Case C: merge xyz shards (including nested folders) into one file.
+        xyz_files = []
+        for root, _, files in os.walk(self.raw_dir):
+            for fname in files:
+                if fname.endswith(".xyz") and fname != "dsgdb9nsd.xyz":
+                    xyz_files.append(osp.join(root, fname))
         if len(xyz_files) > 0:
             logger.info(f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz...")
             merged_path = self.raw_xyz_path
-            
+
             if osp.exists(merged_path):
                 os.remove(merged_path)
 
-            with open(merged_path, "w") as fout: # use "w" model to rewrite
-                for fname in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
-                    full_path = osp.join(self.raw_dir, fname)
+            with open(merged_path, "w") as fout:  # use "w" mode to rewrite
+                for full_path in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
                     try:
                         with open(full_path, "r") as fin:
                             lines = fin.readlines()
 
-                        if not lines: continue
+                        if not lines:
+                            continue
                         natoms = int(lines[0].strip())
-                        
+
                         # 1. Number of atoms written
                         fout.write(f"{natoms}\n")
-                        # 2. Write attribute line 
+                        # 2. Write attribute line
                         prop_line = lines[1].replace('*^', 'e').replace('\t', ' ')
                         fout.write(prop_line)
                         # 3. Write coordinate lines (only take natoms lines)
                         for i in range(2, 2 + natoms):
                             coord_line = lines[i].replace('*^', 'e').replace('\t', ' ')
                             fout.write(coord_line)
-                        
+
                     except Exception as e:
-                        logger.warning(f"Error processing {fname}: {e}")
+                        logger.warning(f"Error processing {full_path}: {e}")
                         continue
             return merged_path
-        # Case C: None
+        # Case D: None
         raise RuntimeError(
             f"Decompression is complete, but I couldn't find dsgdb9nsd.xyz or any .xyz files under {self.raw_dir}!"
             "Please check what files are actually included in the downloaded compressed package."
@@ -733,16 +852,81 @@ class QM9Dataset(Dataset):
         """
         pass
 
+    def _resolve_split_indices(self, n_total: int) -> np.ndarray:
+        if self.subset in ("all", None):
+            return np.arange(n_total, dtype=np.int64)
+
+        train_idx = None
+        val_idx = None
+        test_idx = None
+
+        if self.split_file is not None and osp.exists(self.split_file):
+            split_data = np.load(self.split_file)
+            train_idx = split_data["train_idx"].astype(np.int64)
+            val_idx = split_data["val_idx"].astype(np.int64)
+            test_idx = split_data["test_idx"].astype(np.int64)
+        else:
+            rng = np.random.default_rng(self.seed)
+            perm = rng.permutation(n_total).astype(np.int64)
+            num_train = (
+                int(self.num_train) if self.num_train is not None else int(0.8 * n_total)
+            )
+            num_val = (
+                int(self.num_val) if self.num_val is not None else int(0.1 * n_total)
+            )
+            num_train = max(0, min(num_train, n_total))
+            num_val = max(0, min(num_val, n_total - num_train))
+            if self.num_test is None:
+                num_test = n_total - num_train - num_val
+            else:
+                num_test = int(self.num_test)
+                num_test = max(0, min(num_test, n_total - num_train - num_val))
+
+            train_end = num_train
+            val_end = num_train + num_val
+            test_end = val_end + num_test
+            train_idx = perm[:train_end]
+            val_idx = perm[train_end:val_end]
+            test_idx = perm[val_end:test_end]
+            if test_end < n_total:
+                test_idx = np.concatenate([test_idx, perm[test_end:]], axis=0)
+
+            if self.split_file is not None and dist.get_rank() == 0:
+                os.makedirs(osp.dirname(self.split_file), exist_ok=True)
+                np.savez(
+                    self.split_file,
+                    train_idx=train_idx,
+                    val_idx=val_idx,
+                    test_idx=test_idx,
+                )
+
+        def _sanitize(idx: np.ndarray) -> np.ndarray:
+            idx = idx[(idx >= 0) & (idx < n_total)]
+            return idx.astype(np.int64)
+
+        train_idx = _sanitize(train_idx)
+        val_idx = _sanitize(val_idx)
+        test_idx = _sanitize(test_idx)
+
+        if self.subset == "train":
+            return train_idx
+        if self.subset in ("val", "validation"):
+            return val_idx
+        if self.subset == "test":
+            return test_idx
+        raise ValueError(f"Unsupported subset: {self.subset}")
+
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        real_idx = int(self.indices[idx])
         data = {}
         # 1. loading the info
         if self.graphs is not None:
-            data["graph"] = self._load_pickle(self.graphs[idx])
+            data["graph"] = self._load_pickle(self.graphs[real_idx])
         else:
-            struct = self._load_pickle(self.structures[idx])
+            struct = self._load_pickle(self.structures[real_idx])
             # turn into dictionary format
             data["pos"] = np.array(struct.cart_coords, dtype='float32')
             data["atomic_numbers"] = np.array([s.specie.Z for s in struct], dtype='int64')
@@ -752,12 +936,17 @@ class QM9Dataset(Dataset):
 
         # 2. loading the properties
         for pname in self.property_names:
-            val = self.property_data[pname][idx]
-            # data[pname] = np.array([val], dtype='float32')
+            val = self.property_data[pname][real_idx]
+            scale = 1.0
+            if self.enable_unit_conversion:
+                scale = self.PROPERTY_UNIT_SCALE.get(pname, 1.0)
+            val_arr = np.array([val], dtype="float32")
+            if scale != 1.0:
+                val_arr = val_arr * np.float32(scale)
             if pname == 'lumo':
-                data['energy_per_atom'] = np.array([val], dtype='float32')
+                data['energy_per_atom'] = val_arr
             else:
-                data[pname] = np.array([val], dtype='float32')
+                data[pname] = val_arr
             
         # 3. data transforms
         if self.transforms is not None:

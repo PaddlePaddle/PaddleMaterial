@@ -1,0 +1,141 @@
+Global:
+  do_train: True
+  do_eval: True
+  do_test: True
+
+  label_names: ["energy"]
+  graph_converter:
+    __class_name__: FindPointsInSpheres
+    __init_params__:
+      # train_energy_force.py default cutoff
+      cutoff: 20.0
+      pbc: [0, 0, 0]
+      num_cpus: 4
+
+
+Trainer:
+  # Paper + SchNet-master aligned optimizer style.
+  max_epochs: 100000
+  # SchNet-master style stop/eval/save by global step.
+  max_iter: 5000000
+  eval_interval_steps: 5000
+  save_interval_steps: 50000
+  seed: 42
+  output_dir: ./output/schnet_iso17_paper
+  save_freq: 100
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: "O1"
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: "eval_metric"
+  name_for_best_metric: "energy"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: "epoch"
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+
+Model:
+  __class_name__: SchNet
+  __init_params__:
+    # train_energy_force.py defaults: basis=64, filters=64, interactions=6, cutoff=20.0
+    n_atom_basis: 64
+    n_interactions: 6
+    n_filters: 64
+    cutoff: 20.0
+    n_rbf: 20
+    max_z: 100
+    property_name: "energy"
+    readout: "sum"
+    data_mean: 0.0
+    data_std: 1.0
+    loss_type: "mse_loss"
+
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: ExponentialDecay
+      __init_params__:
+        learning_rate: 1e-3
+        gamma: 0.96
+        decay_steps: 100000
+        by_epoch: False
+
+
+Metric:
+  energy:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+
+Dataset:
+  # Dataset package mirror (uploaded):
+  # https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz
+  train:
+    dataset:
+      __class_name__: ISO17Dataset
+      __init_params__:
+        path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
+        subset: "train"
+        split_file: "split_iso17_ref90_testother_seed42.npz"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 32
+
+  val:
+    dataset:
+      __class_name__: ISO17Dataset
+      __init_params__:
+        path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
+        subset: "val"
+        split_file: "split_iso17_ref90_testother_seed42.npz"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 100
+
+  test:
+    dataset:
+      __class_name__: ISO17Dataset
+      __init_params__:
+        path: "./data/iso17"
+        url: "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/ISO17/iso17.tar.gz"
+        subset: "test"
+        split_file: "split_iso17_ref90_testother_seed42.npz"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        seed: 42
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 100
+
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True
