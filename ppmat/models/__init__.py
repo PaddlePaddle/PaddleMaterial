@@ -35,10 +35,10 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
-from ppmat.models.gdinn.gnn import GEGNN
-from ppmat.models.gdinn.gnn import SolvGNN
-from ppmat.models.gdinn.gnn import SolvGNNxMLP
-from ppmat.models.gdinn.mcm import MCM_MultiMLP
+from ppmat.models.gdinn.gdinn import GEGNN
+from ppmat.models.gdinn.gdinn import MCM_MultiMLP
+from ppmat.models.gdinn.gdinn import SolvGNN
+from ppmat.models.gdinn.gdinn import SolvGNNxMLP
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
