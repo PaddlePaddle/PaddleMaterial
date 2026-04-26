@@ -42,7 +42,7 @@ from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.polymer_chemprop.model import PolymerChempropModel
+from ppmat.models.wd_mpnn.model import WDMPNN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -68,7 +68,7 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
-    "PolymerChempropModel",
+    "WDMPNN",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

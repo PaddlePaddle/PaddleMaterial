@@ -5,12 +5,12 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.polymer_chemprop.featurization import BatchMolGraph
-from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
-from ppmat.models.polymer_chemprop.featurization import get_atom_fdim
-from ppmat.models.polymer_chemprop.featurization import get_bond_fdim
-from ppmat.models.polymer_chemprop.nn_utils import get_activation_function
-from ppmat.models.polymer_chemprop.nn_utils import index_select_ND
+from ppmat.models.wd_mpnn.featurization import BatchMolGraph
+from ppmat.models.wd_mpnn.featurization import Featurization_parameters
+from ppmat.models.wd_mpnn.featurization import get_atom_fdim
+from ppmat.models.wd_mpnn.featurization import get_bond_fdim
+from ppmat.models.wd_mpnn.nn_utils import get_activation_function
+from ppmat.models.wd_mpnn.nn_utils import index_select_ND
 
 
 class MPNEncoder(nn.Layer):

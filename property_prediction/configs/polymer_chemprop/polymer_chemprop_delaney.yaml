@@ -7,7 +7,7 @@ Global:
 Trainer:
   max_epochs: 30
   seed: 42
-  output_dir: ./output/polymer_chemprop_delaney
+  output_dir: ./output/wd_mpnn_delaney
   save_freq: 10
   log_freq: 10
   start_eval_epoch: 1
@@ -29,7 +29,7 @@ Trainer:
   use_tensorboard: False
 
 Model:
-  __class_name__: PolymerChempropModel
+  __class_name__: WDMPNN
   __init_params__:
     hidden_size: 300
     depth: 3
@@ -74,7 +74,7 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: PolymerChempropDataset
+      __class_name__: WDMPNNDataset
       __init_params__:
         path: "./data/delaney.csv"
         smiles_columns: ["smiles"]
@@ -82,7 +82,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: PolymerChempropCollator
+      collate_fn: WDMPNNCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -91,7 +91,7 @@ Dataset:
         batch_size: 50
   val:
     dataset:
-      __class_name__: PolymerChempropDataset
+      __class_name__: WDMPNNDataset
       __init_params__:
         path: "./data/delaney.csv"
         smiles_columns: ["smiles"]
@@ -99,7 +99,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: PolymerChempropCollator
+      collate_fn: WDMPNNCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:

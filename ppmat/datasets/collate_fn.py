@@ -326,14 +326,14 @@ def pad_sequence(sequences, batch_first=False, padding_value=0):
     return out_tensor
 
 
-class PolymerChempropCollator:
-    """Collator for PolymerChempropDataset.
+class WDMPNNCollator:
+    """Collator for WDMPNNDataset.
 
     Batches MolGraph objects into BatchMolGraph and stacks targets.
     """
 
     def __call__(self, batch):
-        from ppmat.models.polymer_chemprop.featurization import BatchMolGraph
+        from ppmat.models.wd_mpnn.featurization import BatchMolGraph
 
         num_molecules = len(batch[0]["mol_graphs"])
 

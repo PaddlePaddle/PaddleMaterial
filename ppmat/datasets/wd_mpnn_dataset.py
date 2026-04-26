@@ -22,7 +22,7 @@ import numpy as np
 from paddle.io import Dataset
 
 
-class PolymerChempropDataset(Dataset):
+class WDMPNNDataset(Dataset):
     """Dataset for polymer-chemprop model.
 
     Loads CSV data with SMILES and target columns, converts to MolGraph.
@@ -40,7 +40,7 @@ class PolymerChempropDataset(Dataset):
         self.path = path
 
         # Build featurization config (lazy import to avoid hard dependency at module load)
-        from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
+        from ppmat.models.wd_mpnn.featurization import Featurization_parameters
 
         if featurization_config is not None:
             self.feat_config = Featurization_parameters(**featurization_config)
@@ -93,7 +93,7 @@ class PolymerChempropDataset(Dataset):
     def __getitem__(self, idx):
         smiles = self.smiles_list[idx]
 
-        from ppmat.models.polymer_chemprop.featurization import MolGraph
+        from ppmat.models.wd_mpnn.featurization import MolGraph
 
         # Build MolGraph for each molecule
         mol_graphs = []

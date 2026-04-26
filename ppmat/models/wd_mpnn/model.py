@@ -1,14 +1,14 @@
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.polymer_chemprop.featurization import Featurization_parameters
-from ppmat.models.polymer_chemprop.mpn import MPN
-from ppmat.models.polymer_chemprop.nn_utils import get_activation_function
-from ppmat.models.polymer_chemprop.nn_utils import initialize_weights
+from ppmat.models.wd_mpnn.featurization import Featurization_parameters
+from ppmat.models.wd_mpnn.mpn import MPN
+from ppmat.models.wd_mpnn.nn_utils import get_activation_function
+from ppmat.models.wd_mpnn.nn_utils import initialize_weights
 
 
-class PolymerChempropModel(nn.Layer):
-    """A PolymerChempropModel is a message passing network followed by feed-forward layers
+class WDMPNN(nn.Layer):
+    """A WDMPNN is a message passing network followed by feed-forward layers
     for molecular property prediction, ported from polymer-chemprop (PyTorch) to PaddlePaddle.
     """
 
@@ -38,7 +38,7 @@ class PolymerChempropModel(nn.Layer):
         property_name: str = "target",
         featurization_config: Featurization_parameters = None,
     ):
-        super(PolymerChempropModel, self).__init__()
+        super(WDMPNN, self).__init__()
 
         self.dataset_type = dataset_type
         self.classification = dataset_type == "classification"
