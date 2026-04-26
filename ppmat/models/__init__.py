@@ -42,7 +42,7 @@ from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.wd_mpnn.model import WDMPNN
+from ppmat.models.wd_mpnn.wd_mpnn import WDMPNN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
