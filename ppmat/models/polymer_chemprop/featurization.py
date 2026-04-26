@@ -1,3 +1,4 @@
+from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import zip_longest
@@ -9,14 +10,84 @@ import numpy as np
 import paddle
 from rdkit import Chem
 
-from ppmat.models.polymer_chemprop.rdkit import make_mol
-from ppmat.models.polymer_chemprop.rdkit import make_polymer_mol
-from ppmat.models.polymer_chemprop.rdkit import parse_polymer_rules
-from ppmat.models.polymer_chemprop.rdkit import remove_wildcard_atoms
-from ppmat.models.polymer_chemprop.rdkit import tag_atoms_in_repeating_unit
+from ppmat.utils.ext_rdkit import make_mol
+from ppmat.utils.ext_rdkit import make_polymer_mol
+
+
+def tag_atoms_in_repeating_unit(mol):
+    """
+    Tags atoms that are part of the core units, as well as atoms serving to identify
+    attachment points. In addition, create a map of bond types based on what bonds are
+    connected to R groups in the input.
+    """
+    atoms = [a for a in mol.GetAtoms()]
+    neighbor_map = {}
+    r_bond_types = {}
+
+    for atom in atoms:
+        if "*" in atom.GetSmarts():
+            neighbors = atom.GetNeighbors()
+            assert len(neighbors) == 1
+            neighbor_idx = neighbors[0].GetIdx()
+            r_tag = atom.GetSmarts().strip("[]").replace(":", "")
+            neighbor_map[r_tag] = neighbor_idx
+            atom.SetBoolProp("core", False)
+            bond = mol.GetBondBetweenAtoms(atom.GetIdx(), neighbor_idx)
+            r_bond_types[r_tag] = bond.GetBondType()
+        else:
+            atom.SetBoolProp("core", True)
+
+    for atom in atoms:
+        if atom.GetIdx() in neighbor_map.values():
+            r_tags = [k for k, v in neighbor_map.items() if v == atom.GetIdx()]
+            atom.SetProp("R", "".join(r_tags))
+        else:
+            atom.SetProp("R", "")
+
+    return mol, r_bond_types
+
+
+def remove_wildcard_atoms(rwmol):
+    indices = [a.GetIdx() for a in rwmol.GetAtoms() if "*" in a.GetSmarts()]
+    while len(indices) > 0:
+        rwmol.RemoveAtom(indices[0])
+        indices = [a.GetIdx() for a in rwmol.GetAtoms() if "*" in a.GetSmarts()]
+    Chem.SanitizeMol(rwmol, Chem.SanitizeFlags.SANITIZE_ALL)
+    return rwmol
+
+
+def parse_polymer_rules(rules):
+    polymer_info = []
+    counter = Counter()
+
+    if "~" in rules[-1]:
+        Xn = float(rules[-1].split("~")[1])
+        rules[-1] = rules[-1].split("~")[0]
+    else:
+        Xn = 1.0
+
+    for rule in rules:
+        if rule == "":
+            continue
+        if len(rule.split(":")) != 3:
+            raise ValueError(f'incorrect format for input information "{rule}"')
+        idx1, idx2 = rule.split(":")[0].split("-")
+        w12 = float(rule.split(":")[1])
+        w21 = float(rule.split(":")[2])
+        polymer_info.append((idx1, idx2, w12, w21))
+        counter[idx1] += float(w21)
+        counter[idx2] += float(w12)
+
+    for k, v in counter.items():
+        if np.isclose(v, 1.0) is False:
+            raise ValueError(
+                f"sum of weights of incoming stochastic edges should be 1 -- found {v} for [*:{k}]"
+            )
+    return polymer_info, 1.0 + np.log10(Xn)
+
 
 # ---------------------------------------------------------------------------
-# Featurization configuration (replaces global PARAMS)
+# Featurization configuration
 # ---------------------------------------------------------------------------
 
 

@@ -163,6 +163,88 @@ def mol2smiles(mol):
     return Chem.MolToSmiles(mol)
 
 
+def make_mol(s: str, keep_h: bool = False, add_h: bool = False):
+    """
+    Builds an RDKit molecule from a SMILES string.
+
+    When keep_h is True, the molecule is constructed with partial sanitization
+    that preserves explicit Hs already present in the SMILES (by skipping
+    SANITIZE_ADJUSTHS). This is useful for chemprop-style featurization where
+    explicit Hs in the input should be retained as-is.
+
+    :param s: SMILES string.
+    :param keep_h: Boolean whether to keep hydrogens in the input smiles.
+        Defaults to False (standard RDKit sanitization).
+    :param add_h: Boolean whether to add hydrogens.
+        Defaults to False.
+    :return: RDKit molecule.
+    """
+    if keep_h:
+        mol = Chem.MolFromSmiles(s, sanitize=False)
+        Chem.SanitizeMol(
+            mol,
+            sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL
+            ^ Chem.SanitizeFlags.SANITIZE_ADJUSTHS,
+        )
+    else:
+        mol = Chem.MolFromSmiles(s)
+    if add_h:
+        mol = Chem.AddHs(mol)
+    return mol
+
+
+def make_polymer_mol(
+    smiles: str,
+    keep_h: bool = False,
+    add_h: bool = False,
+    fragment_weights: list = None,
+):
+    """
+    Builds an RDKit molecule from a polymer SMILES string with fragment weights.
+
+    Splits the SMILES by '.' into individual fragments, creates each fragment
+    via make_mol(), assigns the monomer fraction (w_frag) as a double property
+    on each atom, and combines all fragments into a single molecule using
+    Chem.CombineMols().
+
+    This is a polymer-specific utility used by the polymer chemprop pipeline.
+    The w_frag atom property is consumed downstream by MolGraph to compute
+    atom weights for polymer featurization.
+
+    :param smiles: SMILES string (fragments separated by '.').
+    :param keep_h: Boolean whether to keep hydrogens in the input smiles.
+        Defaults to False (standard RDKit sanitization).
+    :param add_h: Boolean whether to add hydrogens.
+        Defaults to False.
+    :param fragment_weights: List of monomer fractions for each fragment.
+        If None, equal weights (1/n) are assigned to each fragment.
+    :return: RDKit molecule.
+    """
+    frags = smiles.split(".")
+    num_frags = len(frags)
+    if fragment_weights is None:
+        fragment_weights = [1.0 / num_frags] * num_frags
+    if len(fragment_weights) != num_frags:
+        raise ValueError(
+            f"number of input monomers/fragments ({num_frags}) does not match number of "
+            f"input number of weights ({len(fragment_weights)})"
+        )
+
+    mols = []
+    for s, w in zip(frags, fragment_weights):
+        m = make_mol(s, keep_h, add_h)
+        for a in m.GetAtoms():
+            a.SetDoubleProp("w_frag", float(w))
+        mols.append(m)
+
+    mol = mols.pop(0)
+    while len(mols) > 0:
+        m2 = mols.pop(0)
+        mol = Chem.CombineMols(mol, m2)
+
+    return mol
+
+
 def build_molecule(atom_types, edge_types, atom_decoder, verbose=False):
     if verbose:
         print("building new molecule")
