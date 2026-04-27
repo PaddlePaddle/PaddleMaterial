@@ -52,6 +52,7 @@ from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models.common.graph_converter import MolecularGraphConverter
 from ppmat.models.gdinn.utils.atom_feat_encoding import GDINN_ATOM_TYPES
 from ppmat.models.gdinn.utils.atom_feat_encoding import CanonicalAtomFeaturizer
+from ppmat.utils import download
 from ppmat.utils import logger
 
 
@@ -138,6 +139,22 @@ class BinaryActivityDataset(Dataset):
         **kwargs: Additional keyword arguments for compatibility.
     """
 
+    # Dataset name
+    name = "binary_activity"
+
+    # Download URLs for dataset files
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/thermodynamic_data_of_binary_mixtures/output_binary_with_inf_all.csv"  # noqa
+    md5 = "67c7b4112cb248c7284004bab14398a4"
+
+    url_solvent_list = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/thermodynamic_data_of_binary_mixtures/solvent_list.csv"  # noqa
+    md5_solvent_list = "5fdb2e2295b327cd111cea5e19db9fcf"
+
+    url_binary_extra = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/thermodynamic_data_of_binary_mixtures/output_binary_with_inf_all_extra.csv"  # noqa
+    md5_binary_extra = "4121021da4fd2e324568b6f64d10d9b9"
+
+    url_comp_range = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/thermodynamic_data_of_binary_mixtures/all_systems_comp_range_step5e-2.csv"  # noqa
+    md5_comp_range = "e454fa331a9451357ba10c9057fe5240"
+
     # Required CSV columns for data validation
     REQUIRED_COLUMNS = [
         "solv1",
@@ -163,6 +180,19 @@ class BinaryActivityDataset(Dataset):
     ):
         """Initialize Binary Activity Dataset."""
         super().__init__()
+
+        # Auto-download dataset files if not found locally
+        if not osp.exists(path):
+            logger.message("The dataset is not found. Will download it now.")
+            root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            path = root_path
+
+        if solvent_list_path is not None and not osp.exists(solvent_list_path):
+            logger.message("The solvent list is not found. Will download it now.")
+            solvent_list_path = download.get_datasets_path_from_url(
+                self.url_solvent_list, self.md5_solvent_list
+            )
+
         self.path = path
         self.solvent_list_path = solvent_list_path
         self.add_self_loop = add_self_loop
