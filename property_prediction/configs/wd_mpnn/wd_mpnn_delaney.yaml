@@ -56,7 +56,7 @@ Model:
 
 Metric:
   target:
-    __class_name__: paddle.nn.L1Loss
+    __class_name__: paddle.nn.MSELoss
     __init_params__: {}
 
 Optimizer:
@@ -78,7 +78,7 @@ Dataset:
       __init_params__:
         path: "./data/delaney.csv"
         smiles_columns: ["smiles"]
-        target_columns: ["measured log solubility in mols per litre"]
+        target_columns: ["logSolubility"]
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -95,7 +95,7 @@ Dataset:
       __init_params__:
         path: "./data/delaney.csv"
         smiles_columns: ["smiles"]
-        target_columns: ["measured log solubility in mols per litre"]
+        target_columns: ["logSolubility"]
     loader:
       num_workers: 0
       use_shared_memory: False
