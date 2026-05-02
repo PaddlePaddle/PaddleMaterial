@@ -130,7 +130,7 @@ class StructureSampler:
 
     def sample(self, data, sample_params=None):
         if sample_params is None:
-            sample_params = {}
+            sample_params = self.sample_config.get("sample_params", {})
         assert isinstance(sample_params, dict), "sample_params must be a dict or None."
         pred_data = self.model.sample(data, **sample_params)
         pred_data = self.post_process(pred_data)
@@ -139,7 +139,12 @@ class StructureSampler:
     def sample_by_dataloader(
         self,
         save_path=None,
+        sample_params=None,
     ):
+        if sample_params is None:
+            sample_params = self.sample_config.get("sample_params", {})
+        assert isinstance(sample_params, dict), "sample_params must be a dict or None."
+
         dataset_cfg = self.sample_config["data"]
         data_loader = build_dataloader(dataset_cfg)
 
@@ -151,7 +156,7 @@ class StructureSampler:
 
         total_results = []
         for iter_id, batch_data in enumerate(data_loader):
-            pred_data = self.model.sample(batch_data)
+            pred_data = self.model.sample(batch_data, **sample_params)
             structures = structure_converter(pred_data["result"])
             if save_path is not None:
                 os.makedirs(save_path, exist_ok=True)

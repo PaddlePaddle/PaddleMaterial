@@ -1,0 +1,151 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+
+Trainer:
+  max_epochs: 200
+  seed: 42
+  output_dir: ./output/dm2_sio2
+  save_freq: 20
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: False
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'step'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: DM2
+  __init_params__:
+    cutoff: 5.0
+    sigma_min: 0.001
+    sigma_max: 0.75
+    loss_weight: 1.0
+    condition_key: cooling_rate
+    denoiser_cfg:
+      num_species: 2
+      node_embedding_dim: 8
+      edge_basis_size: 16
+      irreps_hidden: "64x0e + 32x1e"
+      irreps_edge: "4x0e + 4x1e + 2x2e"
+      irreps_out: "1x1e"
+      num_convs: 3
+      radial_neurons: [16, 64]
+      num_neighbors: 12
+      use_condition: False
+    scheduler_cfg:
+      __class_name__: DM2DenoisingScheduler
+      __init_params__:
+        sigma_min: 0.001
+        sigma_max: 0.75
+        train_sigma_distribution: uniform
+        sample_schedule: linear
+        default_num_inference_steps: 2900
+        default_final_relax_steps: 100
+        default_max_sigma_for_denoising: 1.0
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 0.0002
+        by_epoch: False
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: DM2StructureDataset
+      __init_params__:
+        paths: "./data/dm2/sio2/train/*.dat"
+        file_format: "lammps-data"
+        cutoff: 10.0
+        species: [8, 14]
+        duplicate: 128
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 16
+  val:
+    dataset:
+      __class_name__: DM2StructureDataset
+      __init_params__:
+        paths: "./data/dm2/sio2/val/*.dat"
+        file_format: "lammps-data"
+        cutoff: 10.0
+        species: [8, 14]
+        duplicate: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 8
+
+Sample:
+  sample_params:
+    num_inference_steps: 2900
+    final_relax_steps: 100
+    max_sigma_for_denoising: 1.0
+  data:
+    dataset:
+      __class_name__: DM2StructureDataset
+      __init_params__:
+        paths: "./data/dm2/sio2/sample/*.dat"
+        file_format: "lammps-data"
+        cutoff: 10.0
+        species: [8, 14]
+        duplicate: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 1
+  build_structure_cfg:
+    format: array
+    primitive: False
+    niggli: False
+    canocial: False
+  metrics:
+    __class_name__: DM2AmorphousGenerationMetric
+    __init_params__:
+      reference_paths: "./data/dm2/sio2/reference/*.dat"
+      file_format: "lammps-data"
+      rdf_cutoff: 8.0
+      rdf_bins: 200
+      coordination_cutoffs:
+        - name: si_o_coordination
+          center_atomic_number: 14
+          neighbor_atomic_number: 8
+          cutoff: 2.0
+  post_transforms: null

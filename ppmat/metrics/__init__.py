@@ -17,11 +17,13 @@ import copy
 import paddle  # noqa
 
 from ppmat.metrics.csp_metric import CSPMetric
+from ppmat.metrics.dm2_metric import DM2AmorphousGenerationMetric
 from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
 
 __all__ = [
     "build_metric",
     "CSPMetric",
+    "DM2AmorphousGenerationMetric",
     "DiffNMRStreamingAdapter",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
