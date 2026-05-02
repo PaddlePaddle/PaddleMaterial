@@ -35,6 +35,10 @@ from ppmat.datasets.geometric_data_type.data import Data
 from ppmat.models.common.e3nn import o3
 from ppmat.models.common.e3nn.nn import FullyConnectedNet
 from ppmat.models.common.e3nn.nn import Gate
+from ppmat.schedulers import build_scheduler
+from ppmat.schedulers.scheduling_dm2 import DM2DenoisingScheduler
+from ppmat.schedulers.scheduling_dm2 import DownselectEdges
+from ppmat.schedulers.scheduling_dm2 import RattleParticles
 from ppmat.utils.scatter import scatter
 
 
@@ -472,60 +476,6 @@ class DM2NequIPDenoiser(nn.Layer):
         return self.out(h_node_x, h_node_z)
 
 
-class RattleParticles(nn.Layer):
-    """Apply Gaussian position noise and store the target displacement ``dx``."""
-
-    def __init__(self, sigma_max: float, sigma_min: float = 0.001):
-        super().__init__()
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-
-    def _sample_sigma(self, shape, dtype):
-        if self.sigma_min >= self.sigma_max:
-            return paddle.full(shape, self.sigma_max, dtype=dtype)
-        return paddle.empty(shape, dtype=dtype).uniform_(
-            min=self.sigma_min,
-            max=self.sigma_max,
-        )
-
-    def forward(self, data: Data) -> Data:
-        batch = getattr(data, "batch", None)
-        if batch is None:
-            sigma = self._sample_sigma([1], data.pos.dtype)
-            sigma = sigma.expand([data.pos.shape[0]]).unsqueeze(axis=-1)
-        else:
-            num_graphs = int(batch.max()) + 1 if batch.numel() > 0 else 1
-            sigma = self._sample_sigma([num_graphs], data.pos.dtype)
-            sigma = sigma[batch].unsqueeze(axis=-1)
-
-        eps = paddle.randn(data.pos.shape, dtype=data.pos.dtype)
-        data.dx = sigma * eps
-        data.pos = data.pos + data.dx
-
-        if getattr(data, "edge_attr", None) is not None:
-            src, dst = data.edge_index[0], data.edge_index[1]
-            data.edge_attr = data.edge_attr + data.dx[dst] - data.dx[src]
-
-        data.sigma = sigma
-        data.eps = eps
-        return data
-
-
-class DownselectEdges(nn.Layer):
-    """Keep only edges whose displacement length is within ``cutoff``."""
-
-    def __init__(self, cutoff: float):
-        super().__init__()
-        self.cutoff = cutoff
-
-    def forward(self, data: Data) -> Data:
-        edge_length = paddle.linalg.norm(data.edge_attr[:, :3], axis=1)
-        edge_ids = paddle.nonzero(edge_length <= self.cutoff).flatten()
-        data.edge_index = paddle.index_select(data.edge_index, edge_ids, axis=1)
-        data.edge_attr = paddle.index_select(data.edge_attr, edge_ids, axis=0)
-        return data
-
-
 def _get_graph_from_batch(batch) -> Data:
     if isinstance(batch, Data):
         return batch
@@ -621,6 +571,7 @@ class DM2(nn.Layer):
         sigma_max: float = 0.75,
         loss_weight: float = 1.0,
         condition_key: str = "cooling_rate",
+        scheduler_cfg: Optional[Dict] = None,
     ):
         super().__init__()
         denoiser_cfg = dict(denoiser_cfg)
@@ -632,10 +583,22 @@ class DM2(nn.Layer):
         self.sigma_max = sigma_max
         self.loss_weight = loss_weight
         self.condition_key = condition_key
-        self.rattle_particles = RattleParticles(
-            sigma_min=sigma_min,
-            sigma_max=sigma_max,
-        )
+        if scheduler_cfg is None:
+            self.scheduler = DM2DenoisingScheduler(
+                sigma_min=sigma_min,
+                sigma_max=sigma_max,
+            )
+        elif "__class_name__" in scheduler_cfg:
+            scheduler_cfg = copy.deepcopy(scheduler_cfg)
+            scheduler_cfg["__init_params__"].setdefault("sigma_min", sigma_min)
+            scheduler_cfg["__init_params__"].setdefault("sigma_max", sigma_max)
+            self.scheduler = build_scheduler(scheduler_cfg)
+        else:
+            scheduler_cfg = copy.deepcopy(scheduler_cfg)
+            scheduler_cfg.setdefault("sigma_min", sigma_min)
+            scheduler_cfg.setdefault("sigma_max", sigma_max)
+            self.scheduler = DM2DenoisingScheduler(**scheduler_cfg)
+        self.rattle_particles = self.scheduler
         self.downselect_edges = DownselectEdges(cutoff)
 
     def forward(self, batch, **kwargs):
@@ -661,33 +624,37 @@ class DM2(nn.Layer):
     def sample(
         self,
         batch_data,
-        num_inference_steps: int = 100,
-        final_relax_steps: int = 0,
+        num_inference_steps: Optional[int] = None,
+        final_relax_steps: Optional[int] = None,
         max_sigma_for_denoising: Optional[float] = None,
         return_trajectory: bool = False,
         **kwargs,
     ):
         graph = _clone_graph(_get_graph_from_batch(batch_data))
         condition = _get_condition_from_batch(batch_data, graph, self.condition_key)
-        max_sigma = (
-            self.sigma_max
-            if max_sigma_for_denoising is None
-            else max_sigma_for_denoising
+        final_relax_steps = (
+            self.scheduler.default_final_relax_steps
+            if final_relax_steps is None
+            else int(final_relax_steps)
         )
 
         trajectory = []
-        sigmas = paddle.linspace(max_sigma, self.sigma_min, num_inference_steps)
+        sigmas = self.scheduler.get_sampling_sigmas(
+            num_inference_steps=num_inference_steps,
+            max_sigma_for_denoising=max_sigma_for_denoising,
+            dtype=graph.pos.dtype,
+        )
         for sigma in sigmas:
             sigma_value = float(sigma.item())
             noisy_graph = _clone_graph(graph)
-            noisy_graph = RattleParticles(
-                sigma_min=sigma_value,
-                sigma_max=sigma_value,
-            )(noisy_graph)
+            noisy_graph = self.scheduler.add_noise(noisy_graph, sigma=sigma_value)
             noisy_graph = self.downselect_edges(noisy_graph)
             pred_dx = self.denoiser(noisy_graph, condition=condition)
             graph = noisy_graph
-            graph = _apply_position_update(graph, noisy_graph.pos - pred_dx)
+            graph = _apply_position_update(
+                graph,
+                self.scheduler.denoise_step(noisy_graph.pos, pred_dx),
+            )
             if return_trajectory:
                 trajectory.append(_graph_to_structure_arrays(graph))
 
@@ -695,7 +662,10 @@ class DM2(nn.Layer):
             work_graph = self.downselect_edges(_clone_graph(graph))
             pred_dx = self.denoiser(work_graph, condition=condition)
             graph = work_graph
-            graph = _apply_position_update(graph, graph.pos - pred_dx)
+            graph = _apply_position_update(
+                graph,
+                self.scheduler.denoise_step(graph.pos, pred_dx),
+            )
             if return_trajectory:
                 trajectory.append(_graph_to_structure_arrays(graph))
 

@@ -1,3 +1,11 @@
+# DM2 Cu50Zr50 metallic-glass reproduction config.
+#
+# Expected data layout:
+#   data/dm2/cuzr/train/*.dat
+#   data/dm2/cuzr/val/*.dat
+#   data/dm2/cuzr/sample/*.dat
+#   data/dm2/cuzr/reference/*.dat
+
 Global:
   do_train: True
   do_eval: False
@@ -6,7 +14,7 @@ Global:
 Trainer:
   max_epochs: 200
   seed: 42
-  output_dir: ./output/dm2_sio2
+  output_dir: ./output/dm2_cuzr
   save_freq: 20
   log_freq: 10
   start_eval_epoch: 1
@@ -72,10 +80,10 @@ Dataset:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/train/*.dat"
+        paths: "./data/dm2/cuzr/train/*.dat"
         file_format: "lammps-data"
         cutoff: 10.0
-        species: [8, 14]
+        species: [29, 40]
         duplicate: 128
     loader:
       num_workers: 0
@@ -91,10 +99,10 @@ Dataset:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/val/*.dat"
+        paths: "./data/dm2/cuzr/val/*.dat"
         file_format: "lammps-data"
         cutoff: 10.0
-        species: [8, 14]
+        species: [29, 40]
         duplicate: 1
     loader:
       num_workers: 0
@@ -116,10 +124,10 @@ Sample:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/sample/*.dat"
+        paths: "./data/dm2/cuzr/sample/*.dat"
         file_format: "lammps-data"
         cutoff: 10.0
-        species: [8, 14]
+        species: [29, 40]
         duplicate: 1
     loader:
       num_workers: 0
@@ -139,13 +147,9 @@ Sample:
   metrics:
     __class_name__: DM2AmorphousGenerationMetric
     __init_params__:
-      reference_paths: "./data/dm2/sio2/reference/*.dat"
+      reference_paths: "./data/dm2/cuzr/reference/*.dat"
       file_format: "lammps-data"
       rdf_cutoff: 8.0
       rdf_bins: 200
-      coordination_cutoffs:
-        - name: si_o_coordination
-          center_atomic_number: 14
-          neighbor_atomic_number: 8
-          cutoff: 2.0
+      coordination_cutoffs: []
   post_transforms: null

@@ -1,3 +1,10 @@
+# DM2 a-SiO2 unconditional reproduction config.
+#
+# Expected data layout follows the official DM2 demo files:
+#   data/dm2/sio2/unconditional/train/sio2_3000_glass_1k_sample{0,1,2}.dat
+#   data/dm2/sio2/unconditional/sample/random_sio2_size_300_demo.dat
+#   data/dm2/sio2/unconditional/reference/*.dat
+
 Global:
   do_train: True
   do_eval: False
@@ -6,7 +13,7 @@ Global:
 Trainer:
   max_epochs: 200
   seed: 42
-  output_dir: ./output/dm2_sio2
+  output_dir: ./output/dm2_sio2_unconditional
   save_freq: 20
   log_freq: 10
   start_eval_epoch: 1
@@ -72,7 +79,10 @@ Dataset:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/train/*.dat"
+        paths:
+          - "./data/dm2/sio2/unconditional/train/sio2_3000_glass_1k_sample0.dat"
+          - "./data/dm2/sio2/unconditional/train/sio2_3000_glass_1k_sample1.dat"
+          - "./data/dm2/sio2/unconditional/train/sio2_3000_glass_1k_sample2.dat"
         file_format: "lammps-data"
         cutoff: 10.0
         species: [8, 14]
@@ -91,7 +101,7 @@ Dataset:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/val/*.dat"
+        paths: "./data/dm2/sio2/unconditional/val/*.dat"
         file_format: "lammps-data"
         cutoff: 10.0
         species: [8, 14]
@@ -116,7 +126,7 @@ Sample:
     dataset:
       __class_name__: DM2StructureDataset
       __init_params__:
-        paths: "./data/dm2/sio2/sample/*.dat"
+        paths: "./data/dm2/sio2/unconditional/sample/*.dat"
         file_format: "lammps-data"
         cutoff: 10.0
         species: [8, 14]
@@ -139,7 +149,7 @@ Sample:
   metrics:
     __class_name__: DM2AmorphousGenerationMetric
     __init_params__:
-      reference_paths: "./data/dm2/sio2/reference/*.dat"
+      reference_paths: "./data/dm2/sio2/unconditional/reference/*.dat"
       file_format: "lammps-data"
       rdf_cutoff: 8.0
       rdf_bins: 200

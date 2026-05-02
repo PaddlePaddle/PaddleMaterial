@@ -101,7 +101,8 @@ class DM2StructureDataset(Dataset):
         species (Optional[Sequence[int]]): Ordered atomic numbers for species
             encoding. If omitted, the dataset infers a sorted species list.
         duplicate (int): Repeat each loaded structure this many times per epoch.
-        cooling_rates (Optional[Sequence[float]]): Per-structure conditioning values.
+        cooling_rates (Optional[float|Sequence[float]]): Per-structure conditioning
+            values. A scalar or one-item sequence is broadcast to all structures.
             DM2 conditional training conventionally uses ``log10(cooling_rate)``;
             set ``log10_cooling_rate=True`` to apply that transform here.
         log10_cooling_rate (bool): Whether to store log10-transformed cooling rates.
@@ -145,10 +146,16 @@ class DM2StructureDataset(Dataset):
         self.species = unique_species
         self.species_to_index = {z: idx for idx, z in enumerate(unique_species)}
 
-        if cooling_rates is not None and len(cooling_rates) != len(atoms_list):
-            raise ValueError(
-                "cooling_rates must be omitted or have the same length as paths."
-            )
+        if cooling_rates is not None:
+            if isinstance(cooling_rates, (int, float)):
+                cooling_rates = [float(cooling_rates)] * len(atoms_list)
+            elif len(cooling_rates) == 1 and len(atoms_list) > 1:
+                cooling_rates = [float(cooling_rates[0])] * len(atoms_list)
+            elif len(cooling_rates) != len(atoms_list):
+                raise ValueError(
+                    "cooling_rates must be omitted, a scalar, a single value to "
+                    "broadcast, or have the same length as paths."
+                )
 
         self.graphs = []
         for idx, atoms in enumerate(atoms_list):

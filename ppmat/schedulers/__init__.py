@@ -16,6 +16,7 @@ import copy
 from typing import Dict
 
 import ppmat.schedulers.scheduling_wrapped_sde_ve as scheduling_wrapped_sde_ve  # noqa
+from ppmat.schedulers.scheduling_dm2 import DM2DenoisingScheduler
 from ppmat.schedulers.scheduling_d3pm import D3PMScheduler
 from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
 from ppmat.schedulers.scheduling_diffprior import NoiseScheduler
@@ -34,6 +35,7 @@ __all__ = [
     "LatticeVPSDEScheduler",
     "NumAtomsVarianceAdjustedWrappedVESDE",
     "D3PMScheduler",
+    "DM2DenoisingScheduler",
     "NoiseScheduler",
 ]
 
