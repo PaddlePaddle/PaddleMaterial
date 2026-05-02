@@ -29,6 +29,8 @@ from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConve
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
+from ppmat.models.dm2.dm2 import DM2
+from ppmat.models.dm2.dm2 import DM2NequIPDenoiser
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
@@ -49,6 +51,8 @@ from ppmat.utils import save_load
 __all__ = [
     "iComformer",
     "ComformerGraphConverter",
+    "DM2",
+    "DM2NequIPDenoiser",
     "DiffCSP",
     "FindPointsInSpheres",
     "MEGNetPlus",

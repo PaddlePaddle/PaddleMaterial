@@ -6,31 +6,36 @@ The structure generation (SG) task tackles the inverse-design challenge of creat
 
 ## 2.Models Matrix
 
-| **Supported Functions**             | **[DiffCSP](./configs/diffcsp/README.md)** | **[MatterGen](./configs/mattergen/README.md)** |
-| ----------------------------------- | ------------------------------------------ | ---------------------------------------------- |
-| **Support Material Types**          |                                            |                                                |
-| Inorganic Materials                 |                    ✅                      |                       ✅                       |
-| **Structure Generation**            |                                            |                                                |
-| &emsp;Random Sample                 | ✅                                         | ✅                                             |
-| &emsp;Condition Sample              | ✅                                         | ✅                                             |
-| **ML Capabilities · Training**      |                                            |                                                |
-| &emsp;Single-GPU                    | ✅                                         | ✅                                             |
-| &emsp;Distributed Train             | ✅                                         | ✅                                             |
-| &emsp;Mixed Precision               | -                                          | -                                              |
-| &emsp;Fine-tuning                   | ✅                                         | ✅                                             |
-| &emsp;Uncertainty / Active-Learning | -                                          | -                                              |
-| &emsp;Dynamic→Static                | -                                          | -                                              |
-| &emsp;Compiler CINN                 | -                                          | -                                              |
-| **ML Capabilities · Predict**       |                                            |                                                |
-| &emsp;Distillation / Pruning        | -                                          | -                                              |
-| &emsp;Standard inference            | ✅                                         | ✅                                             |
-| &emsp;Distributed inference         | -                                          | -                                              |
-| &emsp;Compiler CINN                 | -                                          | -                                              |
-| **Dataset**                         |                                            |                                                |
-| **Materials Project**                |                                            |                                                |
-| &emsp;MP20                          | ✅                                         | ✅                                             |
-| **Hrbrid**                          |                                            |                                                |
-| &emsp;ALEX MP20                     | -                                          | ✅                                             |
-| **ML2DDB🌟**                        | -                                          | ✅                                             |
+| **Supported Functions**             | **[DiffCSP](./configs/diffcsp/README.md)** | **[MatterGen](./configs/mattergen/README.md)** | **[DM2](./configs/dm2/README.md)** |
+| ----------------------------------- | ------------------------------------------ | ---------------------------------------------- | ---------------------------------- |
+| **Support Material Types**          |                                            |                                                |                                    |
+| Inorganic Materials                 | ✅                                         | ✅                                             | -                                  |
+| Disordered / Amorphous Materials    | -                                          | -                                              | ✅                                 |
+| **Structure Generation**            |                                            |                                                |                                    |
+| &emsp;Random Sample                 | ✅                                         | ✅                                             | -                                  |
+| &emsp;Denoising Sample              | -                                          | -                                              | ✅                                 |
+| &emsp;Condition Sample              | ✅                                         | ✅                                             | -                                  |
+| &emsp;Process-condition Sample      | -                                          | -                                              | ✅                                 |
+| **ML Capabilities · Training**      |                                            |                                                |                                    |
+| &emsp;Single-GPU                    | ✅                                         | ✅                                             | ✅                                 |
+| &emsp;Distributed Train             | ✅                                         | ✅                                             | -                                  |
+| &emsp;Mixed Precision               | -                                          | -                                              | -                                  |
+| &emsp;Fine-tuning                   | ✅                                         | ✅                                             | -                                  |
+| &emsp;Uncertainty / Active-Learning | -                                          | -                                              | -                                  |
+| &emsp;Dynamic→Static                | -                                          | -                                              | -                                  |
+| &emsp;Compiler CINN                 | -                                          | -                                              | -                                  |
+| **ML Capabilities · Predict**       |                                            |                                                |                                    |
+| &emsp;Distillation / Pruning        | -                                          | -                                              | -                                  |
+| &emsp;Standard inference            | ✅                                         | ✅                                             | ✅                                 |
+| &emsp;Distributed inference         | -                                          | -                                              | -                                  |
+| &emsp;Compiler CINN                 | -                                          | -                                              | -                                  |
+| **Dataset**                         |                                            |                                                |                                    |
+| **Materials Project**               |                                            |                                                |                                    |
+| &emsp;MP20                          | ✅                                         | ✅                                             | -                                  |
+| **Hybrid**                          |                                            |                                                |                                    |
+| &emsp;ALEX MP20                     | -                                          | ✅                                             | -                                  |
+| **Disordered structures**           |                                            |                                                |                                    |
+| &emsp;ASE-readable trajectories      | -                                          | -                                              | ✅                                 |
+| **ML2DDB🌟**                        | -                                          | ✅                                             | -                                  |
 
 **Notice**:🌟 represent originate research work published from paddlematerials toolkit
