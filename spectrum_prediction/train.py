@@ -36,7 +36,7 @@ def main():
     parser.add_argument(
         "-c", "--config",
         type=str,
-        default="../configs/ecformer/ecd.yaml",
+        default="./configs/ecd.yaml",
         help="Path to config file",
     )
     parser.add_argument(
