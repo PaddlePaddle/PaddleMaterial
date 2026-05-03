@@ -1,0 +1,93 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+  num_train_timesteps: 100
+
+Trainer:
+  max_epochs: 500
+  seed: 42
+  output_dir: ./output/mofdiff_bw20k
+  save_freq: 100
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: False
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'step'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: MOFDiff
+  __init_params__:
+    node_feat_dim: 64
+    hidden_dim: 128
+    latent_dim: 64
+    num_bb_types: 50
+    max_num_bbs: 20
+    num_diffusion_steps: ${Global.num_train_timesteps}
+    fc_num_layers: 3
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 0.001
+        factor: 0.5
+        by_epoch: True
+        patience: 30
+        min_lr: 0.0001
+        indicator: "train_loss"
+        indicator_name: 'loss'
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: MOFDataset
+      __init_params__:
+        path: "./data/mof_bw20k/train.csv"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 64
+  val:
+    dataset:
+      __class_name__: MOFDataset
+      __init_params__:
+        path: "./data/mof_bw20k/val.csv"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+  test:
+    dataset:
+      __class_name__: MOFDataset
+      __init_params__:
+        path: "./data/mof_bw20k/test.csv"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
