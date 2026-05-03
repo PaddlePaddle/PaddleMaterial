@@ -1,0 +1,109 @@
+Global:
+  do_train: True
+  do_eval: True
+  do_test: False
+
+  label_names: ['energy_U0']
+
+  graph_converter:
+    __class_name__: FindPointsInSpheres
+    __init_params__:
+      cutoff: 10.0
+
+  prim_eager_enabled: True
+
+
+Trainer:
+  max_epochs: 200
+  seed: 42
+  output_dir: ./output/schnet_qm9_U0
+  save_freq: 20
+  log_freq: 50
+
+  start_eval_epoch: 1
+  eval_freq: 5
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "energy_U0"
+  greater_is_better: False
+
+
+Model:
+  __class_name__: SchNet
+  __init_params__:
+    n_atom_basis: 128
+    n_interactions: 6
+    n_filters: 128
+    cutoff: 10.0
+    n_gaussians: 50
+    max_z: 100
+    readout: "sum"
+    property_names: ${Global.label_names}
+    data_mean: -76.1160
+    data_std: 10.3238
+    loss_type: "l1_loss"
+    compute_forces: False
+
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 1e-4
+        eta_min: 1e-7
+        by_epoch: False
+
+
+Metric:
+  energy_U0:
+    __class_name__: IgnoreNanMetricWrapper
+    __init_params__:
+      __class_name__: paddle.nn.L1Loss
+      __init_params__: {}
+
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: "./data/qm9"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/qm9"
+        overwrite: False
+        filter_unvalid: True
+    num_workers: 4
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 64
+  val:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: "./data/qm9"
+        property_names: ${Global.label_names}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_path: "./data/qm9"
+        overwrite: False
+        filter_unvalid: True
+    num_workers: 4
+    use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
