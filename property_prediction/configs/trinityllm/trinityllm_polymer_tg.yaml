@@ -1,0 +1,91 @@
+Global:
+  label_names: ["Tg"]
+  do_train: True
+  do_eval: False
+  do_test: False
+
+Dataset:
+  dataset:
+    __class_name__: SMILESDataset
+    __init_params__:
+      data_path: "./data/polymer"
+      label_cols: ${Global.label_names}
+  loader:
+    num_workers: 4
+    use_shared_memory: False
+    collate_fn: DefaultCollator
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+
+Model:
+  __class_name__: TrinityLLM
+  __init_params__:
+    n_vocab: 600
+    n_embd: 256
+    n_layers: 6
+    n_heads: 8
+    ff_dim: 256
+    dropout: 0.1
+    max_length: 512
+    loss_type: l1_loss
+    pad_id: 2
+    property_names: ${Global.label_names}
+
+Trainer:
+  max_epochs: 200
+  seed: 42
+  output_dir: ./output/trinityllm_polymer_tg
+  save_freq: 50
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "Tg"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 5e-4
+        eta_min: 1e-6
+        by_epoch: False
+
+Metric:
+  Tg:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
