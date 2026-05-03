@@ -332,6 +332,15 @@ class WDMPNNCollator:
     Batches MolGraph objects into BatchMolGraph and stacks targets.
     """
 
+    def __init__(self, label_names: List[str] = None):
+        """
+        Initialize WDMPNNCollator.
+
+        :param label_names: List of label names to use as keys in the output dict.
+                           If None, defaults to ["labels"].
+        """
+        self.label_names = label_names if label_names is not None else ["labels"]
+
     def __call__(self, batch):
         from ppmat.models.wd_mpnn.featurization import BatchMolGraph
 
@@ -348,7 +357,7 @@ class WDMPNNCollator:
 
         result = {
             "batch_graphs": batch_graphs,
-            "labels": paddle.to_tensor(targets, dtype="float32"),
+            self.label_names[0]: paddle.to_tensor(targets, dtype="float32"),
             "label_mask": paddle.to_tensor(target_mask, dtype="float32"),
             "smiles": [s["smiles"] for s in batch],
         }

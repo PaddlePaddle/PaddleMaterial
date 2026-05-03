@@ -1,5 +1,5 @@
 Global:
-  label_names: ["target"]
+  label_names: ["Class"]
   do_train: True
   do_eval: True
   do_test: False
@@ -20,7 +20,7 @@ Trainer:
   eval_with_no_grad: True
   gradient_accumulation_steps: 1
   best_metric_indicator: 'eval_metric'
-  name_for_best_metric: "target"
+  name_for_best_metric: "Class"
   greater_is_better: True           # 分类任务：AUC 越大越好
   compute_metric_during_train: True
   metric_strategy_during_eval: 'step'
@@ -52,10 +52,10 @@ Model:
     atom_descriptors: null
     atom_descriptors_size: 0
     multiclass_num_classes: 3
-    property_name: 'target'
+    property_name: 'Class'
 
 Metric:
-  target:
+  Class:
     __class_name__: paddle.nn.BCEWithLogitsLoss    # 二分类交叉熵损失
     __init_params__: {}
 
@@ -83,6 +83,8 @@ Dataset:
       num_workers: 0
       use_shared_memory: False
       collate_fn: WDMPNNCollator
+      collate_params:
+        label_names: ["Class"]
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -100,6 +102,8 @@ Dataset:
       num_workers: 0
       use_shared_memory: False
       collate_fn: WDMPNNCollator
+      collate_params:
+        label_names: ["Class"]
     sampler:
       __class_name__: BatchSampler
       __init_params__:
