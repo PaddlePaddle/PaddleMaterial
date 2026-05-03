@@ -29,19 +29,20 @@ from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConve
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
+from ppmat.models.crystalllm.crystalllm import CrystalLLM
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -67,6 +68,7 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "CrystalLLM",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
