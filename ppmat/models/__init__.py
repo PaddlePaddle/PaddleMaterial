@@ -42,6 +42,8 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
+from ppmat.models.alloygan.alloygan import AlloyGAN
+from ppmat.models.alloygan.alloygan import AlloyCGAN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -67,6 +69,8 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "AlloyGAN",
+    "AlloyCGAN",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
