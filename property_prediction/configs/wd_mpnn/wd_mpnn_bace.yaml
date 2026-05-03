@@ -6,7 +6,7 @@ Global:
 
 Trainer:
   max_epochs: 30
-  seed: 42                          # 与 chemprop 统一
+  seed: 42
   output_dir: ./output/wd_mpnn_bace
   save_freq: 10
   log_freq: 10
@@ -21,7 +21,7 @@ Trainer:
   gradient_accumulation_steps: 1
   best_metric_indicator: 'eval_metric'
   name_for_best_metric: "Class"
-  greater_is_better: True           # 分类任务：AUC 越大越好
+  greater_is_better: True
   compute_metric_during_train: True
   metric_strategy_during_eval: 'step'
   use_visualdl: False
@@ -43,7 +43,7 @@ Model:
     ffn_num_layers: 2
     ffn_hidden_size: 300
     num_tasks: 1
-    dataset_type: 'classification'  # 分类任务
+    dataset_type: 'classification'
     number_of_molecules: 1
     mpn_shared: False
     features_only: False
@@ -57,7 +57,7 @@ Model:
 
 Metric:
   Class:
-    __class_name__: AucMetric    # 使用 AUC 作为评估指标
+    __class_name__: AucMetric
     __init_params__: {}
 
 Optimizer:
@@ -77,9 +77,9 @@ Dataset:
     dataset:
       __class_name__: WDMPNNDataset
       __init_params__:
-        path: "./data/bace.csv"         # BACE 数据集
-        smiles_columns: ["mol"]         # BACE 数据集的 SMILES 列名
-        target_columns: ["Class"]       # BACE 数据集的目标列名
+        path: "./data/bace.csv"
+        smiles_columns: ["mol"]
+        target_columns: ["Class"]
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -96,7 +96,7 @@ Dataset:
     dataset:
       __class_name__: WDMPNNDataset
       __init_params__:
-        path: "./data/bace.csv"         # 全量数据也用于验证（与 train 相同）
+        path: "./data/bace.csv"
         smiles_columns: ["mol"]
         target_columns: ["Class"]
     loader:
