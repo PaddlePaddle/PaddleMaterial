@@ -53,6 +53,7 @@ Model:
     atom_descriptors_size: 0
     multiclass_num_classes: 3
     property_name: 'Class'
+    label_names: ['Class']
 
 Metric:
   Class:

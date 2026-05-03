@@ -312,6 +312,7 @@ class WDMPNN(nn.Layer):
         atom_descriptors_size: int = 0,
         multiclass_num_classes: int = 3,
         property_name: str = "target",
+        label_names: List[str] = None,
         featurization_config: Featurization_parameters = None,
     ):
         super(WDMPNN, self).__init__()
@@ -322,6 +323,7 @@ class WDMPNN(nn.Layer):
         self.num_tasks = num_tasks
         self.multiclass_num_classes = multiclass_num_classes
         self.property_name = property_name
+        self.label_names = label_names if label_names is not None else ["labels"]
 
         self.output_size = num_tasks
         if self.multiclass:
@@ -416,8 +418,8 @@ class WDMPNN(nn.Layer):
 
         out = {"loss_dict": {}, "pred_dict": {}}
 
-        if return_loss and "labels" in data:
-            labels = data["labels"]
+        if return_loss and self.label_names[0] in data:
+            labels = data[self.label_names[0]]
             label_mask = data.get("label_mask")
 
             if self.dataset_type == "regression":
