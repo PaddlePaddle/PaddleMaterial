@@ -57,7 +57,7 @@ Model:
 
 Metric:
   Class:
-    __class_name__: ppmat.metrics.AucMetric    # 使用 AUC 作为评估指标
+    __class_name__: AucMetric    # 使用 AUC 作为评估指标
     __init_params__: {}
 
 Optimizer:
