@@ -57,7 +57,7 @@ Model:
 
 Metric:
   Class:
-    __class_name__: paddle.nn.BCEWithLogitsLoss    # 二分类交叉熵损失
+    __class_name__: paddle.metric.Auc    # 使用 AUC 作为评估指标
     __init_params__: {}
 
 Optimizer:
