@@ -1,0 +1,102 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+  num_train_timesteps: 1000
+
+Trainer:
+  max_epochs: 1000
+  seed: 42
+  output_dir: ./output/diffsyn_zeolite
+  save_freq: 100
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: False
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'step'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: DiffSyn
+  __init_params__:
+    dim: 64
+    channels: 3
+    seq_length: 8
+    cond_dim: 32
+    dim_mults: [1, 2, 4]
+    groups: 8
+    timesteps: ${Global.num_train_timesteps}
+    beta_schedule: cosine
+    objective: pred_noise
+    cond_drop_prob: 0.5
+    ddim_sampling_eta: 1.0
+    loss_type: l1_loss
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 0.001
+        factor: 0.5
+        by_epoch: True
+        patience: 50
+        min_lr: 0.0001
+        indicator: "train_loss"
+        indicator_name: 'loss'
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: ZeoliteDataset
+      __init_params__:
+        path: "./data/zeolite/train.csv"
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 128
+  val:
+    dataset:
+      __class_name__: ZeoliteDataset
+      __init_params__:
+        path: "./data/zeolite/val.csv"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
+  test:
+    dataset:
+      __class_name__: ZeoliteDataset
+      __init_params__:
+        path: "./data/zeolite/test.csv"
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
+
+Sample:
+  model_sample_params:
+    num_inference_steps: 1000
