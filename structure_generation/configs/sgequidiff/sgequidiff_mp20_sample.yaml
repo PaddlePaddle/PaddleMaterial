@@ -1,0 +1,22 @@
+Global:
+  do_train: False
+  do_eval: False
+  do_test: False
+
+Model:
+  __class_name__: "__import__('ppmat.models.sgequidiff.sampler_wrapper', fromlist=['SGEQUIDiffSampler']).SGEQUIDiffSampler"
+  __init_params__:
+    dataset_name: mp_20
+    diffusion_snr: 0.4
+    temperature: 1.0
+    num_timesteps: 1000
+    noise_scheduler_num_monte_carlo_samples: 10
+    num_wn_lattice_translations: 1
+    weight_dir: null
+
+Sample:
+  build_structure_cfg:
+    format: array
+    primitive: False
+    niggli: False
+    canocial: True
