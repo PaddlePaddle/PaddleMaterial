@@ -106,7 +106,7 @@ The reference implementation in `ppmat/models/wd_mpnn/` consists of:
             <td  nowrap="nowrap"> 1 </td>
             <td  nowrap="nowrap"> ~10min </td>
             <td  nowrap="nowrap"><a href="wd_mpnn_bace.yaml">wd_mpnn_bace</a></td>
-            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/wd-MPNN/wd_mpnn_bace_t_20260503_204747_s_42.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td  nowrap="nowrap">wd_mpnn_delaney</td>
@@ -116,7 +116,7 @@ The reference implementation in `ppmat/models/wd_mpnn/` consists of:
             <td  nowrap="nowrap"> 1 </td>
             <td  nowrap="nowrap"> ~4min </td>
             <td  nowrap="nowrap"><a href="wd_mpnn_delaney.yaml">wd_mpnn_delaney</a></td>
-            <td  nowrap="nowrap"><a href="-">checkpoint | log</a></td>
+            <td  nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/wd-MPNN/wd_mpnn_delaney_t_20260503_210303_s_42.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
