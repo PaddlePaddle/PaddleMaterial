@@ -15,11 +15,15 @@
 from __future__ import annotations
 
 import csv
+import os.path as osp
 from typing import Dict
 from typing import List
 
 import numpy as np
 from paddle.io import Dataset
+
+from ppmat.utils import download
+from ppmat.utils import logger
 
 
 class WDMPNNDataset(Dataset):
@@ -27,6 +31,18 @@ class WDMPNNDataset(Dataset):
 
     Loads CSV data with SMILES and target columns, converts to MolGraph.
     """
+
+    url_bace = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/Custom_Poly/bace.csv"  # noqa
+    md5_bace = "b8962e1adc9a83d2d1d706a4224a8f0b"
+
+    url_delaney = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/Custom_Poly/delaney.csv"  # noqa
+    md5_delaney = "b300f12938e848e51d2a9f200486ff9e"
+
+    # Mapping from filename stem to (url, md5) attribute names
+    _dataset_urls = {
+        "bace": ("url_bace", "md5_bace"),
+        "delaney": ("url_delaney", "md5_delaney"),
+    }
 
     def __init__(
         self,
@@ -37,6 +53,24 @@ class WDMPNNDataset(Dataset):
         max_data_size: int = None,
     ):
         super().__init__()
+
+        if not osp.exists(path):
+            logger.message("The dataset is not found. Will download it now.")
+            basename = osp.basename(path)
+            stem = osp.splitext(basename)[0]
+            if stem in self._dataset_urls:
+                url_attr, md5_attr = self._dataset_urls[stem]
+                root_path = download.get_datasets_path_from_url(
+                    getattr(self, url_attr), getattr(self, md5_attr)
+                )
+                path = osp.join(root_path, basename)
+            else:
+                logger.warning(
+                    f"Dataset file '{basename}' is not available for "
+                    f"auto-download. Available datasets: "
+                    f"{list(self._dataset_urls.keys())}"
+                )
+
         self.path = path
 
         # Build featurization config (lazy import to avoid hard dependency at module load)
