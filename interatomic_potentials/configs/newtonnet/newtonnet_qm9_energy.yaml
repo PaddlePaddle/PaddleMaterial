@@ -1,0 +1,89 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+
+  label_names: ['energy']
+
+Trainer:
+  max_epochs: 300
+  seed: 42
+  output_dir: ./output/newtonnet_qm9_energy
+  save_freq: 50
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: False
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "energy"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: NewtonNet
+  __init_params__:
+    cutoff: 5.0
+    n_features: 128
+    n_basis: 20
+    n_interactions: 3
+    activation: swish
+    layer_norm: False
+    loss_type: mse_loss
+    force_loss_weight: 100.0
+    property_names: ${Global.label_names}
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 5e-4
+        eta_min: 1e-6
+        by_epoch: False
+
+Metric:
+  energy:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Dataset:
+  dataset:
+    __class_name__: QM9Dataset
+    __init_params__:
+      path: "./data/qm9"
+      property_names: ${Global.label_names}
+    num_workers: 4
+    use_shared_memory: False
+  split_dataset_ratio:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+  train_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: True
+      drop_last: False
+      batch_size: 32
+  val_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 32
+  test_sampler:
+    __class_name__: BatchSampler
+    __init_params__:
+      shuffle: False
+      drop_last: False
+      batch_size: 32
