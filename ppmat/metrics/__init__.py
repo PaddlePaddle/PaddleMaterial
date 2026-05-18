@@ -16,12 +16,14 @@ import copy
 
 import paddle  # noqa
 
+from ppmat.metrics.crystal_metrics import CrystalMetrics
 from ppmat.metrics.csp_metric import CSPMetric
 from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
 
 __all__ = [
     "build_metric",
     "CSPMetric",
+    "CrystalMetrics",
     "DiffNMRStreamingAdapter",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
