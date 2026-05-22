@@ -42,7 +42,7 @@ from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.density_dataset import DensityDataset
-from ppmat.datasets.small_density_dataset import SmallDensityDataset 
+from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
 from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
@@ -50,6 +50,7 @@ from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
+from ppmat.datasets.omatg.structure_dataset import StructureDataset as OMATGStructureDataset
 
 __all__ = [
     "MP20Dataset",
@@ -64,9 +65,10 @@ __all__ = [
     "HighLevelWaterDataset",
     "MSDnmrDataset",
     "MatbenchDataset",
-    "DensityDataset", 
+    "DensityDataset",
     "SmallDensityDataset",
     "OMol25Dataset",
+    "OMATGStructureDataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {

@@ -1,0 +1,53 @@
+Global:
+  do_train: False
+  do_eval: False
+  do_test: False
+
+Model:
+  __class_name__: OMATGCSPNetFull
+  __init_params__:
+    hidden_dim: 512
+    num_layers: 6
+    max_atoms: 100
+    act_fn: silu
+    dis_emb: sin
+    num_freqs: 128
+    edge_style: fc
+    cutoff: 7.0
+    max_neighbors: 20
+    ln: True
+    ip: True
+    smooth: False
+    pred_type: False
+    pred_scalar: False
+    time_embed_dim: 256
+
+Sample:
+  data:
+    dataset:
+      __class_name__: NumAtomsCrystalDataset
+      __init_params__:
+        total_num: 10
+        prop_names: []
+        prop_values: []
+    loader:
+      num_workers: 0
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 10
+
+  build_structure_cfg:
+    format: array
+    niggli: False
+
+  model_sample_params:
+    num_inference_steps: 100
+
+  metrics:
+    __class_name__: CSPMetric
+    __init_params__:
+      gt_file_path: "./data/mp_20/test.csv"
