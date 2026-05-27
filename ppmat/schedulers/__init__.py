@@ -22,12 +22,16 @@ from ppmat.schedulers.scheduling_diffprior import NoiseScheduler
 from ppmat.schedulers.scheduling_lattice_vp import LatticeVPSDEScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeSchedulerWrapped
+from ppmat.schedulers.miad_schedulers import scheduler as build_miad_scheduler
+from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
+from ppmat.schedulers.scheduling_sde_ve import p_wrapped_normal
 
 NumAtomsVarianceAdjustedWrappedVESDE = (
     scheduling_wrapped_sde_ve.NumAtomsVarianceAdjustedWrappedVESDE
 )
 __all__ = [
     "build_scheduler",
+    "build_miad_scheduler",
     "DDPMScheduler",
     "ScoreSdeVeScheduler",
     "ScoreSdeVeSchedulerWrapped",
@@ -35,6 +39,8 @@ __all__ = [
     "NumAtomsVarianceAdjustedWrappedVESDE",
     "D3PMScheduler",
     "NoiseScheduler",
+    "p_wrapped_normal",
+    "d_log_p_wrapped_normal",
 ]
 
 
