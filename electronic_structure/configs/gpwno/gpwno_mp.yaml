@@ -1,0 +1,167 @@
+Global:
+  do_train: True
+  do_eval: True
+  do_test: True
+  use_voxel: False
+
+Trainer:
+  max_epochs: 2
+  max_iter: 100000
+  seed: 42
+  output_dir: ./output/gpwno_mp
+  save_freq: 2000
+  log_freq: 1
+  start_eval_epoch: 0
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "mae"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: True
+
+Model:
+  __class_name__: GPWNO
+  __init_params__:
+    n_atom_type: 84
+    num_radial: 16
+    num_spherical: 3
+    radial_embed_size: 64
+    radial_hidden_size: 128
+    num_radial_layer: 2
+    num_gcn_layer: 2
+    cutoff: 3.0
+    grid_cutoff: 0.75
+    probe_cutoff: 1.5
+    is_fc: false
+    gauss_start: 0.5
+    gauss_end: 5.0
+    residual: true
+    pbc: true
+    activation: norm
+    num_fourier: 20
+    num_fourier_time: 12
+    width: 16
+    fourier_mode: 0
+    padding: 0
+    use_max_cell: false
+    max_cell_size: 324
+    equivariant_frame: false
+    normalize: true
+    using_ff: true
+    model_sharing: false
+    num_infgcn_layer: 3
+    use_detach: false
+    num_spherical_RNO: 3
+    scalar_mask: true
+    mask_cutoff: 1.0
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 0.001
+        factor: 0.5
+        patience: 10
+        min_lr: 0.00001
+        by_epoch: True
+        indicator: "eval_loss"
+        indicator_name: "loss"
+    weight_decay: 0.0
+    beta1: 0.9
+    beta2: 0.999
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./data/data_mp
+        split_file: crystal_data_split.json
+        atom_file: ./data/data_mp/crystal.json
+        extension: json
+        compression: xz
+        pbc: true
+        split: "train"
+        enable_cache: false
+        overwrite: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 16
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DensityCollator
+      collate_params:
+        n_samples: 1024
+  val:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./data/data_mp
+        split_file: crystal_data_split.json
+        atom_file: ./data/data_mp/crystal.json
+        extension: json
+        compression: xz
+        pbc: true
+        split: "validation"
+        enable_cache: false
+        overwrite: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 6
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DensityCollator
+      collate_params:
+        n_samples: 4096
+  test:
+    dataset:
+      __class_name__: DensityDataset
+      __init_params__:
+        root: ./data/data_mp
+        split_file: crystal_data_split.json
+        atom_file: ./data/data_mp/crystal.json
+        extension: json
+        compression: xz
+        pbc: true
+        split: "test"
+        rotate: false
+        enable_cache: false
+        overwrite: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+      collate_fn: DensityCollator
+      collate_params:
+        n_samples: 2048
+
+Predict:
+  eval_with_no_grad: True
+  num_infer: 100
+  num_vis: 2
+  inf_samples: 4096

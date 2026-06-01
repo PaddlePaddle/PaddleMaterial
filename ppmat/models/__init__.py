@@ -41,6 +41,7 @@ from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
+from ppmat.models.gpwno.GPWNO import GPWNO
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download
@@ -71,6 +72,7 @@ __all__ = [
     "DiffPrior",
     "DiffNMR",
     "InfGCN",
+    "GPWNO",
     "SFIN",
     "SphereNet",
 ]
