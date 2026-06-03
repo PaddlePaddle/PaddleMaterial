@@ -14,6 +14,7 @@
 
 import copy
 
+from ppmat.losses.gibbs_duhem_loss import GibbsDuhemLoss
 from ppmat.losses.l1_loss import HuberLoss
 from ppmat.losses.l1_loss import L1Loss
 from ppmat.losses.l1_loss import MAELoss
@@ -28,6 +29,7 @@ __all__ = [
     "MAELoss",
     "HuberLoss",
     "LossWarper",
+    "GibbsDuhemLoss",
     "build_loss",
 ]
 

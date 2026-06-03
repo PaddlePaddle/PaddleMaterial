@@ -35,13 +35,17 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
+from ppmat.models.gdinn.gdinn import GEGNN
+from ppmat.models.gdinn.gdinn import MCM_MultiMLP
+from ppmat.models.gdinn.gdinn import SolvGNN
+from ppmat.models.gdinn.gdinn import SolvGNNxMLP
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -67,6 +71,10 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "SolvGNN",
+    "SolvGNNxMLP",
+    "GEGNN",
+    "MCM_MultiMLP",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

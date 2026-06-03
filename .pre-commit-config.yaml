@@ -16,6 +16,7 @@ repos:
     rev: "v0.0.272"
     hooks:
       - id: ruff
+        args: ["--line-length=120"]
         exclude: '(jointContribution|legacy)/.*'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks

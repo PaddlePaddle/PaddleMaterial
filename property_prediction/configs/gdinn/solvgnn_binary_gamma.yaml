@@ -1,0 +1,158 @@
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+Global:
+  seed: 42
+  label_names: ["gamma1", "gamma2"]
+  do_train: true
+  do_eval: true
+  do_test: false
+
+Model:
+  __class_name__: "SolvGNN"
+  __init_params__:
+    in_dim: 74
+    hidden_dim: 256
+    n_classes: 1
+    mlp_dropout_rate: 0.0
+    mlp_activation: "relu"
+    mpnn_activation: "relu"
+    num_step_message_passing: 1
+    pinn_lambda: 1.0
+
+Loss:
+  __class_name__: "GibbsDuhemLoss"
+  __init_params__:
+    lambda_gd: 1.0
+    gd_start_epoch: 5
+    loss_type: "mse"
+    gd_loss_type: "mse"
+    use_ln_gamma: true
+
+Metric:
+  gamma1:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+  gamma2:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Optimizer:
+  __class_name__: "Adam"
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+    weight_decay: 0.0
+    lr:
+      __class_name__: "Step"
+      __init_params__:
+        learning_rate: 0.001
+        step_size: 50
+        gamma: 0.5
+        by_epoch: true
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: "BinaryActivityDataset"
+      __init_params__:
+        path: "train_binary.csv"
+        solvent_list_path: "solvent_list.csv"
+        add_self_loop: true
+        preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: "BatchSampler"
+      __init_params__:
+        batch_size: 256
+        shuffle: false
+        drop_last: false
+    loader:
+      collate_fn: "BinaryActivityCollator"
+
+  val:
+    dataset:
+      __class_name__: "BinaryActivityDataset"
+      __init_params__:
+        path: "val_binary.csv"
+        solvent_list_path: "solvent_list.csv"
+        add_self_loop: true
+        preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: "BatchSampler"
+      __init_params__:
+        batch_size: 8
+        shuffle: false
+        drop_last: false
+    loader:
+      collate_fn: "BinaryActivityCollator"
+
+  test:
+    dataset:
+      __class_name__: "BinaryActivityDataset"
+      __init_params__:
+        path: "test_binary.csv"
+        solvent_list_path: "solvent_list.csv"
+        add_self_loop: true
+        preload_graphs: false
+      num_workers: 0
+      use_shared_memory: false
+    sampler:
+      __class_name__: "BatchSampler"
+      __init_params__:
+        batch_size: 8
+        shuffle: false
+        drop_last: false
+    loader:
+      collate_fn: "BinaryActivityCollator"
+
+Trainer:
+  max_epochs: 10
+  seed: 42
+  output_dir: ./output/solvgnn_binary_gamma
+  save_freq: 1
+  log_freq: 100
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: false
+  amp_level: 'O1'
+  eval_with_no_grad: true
+  gradient_accumulation_steps: 1
+  clip_grad_norm: 1.0
+  best_metric_indicator: 'eval_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: false
+  compute_metric_during_train: true
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: false
+  use_wandb: false
+  use_tensorboard: false
+
+Evaluator:
+  __class_name__: "Evaluator"
+  __init_params__:
+    metrics:
+      - __class_name__: "MAE"
+      - __class_name__: "RMSE"
+      - __class_name__: "R2"
+
+Predict:
+  eval_with_no_grad: true
