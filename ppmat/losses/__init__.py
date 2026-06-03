@@ -18,6 +18,8 @@ from ppmat.losses.l1_loss import HuberLoss
 from ppmat.losses.l1_loss import L1Loss
 from ppmat.losses.l1_loss import MAELoss
 from ppmat.losses.l1_loss import SmoothL1Loss
+from ppmat.losses.ecd_loss import ECDLoss
+from ppmat.losses.ir_loss import IRLoss
 from ppmat.losses.loss_warper import LossWarper
 from ppmat.losses.mse_loss import MSELoss
 
@@ -25,6 +27,8 @@ __all__ = [
     "MSELoss",
     "L1Loss",
     "SmoothL1Loss",
+    "ECDLoss",
+    "IRLoss",
     "MAELoss",
     "HuberLoss",
     "LossWarper",
