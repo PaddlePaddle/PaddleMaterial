@@ -1,0 +1,40 @@
+model:
+  type: "sevennet"
+  num_species: 100
+  hidden_dim: 128
+  num_message_layers: 5
+  num_rbf: 64
+  cutoff: 5.0
+
+dataset:
+  type: "extxyz"
+  path: "/home/user/cv/zyy/PaddleSeveNnet/tests/data/systems/hfo2.extxyz"
+  cutoff: 5.0
+  valid_ratio: 0.1
+
+dataloader:
+  batch_size: 4
+  shuffle: true
+  num_workers: 0
+
+optimizer:
+  type: "adam"
+  lr: 0.001
+
+lr_scheduler:
+  type: "constant"
+
+loss:
+  type: "mse"
+  force_loss_weight: 0.1
+
+trainer:
+  epoch: 10
+  per_epoch: 2
+  seed: 42
+  device: "auto"
+
+log:
+  save_dir: "./output/sevennet_hfo2_large"
+  log_interval: 1
+  save_interval: 2
