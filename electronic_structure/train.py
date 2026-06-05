@@ -77,7 +77,7 @@ if __name__ == "__main__":
         "-c",
         "--config",
         type=str,
-        default="./electronic_structure/configs/infgcn_md.yaml",
+        default="./electronic_structure/configs/infgcn_md17_benzene.yaml",
         help="Path to config file",
     )
 
