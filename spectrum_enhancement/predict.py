@@ -30,10 +30,8 @@ from omegaconf import OmegaConf
 from PIL import Image
 
 from ppmat.datasets.stem_image_dataset import STEMImageDataset
-from ppmat.models import build_model
-from ppmat.models import build_model_from_name
+from ppmat.predictor import BasePredictor
 from ppmat.utils import logger
-from ppmat.utils import save_load
 
 
 def _normalize_split(split: Optional[str]) -> Optional[str]:
@@ -267,7 +265,7 @@ class SFINCaseProcessor(BaseCaseProcessor):
         return save_path
 
 
-class SpectrumPredictor:
+class SpectrumPredictor(BasePredictor):
     def __init__(
         self,
         case: str,
@@ -278,52 +276,18 @@ class SpectrumPredictor:
         weights_name: Optional[str] = None,
     ):
         self.case = case.strip().lower()
-        self.config_path = config_path
-        self.checkpoint_path = checkpoint_path
-        self.model_name = model_name
-        self.weights_name = weights_name
-        self.device = device
-
         paddle.set_device(device)
-
-        if self.model_name:
-            logger.info(
-                f"Loading predefined model by name: {self.model_name} "
-                f"(weights_name={self.weights_name})"
-            )
-            self.model, self.config = build_model_from_name(
-                self.model_name, self.weights_name
-            )
-            self.model.eval()
-        else:
-            if not self.config_path:
-                raise ValueError(
-                    "`config_path` is required when `model_name` is not provided."
-                )
-            if not self.checkpoint_path:
-                raise ValueError(
-                    "`checkpoint_path` is required when `model_name` is not provided."
-                )
-            self.config = self._load_config(self.config_path)
-            self.model = self._build_model_and_load_checkpoint()
+        super().__init__(
+            model_name=model_name,
+            weights_name=weights_name,
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            work_dir="",
+            device=device,
+        )
+        self.load_inference_model()
 
         self.case_processor = self._build_case_processor(self.case)
-        self.eval_with_no_grad = (
-            self.config.get("Predict", {}).get("eval_with_no_grad", True)
-        )
-
-    def _load_config(self, config_path: str) -> Dict[str, Any]:
-        config = OmegaConf.load(config_path)
-        return OmegaConf.to_container(config, resolve=True)
-
-    def _build_model_and_load_checkpoint(self):
-        model_cfg = self.config.get("Model")
-        if model_cfg is None:
-            raise ValueError("`Model` section is required in config.")
-        model = build_model(model_cfg)
-        self._load_checkpoint(model, self.checkpoint_path)
-        model.eval()
-        return model
 
     def _build_case_processor(self, case: str) -> BaseCaseProcessor:
         processor_cls = CASE_PROCESSOR_REGISTRY.get(case)
@@ -331,29 +295,6 @@ class SpectrumPredictor:
             available = ", ".join(sorted(CASE_PROCESSOR_REGISTRY.keys()))
             raise ValueError(f"Unsupported case '{case}'. Available cases: [{available}]")
         return processor_cls(self.config)
-
-    @staticmethod
-    def _load_checkpoint(model, checkpoint_path: Optional[str]) -> None:
-        if not checkpoint_path:
-            raise ValueError("`checkpoint_path` must not be empty.")
-        checkpoint_loaded = False
-        try:
-            checkpoint = paddle.load(checkpoint_path)
-            if isinstance(checkpoint, dict):
-                state_dict = None
-                for key in ("model_state_dict", "model", "state_dict"):
-                    if key in checkpoint and isinstance(checkpoint[key], dict):
-                        state_dict = checkpoint[key]
-                        break
-                if state_dict is None:
-                    state_dict = checkpoint
-                model.set_state_dict(state_dict)
-                checkpoint_loaded = True
-        except Exception:
-            checkpoint_loaded = False
-
-        if not checkpoint_loaded:
-            save_load.load_pretrain(model, checkpoint_path)
 
     def run(self, args: argparse.Namespace) -> list[Path]:
         output_dir = Path(args.output_dir)
@@ -408,7 +349,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional predefined model name from MODEL_REGISTRY. "
-            "If provided, `config_path` and `checkpoint_path` are optional."
+            "If omitted, SFIN prediction can load the default checkpoint URL "
+            "from `Predict.checkpoint_path` in the config."
         ),
     )
     parser.add_argument(
@@ -522,6 +464,19 @@ def resolve_output_dir(args: argparse.Namespace, config: Dict[str, Any]) -> str:
     return str(Path("./output") / "spectrum_enhancement" / "predictions")
 
 
+def resolve_checkpoint_path_from_config(config_path: Optional[str]) -> Optional[str]:
+    if not config_path:
+        return None
+    config = OmegaConf.to_container(OmegaConf.load(config_path), resolve=True)
+    predict_cfg = config.get("Predict", {}) or {}
+    trainer_cfg = config.get("Trainer", {}) or {}
+    return (
+        predict_cfg.get("checkpoint_path")
+        or predict_cfg.get("pretrained_model_path")
+        or trainer_cfg.get("pretrained_model_path")
+    )
+
+
 def validate_args(args: argparse.Namespace) -> None:
     # Backward-compatible behavior:
     # - Existing config+checkpoint workflow keeps working.
@@ -537,6 +492,8 @@ def validate_args(args: argparse.Namespace) -> None:
 
 def main():
     args = parse_args()
+    if not args.model_name and not args.checkpoint_path:
+        args.checkpoint_path = resolve_checkpoint_path_from_config(args.config_path)
     validate_args(args)
     predictor = SpectrumPredictor(
         case=args.case,

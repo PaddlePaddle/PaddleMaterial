@@ -126,13 +126,12 @@ class BasePredictor:
 
         self.model.eval()
 
-        self.predict_config = config.get("Predict", None)
+        self.predict_config = config.get("Predict") or {}
         self.eval_with_no_grad = self.predict_config.get("eval_with_no_grad", True)
 
-        if self.predict_config is not None:
-            graph_converter_config = self.predict_config.get("graph_converter", None)
-            if graph_converter_config is not None:
-                self.graph_converter_fn = build_graph_converter(graph_converter_config)
+        graph_converter_config = self.predict_config.get("graph_converter", None)
+        if graph_converter_config is not None:
+            self.graph_converter_fn = build_graph_converter(graph_converter_config)
         else:
             self.graph_converter_fn = None
 

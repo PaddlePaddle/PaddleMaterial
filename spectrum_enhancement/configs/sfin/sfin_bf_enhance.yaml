@@ -5,10 +5,10 @@ Global:
   prim_eager_enabled: False
 
 Trainer:
-  max_epochs: 500
+  max_epochs: 294
   seed: 42
   output_dir: ./output/sfin_bf_enhance
-  save_freq: 100
+  save_freq: 50
   log_freq: 100
   start_eval_epoch: 1
   eval_freq: 1
@@ -62,6 +62,10 @@ Metric:
     __class_name__: PSNRMetric
     __init_params__:
       data_range: 255.0
+
+Predict:
+  eval_with_no_grad: True
+  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance_294.pdparams
 
 Dataset:
   train:

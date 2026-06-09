@@ -53,8 +53,12 @@ def _load_pretrain_from_path(path: str, model: nn.Layer):
             f"Pretrained model path {path}.pdparams does not exists."
         )
     param_state_dict = paddle.load(f"{path}.pdparams")
-    if "state_dict" in param_state_dict:
-        param_state_dict = param_state_dict["state_dict"]
+    for state_key in ("state_dict", "model_state_dict", "model"):
+        if state_key in param_state_dict and isinstance(
+            param_state_dict[state_key], dict
+        ):
+            param_state_dict = param_state_dict[state_key]
+            break
 
     missing_keys_unexpected_keys = model.set_state_dict(param_state_dict)
     if (

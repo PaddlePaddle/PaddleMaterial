@@ -2,11 +2,13 @@
 
 [Noise Calibration and Spatial-Frequency Interactive Network for STEM Image Enhancement](https://arxiv.org/pdf/2504.02555)
 
-## 1.Introduction
+## Abstract
 
 SFIN is a CNN-based model for STEM image restoration. It targets paired reconstruction from noisy grayscale inputs and supports two experimental modes (HAADF and BF), each with two training targets (`enhance`, `detect`).
 
-## 2.Model Description
+---
+
+## Model Description
 
 SFIN takes `noisy` as input and predicts one target image (`gt_enhance` or `gt_detect`).
 
@@ -24,7 +26,9 @@ Evaluation metrics:
 - PSNR
 - SSIM
 
-## 3.Configurations
+---
+
+## Configurations
 
 | Config | Mode | Target | Output Dir |
 | --- | --- | --- | --- |
@@ -33,7 +37,27 @@ Evaluation metrics:
 | `sfin_bf_enhance.yaml` | BF | `gt_enhance` | `./output/sfin_bf_enhance` |
 | `sfin_bf_detect.yaml` | BF | `gt_detect` | `./output/sfin_bf_detect` |
 
-## 4.Dataset
+Key training settings are shared across the four configs unless noted:
+
+| Setting | Value |
+| --- | --- |
+| Optimizer | Adam |
+| Learning rate | `2.0e-4` |
+| LR scheduler | MultiStepDecay, milestones `[250, 400, 425, 450, 475]`, gamma `0.5` |
+| Batch size | `8` for training, `1` for validation/test |
+| Loss | L1 |
+| Metric | PSNR |
+| Epochs | `500` |
+
+---
+
+## Dataset Description
+
+SFIN uses the HAADF and BF STEM image datasets released with the reference
+implementation. The original format contains paired noisy inputs and ground
+truth targets. PaddleMaterials loads the same paired directory structure through
+`STEMImageDataset`. The released data provide train and test splits; the SFIN
+configs use the released test split for both validation and testing.
 
 ### Format
 
@@ -82,15 +106,40 @@ bf_data_test/              # BF val/test
   - `bf_data_test` -> `bf_data_test.zip`
 - Archive formats `zip` and `tar.gz` are both supported.
 
-## 5.Results
+---
+
+## Environment
+
+Run from the PaddleMaterials root directory:
+
+```bash
+pip install -r requirements.txt
+pip install -e . --no-build-isolation
+```
+
+The implementation is expected to run with PaddlePaddle official release
+packages. The submitted training logs were generated on one V100-32GB GPU.
+
+---
+
+## Results
+
+The table tracks the four supported SFIN configurations. Unless otherwise
+specified, metrics use the Torch/Paddle alignment protocol below:
+
+```text
+raw tensor -> global PSNR / SSIM
+```
 
 <table>
     <thead>
         <tr>
             <th nowrap="nowrap">Model Name</th>
             <th nowrap="nowrap">Dataset</th>
-            <th nowrap="nowrap">PSNR (dB)</th>
-            <th nowrap="nowrap">SSIM</th>
+            <th nowrap="nowrap">Target</th>
+            <th nowrap="nowrap">Paddle PSNR / SSIM</th>
+            <th nowrap="nowrap">Torch PSNR / SSIM</th>
+            <th nowrap="nowrap">Status</th>
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
@@ -100,24 +149,72 @@ bf_data_test/              # BF val/test
     <tbody>
         <tr>
             <td nowrap="nowrap">sfin_tem_enhance</td>
-            <td nowrap="nowrap">STEM Enhancement</td>
-            <td nowrap="nowrap">38.74</td>
-            <td nowrap="nowrap">0.9622</td>
+            <td nowrap="nowrap">HAADF test</td>
+            <td nowrap="nowrap">gt_enhance</td>
+            <td nowrap="nowrap">37.440395 / 0.967452</td>
+            <td nowrap="nowrap">37.085558 / 0.958724</td>
+            <td nowrap="nowrap">aligned, PSNR rel. diff 0.957%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.5 hours</td>
             <td nowrap="nowrap"><a href="sfin_tem_enhance.yaml">sfin_tem_enhance</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_he_500.zip">checkpoint | log</a></td>
         </tr>
+        <tr>
+            <td nowrap="nowrap">sfin_tem_detect</td>
+            <td nowrap="nowrap">HAADF test</td>
+            <td nowrap="nowrap">gt_detect</td>
+            <td nowrap="nowrap">pending</td>
+            <td nowrap="nowrap">25.919255 / 0.963871</td>
+            <td nowrap="nowrap">pending full alignment</td>
+            <td nowrap="nowrap">1 (V100-32GB)</td>
+            <td nowrap="nowrap">pending</td>
+            <td nowrap="nowrap"><a href="sfin_tem_detect.yaml">sfin_tem_detect</a></td>
+            <td nowrap="nowrap">pending BCE upload</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">sfin_bf_enhance</td>
+            <td nowrap="nowrap">BF test</td>
+            <td nowrap="nowrap">gt_enhance</td>
+            <td nowrap="nowrap">31.499178 / pending SSIM</td>
+            <td nowrap="nowrap">31.507519 / 0.989180</td>
+            <td nowrap="nowrap">epoch 294 selected, pending full checkpoint verification</td>
+            <td nowrap="nowrap">1 (V100-32GB)</td>
+            <td nowrap="nowrap">pending</td>
+            <td nowrap="nowrap"><a href="sfin_bf_enhance.yaml">sfin_bf_enhance</a></td>
+            <td nowrap="nowrap">pending BCE upload</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">sfin_bf_detect</td>
+            <td nowrap="nowrap">BF test</td>
+            <td nowrap="nowrap">gt_detect</td>
+            <td nowrap="nowrap">23.826540 / 0.943309</td>
+            <td nowrap="nowrap">23.820280 / 0.943306</td>
+            <td nowrap="nowrap">aligned, PSNR rel. diff 0.026%</td>
+            <td nowrap="nowrap">1 (V100-32GB)</td>
+            <td nowrap="nowrap">~21.3 hours</td>
+            <td nowrap="nowrap"><a href="sfin_bf_detect.yaml">sfin_bf_detect</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_epoch_500.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_run.log">log</a></td>
+        </tr>
     </tbody>
 </table>
 
-## 6.Command
+For HAADF enhance, the original SFIN-main metric protocol
+(`clip -> uint8 -> per-image average`) was also verified on 100 HAADF test
+images: Paddle `38.739602 / 0.962186`, Torch `38.420514 / 0.958101`.
 
-Run from `PaddleMaterials` root:
+For BF enhance, `epoch_500.pdparams` is not a strict alignment checkpoint. Under
+the raw/global protocol, epoch 294 has PSNR `31.499178`, which is closest to
+the Torch reference PSNR `31.507519`. The config therefore stops at epoch 294.
+Under the original SFIN-main metric protocol, the epoch 500 Paddle checkpoint is
+`34.011838 / 0.989638` and Torch is `32.295260 / 0.988141`.
 
-```bash
-pip install -e . --no-build-isolation
-```
+Note: each config stores its default inference weight URL in
+`Predict.checkpoint_path`. HAADF enhance and BF detect URLs are available now;
+HAADF detect and BF enhance need their BCE URLs updated after upload.
+
+---
+
+## Command
 
 ### Training
 
@@ -139,26 +236,42 @@ python spectrum_enhancement/train.py \
   -c spectrum_enhancement/configs/sfin/sfin_bf_detect.yaml
 ```
 
-### Evaluation
-
-```bash
-python spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
-  Global.do_train=False Global.do_eval=True Global.do_test=True \
-  Trainer.pretrained_model_path='path/to/model.pdparams'
-```
-
 ### Prediction
 
 ```bash
+# Mode 1: use checkpoint URL from Predict.checkpoint_path.
 python spectrum_enhancement/predict.py \
-  --config_path spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
-  --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_he_500.pdparams \
-  --data_path ./data_test \
+  --config_path spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml
+```
+
+Use the matching config for the other tasks:
+
+| Task | Config | Default data root | Default checkpoint |
+| --- | --- | --- | --- |
+| HAADF enhance | `sfin_tem_enhance.yaml` | `./data_test` | available |
+| HAADF detect | `sfin_tem_detect.yaml` | `./data_test` | pending BCE upload |
+| BF enhance | `sfin_bf_enhance.yaml` | `./bf_data_test` | pending BCE upload |
+| BF detect | `sfin_bf_detect.yaml` | `./bf_data_test` | available |
+
+```bash
+# Mode 2: override data/checkpoint/output paths.
+python spectrum_enhancement/predict.py \
+  --config_path spectrum_enhancement/configs/sfin/sfin_bf_detect.yaml \
+  --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_epoch_500.pdparams \
+  --data_path ./bf_data_test \
   --output_dir ./output/sfin_predictions
 ```
 
-## 7.Citation
+---
+
+## References
+
+- Reference implementation: [HeasonLee/SFIN](https://github.com/HeasonLee/SFIN)
+- Paper: [Noise Calibration and Spatial-Frequency Interactive Network for STEM Image Enhancement](https://arxiv.org/pdf/2504.02555)
+
+---
+
+## Citation
 
 ```bibtex
 @inproceedings{li2025sfin,

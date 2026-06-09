@@ -1,8 +1,8 @@
-# SPEN-Spectrum Enhancement
+# Spectrum Enhancement (SPEN)
 
 ## 1.Introduction
 
-Spectrum Enhancement (SE) focuses on enhancing and denoising spectral and microscopy data. Leveraging advanced deep learning techniques, SE aims to recover high-quality signals from noisy observations, enabling more accurate analysis of material properties at the atomic scale. This task is particularly valuable for STEM (Scanning Transmission Electron Microscopy) image processing, where noise reduction can significantly improve the visualization of crystal structures and defects.
+Spectrum Enhancement (SPEN) focuses on enhancing and denoising spectral and microscopy data. Leveraging advanced deep learning techniques, SPEN aims to recover high-quality signals from noisy observations, enabling more accurate analysis of material properties at the atomic scale. This task is particularly valuable for STEM (Scanning Transmission Electron Microscopy) image processing, where noise reduction can significantly improve the visualization of crystal structures and defects.
 
 ## 2.Framework Support Matrix
 
@@ -10,7 +10,7 @@ Spectrum Enhancement (SE) focuses on enhancing and denoising spectral and micros
 | ----------------------------------- | :---------: |
 | **ML Capabilities · Training**      |             |
 | Single-GPU                          |      ✅     |
-| Distributed training                |      ✅     |
+| Distributed training                |      —      |
 | Mixed precision (AMP)               |      —      |
 | Fine-tuning                         |      ✅     |
 | **ML Capabilities · Predict**       |             |

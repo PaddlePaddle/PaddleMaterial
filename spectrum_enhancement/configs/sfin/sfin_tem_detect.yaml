@@ -63,6 +63,10 @@ Metric:
     __init_params__:
       data_range: 255.0
 
+Predict:
+  eval_with_no_grad: True
+  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_tem_detect_500.pdparams
+
 Dataset:
   train:
     dataset:

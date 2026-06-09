@@ -23,9 +23,9 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from ppmat.datasets.build_stem import build_stem_data_root_resolver
-from ppmat.datasets.build_stem import build_stem_downloader
-from ppmat.datasets.build_stem import build_stem_sample_builder
+from ppmat.datasets.build_spectrum import build_stem_data_root_resolver
+from ppmat.datasets.build_spectrum import build_stem_downloader
+from ppmat.datasets.build_spectrum import build_stem_sample_builder
 from ppmat.utils import logger
 
 
