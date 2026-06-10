@@ -163,13 +163,13 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">sfin_tem_detect</td>
             <td nowrap="nowrap">HAADF test</td>
             <td nowrap="nowrap">gt_detect</td>
-            <td nowrap="nowrap">pending</td>
+            <td nowrap="nowrap">26.013702 / 0.964492</td>
             <td nowrap="nowrap">25.919255 / 0.963871</td>
-            <td nowrap="nowrap">pending full alignment</td>
+            <td nowrap="nowrap">aligned, PSNR rel. diff 0.364%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
-            <td nowrap="nowrap">pending</td>
+            <td nowrap="nowrap">~21.2 hours</td>
             <td nowrap="nowrap"><a href="sfin_tem_detect.yaml">sfin_tem_detect</a></td>
-            <td nowrap="nowrap">pending BCE upload</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_hd.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_hd_run.log">log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">sfin_bf_enhance</td>
@@ -202,6 +202,10 @@ For HAADF enhance, the original SFIN-main metric protocol
 (`clip -> uint8 -> per-image average`) was also verified on 100 HAADF test
 images: Paddle `38.739602 / 0.962186`, Torch `38.420514 / 0.958101`.
 
+For HAADF detect, the original SFIN-main metric protocol was also verified on
+100 HAADF test images: Paddle `28.768660 / 0.963753`, Torch
+`28.671135 / 0.963961`.
+
 For BF enhance, `epoch_500.pdparams` is not a strict alignment checkpoint. Under
 the raw/global protocol, epoch 294 has PSNR `31.499178`, which is closest to
 the Torch reference PSNR `31.507519`. The config therefore stops at epoch 294.
@@ -209,8 +213,8 @@ Under the original SFIN-main metric protocol, the epoch 500 Paddle checkpoint is
 `34.011838 / 0.989638` and Torch is `32.295260 / 0.988141`.
 
 Note: each config stores its default inference weight URL in
-`Predict.checkpoint_path`. HAADF enhance and BF detect URLs are available now;
-HAADF detect and BF enhance need their BCE URLs updated after upload.
+`Predict.checkpoint_path`. HAADF enhance, HAADF detect, and BF detect URLs are
+available now; BF enhance needs its BCE URL updated after upload.
 
 ---
 
@@ -249,7 +253,7 @@ Use the matching config for the other tasks:
 | Task | Config | Default data root | Default checkpoint |
 | --- | --- | --- | --- |
 | HAADF enhance | `sfin_tem_enhance.yaml` | `./data_test` | available |
-| HAADF detect | `sfin_tem_detect.yaml` | `./data_test` | pending BCE upload |
+| HAADF detect | `sfin_tem_detect.yaml` | `./data_test` | available |
 | BF enhance | `sfin_bf_enhance.yaml` | `./bf_data_test` | pending BCE upload |
 | BF detect | `sfin_bf_detect.yaml` | `./bf_data_test` | available |
 

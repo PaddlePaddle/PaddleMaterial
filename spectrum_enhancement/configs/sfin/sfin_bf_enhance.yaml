@@ -65,7 +65,7 @@ Metric:
 
 Predict:
   eval_with_no_grad: True
-  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance_294.pdparams
+  checkpoint_path: null
 
 Dataset:
   train:
