@@ -38,6 +38,7 @@ from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
+from ppmat.models.sevennet.sevennet_model import PurePaddleSevenNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
@@ -67,6 +68,7 @@ __all__ = [
     "DiffNMR",
     "InfGCN",
     "MatENO",
+    "PurePaddleSevenNet",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
@@ -111,6 +113,12 @@ MODEL_REGISTRY = {
     "mattergen_ml2ddb": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb.zip",
     "mattergen_ml2ddb_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_chemical_system.zip",
     "mattergen_ml2ddb_space_group": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_space_group.zip",
+    # SevenNet pretrained models - URLs to be provided by official
+    # "sevennet_omni": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/sevennet/sevennet_omni.zip",
+    # "sevennet_mf_ompa": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/sevennet/sevennet_mf_ompa.zip",
+    # "sevennet_omat": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/sevennet/sevennet_omat.zip",
+    # "sevennet_l3i5": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/sevennet/sevennet_l3i5.zip",
+    # "sevennet_0": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/sevennet/sevennet_0.zip",
 }
 
 

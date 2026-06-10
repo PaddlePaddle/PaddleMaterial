@@ -55,9 +55,11 @@ class MessageBlock(nn.Layer):
         msg = self.msg_mlp(msg_in)
         msg = msg * edge_weight
 
+        # 使用 scatter_nd_add 实现消息聚合
         num_nodes = h.shape[0]
         agg = paddle.zeros([num_nodes, h.shape[1]], dtype=h.dtype)
-        agg = paddle.scatter_nd_add(agg, edge_dst.unsqueeze(1), msg)
+        edge_dst_2d = edge_dst.unsqueeze(1)
+        agg = paddle.scatter_nd_add(agg, edge_dst_2d, msg)
 
         upd_in = paddle.concat([h, agg], axis=-1)
         dh = self.upd_mlp(upd_in)
@@ -115,3 +117,85 @@ class PurePaddleSevenNet(nn.Layer):
             "total_energy": total_energy,
             "atomic_energy": atomic_energy,
         }
+
+    def predict(self, data):
+        """Predict energy and forces for a batch of structures.
+        
+        This method provides a compatible interface for PotentialPredictor.
+        
+        Args:
+            data: Dictionary containing graph data with keys:
+                - z: atomic numbers (Tensor)
+                - pos: positions (Tensor)
+                - edge_index: edge connectivity (Tensor)
+                
+        Returns:
+            Dictionary with predictions:
+                - energy: total energy per structure (float)
+                - forces: atomic forces (numpy array)
+        """
+        # Support both direct graph dict and data object with graph attribute
+        if hasattr(data, 'graph'):
+            graph = data.graph
+        else:
+            graph = data
+            
+        # Handle batch dimension
+        if isinstance(graph, list):
+            results = []
+            for g in graph:
+                result = self.forward(g)
+                # Convert to numpy and format output
+                prediction = {
+                    "energy": float(result["total_energy"].numpy()),
+                    "atomic_energy": result["atomic_energy"].numpy(),
+                }
+                results.append(prediction)
+            return results
+        else:
+            result = self.forward(graph)
+            return {
+                "energy": float(result["total_energy"].numpy()),
+                "atomic_energy": result["atomic_energy"].numpy(),
+            }
+    
+    def compute_forces(self, graph, eps=1e-4):
+        """Compute forces by finite difference of energy w.r.t. positions.
+        
+        Uses finite difference instead of autograd because Paddle's
+        scatter_nd_add backward pass has numerical instability with
+        deep message-passing networks.
+        
+        Args:
+            graph: Dictionary containing graph data
+            eps: Finite difference step size
+            
+        Returns:
+            numpy array of forces with shape [num_atoms, 3]
+        """
+        import numpy as np
+        
+        positions_np = graph["pos"].numpy()
+        z = graph["z"]
+        edge_index = graph["edge_index"]
+        num_atoms = positions_np.shape[0]
+        forces = np.zeros_like(positions_np)
+        
+        for i in range(num_atoms):
+            for j in range(3):
+                pos_plus = positions_np.copy()
+                pos_plus[i, j] += eps
+                pos_minus = positions_np.copy()
+                pos_minus[i, j] -= eps
+                
+                pos_p = paddle.to_tensor(pos_plus, dtype="float32")
+                with paddle.no_grad():
+                    e_plus = float(self.forward({"z": z, "pos": pos_p, "edge_index": edge_index})["total_energy"].numpy())
+                
+                pos_m = paddle.to_tensor(pos_minus, dtype="float32")
+                with paddle.no_grad():
+                    e_minus = float(self.forward({"z": z, "pos": pos_m, "edge_index": edge_index})["total_energy"].numpy())
+                
+                forces[i, j] = -(e_plus - e_minus) / (2 * eps)
+        
+        return forces

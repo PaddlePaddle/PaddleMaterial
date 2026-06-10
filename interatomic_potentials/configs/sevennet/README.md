@@ -1,103 +1,84 @@
-# SevenNet - Interatomic Potential Model
+# SevenNet Model Configuration
 
-## 任务简介
+## Overview
 
-SevenNet 是一个基于图神经网络的机器学习原子间势函数模型，用于预测分子和材料的能量与力。
+SevenNet is a message-passing graph neural network for interatomic potential prediction.
 
-## 模型简介
+## Pretrained Models
 
-SevenNet 模型结构包括：
-- **原子嵌入层**: 将原子序数映射为特征向量
-- **径向基函数 (RBF)**: 编码原子间距离信息
-- **消息传递块**: 多层图神经网络进行信息聚合
-- **能量预测头**: 预测原子能量并求和得到总能量
+SevenNet provides multiple pretrained models:
 
-## 环境依赖
+| Model | Description | Training Dataset | Performance (CPS) |
+|-------|-------------|------------------|-------------------|
+| **SevenNet-Omni** (Recommended) | Universal potential, 15 datasets | 15 open ab initio datasets | 0.849 |
+| SevenNet-Omni-i8 | Higher capacity (Nlayer=8) | 15 datasets | 0.859 |
+| SevenNet-Omni-i12 | Highest capacity (Nlayer=12) | 15 datasets | 0.873 |
+| SevenNet-MF-ompa | Multi-fidelity learning | MPtrj, sAlex, OMat24 | 0.845 |
+| SevenNet-omat | OMat24 only | OMat24 | κSRME: 0.221 |
+| SevenNet-l3i5 | MPtrj with lmax=3 | MPtrj | 0.714 |
+| SevenNet-0 | Fastest inference | MPtrj | F1: 0.67 |
 
-```bash
-# 安装 PaddlePaddle
-pip install paddlepaddle==3.3.1
+## Using Pretrained Models
 
-# 安装依赖
-pip install ase numpy tqdm pyyaml
+### Step 1: Download Model
+
+When official provides URLs, download the pretrained model:
+
+```python
+from ppmat.utils import download
+
+model_name = "sevennet_omni"  # or other model name
+model_path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
 ```
 
-## 数据准备
+### Step 2: Load Model
 
-数据集格式：extxyz 格式，包含原子坐标、能量和力标签。
+```python
+import paddle
+from ppmat.models import PurePaddleSevenNet
 
-示例数据位于：`tests/data/systems/hfo2.extxyz`
+# Load checkpoint
+state_dict = paddle.load("path/to/checkpoint.pdparams")
 
-## 训练命令
+# Create model
+model = PurePaddleSevenNet(
+    num_species=100,
+    hidden_dim=128,
+    num_message_layers=5,
+    num_rbf=32,
+    cutoff=5.0,
+)
 
-```bash
-# 使用默认配置训练
-cd interatomic_potentials
-python train.py --config configs/sevennet/sevennet_hfo2.yaml
-
-# 指定输出目录
-python train.py --config configs/sevennet/sevennet_hfo2.yaml --output-dir ./output/sevennet_hfo2
+# Load weights
+model.set_state_dict(state_dict)
+model.eval()
 ```
 
-## 推理命令
+### Step 3: Predict
 
-```bash
-cd interatomic_potentials
-python infer.py --model ./output/sevennet_hfo2/model_final.pdparams --structure tests/data/systems/hfo2.extxyz
+```python
+# Create graph from structure
+graph = {
+    "z": paddle.to_tensor([1, 8, 1], dtype="int64"),  # H, O, H
+    "pos": paddle.to_tensor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype="float32"),
+    "edge_index": paddle.to_tensor([[0, 1], [1, 0]], dtype="int64"),
+}
+
+# Predict
+result = model(graph)
+energy = result["total_energy"]
 ```
 
-## 配置说明
+## Training Datasets
 
-### 模型配置 (`model`)
-- `type`: 模型类型，固定为 "sevennet"
-- `num_species`: 原子种类数，默认 100
-- `hidden_dim`: 隐藏层维度，默认 128
-- `num_message_layers`: 消息传递层数，默认 4
-- `num_rbf`: 径向基函数数量，默认 32
-- `cutoff`: 截断半径（Å），默认 5.0
+The official training datasets include:
 
-### 数据集配置 (`dataset`)
-- `type`: 数据集类型，固定为 "extxyz"
-- `path`: 数据集路径
-- `cutoff`: 截断半径
-- `valid_ratio`: 验证集比例，默认 0.1
+- **MPtrj** (Materials Project Trajectory): https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842
+- **OMat24**: https://huggingface.co/datasets/fairchem/OMAT24
+- **sAlex**: https://huggingface.co/datasets/fairchem/OMAT24
 
-### 训练配置 (`trainer`)
-- `epoch`: 训练轮数
-- `per_epoch`: 每多少轮保存一次
-- `seed`: 随机种子
-- `device`: 设备，"auto"、"gpu" 或 "cpu"
+## References
 
-## 参考结果
-
-使用 `sevennet_hfo2.yaml` 配置训练 HfO2 数据集：
-- 训练轮数：2
-- 初始训练损失：~888
-- 最终验证损失：~794
-
-## 目录结构
-
-```
-interatomic_potentials/
-├── train.py              # 训练入口脚本
-├── infer.py              # 推理入口脚本
-└── configs/
-    └── sevennet/
-        ├── sevennet_hfo2.yaml        # 默认配置
-        ├── sevennet_hfo2_large.yaml  # 大型配置
-        └── README.md                 # 本文件
-```
-
-## 代码结构
-
-```
-ppmat/
-└── models/
-    └── sevennet/
-        ├── __init__.py
-        └── sevennet_model.py  # SevenNet 模型实现
-```
-
-## 参考
-
-本模型参考了 SevenNet 系列原子间势函数的设计理念。
+- [SevenNet Official Repository](https://github.com/MDIL-SNU/SevenNet)
+- [SevenNet Documentation](https://sevennet.readthedocs.io/)
+- [Pretrained Models Guide](https://sevennet.readthedocs.io/en/latest/user_guide/pretrained.html)
