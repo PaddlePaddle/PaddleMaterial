@@ -23,9 +23,7 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from ppmat.datasets.build_spectrum import build_stem_data_root_resolver
-from ppmat.datasets.build_spectrum import build_stem_downloader
-from ppmat.datasets.build_spectrum import build_stem_sample_builder
+from ppmat.utils import download as download_utils
 from ppmat.utils import logger
 
 
@@ -87,9 +85,6 @@ class STEMImageDataset(paddle.io.Dataset):
         target_subdir: str = "gt_enhance",
         file_suffix: str = ".png",
         strict_index_naming: bool = True,
-        sample_builder_cfg: Optional[Dict] = None,
-        downloader_cfg: Optional[Dict] = None,
-        data_root_resolver_cfg: Optional[Dict] = None,
         scale_to_unit: bool = False,
         url: Optional[str] = None,
         md5: Optional[str] = None,
@@ -107,15 +102,6 @@ class STEMImageDataset(paddle.io.Dataset):
             target_subdir: Subdirectory name for target/ground truth images.
             file_suffix: File extension for images (e.g., '.png', '.tif').
             strict_index_naming: If True, expects files named as {idx}{suffix}.
-            sample_builder_cfg: Sample builder config in factory style:
-                {
-                    "__class_name__": "StrictIndexSampleBuilder",
-                    "__init_params__": {}
-                }
-            downloader_cfg: Downloader config in factory style.
-                Default class is "DefaultSTEMDatasetDownloader".
-            data_root_resolver_cfg: Data root resolver config in factory style.
-                Default class is "PairDirectoryDataRootResolver".
             scale_to_unit: If True, scales pixel values to [0, 1].
             url: URL to download the dataset from. Overrides default URL.
             md5: MD5 checksum for downloaded file. Optional.
@@ -131,12 +117,6 @@ class STEMImageDataset(paddle.io.Dataset):
         self.file_suffix = file_suffix
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
-        self.sample_builder = build_stem_sample_builder(
-            sample_builder_cfg,
-            strict_index_naming=strict_index_naming,
-        )
-        self.downloader = build_stem_downloader(downloader_cfg)
-        self.data_root_resolver = build_stem_data_root_resolver(data_root_resolver_cfg)
 
         self.url = url if url is not None else self._infer_default_url(data_path)
         self.md5 = (
@@ -206,7 +186,7 @@ class STEMImageDataset(paddle.io.Dataset):
         )
 
     def _download_dataset(self, force_download: bool = False) -> Path:
-        """Download dataset with built-in ppmat factory utility."""
+        """Download dataset with built-in ppmat download utility."""
         if not self.url:
             candidate = ", ".join(sorted(self._DEFAULT_URL_MAP.keys()))
             raise FileNotFoundError(
@@ -217,11 +197,18 @@ class STEMImageDataset(paddle.io.Dataset):
         logger.message(
             f"Dataset root {self.data_root} not found. Will download it now."
         )
-        downloaded_root = self.downloader.download(
-            self.url,
-            self.md5,
-            force_download=force_download,
-        )
+        if force_download:
+            downloaded_root = download_utils.get_path_from_url(
+                self.url,
+                download_utils.DATASETS_HOME,
+                md5sum=self.md5,
+                check_exist=False,
+                decompress=True,
+            )
+        else:
+            downloaded_root = download_utils.get_datasets_path_from_url(
+                self.url, self.md5
+            )
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return Path(downloaded_root)
 
@@ -252,21 +239,97 @@ class STEMImageDataset(paddle.io.Dataset):
         return matches[0]
 
     def _find_data_roots(self, base_root: Path) -> List[Path]:
-        return self.data_root_resolver.find_data_roots(
-            base_root=base_root,
-            split=self.split,
-            noisy_subdir=self.noisy_subdir,
-            target_subdir=self.target_subdir,
+        if not base_root.exists():
+            return []
+
+        candidate_roots: List[Path] = [base_root]
+        frontier: List[Path] = [base_root]
+        for _ in range(2):
+            next_frontier: List[Path] = []
+            for root in frontier:
+                for child in root.iterdir():
+                    if child.is_dir():
+                        candidate_roots.append(child)
+                        next_frontier.append(child)
+            frontier = next_frontier
+
+        matches: List[Path] = []
+        for root in candidate_roots:
+            if self.split is not None:
+                split_root = root / self.split
+                if self._contains_pair_dirs(split_root):
+                    matches.append(split_root)
+            if self._contains_pair_dirs(root):
+                matches.append(root)
+
+        seen = set()
+        unique_matches = []
+        for path in matches:
+            path_str = str(path)
+            if path_str in seen:
+                continue
+            seen.add(path_str)
+            unique_matches.append(path)
+        return unique_matches
+
+    def _contains_pair_dirs(self, root: Path) -> bool:
+        return (
+            root.is_dir()
+            and (root / self.noisy_subdir).exists()
+            and (root / self.target_subdir).exists()
         )
 
     def _build_samples(self, data_count: int | None) -> List[Dict[str, str]]:
         """Build list of sample dictionaries."""
-        return self.sample_builder.build(
-            noisy_dir=self.noisy_dir,
-            target_dir=self.target_dir,
-            file_suffix=self.file_suffix,
-            data_count=data_count,
-        )
+        if not self.strict_index_naming:
+            return self._build_matched_name_samples(data_count)
+
+        samples: List[Dict[str, str]] = []
+        if data_count is None:
+            data_count = len(sorted(self.noisy_dir.glob(f"*{self.file_suffix}")))
+
+        for idx in range(int(data_count)):
+            name = f"{idx}{self.file_suffix}"
+            noisy_path = self.noisy_dir / name
+            target_path = self.target_dir / name
+            if not noisy_path.exists():
+                raise FileNotFoundError(f"Noisy image not found: {noisy_path}")
+            if not target_path.exists():
+                raise FileNotFoundError(f"Target image not found: {target_path}")
+            samples.append(
+                {
+                    "name": name,
+                    "noisy_path": str(noisy_path),
+                    "target_path": str(target_path),
+                }
+            )
+        return samples
+
+    def _build_matched_name_samples(
+        self, data_count: int | None
+    ) -> List[Dict[str, str]]:
+        noisy_files = {
+            path.name: path
+            for path in self.noisy_dir.glob(f"*{self.file_suffix}")
+            if path.is_file()
+        }
+        target_files = {
+            path.name: path
+            for path in self.target_dir.glob(f"*{self.file_suffix}")
+            if path.is_file()
+        }
+        common_names = sorted(set(noisy_files.keys()) & set(target_files.keys()))
+        if data_count is not None:
+            common_names = common_names[: int(data_count)]
+
+        return [
+            {
+                "name": name,
+                "noisy_path": str(noisy_files[name]),
+                "target_path": str(target_files[name]),
+            }
+            for name in common_names
+        ]
 
     def __len__(self):
         return len(self.samples)

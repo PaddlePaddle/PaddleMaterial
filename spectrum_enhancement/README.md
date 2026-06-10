@@ -1,27 +1,37 @@
-# Spectrum Enhancement (SPEN)
+# SE-Spectrum Enhancement
 
 ## 1.Introduction
 
-Spectrum Enhancement (SPEN) focuses on enhancing and denoising spectral and microscopy data. Leveraging advanced deep learning techniques, SPEN aims to recover high-quality signals from noisy observations, enabling more accurate analysis of material properties at the atomic scale. This task is particularly valuable for STEM (Scanning Transmission Electron Microscopy) image processing, where noise reduction can significantly improve the visualization of crystal structures and defects.
+Spectrum Enhancement (SE) targets reconstruction and denoising of noisy
+spectral or microscopy observations. In materials characterization workflows,
+low-dose or low-signal acquisitions often reduce image quality and make
+atomic-scale structure analysis harder. SE models learn to recover cleaner
+signals from paired noisy and reference data, improving downstream inspection
+of crystal structures, defects, and local material morphology.
 
-## 2.Framework Support Matrix
+The current PaddleMaterials SE workflow focuses on STEM image enhancement.
+Given noisy HAADF or BF STEM inputs, the model predicts enhanced or detection
+target images and supports training, evaluation, and prediction with the common
+PaddleMaterials trainer/predictor style.
 
-| **Supported Functions**             | **Support** |
-| ----------------------------------- | :---------: |
-| **ML Capabilities · Training**      |             |
-| Single-GPU                          |      ✅     |
-| Distributed training                |      —      |
-| Mixed precision (AMP)               |      —      |
-| Fine-tuning                         |      ✅     |
-| **ML Capabilities · Predict**       |             |
-| Standard inference                  |      ✅     |
-| Distributed inference               |      —      |
-| **Data Pipeline**                   |             |
-| Local dataset loading               |      ✅     |
-| Auto dataset download               |      ✅     |
-| **Task Workflow**                   |             |
-| Training / Evaluation / Prediction  |      ✅     |
+## 2.Models Matrix
 
-## 3.Model README
-
-- [SFIN](./configs/sfin/README.md)
+| **Supported Functions**             | **[SFIN](./configs/sfin/README.md)** |
+| ----------------------------------- | ------------------------------------ |
+| **Support Data Types**              |                                      |
+| &emsp;STEM images                   | ✅                                   |
+| &emsp;HAADF / BF inputs             | ✅                                   |
+| **Spectrum Enhancement**            |                                      |
+| &emsp;Image denoising/enhancement   | ✅                                   |
+| &emsp;Detection target restoration  | ✅                                   |
+| **ML Capabilities · Training**      |                                      |
+| &emsp;Single-GPU                    | ✅                                   |
+| &emsp;Distributed Train             | -                                    |
+| &emsp;Mixed Precision               | -                                    |
+| &emsp;Fine-tuning                   | ✅                                   |
+| **ML Capabilities · Predict**       |                                      |
+| &emsp;Standard inference            | ✅                                   |
+| &emsp;Distributed inference         | -                                    |
+| **Dataset**                         |                                      |
+| &emsp;HAADF STEM                    | ✅                                   |
+| &emsp;BF STEM                       | ✅                                   |
