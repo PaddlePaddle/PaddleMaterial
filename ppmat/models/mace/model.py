@@ -32,8 +32,21 @@ class MACE(nn.Layer):
         # Output layer for energy prediction
         self.output = nn.Linear(hidden_dim, 1)
 
-    def forward(self, atomic_numbers, positions, cell=None, pbc=False):
-        """Forward pass of MACE model"""
+    def forward(self, atomic_numbers, positions, cell=None, pbc=False, compute_stress=False):
+        """Forward pass of MACE model.
+        
+        Args:
+            atomic_numbers: Atomic numbers of atoms
+            positions: Atomic positions, shape [num_atoms, 3]
+            cell: Unit cell matrix, shape [3, 3], optional
+            pbc: Periodic boundary conditions, default False
+            compute_stress: Whether to compute stress tensor, default False
+            
+        Returns:
+            total_energy: Total energy of the system
+            forces: Forces on atoms, shape [num_atoms, 3]
+            stress: Stress tensor (Voigt notation), shape [6], optional
+        """
         # Convert atomic numbers to indices
         atom_indices = atomic_number_to_index(atomic_numbers)
         atom_indices = paddle.to_tensor(atom_indices, dtype='int64')
@@ -68,10 +81,47 @@ class MACE(nn.Layer):
         total_energy = atomic_energies.sum()
 
         # Compute forces by differentiating energy with respect to positions
-        forces = -paddle.grad(total_energy, positions)[0]
+        forces = -paddle.grad(total_energy, positions, create_graph=compute_stress)[0]
+
+        if compute_stress and cell is not None:
+            # Compute stress tensor by differentiating energy with respect to cell
+            # stress_ij = (1/V) * sum_k(dE/dcell_ik * cell_jk)
+            volume = paddle.abs(paddle.linalg.det(cell))
+            dE_dcell = paddle.grad(total_energy, cell, create_graph=False)[0]
+            
+            # Compute stress tensor
+            stress = paddle.zeros([3, 3])
+            for i in range(3):
+                for j in range(3):
+                    stress[i, j] = paddle.sum(dE_dcell[i, :] * cell[j, :]) / volume
+            
+            # Convert to Voigt notation: [xx, yy, zz, yz, xz, xy]
+            stress_voigt = paddle.stack([
+                stress[0, 0],
+                stress[1, 1],
+                stress[2, 2],
+                (stress[1, 2] + stress[2, 1]) / 2.0,
+                (stress[0, 2] + stress[2, 0]) / 2.0,
+                (stress[0, 1] + stress[1, 0]) / 2.0
+            ])
+            
+            return total_energy, forces, stress_voigt
 
         return total_energy, forces
 
-    def predict(self, atomic_numbers, positions, cell=None, pbc=False):
-        """Predict energy and forces"""
-        return self.forward(atomic_numbers, positions, cell, pbc)
+    def predict(self, atomic_numbers, positions, cell=None, pbc=False, compute_stress=False):
+        """Predict energy, forces and optionally stress.
+        
+        Args:
+            atomic_numbers: Atomic numbers of atoms
+            positions: Atomic positions, shape [num_atoms, 3]
+            cell: Unit cell matrix, shape [3, 3], optional
+            pbc: Periodic boundary conditions, default False
+            compute_stress: Whether to compute stress tensor, default False
+            
+        Returns:
+            total_energy: Total energy of the system
+            forces: Forces on atoms, shape [num_atoms, 3]
+            stress: Stress tensor (Voigt notation), shape [6], optional
+        """
+        return self.forward(atomic_numbers, positions, cell, pbc, compute_stress)

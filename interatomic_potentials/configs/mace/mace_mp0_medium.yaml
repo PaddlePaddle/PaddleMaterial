@@ -1,0 +1,66 @@
+model:
+  name: MACE
+  hidden_dim: 128
+  num_layers: 2
+  num_basis: 8
+  r_max: 6.0
+  num_elements: 89
+
+dataset:
+  name: XYZDataset
+  train_path: data/mptrj/train.extxyz
+  valid_path: data/mptrj/valid.extxyz
+  test_path: data/mptrj/test.extxyz
+  r_max: 6.0
+
+dataloader:
+  batch_size: 8
+  num_workers: 4
+  shuffle: true
+
+optimizer:
+  name: Adam
+  learning_rate: 0.001
+  weight_decay: 0.0
+
+lr_scheduler:
+  name: CosineAnnealingLR
+  T_max: 200
+  eta_min: 0.000001
+
+loss:
+  name: MSELoss
+  energy_weight: 1.0
+  force_weight: 100.0
+  stress_weight: 1.0
+
+metric:
+  name: MAE
+  energy_weight: 1.0
+  force_weight: 1.0
+  stress_weight: 1.0
+
+trainer:
+  name: MACETrainer
+  max_epochs: 200
+  save_dir: checkpoints
+  log_dir: logs
+  save_interval: 10
+  eval_interval: 5
+
+predictor:
+  name: MACEPredictor
+  model_path: checkpoints/mace_mp0_best.pdparams
+
+save:
+  save_best: true
+  save_last: true
+  save_interval: 10
+
+log:
+  log_interval: 100
+  log_level: info
+
+eval:
+  eval_interval: 5
+  eval_metrics: ["MAE"]
