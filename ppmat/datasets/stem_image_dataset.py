@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict
 from typing import List
 from typing import Optional
+from urllib.parse import urlparse
 
 import numpy as np
 import paddle
@@ -153,16 +154,10 @@ class STEMImageDataset(paddle.io.Dataset):
 
         for candidate_root in candidate_roots:
             matches = self._find_data_roots(candidate_root)
-            if not matches:
+            selected_root = self._select_data_root(candidate_root, matches)
+            if selected_root is None:
                 continue
-            if len(matches) > 1:
-                raise FileNotFoundError(
-                    "Multiple candidate dataset roots were found under "
-                    f"'{candidate_root}': {[str(m) for m in matches]}. "
-                    "Please provide a more specific local `data_path` or explicit `url`."
-                )
-
-            data_root_candidate = matches[0]
+            data_root_candidate = selected_root
             if self.split is not None and data_root_candidate == candidate_root:
                 logger.warning(
                     f"Split '{self.split}' requested but legacy format detected. "
@@ -223,6 +218,51 @@ class STEMImageDataset(paddle.io.Dataset):
                     candidate_roots.append(root)
         return candidate_roots
 
+    def _select_data_root(
+        self, candidate_root: Path, matches: List[Path]
+    ) -> Optional[Path]:
+        if not matches:
+            return None
+        if len(matches) == 1:
+            return matches[0]
+
+        preferred_names = self._get_preferred_root_names()
+        for preferred_name in preferred_names:
+            preferred_matches = [path for path in matches if path.name == preferred_name]
+            if len(preferred_matches) == 1:
+                logger.info(
+                    "Resolved dataset root '%s' under '%s' from multiple candidates: %s"
+                    % (
+                        preferred_matches[0],
+                        candidate_root,
+                        [str(path) for path in matches],
+                    )
+                )
+                return preferred_matches[0]
+
+        raise FileNotFoundError(
+            "Multiple candidate dataset roots were found under "
+            f"'{candidate_root}': {[str(path) for path in matches]}. "
+            f"Tried preferred names: {preferred_names or ['<none>']}. "
+            "Please provide a more specific local `data_path` or explicit `url`."
+        )
+
+    def _get_preferred_root_names(self) -> List[str]:
+        preferred_names: List[str] = []
+        for name in (self.data_root.name, self._infer_download_root_name()):
+            if name and name not in preferred_names:
+                preferred_names.append(name)
+        return preferred_names
+
+    def _infer_download_root_name(self) -> Optional[str]:
+        if not self.url:
+            return None
+        parsed_path = urlparse(self.url).path
+        archive_name = Path(parsed_path).name
+        if not archive_name:
+            return None
+        return Path(archive_name).stem
+
     @classmethod
     def _infer_default_url(cls, data_path: str) -> Optional[str]:
         key = Path(data_path).name
@@ -245,9 +285,7 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def _locate_data_root(self, base_root: Path) -> Optional[Path]:
         matches = self._find_data_roots(base_root)
-        if not matches:
-            return None
-        return matches[0]
+        return self._select_data_root(base_root, matches)
 
     def _find_data_roots(self, base_root: Path) -> List[Path]:
         if not base_root.exists():
@@ -258,7 +296,7 @@ class STEMImageDataset(paddle.io.Dataset):
         for _ in range(2):
             next_frontier: List[Path] = []
             for root in frontier:
-                for child in root.iterdir():
+                for child in sorted(root.iterdir()):
                     if child.is_dir():
                         candidate_roots.append(child)
                         next_frontier.append(child)
