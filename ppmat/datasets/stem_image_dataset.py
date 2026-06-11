@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+from typing import Callable
 from pathlib import Path
 from typing import Dict
 from typing import List
@@ -23,15 +25,14 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from ppmat.utils import download as download_utils
+from ppmat.utils import download
 from ppmat.utils import logger
 
 
 class STEMImageDataset(paddle.io.Dataset):
     """Dataset for paired STEM image restoration/enhancement.
 
-    Supports automatic download and extraction (zip/tar/tar.gz) through
-    ``ppmat.utils.download.get_datasets_path_from_url``.
+    Supports automatic download and extraction through ``ppmat.utils.download``.
 
     Expected directory layout after extraction:
         data_path/
@@ -86,6 +87,7 @@ class STEMImageDataset(paddle.io.Dataset):
         file_suffix: str = ".png",
         strict_index_naming: bool = True,
         scale_to_unit: bool = False,
+        transforms: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         url: Optional[str] = None,
         md5: Optional[str] = None,
         download: bool = True,
@@ -103,6 +105,7 @@ class STEMImageDataset(paddle.io.Dataset):
             file_suffix: File extension for images (e.g., '.png', '.tif').
             strict_index_naming: If True, expects files named as {idx}{suffix}.
             scale_to_unit: If True, scales pixel values to [0, 1].
+            transforms: Optional per-sample transforms built by ``build_dataloader``.
             url: URL to download the dataset from. Overrides default URL.
             md5: MD5 checksum for downloaded file. Optional.
             download: Whether to automatically download if data not found.
@@ -117,18 +120,18 @@ class STEMImageDataset(paddle.io.Dataset):
         self.file_suffix = file_suffix
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
+        self.transforms = transforms
 
         self.url = url if url is not None else self._infer_default_url(data_path)
         self.md5 = (
             md5 if md5 is not None else self._infer_default_md5(data_path) or self.md5
         )
+        if data_count is not None and int(data_count) < 0:
+            raise ValueError("`data_count` must be None or a non-negative integer.")
         self.data_root = Path(data_path)
-        self.downloaded_root: Optional[Path] = None
-
-        if self._locate_data_root(self.data_root) is None and (
-            download or force_download
-        ):
-            self.downloaded_root = self._download_dataset(force_download)
+        self.downloaded_root = self._maybe_download_dataset(
+            download=download, force_download=force_download
+        )
 
         # Determine actual data directory based on split
         self.data_dir = self._resolve_data_dir()
@@ -146,21 +149,13 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def _resolve_data_dir(self) -> Path:
         """Resolve the actual data directory based on split configuration."""
-        candidate_roots = [self.data_root]
-        if self.downloaded_root is not None:
-            for root in [self.downloaded_root, self.downloaded_root.parent]:
-                if root != self.data_root and root not in candidate_roots:
-                    candidate_roots.append(root)
+        candidate_roots = self._get_candidate_roots()
 
         for candidate_root in candidate_roots:
             matches = self._find_data_roots(candidate_root)
             if not matches:
                 continue
-            if (
-                self.downloaded_root is not None
-                and candidate_root == self.downloaded_root.parent
-                and len(matches) > 1
-            ):
+            if len(matches) > 1:
                 raise FileNotFoundError(
                     "Multiple candidate dataset roots were found under "
                     f"'{candidate_root}': {[str(m) for m in matches]}. "
@@ -185,8 +180,18 @@ class STEMImageDataset(paddle.io.Dataset):
             f"'{self.noisy_subdir}' and '{self.target_subdir}' under: {searched_roots}"
         )
 
+    def _maybe_download_dataset(
+        self, download: bool = True, force_download: bool = False
+    ) -> Optional[Path]:
+        """Download dataset when local data root cannot be resolved."""
+        if not force_download and self._locate_data_root(self.data_root) is not None:
+            return None
+        if not (download or force_download):
+            return None
+        return self._download_dataset(force_download=force_download)
+
     def _download_dataset(self, force_download: bool = False) -> Path:
-        """Download dataset with built-in ppmat download utility."""
+        """Delegate dataset download to the shared ppmat download utility."""
         if not self.url:
             candidate = ", ".join(sorted(self._DEFAULT_URL_MAP.keys()))
             raise FileNotFoundError(
@@ -198,19 +203,25 @@ class STEMImageDataset(paddle.io.Dataset):
             f"Dataset root {self.data_root} not found. Will download it now."
         )
         if force_download:
-            downloaded_root = download_utils.get_path_from_url(
+            downloaded_root = download.get_path_from_url(
                 self.url,
-                download_utils.DATASETS_HOME,
+                download.DATASETS_HOME,
                 md5sum=self.md5,
                 check_exist=False,
                 decompress=True,
             )
         else:
-            downloaded_root = download_utils.get_datasets_path_from_url(
-                self.url, self.md5
-            )
+            downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return Path(downloaded_root)
+
+    def _get_candidate_roots(self) -> List[Path]:
+        candidate_roots = [self.data_root]
+        if self.downloaded_root is not None:
+            for root in (self.downloaded_root, self.downloaded_root.parent):
+                if root != self.data_root and root not in candidate_roots:
+                    candidate_roots.append(root)
+        return candidate_roots
 
     @classmethod
     def _infer_default_url(cls, data_path: str) -> Optional[str]:
@@ -279,46 +290,112 @@ class STEMImageDataset(paddle.io.Dataset):
             and (root / self.target_subdir).exists()
         )
 
+    def _list_image_files(self, directory: Path) -> List[Path]:
+        return sorted(
+            path for path in directory.glob(f"*{self.file_suffix}") if path.is_file()
+        )
+
     def _build_samples(self, data_count: int | None) -> List[Dict[str, str]]:
         """Build list of sample dictionaries."""
         if not self.strict_index_naming:
             return self._build_matched_name_samples(data_count)
+        return self._build_indexed_samples(data_count)
+
+    def _build_indexed_samples(self, data_count: int | None) -> List[Dict[str, str]]:
+        noisy_files = self._list_image_files(self.noisy_dir)
+        target_files = self._list_image_files(self.target_dir)
+        noisy_index_map = self._build_index_map(noisy_files, self.noisy_dir)
+        target_index_map = self._build_index_map(target_files, self.target_dir)
+
+        if data_count is None:
+            common_indices = sorted(set(noisy_index_map) & set(target_index_map))
+            if not common_indices:
+                raise FileNotFoundError(
+                    "No matched indexed image pairs were found under "
+                    f"'{self.noisy_dir}' and '{self.target_dir}'."
+                )
+            max_index = common_indices[-1]
+            missing_indices = [
+                idx
+                for idx in range(max_index + 1)
+                if idx not in noisy_index_map or idx not in target_index_map
+            ]
+            if missing_indices:
+                raise FileNotFoundError(
+                    "Strict indexed naming expects contiguous pairs from 0. "
+                    f"Missing indices: {missing_indices[:10]}. "
+                    "Use `strict_index_naming=False` for arbitrary filenames."
+                )
+            expected_indices = list(range(max_index + 1))
+        else:
+            expected_indices = list(range(int(data_count)))
 
         samples: List[Dict[str, str]] = []
-        if data_count is None:
-            data_count = len(sorted(self.noisy_dir.glob(f"*{self.file_suffix}")))
-
-        for idx in range(int(data_count)):
-            name = f"{idx}{self.file_suffix}"
-            noisy_path = self.noisy_dir / name
-            target_path = self.target_dir / name
+        for idx in expected_indices:
+            noisy_path = noisy_index_map.get(idx)
+            target_path = target_index_map.get(idx)
+            if noisy_path is None:
+                raise FileNotFoundError(
+                    f"Noisy image for index {idx} not found in '{self.noisy_dir}'."
+                )
+            if target_path is None:
+                raise FileNotFoundError(
+                    f"Target image for index {idx} not found in '{self.target_dir}'."
+                )
             if not noisy_path.exists():
                 raise FileNotFoundError(f"Noisy image not found: {noisy_path}")
             if not target_path.exists():
                 raise FileNotFoundError(f"Target image not found: {target_path}")
             samples.append(
                 {
-                    "name": name,
+                    "name": noisy_path.name,
                     "noisy_path": str(noisy_path),
                     "target_path": str(target_path),
                 }
             )
         return samples
 
+    def _build_index_map(
+        self, files: List[Path], directory: Path
+    ) -> Dict[int, Path]:
+        index_map: Dict[int, Path] = {}
+        invalid_names: List[str] = []
+        for path in files:
+            if not path.stem.isdigit():
+                invalid_names.append(path.name)
+                continue
+            index = int(path.stem)
+            if index in index_map:
+                raise ValueError(
+                    f"Duplicate indexed file '{path.name}' found in '{directory}'."
+                )
+            index_map[index] = path
+
+        if invalid_names:
+            raise ValueError(
+                "Strict indexed naming requires filenames like '0"
+                f"{self.file_suffix}'. Invalid files in '{directory}': "
+                f"{invalid_names[:10]}"
+            )
+        return index_map
+
     def _build_matched_name_samples(
         self, data_count: int | None
     ) -> List[Dict[str, str]]:
         noisy_files = {
             path.name: path
-            for path in self.noisy_dir.glob(f"*{self.file_suffix}")
-            if path.is_file()
+            for path in self._list_image_files(self.noisy_dir)
         }
         target_files = {
             path.name: path
-            for path in self.target_dir.glob(f"*{self.file_suffix}")
-            if path.is_file()
+            for path in self._list_image_files(self.target_dir)
         }
         common_names = sorted(set(noisy_files.keys()) & set(target_files.keys()))
+        if not common_names:
+            raise FileNotFoundError(
+                "No matched image pairs were found under "
+                f"'{self.noisy_dir}' and '{self.target_dir}'."
+            )
         if data_count is not None:
             common_names = common_names[: int(data_count)]
 
@@ -356,4 +433,6 @@ class STEMImageDataset(paddle.io.Dataset):
         # Backward compatibility for legacy code paths that read `gt_enhance`.
         if self.target_subdir != "gt_enhance":
             output["gt_enhance"] = target
+        if self.transforms is not None:
+            output = self.transforms(output)
         return output
