@@ -16,112 +16,52 @@ from __future__ import annotations
 
 import argparse
 import copy
-from abc import ABC, abstractmethod
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 from typing import Dict
 from typing import Optional
-from typing import Type
 
 import numpy as np
 import paddle
 from omegaconf import OmegaConf
 from PIL import Image
 
-from ppmat.datasets.stem_image_dataset import STEMImageDataset
+from ppmat.datasets import build_dataloader as build_ppmat_dataloader
 from ppmat.predictor import BasePredictor
 from ppmat.utils import logger
 
 
 def _normalize_split(split: Optional[str]) -> Optional[str]:
-    if split is None:
-        return None
     if split == "validation":
         return "val"
     return split
 
 
-CASE_PROCESSOR_REGISTRY: Dict[str, Type["BaseCaseProcessor"]] = {}
-
-
-def register_case_processor(cls: Type["BaseCaseProcessor"]) -> Type["BaseCaseProcessor"]:
-    case_name = cls.case_name.strip().lower()
-    if not case_name:
-        raise ValueError("Case processor must define a non-empty `case_name`.")
-    CASE_PROCESSOR_REGISTRY[case_name] = cls
-    return cls
-
-
-class BaseCaseProcessor(ABC):
-    """
-    Case-level hooks for custom data processing and output processing.
-
-    To add a new model case:
-    1. Subclass BaseCaseProcessor.
-    2. Implement the abstract methods.
-    3. Register with @register_case_processor.
-    """
-
-    case_name = ""
-
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-
-    @abstractmethod
-    def build_dataset(self, args: argparse.Namespace) -> paddle.io.Dataset:
-        raise NotImplementedError
-
-    def prepare_model_input(
+class SpectrumPredictor(BasePredictor):
+    def __init__(
         self,
-        sample: Dict[str, Any],
-        index: int,
-        args: argparse.Namespace,
-    ) -> Any:
-        return sample
+        device: str,
+        config_path: Optional[str] = None,
+        checkpoint_path: Optional[str] = None,
+        model_name: Optional[str] = None,
+        weights_name: Optional[str] = None,
+    ):
+        paddle.set_device(device)
+        super().__init__(
+            model_name=model_name,
+            weights_name=weights_name,
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            work_dir="",
+            device=device,
+        )
+        self.load_inference_model()
 
-    def forward_model(
-        self,
-        model: paddle.nn.Layer,
-        model_input: Any,
-        args: argparse.Namespace,
-    ) -> Any:
-        if hasattr(model, "predict"):
-            return model.predict(model_input)
-        return model(model_input)
-
-    @abstractmethod
-    def parse_model_output(
-        self,
-        model_output: Any,
-        sample: Dict[str, Any],
-        index: int,
-        args: argparse.Namespace,
-    ) -> Any:
-        raise NotImplementedError
-
-    @abstractmethod
-    def save_prediction(
-        self,
-        parsed_output: Any,
-        sample: Dict[str, Any],
-        index: int,
-        output_dir: Path,
-        args: argparse.Namespace,
-    ) -> Path:
-        raise NotImplementedError
-
-
-@register_case_processor
-class SFINCaseProcessor(BaseCaseProcessor):
-    case_name = "sfin"
-
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        model_init = config.get("Model", {}).get("__init_params__", {})
+        model_init = self.config.get("Model", {}).get("__init_params__", {})
         self.target_name = model_init.get("target_name", "gt_enhance")
 
-    def _resolve_dataset_init_params(self, split: Optional[str]) -> Dict[str, Any]:
+    def _resolve_dataloader_config(self, split: Optional[str]) -> Dict[str, Any]:
         dataset_cfg_root = self.config.get("Dataset", {})
         if not isinstance(dataset_cfg_root, dict):
             return {}
@@ -140,66 +80,79 @@ class SFINCaseProcessor(BaseCaseProcessor):
             if not isinstance(dataset_cfg, dict):
                 continue
             if dataset_cfg.get("__class_name__") == "STEMImageDataset":
-                return copy.deepcopy(dataset_cfg.get("__init_params__", {}))
-        return {}
+                return copy.deepcopy(branch_cfg)
 
-    def build_dataset(self, args: argparse.Namespace) -> paddle.io.Dataset:
-        init_params = self._resolve_dataset_init_params(args.split)
+        return {
+            "dataset": {
+                "__class_name__": "STEMImageDataset",
+                "__init_params__": {},
+            },
+            "sampler": {
+                "__class_name__": "BatchSampler",
+                "__init_params__": {
+                    "shuffle": False,
+                    "drop_last": False,
+                    "batch_size": 1,
+                },
+            },
+            "loader": {
+                "num_workers": 0,
+                "use_shared_memory": False,
+                "collate_fn": "DefaultCollator",
+            },
+        }
 
-        init_params["data_path"] = args.data_path or init_params.get("data_path", "./data_test")
-        init_params["file_suffix"] = args.file_suffix or init_params.get("file_suffix", ".png")
-        init_params["split"] = (
-            _normalize_split(args.split)
-            if args.split is not None
-            else init_params.get("split", None)
-        )
+    def build_dataloader(self, args: argparse.Namespace) -> paddle.io.DataLoader:
+        dataloader_cfg = self._resolve_dataloader_config(args.split)
+        dataset_cfg = dataloader_cfg.setdefault("dataset", {})
+        dataset_cfg["__class_name__"] = "STEMImageDataset"
+        init_params = dataset_cfg.setdefault("__init_params__", {})
 
+        if args.data_path is not None:
+            init_params["data_path"] = args.data_path
+        else:
+            init_params.setdefault("data_path", "./data_test")
+        if args.file_suffix is not None:
+            init_params["file_suffix"] = args.file_suffix
+        else:
+            init_params.setdefault("file_suffix", ".png")
+        if args.split is not None:
+            init_params["split"] = _normalize_split(args.split)
         if args.data_count > 0:
             init_params["data_count"] = args.data_count
-        else:
-            init_params["data_count"] = None
-
         if args.noisy_subdir is not None:
             init_params["noisy_subdir"] = args.noisy_subdir
         if args.target_subdir is not None:
             init_params["target_subdir"] = args.target_subdir
-
-        # Preserve config defaults unless CLI explicitly overrides.
         if args.download is not None:
             init_params["download"] = bool(args.download)
         if args.force_download is not None:
             init_params["force_download"] = bool(args.force_download)
-        return STEMImageDataset(**init_params)
 
-    def prepare_model_input(
-        self,
-        sample: Dict[str, Any],
-        index: int,
-        args: argparse.Namespace,
-    ) -> Dict[str, Any]:
-        if not isinstance(sample, dict):
-            return sample
+        loader_cfg = dataloader_cfg.setdefault("loader", {})
+        loader_cfg.setdefault("num_workers", 0)
+        loader_cfg.setdefault("use_shared_memory", False)
+        loader_cfg.setdefault("collate_fn", "DefaultCollator")
+        sampler_cfg = dataloader_cfg.setdefault("sampler", {})
+        sampler_cfg.setdefault("__class_name__", "BatchSampler")
+        sampler_cfg.setdefault(
+            "__init_params__",
+            {"shuffle": False, "drop_last": False, "batch_size": 1},
+        )
 
-        model_init = self.config.get("Model", {}).get("__init_params__", {})
-        input_key = model_init.get("input_name", "noisy")
-        key_candidates = [input_key, "image", "noisy", "input", "x"]
+        return build_ppmat_dataloader(dataloader_cfg)
 
-        model_input = dict(sample)
-        for key in key_candidates:
-            x = model_input.get(key)
-            if isinstance(x, paddle.Tensor):
-                if x.ndim == 3:
-                    model_input[key] = x.unsqueeze(0)
-                elif x.ndim == 2:
-                    model_input[key] = x.unsqueeze(0).unsqueeze(0)
-                break
-        return model_input
+    def predict_batch(self, batch: Dict[str, Any]) -> Any:
+        if hasattr(self.model, "predict"):
+            output = self.model.predict(batch)
+        else:
+            output = self.model(batch)
+        return self.post_process(output)
 
     def _pick_prediction_tensor(self, output: Any) -> paddle.Tensor:
         if isinstance(output, dict):
             if "pred_dict" in output and isinstance(output["pred_dict"], dict):
                 output = output["pred_dict"]
-
             for key in [self.target_name, "pred", "output", "enhanced", "image"]:
                 if key in output and output[key] is not None:
                     pred = output[key]
@@ -229,9 +182,9 @@ class SFINCaseProcessor(BaseCaseProcessor):
     def parse_model_output(
         self,
         model_output: Any,
-        sample: Dict[str, Any],
-        index: int,
-        args: argparse.Namespace,
+        sample: Optional[Dict[str, Any]] = None,
+        index: int = 0,
+        args: Optional[argparse.Namespace] = None,
     ) -> np.ndarray:
         pred = self._pick_prediction_tensor(model_output)
         pred = paddle.clip(pred, min=0.0, max=255.0)
@@ -252,6 +205,12 @@ class SFINCaseProcessor(BaseCaseProcessor):
         args: argparse.Namespace,
     ) -> Path:
         file_name = sample.get("name", f"{index}{args.file_suffix or '.png'}")
+        if isinstance(file_name, (list, tuple)):
+            file_name = (
+                file_name[0]
+                if file_name
+                else f"{index}{args.file_suffix or '.png'}"
+            )
         if args.save_suffix:
             suffix = args.save_suffix
             if not suffix.startswith("."):
@@ -264,84 +223,38 @@ class SFINCaseProcessor(BaseCaseProcessor):
         Image.fromarray(parsed_output).save(save_path)
         return save_path
 
-
-class SpectrumPredictor(BasePredictor):
-    def __init__(
-        self,
-        case: str,
-        device: str,
-        config_path: Optional[str] = None,
-        checkpoint_path: Optional[str] = None,
-        model_name: Optional[str] = None,
-        weights_name: Optional[str] = None,
-    ):
-        self.case = case.strip().lower()
-        paddle.set_device(device)
-        super().__init__(
-            model_name=model_name,
-            weights_name=weights_name,
-            config_path=config_path,
-            checkpoint_path=checkpoint_path,
-            work_dir="",
-            device=device,
-        )
-        self.load_inference_model()
-
-        self.case_processor = self._build_case_processor(self.case)
-
-    def _build_case_processor(self, case: str) -> BaseCaseProcessor:
-        processor_cls = CASE_PROCESSOR_REGISTRY.get(case)
-        if processor_cls is None:
-            available = ", ".join(sorted(CASE_PROCESSOR_REGISTRY.keys()))
-            raise ValueError(f"Unsupported case '{case}'. Available cases: [{available}]")
-        return processor_cls(self.config)
-
     def run(self, args: argparse.Namespace) -> list[Path]:
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        dataset = self.case_processor.build_dataset(args)
-        if len(dataset) == 0:
+        dataloader = self.build_dataloader(args)
+        if dataloader is None or len(dataloader.dataset) == 0:
             raise ValueError("No samples found in dataset.")
 
         saved_paths = []
         context = paddle.no_grad() if self.eval_with_no_grad else nullcontext()
         with context:
-            for idx in range(len(dataset)):
-                sample = dataset[idx]
-                model_input = self.case_processor.prepare_model_input(sample, idx, args)
-                model_output = self.case_processor.forward_model(
-                    self.model,
-                    model_input,
-                    args,
-                )
-                parsed_output = self.case_processor.parse_model_output(
-                    model_output,
-                    sample,
-                    idx,
-                    args,
-                )
-                save_path = self.case_processor.save_prediction(
+            for idx, batch in enumerate(dataloader):
+                model_output = self.predict_batch(batch)
+                parsed_output = self.parse_model_output(model_output, batch, idx, args)
+                save_path = self.save_prediction(
                     parsed_output,
-                    sample,
+                    batch,
                     idx,
                     output_dir,
                     args,
                 )
                 saved_paths.append(save_path)
-
         return saved_paths
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generic spectrum enhancement prediction with case-level hooks."
-    )
+    parser = argparse.ArgumentParser(description="SFIN prediction entry.")
     parser.add_argument(
         "--case",
         type=str,
         default="sfin",
-        help="Prediction case name. Extend by registering a new case processor.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--model_name",
@@ -349,8 +262,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional predefined model name from MODEL_REGISTRY. "
-            "If omitted, SFIN prediction can load the default checkpoint URL "
-            "from `Predict.checkpoint_path` in the config."
+            "If omitted, the predictor loads `Predict.checkpoint_path` from the config."
         ),
     )
     parser.add_argument(
@@ -385,7 +297,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         choices=["train", "val", "validation", "test"],
-        help="Dataset split to use. If omitted, case processor chooses default split.",
+        help="Dataset split to use. If omitted, pick test/val/train in that order.",
     )
     parser.add_argument(
         "--output_dir",
@@ -478,9 +390,8 @@ def resolve_checkpoint_path_from_config(config_path: Optional[str]) -> Optional[
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    # Backward-compatible behavior:
-    # - Existing config+checkpoint workflow keeps working.
-    # - New model_name workflow is optional.
+    if args.case and args.case.lower() != "sfin":
+        raise ValueError("Only `sfin` is supported by this prediction entry.")
     if args.model_name:
         return
     if not args.config_path or not args.checkpoint_path:
@@ -496,7 +407,6 @@ def main():
         args.checkpoint_path = resolve_checkpoint_path_from_config(args.config_path)
     validate_args(args)
     predictor = SpectrumPredictor(
-        case=args.case,
         device=args.device,
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,

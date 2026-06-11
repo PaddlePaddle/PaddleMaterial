@@ -19,10 +19,8 @@ import copy
 import datetime
 import os
 import os.path as osp
-from abc import ABC
 from typing import Any
 from typing import Dict
-from typing import Type
 
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
@@ -34,7 +32,7 @@ from ppmat.datasets.transform import run_dataset_transform
 from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
-from ppmat.trainer.base_trainer import BaseTrainer
+from ppmat.trainer import build_trainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
@@ -71,216 +69,130 @@ def read_independent_dataloader_config(config: Dict[str, Any]):
     return train_loader, val_loader, test_loader
 
 
-TRAIN_CASE_REGISTRY: Dict[str, Type["BaseTrainCase"]] = {}
+def build_dataloaders(config: Dict[str, Any]):
+    set_signal_handlers()
+    dataset_cfg = config.get("Dataset", {})
+    if dataset_cfg.get("split_dataset_ratio") is not None:
+        loader = build_dataloader(dataset_cfg)
+        return loader.get("train"), loader.get("val"), loader.get("test")
+    return read_independent_dataloader_config(config)
 
 
-def register_train_case(cls: Type["BaseTrainCase"]) -> Type["BaseTrainCase"]:
-    case_name = cls.case_name.strip().lower()
-    if not case_name:
-        raise ValueError("Train case must define a non-empty `case_name`.")
-    TRAIN_CASE_REGISTRY[case_name] = cls
-    return cls
-
-
-class BaseTrainCase(ABC):
-    case_name = ""
-
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-
-    def build_dataloaders(self):
-        set_signal_handlers()
-        dataset_cfg = self.config.get("Dataset", {})
-        if dataset_cfg.get("split_dataset_ratio") is not None:
-            loader = build_dataloader(dataset_cfg)
-            train_loader = loader.get("train", None)
-            val_loader = loader.get("val", None)
-            test_loader = loader.get("test", None)
-            return train_loader, val_loader, test_loader
-        return read_independent_dataloader_config(self.config)
-
-    def _maybe_apply_dataset_transform(self, train_loader, model_cfg: Dict[str, Any]):
-        if not self.config["Global"].get("do_train", True):
-            return
-        dataset_trans_cfg = self.config.get("Dataset", {}).get("transform")
-        if dataset_trans_cfg is None:
-            return
-        if train_loader is None:
-            raise ValueError(
-                "Dataset.transform is configured, but train_loader is None."
-            )
-
-        trans_cfg = copy.deepcopy(dataset_trans_cfg)
-        trans_func = trans_cfg.pop("__class_name__", None)
-        trans_params = trans_cfg.pop("__init_params__", {})
-        if trans_func is None:
-            raise KeyError("Dataset.transform.__class_name__ is required.")
-
-        label_names = self.config.get("Global", {}).get("label_names")
-        if label_names is None:
-            raise KeyError(
-                "Global.label_names is required when Dataset.transform is enabled."
-            )
-
-        logger.info(f"Using dataset transform function: {trans_func}")
-        data_mean, data_std = run_dataset_transform(
-            trans_func, train_loader, label_names, **trans_params
-        )
-        logger.info(
-            f"Target is {label_names}, data mean is {data_mean}, data std is {data_std}"
-        )
-
-        model_cfg.setdefault("__init_params__", {})
-        model_cfg["__init_params__"]["data_mean"] = data_mean
-        model_cfg["__init_params__"]["data_std"] = data_std
-
-    def build_model(self, train_loader, val_loader, test_loader):
-        model_cfg = copy.deepcopy(self.config["Model"])
-        self._maybe_apply_dataset_transform(train_loader, model_cfg)
-        return build_model(model_cfg)
-
-    def build_optimizer(self, model, train_loader):
-        if self.config.get("Optimizer") is not None and self.config["Global"].get(
-            "do_train", True
-        ):
-            assert train_loader is not None, (
-                "train_loader must be defined when Optimizer is provided."
-            )
-            assert self.config["Trainer"].get("max_epochs") is not None, (
-                "Trainer.max_epochs must be defined when Optimizer is provided."
-            )
-            return build_optimizer(
-                self.config["Optimizer"],
-                model,
-                self.config["Trainer"]["max_epochs"],
-                len(train_loader),
-            )
-        return None, None
-
-    def build_metric(self):
-        metric_cfg = self.config.get("Metric")
-        return build_metric(metric_cfg) if metric_cfg is not None else None
-
-    def build_trainer(
-        self,
-        model,
-        train_loader,
-        val_loader,
-        optimizer,
-        lr_scheduler,
-        metric_func,
-    ):
-        return BaseTrainer(
-            self.config["Trainer"],
-            model,
-            train_dataloader=train_loader,
-            val_dataloader=val_loader,
-            optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
-            compute_metric_func_dict=metric_func,
-        )
-
-    def post_build_trainer(self, trainer, model, train_loader, val_loader, test_loader):
+def maybe_apply_dataset_transform(
+    config: Dict[str, Any],
+    train_loader,
+    model_cfg: Dict[str, Any],
+):
+    if not config["Global"].get("do_train", True):
         return
+    dataset_trans_cfg = config.get("Dataset", {}).get("transform")
+    if dataset_trans_cfg is None:
+        return
+    if train_loader is None:
+        raise ValueError("Dataset.transform is configured, but train_loader is None.")
 
-    def run(self, trainer, train_loader, val_loader, test_loader):
-        if self.config["Global"].get("do_train", True):
-            trainer.train()
-        if self.config["Global"].get("do_eval", False):
-            logger.info("Evaluating on validation set")
-            trainer.eval(val_loader)
-        if self.config["Global"].get("do_test", False):
-            logger.info("Evaluating on test set")
-            trainer.eval(test_loader)
+    trans_cfg = copy.deepcopy(dataset_trans_cfg)
+    trans_func = trans_cfg.pop("__class_name__", None)
+    trans_params = trans_cfg.pop("__init_params__", {})
+    if trans_func is None:
+        raise KeyError("Dataset.transform.__class_name__ is required.")
 
-
-@register_train_case
-class SFINTrainCase(BaseTrainCase):
-    case_name = "sfin"
-
-
-class TrainRunner:
-    def __init__(
-        self,
-        case: str,
-        config_path: str,
-        dynamic_args: list[str],
-        append_timestamp: bool = False,
-    ):
-        self.case = case.strip().lower()
-        self.config_path = config_path
-        self.dynamic_args = dynamic_args
-        self.append_timestamp = append_timestamp
-
-    def _build_case(self, config: Dict[str, Any]) -> BaseTrainCase:
-        case_cls = TRAIN_CASE_REGISTRY.get(self.case)
-        if case_cls is None:
-            available = ", ".join(sorted(TRAIN_CASE_REGISTRY.keys()))
-            raise ValueError(
-                f"Unsupported train case '{self.case}'. Available: [{available}]"
-            )
-        return case_cls(config)
-
-    def _load_and_merge_config(self):
-        cfg = OmegaConf.load(self.config_path)
-        cli_cfg = OmegaConf.from_dotlist(self.dynamic_args)
-        cfg = OmegaConf.merge(cfg, cli_cfg)
-
-        if self.append_timestamp or cfg["Trainer"].get("append_timestamp", False):
-            seed = cfg["Trainer"].get("seed", 42)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_output_dir = cfg["Trainer"]["output_dir"]
-            cfg["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
-        return cfg
-
-    def _save_config(self, cfg):
-        if dist.get_rank() == 0:
-            os.makedirs(cfg["Trainer"]["output_dir"], exist_ok=True)
-            config_name = os.path.basename(self.config_path)
-            OmegaConf.save(cfg, osp.join(cfg["Trainer"]["output_dir"], config_name))
-
-    @staticmethod
-    def _setup_runtime(config: Dict[str, Any]):
-        logger_path = osp.join(config["Trainer"]["output_dir"], "run.log")
-        logger.init_logger(log_file=logger_path)
-        logger.info(f"Logger saved to {logger_path}")
-
-        seed = config["Trainer"].get("seed", 42)
-        misc.set_random_seed(seed)
-        logger.info(f"Set random seed to {seed}")
-
-        enabled = config["Global"].get("prim_eager_enabled", False)
-        white_list = config["Global"].get("prim_backward_white_list", None)
-        setting_eager_mode(enabled, white_list)
-
-    def run(self):
-        cfg = self._load_and_merge_config()
-        self._save_config(cfg)
-        config = OmegaConf.to_container(cfg, resolve=True)
-
-        self._setup_runtime(config)
-
-        train_case = self._build_case(config)
-        train_loader, val_loader, test_loader = train_case.build_dataloaders()
-        model = train_case.build_model(train_loader, val_loader, test_loader)
-        optimizer, lr_scheduler = train_case.build_optimizer(model, train_loader)
-        metric_func = train_case.build_metric()
-        trainer = train_case.build_trainer(
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
-            metric_func=metric_func,
+    label_names = config.get("Global", {}).get("label_names")
+    if label_names is None:
+        raise KeyError(
+            "Global.label_names is required when Dataset.transform is enabled."
         )
-        train_case.post_build_trainer(
-            trainer,
+
+    logger.info(f"Using dataset transform function: {trans_func}")
+    data_mean, data_std = run_dataset_transform(
+        trans_func, train_loader, label_names, **trans_params
+    )
+    logger.info(
+        f"Target is {label_names}, data mean is {data_mean}, data std is {data_std}"
+    )
+
+    model_cfg.setdefault("__init_params__", {})
+    model_cfg["__init_params__"]["data_mean"] = data_mean
+    model_cfg["__init_params__"]["data_std"] = data_std
+
+
+def setup_runtime(config: Dict[str, Any]):
+    logger_path = osp.join(config["Trainer"]["output_dir"], "run.log")
+    logger.init_logger(log_file=logger_path)
+    logger.info(f"Logger saved to {logger_path}")
+
+    seed = config["Trainer"].get("seed", 42)
+    misc.set_random_seed(seed)
+    logger.info(f"Set random seed to {seed}")
+
+    enabled = config["Global"].get("prim_eager_enabled", False)
+    white_list = config["Global"].get("prim_backward_white_list", None)
+    setting_eager_mode(enabled, white_list)
+
+
+def build_components(config: Dict[str, Any]):
+    train_loader, val_loader, test_loader = build_dataloaders(config)
+
+    model_cfg = copy.deepcopy(config["Model"])
+    maybe_apply_dataset_transform(config, train_loader, model_cfg)
+    model = build_model(model_cfg)
+
+    trainer_runtime_cfg = config["Trainer"]
+    if "__init_params__" in trainer_runtime_cfg:
+        trainer_runtime_cfg = trainer_runtime_cfg.get("__init_params__", {}).get(
+            "config", trainer_runtime_cfg
+        )
+
+    if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
+        assert train_loader is not None, (
+            "train_loader must be defined when Optimizer is provided."
+        )
+        assert trainer_runtime_cfg.get("max_epochs") is not None, (
+            "Trainer.max_epochs must be defined when Optimizer is provided."
+        )
+        optimizer, lr_scheduler = build_optimizer(
+            config["Optimizer"],
             model,
-            train_loader,
-            val_loader,
-            test_loader,
+            trainer_runtime_cfg["max_epochs"],
+            len(train_loader),
         )
-        train_case.run(trainer, train_loader, val_loader, test_loader)
+    else:
+        optimizer, lr_scheduler = None, None
+
+    metric_cfg = config.get("Metric")
+    metric_func = build_metric(metric_cfg) if metric_cfg is not None else None
+
+    trainer_cfg = config["Trainer"]
+    if "__init_params__" not in trainer_cfg:
+        trainer_cfg = {
+            "__class_name__": "BaseTrainer",
+            "__init_params__": {"config": trainer_cfg},
+        }
+
+    trainer = build_trainer(
+        trainer_cfg,
+        model=model,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        compute_metric_func_dict=metric_func,
+    )
+    return trainer, train_loader, val_loader, test_loader
+
+
+def run(config: Dict[str, Any]):
+    setup_runtime(config)
+    trainer, train_loader, val_loader, test_loader = build_components(config)
+
+    if config["Global"].get("do_train", True):
+        trainer.train()
+    if config["Global"].get("do_eval", False):
+        logger.info("Evaluating on validation set")
+        trainer.eval(val_loader)
+    if config["Global"].get("do_test", False):
+        logger.info("Evaluating on test set")
+        trainer.eval(test_loader)
 
 
 def parse_args():
@@ -288,8 +200,8 @@ def parse_args():
     parser.add_argument(
         "--case",
         type=str,
-        default="sfin",
-        help="Train case name. Extend by registering a new train case.",
+        default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-c",
@@ -311,13 +223,24 @@ def main():
         fleet.init(is_collective=True)
 
     args, dynamic_args = parse_args()
-    runner = TrainRunner(
-        case=args.case,
-        config_path=args.config,
-        dynamic_args=dynamic_args,
-        append_timestamp=args.append_timestamp,
-    )
-    runner.run()
+
+    cfg = OmegaConf.load(args.config)
+    cli_cfg = OmegaConf.from_dotlist(dynamic_args)
+    cfg = OmegaConf.merge(cfg, cli_cfg)
+
+    if args.append_timestamp or cfg["Trainer"].get("append_timestamp", False):
+        seed = cfg["Trainer"].get("seed", 42)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_output_dir = cfg["Trainer"]["output_dir"]
+        cfg["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+
+    if dist.get_rank() == 0:
+        os.makedirs(cfg["Trainer"]["output_dir"], exist_ok=True)
+        config_name = os.path.basename(args.config)
+        OmegaConf.save(cfg, osp.join(cfg["Trainer"]["output_dir"], config_name))
+
+    config = OmegaConf.to_container(cfg, resolve=True)
+    run(config)
 
 
 if __name__ == "__main__":
