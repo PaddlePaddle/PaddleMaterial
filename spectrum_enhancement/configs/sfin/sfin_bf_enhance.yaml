@@ -5,7 +5,7 @@ Global:
   prim_eager_enabled: False
 
 Trainer:
-  max_epochs: 294
+  max_epochs: 434
   seed: 42
   output_dir: ./output/sfin_bf_enhance
   save_freq: 50

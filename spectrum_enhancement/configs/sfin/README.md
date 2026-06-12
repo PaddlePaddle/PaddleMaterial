@@ -137,11 +137,11 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">sfin_bf_enhance</td>
             <td nowrap="nowrap">BF test</td>
             <td nowrap="nowrap">gt_enhance</td>
-            <td nowrap="nowrap">31.595643 / 0.992208</td>
+            <td nowrap="nowrap">31.339841 / 0.992708</td>
             <td nowrap="nowrap">31.507519 / 0.989180</td>
-            <td nowrap="nowrap">aligned, PSNR rel. diff 0.280%</td>
+            <td nowrap="nowrap">aligned, PSNR rel. diff 0.532%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
-            <td nowrap="nowrap">~12.7 hours</td>
+            <td nowrap="nowrap">~19.1 hours</td>
             <td nowrap="nowrap"><a href="sfin_bf_enhance.yaml">sfin_bf_enhance</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_be.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_be_run.log">log</a></td>
         </tr>
@@ -169,7 +169,7 @@ For HAADF detect, the original SFIN-main metric protocol was also verified on
 `28.671135 / 0.963961`.
 
 For BF enhance, the original SFIN-main metric protocol was also verified on 100
-BF test images: Paddle `32.663727 / 0.987594`, Torch
+BF test images: Paddle `31.985411 / 0.987993`, Torch
 `32.295260 / 0.988141`.
 
 For BF detect, the original SFIN-main metric protocol was also verified on 100
