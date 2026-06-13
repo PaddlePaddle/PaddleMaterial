@@ -78,7 +78,6 @@ Dataset:
         noisy_subdir: "noisy"
         target_subdir: "gt_detect"
         file_suffix: ".png"
-        strict_index_naming: True
         scale_to_unit: False
         auto_download: True
     sampler:
@@ -102,7 +101,6 @@ Dataset:
         noisy_subdir: "noisy"
         target_subdir: "gt_detect"
         file_suffix: ".png"
-        strict_index_naming: True
         scale_to_unit: False
         auto_download: True
     sampler:
@@ -126,7 +124,6 @@ Dataset:
         noisy_subdir: "noisy"
         target_subdir: "gt_detect"
         file_suffix: ".png"
-        strict_index_naming: True
         scale_to_unit: False
         auto_download: True
     sampler:

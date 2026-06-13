@@ -40,10 +40,9 @@ class STEMImageDataset(paddle.io.Dataset):
       gt_detect/     # optional for prediction-only datasets
     ```
 
-    The handler also accepts ``root/<split>/...`` when a split directory is
-    prepared explicitly. If ``data_path`` is missing, the released SFIN archive
-    is downloaded automatically according to the basename of ``data_path``.
-    The model-facing keys are controlled by ``input_name`` and ``target_name``.
+    If ``data_path`` is missing, the released SFIN archive is downloaded
+    automatically according to the basename of ``data_path``. The model-facing
+    keys are controlled by ``input_name`` and ``target_name``.
     """
 
     name = "stem_image"
@@ -79,13 +78,11 @@ class STEMImageDataset(paddle.io.Dataset):
         self,
         data_path: str,
         target_subdir: Optional[str] = "gt_enhance",
-        split: Optional[str] = None,
         input_name: str = "noisy",
         target_name: Optional[str] = None,
         noisy_subdir: str = "noisy",
         file_suffix: str = ".png",
         data_count: Optional[int] = None,
-        strict_index_naming: bool = True,
         scale_to_unit: bool = False,
         transforms: Optional[Callable] = None,
         url: Optional[str] = None,
@@ -94,22 +91,16 @@ class STEMImageDataset(paddle.io.Dataset):
     ):
         super().__init__()
 
-        if split == "validation":
-            split = "val"
-        if split not in {None, "train", "val", "test"}:
-            raise ValueError("split must be one of None, 'train', 'val', or 'test'.")
         if data_count is not None and int(data_count) < 0:
             raise ValueError("data_count must be None or a non-negative integer.")
 
         self.data_path = data_path
-        self.split = split
         self.input_name = input_name
         self.target_name = target_name if target_name is not None else target_subdir
         self.noisy_subdir = noisy_subdir
         self.target_subdir = target_subdir
         self.file_suffix = file_suffix
-        self.data_count = data_count
-        self.strict_index_naming = strict_index_naming
+        self.data_count = int(data_count) if data_count is not None else None
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
         dataset_name = self._infer_dataset_name(data_path)
@@ -151,11 +142,37 @@ class STEMImageDataset(paddle.io.Dataset):
             f"Downloading {self.name} from {self.url}."
         )
         downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
+        downloaded_root = self._normalize_downloaded_root(downloaded_root)
+        downloaded_root = self._resolve_downloaded_data_root(
+            downloaded_root,
+            self._infer_dataset_name(data_path),
+        )
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return downloaded_root
 
+    @staticmethod
+    def _normalize_downloaded_root(downloaded_root: str) -> str:
+        if osp.exists(downloaded_root):
+            return downloaded_root
+
+        parent_root = osp.dirname(downloaded_root)
+        if parent_root and osp.isdir(parent_root):
+            return parent_root
+
+        return downloaded_root
+
+    def _resolve_downloaded_data_root(self, downloaded_root: str, dataset_name: str):
+        if self._has_data_dirs(downloaded_root):
+            return downloaded_root
+
+        named_root = osp.join(downloaded_root, dataset_name)
+        if self._has_data_dirs(named_root):
+            return named_root
+
+        return downloaded_root
+
     def _prepare_data_dirs(self):
-        data_root = self._resolve_data_root(self.root)
+        data_root = self.root
         noisy_root = osp.join(data_root, self.noisy_subdir)
         target_root = (
             osp.join(data_root, self.target_subdir)
@@ -169,7 +186,7 @@ class STEMImageDataset(paddle.io.Dataset):
             raise FileNotFoundError(f"Target directory not found: {target_root}")
         return data_root, noisy_root, target_root
 
-    def _contains_data_dirs(self, root: str) -> bool:
+    def _has_data_dirs(self, root: str) -> bool:
         noisy_root = osp.join(root, self.noisy_subdir)
         target_root = (
             osp.join(root, self.target_subdir)
@@ -178,47 +195,6 @@ class STEMImageDataset(paddle.io.Dataset):
         )
         return osp.isdir(noisy_root) and (
             target_root is None or osp.isdir(target_root)
-        )
-
-    def _walk_candidate_roots(self, root: str, max_depth: int = 2):
-        candidates = [root]
-        frontier = [(root, 0)]
-        while frontier:
-            current_root, depth = frontier.pop(0)
-            if depth >= max_depth or not osp.isdir(current_root):
-                continue
-            for child_name in sorted(os.listdir(current_root)):
-                child_root = osp.join(current_root, child_name)
-                if not osp.isdir(child_root):
-                    continue
-                candidates.append(child_root)
-                frontier.append((child_root, depth + 1))
-        return candidates
-
-    def _resolve_data_root(self, root: str) -> str:
-        candidates = self._walk_candidate_roots(root)
-
-        if self.split is not None:
-            for candidate in candidates:
-                split_root = osp.join(candidate, self.split)
-                if self._contains_data_dirs(split_root):
-                    return split_root
-            searched_roots = ", ".join(candidates)
-            raise FileNotFoundError(
-                f"Split '{self.split}' with data directories not found under "
-                f"{root}. Searched roots: {searched_roots}."
-            )
-
-        for candidate in candidates:
-            if not self._contains_data_dirs(candidate):
-                continue
-            return candidate
-
-        searched_roots = ", ".join(candidates)
-        raise FileNotFoundError(
-            "Cannot locate dataset directories "
-            f"'{self.noisy_subdir}' and '{self.target_subdir}' under {root}. "
-            f"Searched roots: {searched_roots}."
         )
 
     @staticmethod
@@ -250,11 +226,6 @@ class STEMImageDataset(paddle.io.Dataset):
             )
         return index_map
 
-    def _slice_by_data_count(self, samples):
-        if self.data_count is None:
-            return samples
-        return samples[: self.data_count]
-
     def _build_samples(self):
         noisy_files = sorted(
             [
@@ -279,16 +250,15 @@ class STEMImageDataset(paddle.io.Dataset):
         if not target_files:
             raise FileNotFoundError(f"No target images found under {self.target_root}.")
 
-        if self.strict_index_naming:
-            samples = self._build_indexed_pair_samples(noisy_files, target_files)
-        else:
-            samples = self._build_same_name_pair_samples(noisy_files, target_files)
+        samples = self._build_pair_samples(noisy_files, target_files)
         if not samples:
             raise FileNotFoundError(
                 f"No paired samples found under {self.noisy_root} "
                 f"and {self.target_root}."
             )
-        return self._slice_by_data_count(samples)
+        if self.data_count is not None:
+            samples = samples[: self.data_count]
+        return samples
 
     def _build_prediction_samples(self, noisy_files):
         samples = [
@@ -299,9 +269,11 @@ class STEMImageDataset(paddle.io.Dataset):
             }
             for file_name in noisy_files
         ]
-        return self._slice_by_data_count(samples)
+        if self.data_count is not None:
+            samples = samples[: self.data_count]
+        return samples
 
-    def _build_indexed_pair_samples(self, noisy_files, target_files):
+    def _build_pair_samples(self, noisy_files, target_files):
         noisy_map = self._build_index_map(
             noisy_files, self.noisy_root, self.file_suffix
         )
@@ -333,27 +305,6 @@ class STEMImageDataset(paddle.io.Dataset):
                 "name": noisy_map[idx],
             }
             for idx in common_indices
-        ]
-
-    def _build_same_name_pair_samples(self, noisy_files, target_files):
-        target_file_set = set(target_files)
-        noisy_file_set = set(noisy_files)
-        missing_target = sorted(noisy_file_set - target_file_set)
-        missing_noisy = sorted(target_file_set - noisy_file_set)
-        if missing_target or missing_noisy:
-            raise FileNotFoundError(
-                "Noisy and target images are not paired. "
-                f"Missing target files: {missing_target[:10]}, "
-                f"missing noisy files: {missing_noisy[:10]}."
-            )
-        return [
-            {
-                "noisy": file_name,
-                "target": file_name,
-                "name": file_name,
-            }
-            for file_name in noisy_files
-            if file_name in target_file_set
         ]
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
