@@ -292,7 +292,7 @@ def parse_args():
     parser.add_argument(
         "--config_path",
         type=str,
-        default="./spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml",
+        default=None,
         help="Path to the configuration file.",
     )
     parser.add_argument(
