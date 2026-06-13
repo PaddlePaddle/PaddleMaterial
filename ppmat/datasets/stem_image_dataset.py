@@ -103,9 +103,9 @@ class STEMImageDataset(paddle.io.Dataset):
         self.data_count = int(data_count) if data_count is not None else None
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
-        dataset_name = self._infer_dataset_name(data_path)
-        self.url = url if url is not None else self._get_dataset_url(dataset_name)
-        self.md5 = md5 if md5 is not None else self._get_dataset_md5(dataset_name)
+        self.dataset_name = osp.basename(osp.normpath(data_path))
+        self.url = url if url is not None else self.DATASET_URLS.get(self.dataset_name)
+        self.md5 = md5 if md5 is not None else self.DATASET_MD5S.get(self.dataset_name)
         self.auto_download = auto_download
 
         self.root = self._prepare_root(data_path, self.auto_download)
@@ -113,40 +113,38 @@ class STEMImageDataset(paddle.io.Dataset):
         self.samples = self._build_samples()
         self.file_names = [sample["name"] for sample in self.samples]
 
-    @classmethod
-    def _infer_dataset_name(cls, data_path: str) -> str:
-        return osp.basename(osp.normpath(data_path))
-
-    @classmethod
-    def _get_dataset_url(cls, dataset_name: str) -> Optional[str]:
-        return cls.DATASET_URLS.get(dataset_name, cls.url)
-
-    @classmethod
-    def _get_dataset_md5(cls, dataset_name: str) -> Optional[str]:
-        return cls.DATASET_MD5S.get(dataset_name, cls.md5)
-
     def _prepare_root(
         self,
         data_path: str,
         auto_download: bool,
     ) -> str:
         if osp.exists(data_path):
-            return data_path
-        if not auto_download or self.url is None:
-            raise FileNotFoundError(
-                f"Dataset path {data_path} not found. Please prepare data manually "
-                "or enable auto download with a valid url."
+            if self._has_data_dirs(data_path):
+                return data_path
+            if (
+                self.dataset_name not in self.DATASET_URLS
+                or not auto_download
+                or self.url is None
+            ):
+                return data_path
+            logger.message(
+                f"Dataset root {data_path} exists but does not contain "
+                f"'{self.noisy_subdir}' and '{self.target_subdir}'. "
+                f"Downloading {self.name} from {self.url}."
             )
-        logger.message(
-            f"Dataset root {data_path} not found. "
-            f"Downloading {self.name} from {self.url}."
-        )
+        else:
+            if not auto_download or self.url is None:
+                raise FileNotFoundError(
+                    f"Dataset path {data_path} not found. Please prepare data "
+                    "manually or enable auto download with a valid url."
+                )
+            logger.message(
+                f"Dataset root {data_path} not found. "
+                f"Downloading {self.name} from {self.url}."
+            )
         downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
         downloaded_root = self._normalize_downloaded_root(downloaded_root)
-        downloaded_root = self._resolve_downloaded_data_root(
-            downloaded_root,
-            self._infer_dataset_name(data_path),
-        )
+        downloaded_root = self._resolve_downloaded_data_root(downloaded_root)
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return downloaded_root
 
@@ -161,11 +159,14 @@ class STEMImageDataset(paddle.io.Dataset):
 
         return downloaded_root
 
-    def _resolve_downloaded_data_root(self, downloaded_root: str, dataset_name: str):
+    def _resolve_downloaded_data_root(self, downloaded_root: str):
+        if self.dataset_name not in self.DATASET_URLS:
+            return downloaded_root
+
         if self._has_data_dirs(downloaded_root):
             return downloaded_root
 
-        named_root = osp.join(downloaded_root, dataset_name)
+        named_root = osp.join(downloaded_root, self.dataset_name)
         if self._has_data_dirs(named_root):
             return named_root
 
