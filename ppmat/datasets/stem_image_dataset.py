@@ -14,13 +14,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+import os
+import os.path as osp
 from typing import Callable
-from pathlib import Path
 from typing import Dict
-from typing import List
 from typing import Optional
-from urllib.parse import urlparse
 
 import numpy as np
 import paddle
@@ -31,427 +29,335 @@ from ppmat.utils import logger
 
 
 class STEMImageDataset(paddle.io.Dataset):
-    """Dataset for paired STEM image restoration/enhancement.
+    """Paired STEM image dataset for spectrum enhancement tasks.
 
-    Supports automatic download and extraction through ``ppmat.utils.download``.
+    Expected layout:
 
-    Expected directory layout after extraction:
-        data_path/
-          train/
-            noisy/
-              0.png
-              1.png
-              ...
-            gt_enhance/
-              0.png
-              1.png
-              ...
-          val/
-            noisy/
-              ...
-            gt_enhance/
-              ...
-          test/
-            noisy/
-              ...
-            gt_enhance/
-              ...
+    ```text
+    root/
+      noisy/
+      gt_enhance/    # optional for prediction-only datasets
+      gt_detect/     # optional for prediction-only datasets
+    ```
 
-    Or legacy format (backward compatible):
-        data_path/
-          noisy/
-            0.png
-            ...
-          gt_enhance/
-            0.png
-            ...
+    The handler also accepts ``root/<split>/...`` when a split directory is
+    prepared explicitly. If ``data_path`` is missing, the released SFIN archive
+    is downloaded automatically according to the basename of ``data_path``.
+    The model-facing keys are controlled by ``input_name`` and ``target_name``.
     """
 
-    name = "stem_enhancement"
+    name = "stem_image"
     url = None
     md5 = None
-    _DEFAULT_URL_MAP = {
-        "data": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data.zip",
-        "data_test": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip",
-        "bf_data": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data.zip",
-        "bf_data_test": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip",
+
+    DATASET_URLS: Dict[str, str] = {
+        "data": (
+            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+            "SFIN_datasets/haadf_data.zip"
+        ),
+        "data_test": (
+            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+            "SFIN_datasets/haadf_data_test.zip"
+        ),
+        "bf_data": (
+            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+            "SFIN_datasets/bf_data.zip"
+        ),
+        "bf_data_test": (
+            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+            "SFIN_datasets/bf_data_test.zip"
+        ),
     }
-    _DEFAULT_MD5_MAP: Dict[str, str] = {}
+    DATASET_MD5S: Dict[str, Optional[str]] = {
+        "data": None,
+        "data_test": None,
+        "bf_data": None,
+        "bf_data_test": None,
+    }
 
     def __init__(
         self,
         data_path: str,
+        target_subdir: Optional[str] = "gt_enhance",
         split: Optional[str] = None,
-        data_count: int | None = None,
+        input_name: str = "noisy",
+        target_name: Optional[str] = None,
         noisy_subdir: str = "noisy",
-        target_subdir: str = "gt_enhance",
         file_suffix: str = ".png",
+        data_count: Optional[int] = None,
         strict_index_naming: bool = True,
         scale_to_unit: bool = False,
-        transforms: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        transforms: Optional[Callable] = None,
         url: Optional[str] = None,
         md5: Optional[str] = None,
-        download: bool = True,
-        force_download: bool = False,
+        auto_download: bool = True,
     ):
-        """Initialize STEMImageDataset.
-
-        Args:
-            data_path: Root directory for the dataset.
-            split: Dataset split, one of 'train', 'val', 'test', or None.
-                   If None, uses legacy format without split subdirectories.
-            data_count: Maximum number of samples to load. None means all.
-            noisy_subdir: Subdirectory name for noisy images.
-            target_subdir: Subdirectory name for target/ground truth images.
-            file_suffix: File extension for images (e.g., '.png', '.tif').
-            strict_index_naming: If True, expects files named as {idx}{suffix}.
-            scale_to_unit: If True, scales pixel values to [0, 1].
-            transforms: Optional per-sample transforms built by ``build_dataloader``.
-            url: URL to download the dataset from. Overrides default URL.
-            md5: MD5 checksum for downloaded file. Optional.
-            download: Whether to automatically download if data not found.
-            force_download: If True, re-download even if data exists.
-        """
         super().__init__()
 
+        if split == "validation":
+            split = "val"
+        if split not in {None, "train", "val", "test"}:
+            raise ValueError("split must be one of None, 'train', 'val', or 'test'.")
+        if data_count is not None and int(data_count) < 0:
+            raise ValueError("data_count must be None or a non-negative integer.")
+
+        self.data_path = data_path
         self.split = split
-        self.data_count = data_count
+        self.input_name = input_name
+        self.target_name = target_name if target_name is not None else target_subdir
         self.noisy_subdir = noisy_subdir
         self.target_subdir = target_subdir
         self.file_suffix = file_suffix
+        self.data_count = data_count
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
+        dataset_name = self._infer_dataset_name(data_path)
+        self.url = url if url is not None else self._get_dataset_url(dataset_name)
+        self.md5 = md5 if md5 is not None else self._get_dataset_md5(dataset_name)
+        self.auto_download = auto_download
 
-        self.url = url if url is not None else self._infer_default_url(data_path)
-        self.md5 = (
-            md5 if md5 is not None else self._infer_default_md5(data_path) or self.md5
-        )
-        if data_count is not None and int(data_count) < 0:
-            raise ValueError("`data_count` must be None or a non-negative integer.")
-        self.data_root = Path(data_path)
-        self.downloaded_root = self._maybe_download_dataset(
-            download=download, force_download=force_download
-        )
+        self.root = self._prepare_root(data_path, self.auto_download)
+        self.data_root, self.noisy_root, self.target_root = self._prepare_data_dirs()
+        self.samples = self._build_samples()
+        self.file_names = [sample["name"] for sample in self.samples]
 
-        # Determine actual data directory based on split
-        self.data_dir = self._resolve_data_dir()
+    @classmethod
+    def _infer_dataset_name(cls, data_path: str) -> str:
+        return osp.basename(osp.normpath(data_path))
 
-        # Set up noisy and target directories
-        self.noisy_dir = self.data_dir / noisy_subdir
-        self.target_dir = self.data_dir / target_subdir
+    @classmethod
+    def _get_dataset_url(cls, dataset_name: str) -> Optional[str]:
+        return cls.DATASET_URLS.get(dataset_name, cls.url)
 
-        if not self.noisy_dir.exists():
-            raise FileNotFoundError(f"Noisy directory not found: {self.noisy_dir}")
-        if not self.target_dir.exists():
-            raise FileNotFoundError(f"Target directory not found: {self.target_dir}")
+    @classmethod
+    def _get_dataset_md5(cls, dataset_name: str) -> Optional[str]:
+        return cls.DATASET_MD5S.get(dataset_name, cls.md5)
 
-        self.samples = self._build_samples(data_count)
-
-    def _resolve_data_dir(self) -> Path:
-        """Resolve the actual data directory based on split configuration."""
-        candidate_roots = self._get_candidate_roots()
-
-        for candidate_root in candidate_roots:
-            matches = self._find_data_roots(candidate_root)
-            selected_root = self._select_data_root(candidate_root, matches)
-            if selected_root is None:
-                continue
-            data_root_candidate = selected_root
-            if self.split is not None and data_root_candidate == candidate_root:
-                logger.warning(
-                    f"Split '{self.split}' requested but legacy format detected. "
-                    f"Using data directly from {candidate_root}"
-                )
-            return data_root_candidate
-
-        searched_roots = ", ".join([str(path) for path in candidate_roots])
-        if self.split is not None:
+    def _prepare_root(
+        self,
+        data_path: str,
+        auto_download: bool,
+    ) -> str:
+        if osp.exists(data_path):
+            return data_path
+        if not auto_download or self.url is None:
             raise FileNotFoundError(
-                f"Split '{self.split}' not found under: {searched_roots}"
+                f"Dataset path {data_path} not found. Please prepare data manually "
+                "or enable auto download with a valid url."
             )
+        logger.message(
+            f"Dataset root {data_path} not found. "
+            f"Downloading {self.name} from {self.url}."
+        )
+        downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
+        logger.info(f"Dataset downloaded to: {downloaded_root}")
+        return downloaded_root
+
+    def _prepare_data_dirs(self):
+        data_root = self._resolve_data_root(self.root)
+        noisy_root = osp.join(data_root, self.noisy_subdir)
+        target_root = (
+            osp.join(data_root, self.target_subdir)
+            if self.target_subdir is not None
+            else None
+        )
+
+        if not osp.isdir(noisy_root):
+            raise FileNotFoundError(f"Noisy directory not found: {noisy_root}")
+        if target_root is not None and not osp.isdir(target_root):
+            raise FileNotFoundError(f"Target directory not found: {target_root}")
+        return data_root, noisy_root, target_root
+
+    def _contains_data_dirs(self, root: str) -> bool:
+        noisy_root = osp.join(root, self.noisy_subdir)
+        target_root = (
+            osp.join(root, self.target_subdir)
+            if self.target_subdir is not None
+            else None
+        )
+        return osp.isdir(noisy_root) and (
+            target_root is None or osp.isdir(target_root)
+        )
+
+    def _walk_candidate_roots(self, root: str, max_depth: int = 2):
+        candidates = [root]
+        frontier = [(root, 0)]
+        while frontier:
+            current_root, depth = frontier.pop(0)
+            if depth >= max_depth or not osp.isdir(current_root):
+                continue
+            for child_name in sorted(os.listdir(current_root)):
+                child_root = osp.join(current_root, child_name)
+                if not osp.isdir(child_root):
+                    continue
+                candidates.append(child_root)
+                frontier.append((child_root, depth + 1))
+        return candidates
+
+    def _resolve_data_root(self, root: str) -> str:
+        candidates = self._walk_candidate_roots(root)
+
+        if self.split is not None:
+            for candidate in candidates:
+                split_root = osp.join(candidate, self.split)
+                if self._contains_data_dirs(split_root):
+                    return split_root
+            searched_roots = ", ".join(candidates)
+            raise FileNotFoundError(
+                f"Split '{self.split}' with data directories not found under "
+                f"{root}. Searched roots: {searched_roots}."
+            )
+
+        for candidate in candidates:
+            if not self._contains_data_dirs(candidate):
+                continue
+            return candidate
+
+        searched_roots = ", ".join(candidates)
         raise FileNotFoundError(
             "Cannot locate dataset directories "
-            f"'{self.noisy_subdir}' and '{self.target_subdir}' under: {searched_roots}"
+            f"'{self.noisy_subdir}' and '{self.target_subdir}' under {root}. "
+            f"Searched roots: {searched_roots}."
         )
 
-    def _maybe_download_dataset(
-        self, download: bool = True, force_download: bool = False
-    ) -> Optional[Path]:
-        """Download dataset when local data root cannot be resolved."""
-        if not force_download and self._locate_data_root(self.data_root) is not None:
-            return None
-        if not (download or force_download):
-            return None
-        return self._download_dataset(force_download=force_download)
-
-    def _download_dataset(self, force_download: bool = False) -> Path:
-        """Delegate dataset download to the shared ppmat download utility."""
-        if not self.url:
-            candidate = ", ".join(sorted(self._DEFAULT_URL_MAP.keys()))
-            raise FileNotFoundError(
-                f"Dataset not found at '{self.data_root}', and no download URL provided. "
-                f"Auto-url is only inferred for data_path basename in [{candidate}]."
-            )
-
-        logger.message(
-            f"Dataset root {self.data_root} not found. Will download it now."
-        )
-        if force_download:
-            downloaded_root = download.get_path_from_url(
-                self.url,
-                download.DATASETS_HOME,
-                md5sum=self.md5,
-                check_exist=False,
-                decompress=True,
-            )
-        else:
-            downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
-        logger.info(f"Dataset downloaded to: {downloaded_root}")
-        return Path(downloaded_root)
-
-    def _get_candidate_roots(self) -> List[Path]:
-        candidate_roots = [self.data_root]
-        if self.downloaded_root is not None:
-            for root in (self.downloaded_root, self.downloaded_root.parent):
-                if root != self.data_root and root not in candidate_roots:
-                    candidate_roots.append(root)
-        return candidate_roots
-
-    def _select_data_root(
-        self, candidate_root: Path, matches: List[Path]
-    ) -> Optional[Path]:
-        if not matches:
-            return None
-        if len(matches) == 1:
-            return matches[0]
-
-        preferred_names = self._get_preferred_root_names()
-        for preferred_name in preferred_names:
-            preferred_matches = [path for path in matches if path.name == preferred_name]
-            if len(preferred_matches) == 1:
-                logger.info(
-                    "Resolved dataset root '%s' under '%s' from multiple candidates: %s"
-                    % (
-                        preferred_matches[0],
-                        candidate_root,
-                        [str(path) for path in matches],
-                    )
-                )
-                return preferred_matches[0]
-
-        raise FileNotFoundError(
-            "Multiple candidate dataset roots were found under "
-            f"'{candidate_root}': {[str(path) for path in matches]}. "
-            f"Tried preferred names: {preferred_names or ['<none>']}. "
-            "Please provide a more specific local `data_path` or explicit `url`."
-        )
-
-    def _get_preferred_root_names(self) -> List[str]:
-        preferred_names: List[str] = []
-        for name in (self.data_root.name, self._infer_download_root_name()):
-            if name and name not in preferred_names:
-                preferred_names.append(name)
-        return preferred_names
-
-    def _infer_download_root_name(self) -> Optional[str]:
-        if not self.url:
-            return None
-        parsed_path = urlparse(self.url).path
-        archive_name = Path(parsed_path).name
-        if not archive_name:
-            return None
-        return Path(archive_name).stem
-
-    @classmethod
-    def _infer_default_url(cls, data_path: str) -> Optional[str]:
-        key = Path(data_path).name
-        url = cls._DEFAULT_URL_MAP.get(key)
-        if url is not None:
-            logger.info(
-                f"Infer dataset download URL by data_path='{data_path}': {url}"
-            )
-        return url
-
-    @classmethod
-    def _infer_default_md5(cls, data_path: str) -> Optional[str]:
-        key = Path(data_path).name
-        md5 = cls._DEFAULT_MD5_MAP.get(key)
-        if md5 is not None:
-            logger.info(
-                f"Infer dataset md5 by data_path='{data_path}': {md5}"
-            )
-        return md5
-
-    def _locate_data_root(self, base_root: Path) -> Optional[Path]:
-        matches = self._find_data_roots(base_root)
-        return self._select_data_root(base_root, matches)
-
-    def _find_data_roots(self, base_root: Path) -> List[Path]:
-        if not base_root.exists():
-            return []
-
-        candidate_roots: List[Path] = [base_root]
-        frontier: List[Path] = [base_root]
-        for _ in range(2):
-            next_frontier: List[Path] = []
-            for root in frontier:
-                for child in sorted(root.iterdir()):
-                    if child.is_dir():
-                        candidate_roots.append(child)
-                        next_frontier.append(child)
-            frontier = next_frontier
-
-        matches: List[Path] = []
-        for root in candidate_roots:
-            if self.split is not None:
-                split_root = root / self.split
-                if self._contains_pair_dirs(split_root):
-                    matches.append(split_root)
-            if self._contains_pair_dirs(root):
-                matches.append(root)
-
-        seen = set()
-        unique_matches = []
-        for path in matches:
-            path_str = str(path)
-            if path_str in seen:
+    @staticmethod
+    def _build_index_map(file_names, directory: str, file_suffix: str):
+        index_map = {}
+        invalid_files = []
+        duplicate_files = []
+        for file_name in file_names:
+            stem = osp.splitext(file_name)[0]
+            if not stem.isdigit():
+                invalid_files.append(file_name)
                 continue
-            seen.add(path_str)
-            unique_matches.append(path)
-        return unique_matches
-
-    def _contains_pair_dirs(self, root: Path) -> bool:
-        return (
-            root.is_dir()
-            and (root / self.noisy_subdir).exists()
-            and (root / self.target_subdir).exists()
-        )
-
-    def _list_image_files(self, directory: Path) -> List[Path]:
-        return sorted(
-            path for path in directory.glob(f"*{self.file_suffix}") if path.is_file()
-        )
-
-    def _build_samples(self, data_count: int | None) -> List[Dict[str, str]]:
-        """Build list of sample dictionaries."""
-        if not self.strict_index_naming:
-            return self._build_matched_name_samples(data_count)
-        return self._build_indexed_samples(data_count)
-
-    def _build_indexed_samples(self, data_count: int | None) -> List[Dict[str, str]]:
-        noisy_files = self._list_image_files(self.noisy_dir)
-        target_files = self._list_image_files(self.target_dir)
-        noisy_index_map = self._build_index_map(noisy_files, self.noisy_dir)
-        target_index_map = self._build_index_map(target_files, self.target_dir)
-
-        if data_count is None:
-            common_indices = sorted(set(noisy_index_map) & set(target_index_map))
-            if not common_indices:
-                raise FileNotFoundError(
-                    "No matched indexed image pairs were found under "
-                    f"'{self.noisy_dir}' and '{self.target_dir}'."
-                )
-            max_index = common_indices[-1]
-            missing_indices = [
-                idx
-                for idx in range(max_index + 1)
-                if idx not in noisy_index_map or idx not in target_index_map
-            ]
-            if missing_indices:
-                raise FileNotFoundError(
-                    "Strict indexed naming expects contiguous pairs from 0. "
-                    f"Missing indices: {missing_indices[:10]}. "
-                    "Use `strict_index_naming=False` for arbitrary filenames."
-                )
-            expected_indices = list(range(max_index + 1))
-        else:
-            expected_indices = list(range(int(data_count)))
-
-        samples: List[Dict[str, str]] = []
-        for idx in expected_indices:
-            noisy_path = noisy_index_map.get(idx)
-            target_path = target_index_map.get(idx)
-            if noisy_path is None:
-                raise FileNotFoundError(
-                    f"Noisy image for index {idx} not found in '{self.noisy_dir}'."
-                )
-            if target_path is None:
-                raise FileNotFoundError(
-                    f"Target image for index {idx} not found in '{self.target_dir}'."
-                )
-            if not noisy_path.exists():
-                raise FileNotFoundError(f"Noisy image not found: {noisy_path}")
-            if not target_path.exists():
-                raise FileNotFoundError(f"Target image not found: {target_path}")
-            samples.append(
-                {
-                    "name": noisy_path.name,
-                    "noisy_path": str(noisy_path),
-                    "target_path": str(target_path),
-                }
-            )
-        return samples
-
-    def _build_index_map(
-        self, files: List[Path], directory: Path
-    ) -> Dict[int, Path]:
-        index_map: Dict[int, Path] = {}
-        invalid_names: List[str] = []
-        for path in files:
-            if not path.stem.isdigit():
-                invalid_names.append(path.name)
-                continue
-            index = int(path.stem)
+            index = int(stem)
             if index in index_map:
-                raise ValueError(
-                    f"Duplicate indexed file '{path.name}' found in '{directory}'."
-                )
-            index_map[index] = path
+                duplicate_files.append((index_map[index], file_name))
+                continue
+            index_map[index] = file_name
 
-        if invalid_names:
+        if invalid_files:
             raise ValueError(
-                "Strict indexed naming requires filenames like '0"
-                f"{self.file_suffix}'. Invalid files in '{directory}': "
-                f"{invalid_names[:10]}"
+                "Strict indexed naming requires files named like "
+                f"'0{file_suffix}' under {directory}. "
+                f"Invalid files: {invalid_files[:10]}."
+            )
+        if duplicate_files:
+            raise ValueError(
+                "Strict indexed naming requires one file per integer index under "
+                f"{directory}. Duplicate indexed files: {duplicate_files[:10]}."
             )
         return index_map
 
-    def _build_matched_name_samples(
-        self, data_count: int | None
-    ) -> List[Dict[str, str]]:
-        noisy_files = {
-            path.name: path
-            for path in self._list_image_files(self.noisy_dir)
-        }
-        target_files = {
-            path.name: path
-            for path in self._list_image_files(self.target_dir)
-        }
-        common_names = sorted(set(noisy_files.keys()) & set(target_files.keys()))
-        if not common_names:
-            raise FileNotFoundError(
-                "No matched image pairs were found under "
-                f"'{self.noisy_dir}' and '{self.target_dir}'."
-            )
-        if data_count is not None:
-            common_names = common_names[: int(data_count)]
+    def _slice_by_data_count(self, samples):
+        if self.data_count is None:
+            return samples
+        return samples[: self.data_count]
 
+    def _build_samples(self):
+        noisy_files = sorted(
+            [
+                file_name
+                for file_name in os.listdir(self.noisy_root)
+                if file_name.endswith(self.file_suffix)
+            ]
+        )
+        if not noisy_files:
+            raise FileNotFoundError(f"No noisy images found under {self.noisy_root}.")
+
+        if self.target_root is None:
+            return self._build_prediction_samples(noisy_files)
+
+        target_files = sorted(
+            [
+                file_name
+                for file_name in os.listdir(self.target_root)
+                if file_name.endswith(self.file_suffix)
+            ]
+        )
+        if not target_files:
+            raise FileNotFoundError(f"No target images found under {self.target_root}.")
+
+        if self.strict_index_naming:
+            samples = self._build_indexed_pair_samples(noisy_files, target_files)
+        else:
+            samples = self._build_same_name_pair_samples(noisy_files, target_files)
+        if not samples:
+            raise FileNotFoundError(
+                f"No paired samples found under {self.noisy_root} "
+                f"and {self.target_root}."
+            )
+        return self._slice_by_data_count(samples)
+
+    def _build_prediction_samples(self, noisy_files):
+        samples = [
+            {
+                "noisy": file_name,
+                "target": None,
+                "name": file_name,
+            }
+            for file_name in noisy_files
+        ]
+        return self._slice_by_data_count(samples)
+
+    def _build_indexed_pair_samples(self, noisy_files, target_files):
+        noisy_map = self._build_index_map(
+            noisy_files, self.noisy_root, self.file_suffix
+        )
+        target_map = self._build_index_map(
+            target_files, self.target_root, self.file_suffix
+        )
+        if not noisy_map:
+            raise FileNotFoundError(
+                f"No indexed noisy images found under {self.noisy_root}."
+            )
+        if not target_map:
+            raise FileNotFoundError(
+                f"No indexed target images found under {self.target_root}."
+            )
+
+        common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
+        missing_target = sorted(set(noisy_map.keys()) - set(target_map.keys()))
+        missing_noisy = sorted(set(target_map.keys()) - set(noisy_map.keys()))
+        if missing_target or missing_noisy:
+            raise FileNotFoundError(
+                "Noisy and target images are not paired. "
+                f"Missing target indices: {missing_target[:10]}, "
+                f"missing noisy indices: {missing_noisy[:10]}."
+            )
         return [
             {
-                "name": name,
-                "noisy_path": str(noisy_files[name]),
-                "target_path": str(target_files[name]),
+                "noisy": noisy_map[idx],
+                "target": target_map[idx],
+                "name": noisy_map[idx],
             }
-            for name in common_names
+            for idx in common_indices
         ]
 
-    def __len__(self):
-        return len(self.samples)
+    def _build_same_name_pair_samples(self, noisy_files, target_files):
+        target_file_set = set(target_files)
+        noisy_file_set = set(noisy_files)
+        missing_target = sorted(noisy_file_set - target_file_set)
+        missing_noisy = sorted(target_file_set - noisy_file_set)
+        if missing_target or missing_noisy:
+            raise FileNotFoundError(
+                "Noisy and target images are not paired. "
+                f"Missing target files: {missing_target[:10]}, "
+                f"missing noisy files: {missing_noisy[:10]}."
+            )
+        return [
+            {
+                "noisy": file_name,
+                "target": file_name,
+                "name": file_name,
+            }
+            for file_name in noisy_files
+            if file_name in target_file_set
+        ]
 
-    def _load_gray_image(self, path: str) -> paddle.Tensor:
-        """Load image as grayscale tensor."""
-        image = Image.open(path).convert("L")
+    def _load_gray_image(self, file_path: str) -> paddle.Tensor:
+        image = Image.open(file_path).convert("L")
         image_array = np.asarray(image, dtype=np.float32)
         if self.scale_to_unit:
             image_array = image_array / 255.0
@@ -459,18 +365,18 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def __getitem__(self, idx: int):
         sample = self.samples[idx]
-        noisy = self._load_gray_image(sample["noisy_path"])
-        target = self._load_gray_image(sample["target_path"])
+        noisy = self._load_gray_image(osp.join(self.noisy_root, sample["noisy"]))
 
-        output = {
-            "noisy": noisy,
-            self.target_subdir: target,
-            "target": target,
+        data = {
+            self.input_name: noisy,
             "name": sample["name"],
         }
-        # Backward compatibility for legacy code paths that read `gt_enhance`.
-        if self.target_subdir != "gt_enhance":
-            output["gt_enhance"] = target
+        if self.target_root is not None:
+            target = self._load_gray_image(osp.join(self.target_root, sample["target"]))
+            data[self.target_name] = target
         if self.transforms is not None:
-            output = self.transforms(output)
-        return output
+            data = self.transforms(data)
+        return data
+
+    def __len__(self):
+        return len(self.samples)

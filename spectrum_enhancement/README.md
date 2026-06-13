@@ -10,9 +10,9 @@ signals from paired noisy and reference data, improving downstream inspection
 of crystal structures, defects, and local material morphology.
 
 The current PaddleMaterials SE workflow focuses on STEM image enhancement.
-Given noisy HAADF or BF STEM inputs, the model predicts enhanced or detection
-target images and supports training, evaluation, and prediction with the common
-PaddleMaterials trainer/predictor style.
+Given noisy HAADF or BF STEM inputs, the model predicts a configured target
+image (`gt_enhance` or `gt_detect`) and supports training, evaluation, and
+prediction with the common PaddleMaterials trainer/predictor style.
 
 ## 2.Models Matrix
 

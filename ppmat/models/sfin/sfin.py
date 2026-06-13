@@ -233,6 +233,10 @@ class SFIN(nn.Layer):
         in_channels (int): Number of input channels (default: 1 for grayscale images)
         base_channels (int): Base number of channels (default: 64)
         num_blocks (int): Number of ResNet blocks (default: 8)
+        input_name (str): Dataset input key for noisy STEM images.
+        target_name (str): Dataset target key and prediction key.
+        loss_type (str): Loss function type, either ``l1`` or ``mse``.
+        loss_weight (float): Loss scaling weight.
 
     Reference:
         Li et al., "Noise Calibration and Spatial-Frequency Interactive Network for
@@ -306,31 +310,6 @@ class SFIN(nn.Layer):
         x = self.tail_conv(x)
         return x
 
-    def _get_input_tensor(self, batch: Dict) -> paddle.Tensor:
-        key_candidates = [self.input_name, "image", "noisy", "input", "x"]
-        for key in key_candidates:
-            if key in batch and batch[key] is not None:
-                return batch[key]
-        raise KeyError(
-            "SFIN expects one of input keys "
-            f"{key_candidates}, but got keys: {list(batch.keys())}"
-        )
-
-    def _get_label_tensor(self, batch: Dict):
-        key_candidates = [
-            self.target_name,
-            "gt_enhance",
-            "target",
-            "label",
-            "gt",
-            "clean",
-            "y",
-        ]
-        for key in key_candidates:
-            if key in batch and batch[key] is not None:
-                return batch[key]
-        return None
-
     def forward(self, batch):
         """
         Unified forward for both:
@@ -338,19 +317,26 @@ class SFIN(nn.Layer):
         2) dict -> trainer-ready output with loss_dict and pred_dict
         """
         if isinstance(batch, dict):
-            x = self._get_input_tensor(batch)
+            if self.input_name not in batch:
+                raise KeyError(
+                    f"SFIN expects '{self.input_name}' in batch, but got keys: "
+                    f"{list(batch.keys())}"
+                )
+            if self.target_name not in batch:
+                raise KeyError(
+                    f"SFIN expects '{self.target_name}' in batch, but got keys: "
+                    f"{list(batch.keys())}"
+                )
+
+            x = batch[self.input_name]
             enhanced = self._forward_tensor(x)
 
             pred_dict = {
                 self.target_name: enhanced,
-                "pred": enhanced,
             }
-            loss_dict = {}
-
-            label = self._get_label_tensor(batch)
-            if label is not None:
-                loss = self.criterion(enhanced, label) * self.loss_weight
-                loss_dict["loss"] = loss
+            label = batch[self.target_name]
+            loss = self.criterion(enhanced, label) * self.loss_weight
+            loss_dict = {"loss": loss}
 
             return {"loss_dict": loss_dict, "pred_dict": pred_dict}
 
@@ -358,17 +344,22 @@ class SFIN(nn.Layer):
 
     def predict(self, batch: Dict) -> Dict:
         """
-        Prediction interface for BasePredictor.
+        Prediction interface for spectrum enhancement predictor entries.
 
         Args:
-            batch: Dictionary containing 'image' key with input tensor
+            batch: Dictionary containing the configured input key.
 
         Returns:
-            Dictionary containing 'pred' key with enhanced image
+            Dictionary containing the configured prediction key
         """
         if isinstance(batch, dict):
-            x = self._get_input_tensor(batch)
+            if self.input_name not in batch:
+                raise KeyError(
+                    f"SFIN expects '{self.input_name}' in batch, but got keys: "
+                    f"{list(batch.keys())}"
+                )
+            x = batch[self.input_name]
             enhanced = self._forward_tensor(x)
-            return {self.target_name: enhanced, "pred": enhanced}
+            return {self.target_name: enhanced}
 
         return self._forward_tensor(batch)

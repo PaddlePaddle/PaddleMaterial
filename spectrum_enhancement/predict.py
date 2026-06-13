@@ -12,346 +12,316 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
 import argparse
 import copy
-from contextlib import nullcontext
+import os
+import os.path as osp
 from pathlib import Path
-from typing import Any
-from typing import Dict
 from typing import Optional
 
 import numpy as np
 import paddle
 from omegaconf import OmegaConf
 from PIL import Image
+from tqdm import tqdm
 
-from ppmat.datasets import build_dataloader as build_ppmat_dataloader
-from ppmat.predictor import BasePredictor
+from ppmat.datasets import build_dataloader
+from ppmat.datasets.transform import build_post_transforms
+from ppmat.models import build_model
+from ppmat.models import build_model_from_name
 from ppmat.utils import logger
+from ppmat.utils import save_load
 
 
-def _normalize_split(split: Optional[str]) -> Optional[str]:
-    if split == "validation":
-        return "val"
-    return split
+class SpectrumPredictor:
+    """Spectrum enhancement predictor.
 
+    The model-loading and post-process flow follows the repository predictor
+    entries such as ``property_prediction/predict.py``. Dataset prediction uses
+    the configured ``Dataset.<split>`` branch directly, so prediction stays
+    aligned with the training/evaluation data interface.
+    """
 
-class SpectrumPredictor(BasePredictor):
     def __init__(
         self,
-        device: str,
-        config_path: Optional[str] = None,
-        checkpoint_path: Optional[str] = None,
         model_name: Optional[str] = None,
         weights_name: Optional[str] = None,
+        config_path: Optional[str] = None,
+        checkpoint_path: Optional[str] = None,
     ):
-        paddle.set_device(device)
-        super().__init__(
-            model_name=model_name,
-            weights_name=weights_name,
-            config_path=config_path,
-            checkpoint_path=checkpoint_path,
-            work_dir="",
-            device=device,
+        if model_name is None:
+            assert (
+                config_path is not None and checkpoint_path is not None
+            ), (
+                "config_path and checkpoint_path must be provided when "
+                "model_name is None."
+            )
+
+            logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
+
+            config = OmegaConf.load(config_path)
+            config = OmegaConf.to_container(config, resolve=True)
+
+            model_config = config.get("Model", None)
+            assert model_config is not None, "Model config must be provided."
+            model = build_model(model_config)
+            save_load.load_pretrain(model, checkpoint_path)
+        else:
+            logger.info("Since model_name is given, downloading it...")
+            model, config = build_model_from_name(model_name, weights_name)
+
+        self.model = model
+        self.config = config
+        self.model.eval()
+
+        predict_config = config.get("Predict", None)
+        self.predict_config = predict_config
+        self.eval_with_no_grad = (
+            predict_config.get("eval_with_no_grad", True)
+            if predict_config is not None
+            else True
         )
-        self.load_inference_model()
+
+        self.post_transforms_cfg = (
+            predict_config.get("post_transforms", None)
+            if predict_config is not None
+            else None
+        )
+        if self.post_transforms_cfg is not None:
+            self.post_transforms = build_post_transforms(self.post_transforms_cfg)
+        else:
+            self.post_transforms = None
 
         model_init = self.config.get("Model", {}).get("__init_params__", {})
+        self.input_name = model_init.get("input_name", "noisy")
         self.target_name = model_init.get("target_name", "gt_enhance")
 
-    def _resolve_dataloader_config(self, split: Optional[str]) -> Dict[str, Any]:
-        dataset_cfg_root = self.config.get("Dataset", {})
-        if not isinstance(dataset_cfg_root, dict):
-            return {}
+    def post_process(self, data):
+        if self.post_transforms is None:
+            return data
+        return self.post_transforms(data)
 
-        split = _normalize_split(split)
-        candidate_keys = []
-        if split is not None:
-            candidate_keys.append(split)
-        candidate_keys.extend(["test", "val", "train"])
-
-        for key in candidate_keys:
-            branch_cfg = dataset_cfg_root.get(key)
-            if not isinstance(branch_cfg, dict):
-                continue
-            dataset_cfg = branch_cfg.get("dataset", {})
-            if not isinstance(dataset_cfg, dict):
-                continue
-            if dataset_cfg.get("__class_name__") == "STEMImageDataset":
-                return copy.deepcopy(branch_cfg)
-
-        return {
-            "dataset": {
-                "__class_name__": "STEMImageDataset",
-                "__init_params__": {},
-            },
-            "sampler": {
-                "__class_name__": "BatchSampler",
-                "__init_params__": {
-                    "shuffle": False,
-                    "drop_last": False,
-                    "batch_size": 1,
-                },
-            },
-            "loader": {
-                "num_workers": 0,
-                "use_shared_memory": False,
-                "collate_fn": "DefaultCollator",
-            },
-        }
-
-    def build_dataloader(self, args: argparse.Namespace) -> paddle.io.DataLoader:
-        dataloader_cfg = self._resolve_dataloader_config(args.split)
-        dataset_cfg = dataloader_cfg.setdefault("dataset", {})
-        dataset_cfg["__class_name__"] = "STEMImageDataset"
-        init_params = dataset_cfg.setdefault("__init_params__", {})
-
-        if args.data_path is not None:
-            init_params["data_path"] = args.data_path
+    def predict_batch(self, batch):
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                out = self.model.predict(batch)
         else:
-            init_params.setdefault("data_path", "./data_test")
-        if args.file_suffix is not None:
-            init_params["file_suffix"] = args.file_suffix
-        else:
-            init_params.setdefault("file_suffix", ".png")
-        if args.split is not None:
-            init_params["split"] = _normalize_split(args.split)
-        if args.data_count > 0:
-            init_params["data_count"] = args.data_count
-        if args.noisy_subdir is not None:
-            init_params["noisy_subdir"] = args.noisy_subdir
-        if args.target_subdir is not None:
-            init_params["target_subdir"] = args.target_subdir
-        if args.download is not None:
-            init_params["download"] = bool(args.download)
-        if args.force_download is not None:
-            init_params["force_download"] = bool(args.force_download)
+            out = self.model.predict(batch)
+        return self.post_process(out)
 
-        loader_cfg = dataloader_cfg.setdefault("loader", {})
-        loader_cfg.setdefault("num_workers", 0)
-        loader_cfg.setdefault("use_shared_memory", False)
-        loader_cfg.setdefault("collate_fn", "DefaultCollator")
-        sampler_cfg = dataloader_cfg.setdefault("sampler", {})
-        sampler_cfg.setdefault("__class_name__", "BatchSampler")
-        sampler_cfg.setdefault(
-            "__init_params__",
-            {"shuffle": False, "drop_last": False, "batch_size": 1},
-        )
-
-        return build_ppmat_dataloader(dataloader_cfg)
-
-    def predict_batch(self, batch: Dict[str, Any]) -> Any:
-        if hasattr(self.model, "predict"):
-            output = self.model.predict(batch)
-        else:
-            output = self.model(batch)
-        return self.post_process(output)
-
-    def _pick_prediction_tensor(self, output: Any) -> paddle.Tensor:
-        if isinstance(output, dict):
-            if "pred_dict" in output and isinstance(output["pred_dict"], dict):
-                output = output["pred_dict"]
-            for key in [self.target_name, "pred", "output", "enhanced", "image"]:
-                if key in output and output[key] is not None:
-                    pred = output[key]
-                    break
-            else:
-                pred = None
-                for value in output.values():
-                    if isinstance(value, paddle.Tensor):
-                        pred = value
-                        break
-                if pred is None:
-                    raise KeyError(
-                        "Cannot find prediction tensor in model output dict. "
-                        f"Keys: {list(output.keys())}"
-                    )
-        elif isinstance(output, (list, tuple)):
-            if not output:
-                raise ValueError("Model output list/tuple is empty.")
-            pred = output[0]
-        else:
-            pred = output
-
-        if not isinstance(pred, paddle.Tensor):
-            pred = paddle.to_tensor(pred)
-        return pred
-
-    def parse_model_output(
-        self,
-        model_output: Any,
-        sample: Optional[Dict[str, Any]] = None,
-        index: int = 0,
-        args: Optional[argparse.Namespace] = None,
-    ) -> np.ndarray:
-        pred = self._pick_prediction_tensor(model_output)
-        pred = paddle.clip(pred, min=0.0, max=255.0)
-        pred_np = pred.squeeze().detach().cpu().numpy().astype(np.uint8)
-
-        if pred_np.ndim == 3 and pred_np.shape[0] in (1, 3):
-            pred_np = np.transpose(pred_np, (1, 2, 0))
-        if pred_np.ndim == 3 and pred_np.shape[-1] == 1:
-            pred_np = pred_np[..., 0]
-        return pred_np
-
-    def save_prediction(
-        self,
-        parsed_output: np.ndarray,
-        sample: Dict[str, Any],
-        index: int,
-        output_dir: Path,
-        args: argparse.Namespace,
-    ) -> Path:
-        file_name = sample.get("name", f"{index}{args.file_suffix or '.png'}")
-        if isinstance(file_name, (list, tuple)):
-            file_name = (
-                file_name[0]
-                if file_name
-                else f"{index}{args.file_suffix or '.png'}"
+    def _get_prediction_tensor(self, output) -> paddle.Tensor:
+        if not isinstance(output, dict):
+            raise TypeError(f"Expected dict output, but got {type(output)}.")
+        if self.target_name not in output:
+            raise KeyError(
+                f"Prediction key '{self.target_name}' not found in output keys "
+                f"{list(output.keys())}."
             )
-        if args.save_suffix:
-            suffix = args.save_suffix
-            if not suffix.startswith("."):
-                suffix = f".{suffix}"
-            file_name = f"{Path(file_name).stem}{suffix}"
-        elif Path(file_name).suffix == "":
-            file_name = f"{file_name}{args.file_suffix or '.png'}"
+        return output[self.target_name]
 
+    @staticmethod
+    def _tensor_to_image(pred: paddle.Tensor) -> np.ndarray:
+        pred = paddle.clip(pred, min=0.0, max=255.0)
+        pred = pred.squeeze().detach().cpu().numpy()
+        if pred.ndim == 3 and pred.shape[0] in (1, 3):
+            pred = np.transpose(pred, (1, 2, 0))
+        if pred.ndim == 3 and pred.shape[-1] == 1:
+            pred = pred[..., 0]
+        return pred.astype(np.uint8)
+
+    def parse_prediction(self, output) -> np.ndarray:
+        return self._tensor_to_image(self._get_prediction_tensor(output))
+
+    @staticmethod
+    def _normalize_split(split: str) -> str:
+        return "val" if split == "validation" else split
+
+    @staticmethod
+    def _normalize_file_name(file_name, default_name: str) -> str:
+        if isinstance(file_name, (list, tuple)):
+            file_name = file_name[0] if file_name else default_name
+        if isinstance(file_name, str):
+            return file_name
+        return default_name
+
+    def _save_prediction(
+        self,
+        output,
+        output_dir: Path,
+        file_name: str,
+        file_suffix: str = ".png",
+    ) -> Path:
+        pred = self.parse_prediction(output)
+        if Path(file_name).suffix == "":
+            file_name = f"{file_name}{file_suffix}"
         save_path = output_dir / file_name
-        Image.fromarray(parsed_output).save(save_path)
+        Image.fromarray(pred).save(save_path)
         return save_path
 
-    def run(self, args: argparse.Namespace) -> list[Path]:
-        output_dir = Path(args.output_dir)
+    @staticmethod
+    def _save_image(
+        pred: np.ndarray,
+        output_dir: Path,
+        file_name: str,
+        file_suffix: str = ".png",
+    ) -> Path:
+        if Path(file_name).suffix == "":
+            file_name = f"{file_name}{file_suffix}"
+        save_path = output_dir / file_name
+        Image.fromarray(pred).save(save_path)
+        return save_path
+
+    def from_dataset(
+        self,
+        split: str = "test",
+        output_dir: str = "./output/spectrum_enhancement/predictions",
+    ):
+        split = self._normalize_split(split)
+        dataset_cfg = self.config.get("Dataset", {}).get(split, None)
+        if dataset_cfg is None:
+            raise KeyError(f"Dataset.{split} is not defined in config.")
+
+        dataloader = build_dataloader(copy.deepcopy(dataset_cfg))
+        output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        dataloader = self.build_dataloader(args)
-        if dataloader is None or len(dataloader.dataset) == 0:
-            raise ValueError("No samples found in dataset.")
+        file_suffix = (
+            dataset_cfg.get("dataset", {})
+            .get("__init_params__", {})
+            .get("file_suffix", ".png")
+        )
+        saved_paths = []
+        for idx, batch in enumerate(tqdm(dataloader)):
+            output = self.predict_batch(batch)
+            pred = self._get_prediction_tensor(output)
+            if len(pred.shape) >= 4:
+                pred_list = [pred[i] for i in range(pred.shape[0])]
+            else:
+                pred_list = [pred]
+
+            names = batch.get("name")
+            for batch_idx, pred_item in enumerate(pred_list):
+                if isinstance(names, (list, tuple)):
+                    name = names[batch_idx] if batch_idx < len(names) else None
+                else:
+                    name = names
+                file_name = self._normalize_file_name(
+                    name, f"{idx * len(pred_list) + batch_idx}{file_suffix}"
+                )
+                saved_paths.append(
+                    self._save_image(
+                        self._tensor_to_image(pred_item),
+                        output_dir,
+                        file_name,
+                        file_suffix,
+                    )
+                )
+        return saved_paths
+
+    def _load_image(
+        self,
+        image_path: Path,
+        scale_to_unit: bool = False,
+    ) -> paddle.Tensor:
+        image = Image.open(image_path).convert("L")
+        image_array = np.asarray(image, dtype=np.float32)
+        if scale_to_unit:
+            image_array = image_array / 255.0
+        return paddle.to_tensor(image_array).unsqueeze(0).unsqueeze(0)
+
+    def collect_images(self, input_path: str):
+        path = Path(input_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Input path not found: {path}")
+        if path.is_file():
+            return [path]
+
+        image_files = []
+        for file_name in sorted(os.listdir(path)):
+            file_path = path / file_name
+            if file_path.is_file() and file_path.suffix.lower() in {
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".bmp",
+                ".tif",
+                ".tiff",
+            }:
+                image_files.append(file_path)
+        if not image_files:
+            raise FileNotFoundError(f"No image files found under {path}.")
+        logger.info(f"Load {len(image_files)} noisy images from {path}")
+        return image_files
+
+    def from_image_path(
+        self,
+        input_path: str,
+        output_dir: str = "./output/spectrum_enhancement/predictions",
+        scale_to_unit: Optional[bool] = None,
+    ):
+        if scale_to_unit is None:
+            dataset_cfg = (
+                self.config.get("Dataset", {}).get("test", {}).get("dataset", {})
+            )
+            scale_to_unit = (
+                dataset_cfg.get("__init_params__", {}).get("scale_to_unit", False)
+            )
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         saved_paths = []
-        context = paddle.no_grad() if self.eval_with_no_grad else nullcontext()
-        with context:
-            for idx, batch in enumerate(dataloader):
-                model_output = self.predict_batch(batch)
-                parsed_output = self.parse_model_output(model_output, batch, idx, args)
-                save_path = self.save_prediction(
-                    parsed_output,
-                    batch,
-                    idx,
-                    output_dir,
-                    args,
-                )
-                saved_paths.append(save_path)
+        for image_path in tqdm(self.collect_images(input_path)):
+            batch = {self.input_name: self._load_image(image_path, scale_to_unit)}
+            output = self.predict_batch(batch)
+            saved_paths.append(
+                self._save_prediction(output, output_dir, image_path.name)
+            )
         return saved_paths
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="SFIN prediction entry.")
-    parser.add_argument(
-        "--case",
-        type=str,
-        default="sfin",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--model_name",
-        type=str,
-        default=None,
-        help=(
-            "Optional predefined model name from MODEL_REGISTRY. "
-            "If omitted, the predictor loads `Predict.checkpoint_path` from the config."
-        ),
-    )
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default=None, help="Model name.")
     parser.add_argument(
         "--weights_name",
         type=str,
         default=None,
-        help=(
-            "Optional weight filename when `model_name` is used "
-            "(e.g., best.pdparams / latest.pdparams)."
-        ),
+        help="Weights name, e.g., best.pdparams, latest.pdparams.",
     )
     parser.add_argument(
         "--config_path",
         type=str,
         default="./spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml",
-        help="Path to model config yaml (used when model_name is not provided).",
+        help="Path to the configuration file.",
     )
     parser.add_argument(
         "--checkpoint_path",
         type=str,
         default=None,
-        help="Path or URL to checkpoint (*.pdparams) (used when model_name is not provided).",
+        help="Path to the checkpoint file.",
     )
     parser.add_argument(
-        "--data_path",
+        "--input_path",
         type=str,
         default=None,
-        help="Root directory of input data. If omitted, infer from config Dataset section.",
+        help=(
+            "Path to noisy image file or directory. If omitted, predict from "
+            "Dataset.<split> in the config."
+        ),
     )
     parser.add_argument(
         "--split",
         type=str,
-        default=None,
+        default="test",
         choices=["train", "val", "validation", "test"],
-        help="Dataset split to use. If omitted, pick test/val/train in that order.",
+        help="Dataset split used when input_path is omitted.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
         default=None,
-        help="Directory to save predictions. Defaults to <Trainer.output_dir>/predictions.",
-    )
-    parser.add_argument(
-        "--file_suffix",
-        type=str,
-        default=None,
-        help="Input file suffix for dataset scanning (e.g., .png).",
-    )
-    parser.add_argument(
-        "--save_suffix",
-        type=str,
-        default=None,
-        help="Optional output file suffix override (e.g., .png).",
-    )
-    parser.add_argument(
-        "--data_count",
-        type=int,
-        default=-1,
-        help="Max number of samples to process, <=0 means all.",
-    )
-    parser.add_argument(
-        "--noisy_subdir",
-        type=str,
-        default=None,
-        help="Optional override for noisy image sub-directory.",
-    )
-    parser.add_argument(
-        "--target_subdir",
-        type=str,
-        default=None,
-        help="Optional override for target image sub-directory.",
-    )
-    parser.add_argument(
-        "--download",
-        action="store_true",
-        default=None,
-        help=(
-            "Enable auto-download when data_path is missing. "
-            "If omitted, keep dataset config default."
-        ),
-    )
-    parser.add_argument(
-        "--force_download",
-        action="store_true",
-        default=None,
-        help=(
-            "Force re-download dataset archive. "
-            "If omitted, keep dataset config default."
-        ),
+        help="Path to save prediction images.",
     )
     parser.add_argument(
         "--device",
@@ -363,60 +333,52 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_output_dir(args: argparse.Namespace, config: Dict[str, Any]) -> str:
-    if args.output_dir:
-        return args.output_dir
+def _default_output_dir(
+    config,
+    config_path: Optional[str],
+    model_name: Optional[str],
+) -> str:
     trainer_output_dir = config.get("Trainer", {}).get("output_dir")
     if trainer_output_dir:
-        return str(Path(trainer_output_dir) / "predictions")
-    if args.config_path:
-        return str(Path("./output") / Path(args.config_path).stem / "predictions")
-    if args.model_name:
-        return str(Path("./output") / args.model_name / "predictions")
-    return str(Path("./output") / "spectrum_enhancement" / "predictions")
+        return osp.join(trainer_output_dir, "predictions")
+    if config_path:
+        return osp.join("./output", Path(config_path).stem, "predictions")
+    if model_name:
+        return osp.join("./output", model_name, "predictions")
+    return "./output/spectrum_enhancement/predictions"
 
 
-def resolve_checkpoint_path_from_config(config_path: Optional[str]) -> Optional[str]:
-    if not config_path:
+def _checkpoint_path_from_config(config_path: Optional[str]) -> Optional[str]:
+    if config_path is None:
         return None
-    config = OmegaConf.to_container(OmegaConf.load(config_path), resolve=True)
-    predict_cfg = config.get("Predict", {}) or {}
-    trainer_cfg = config.get("Trainer", {}) or {}
-    return (
-        predict_cfg.get("checkpoint_path")
-        or predict_cfg.get("pretrained_model_path")
-        or trainer_cfg.get("pretrained_model_path")
-    )
-
-
-def validate_args(args: argparse.Namespace) -> None:
-    if args.case and args.case.lower() != "sfin":
-        raise ValueError("Only `sfin` is supported by this prediction entry.")
-    if args.model_name:
-        return
-    if not args.config_path or not args.checkpoint_path:
-        raise ValueError(
-            "Either provide `--model_name`, or provide both "
-            "`--config_path` and `--checkpoint_path`."
-        )
-
-
-def main():
-    args = parse_args()
-    if not args.model_name and not args.checkpoint_path:
-        args.checkpoint_path = resolve_checkpoint_path_from_config(args.config_path)
-    validate_args(args)
-    predictor = SpectrumPredictor(
-        device=args.device,
-        config_path=args.config_path,
-        checkpoint_path=args.checkpoint_path,
-        model_name=args.model_name,
-        weights_name=args.weights_name,
-    )
-    args.output_dir = resolve_output_dir(args, predictor.config)
-    saved_paths = predictor.run(args)
-    logger.info(f"Saved {len(saved_paths)} predictions to {args.output_dir}")
+    config = OmegaConf.load(config_path)
+    config = OmegaConf.to_container(config, resolve=True)
+    predict_config = config.get("Predict", None)
+    if predict_config is None:
+        return None
+    return predict_config.get("checkpoint_path", None)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    paddle.set_device(args.device)
+
+    checkpoint_path = args.checkpoint_path
+    if args.model_name is None and checkpoint_path is None:
+        checkpoint_path = _checkpoint_path_from_config(args.config_path)
+
+    predictor = SpectrumPredictor(
+        model_name=args.model_name,
+        weights_name=args.weights_name,
+        config_path=args.config_path,
+        checkpoint_path=checkpoint_path,
+    )
+
+    output_dir = args.output_dir or _default_output_dir(
+        predictor.config, args.config_path, args.model_name
+    )
+    if args.input_path is not None:
+        saved_paths = predictor.from_image_path(args.input_path, output_dir)
+    else:
+        saved_paths = predictor.from_dataset(args.split, output_dir)
+    logger.info(f"Saved {len(saved_paths)} predictions to {output_dir}")
