@@ -28,14 +28,11 @@ from PIL import Image
 from tqdm import tqdm
 
 from ppmat.datasets import build_dataloader
-from ppmat.datasets.transform import build_post_transforms
-from ppmat.models import build_model
-from ppmat.models import build_model_from_name
+from ppmat.predictor import BasePredictor
 from ppmat.utils import logger
-from ppmat.utils import save_load
 
 
-class SpectrumPredictor:
+class SpectrumPredictor(BasePredictor):
     """Spectrum enhancement predictor.
 
     The model-loading and post-process flow follows the repository predictor
@@ -51,57 +48,18 @@ class SpectrumPredictor:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        if model_name is None:
-            assert (
-                config_path is not None and checkpoint_path is not None
-            ), (
-                "config_path and checkpoint_path must be provided when "
-                "model_name is None."
-            )
-
-            logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
-
-            config = OmegaConf.load(config_path)
-            config = OmegaConf.to_container(config, resolve=True)
-
-            model_config = config.get("Model", None)
-            assert model_config is not None, "Model config must be provided."
-            model = build_model(model_config)
-            save_load.load_pretrain(model, checkpoint_path)
-        else:
-            logger.info("Since model_name is given, downloading it...")
-            model, config = build_model_from_name(model_name, weights_name)
-
-        self.model = model
-        self.config = config
-        self.model.eval()
-
-        predict_config = config.get("Predict", None)
-        self.predict_config = predict_config
-        self.eval_with_no_grad = (
-            predict_config.get("eval_with_no_grad", True)
-            if predict_config is not None
-            else True
+        super().__init__(
+            model_name=model_name,
+            weights_name=weights_name,
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            work_dir="",
         )
-
-        self.post_transforms_cfg = (
-            predict_config.get("post_transforms", None)
-            if predict_config is not None
-            else None
-        )
-        if self.post_transforms_cfg is not None:
-            self.post_transforms = build_post_transforms(self.post_transforms_cfg)
-        else:
-            self.post_transforms = None
+        self.load_inference_model()
 
         model_init = self.config.get("Model", {}).get("__init_params__", {})
         self.input_name = model_init.get("input_name", "noisy")
         self.target_name = model_init.get("target_name", "gt_enhance")
-
-    def post_process(self, data):
-        if self.post_transforms is None:
-            return data
-        return self.post_transforms(data)
 
     def predict_batch(self, batch):
         if self.eval_with_no_grad:
