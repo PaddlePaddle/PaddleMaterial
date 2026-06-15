@@ -14,8 +14,10 @@
 
 import argparse
 import copy
-import os
 import os.path as osp
+import shutil
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -129,9 +131,6 @@ class SpectrumPredictor:
             pred = pred[..., 0]
         return pred.astype(np.uint8)
 
-    def parse_prediction(self, output) -> np.ndarray:
-        return self._tensor_to_image(self._get_prediction_tensor(output))
-
     @staticmethod
     def _normalize_split(split: str) -> str:
         return "val" if split == "validation" else split
@@ -143,20 +142,6 @@ class SpectrumPredictor:
         if isinstance(file_name, str):
             return file_name
         return default_name
-
-    def _save_prediction(
-        self,
-        output,
-        output_dir: Path,
-        file_name: str,
-        file_suffix: str = ".png",
-    ) -> Path:
-        pred = self.parse_prediction(output)
-        if Path(file_name).suffix == "":
-            file_name = f"{file_name}{file_suffix}"
-        save_path = output_dir / file_name
-        Image.fromarray(pred).save(save_path)
-        return save_path
 
     @staticmethod
     def _save_image(
@@ -171,16 +156,11 @@ class SpectrumPredictor:
         Image.fromarray(pred).save(save_path)
         return save_path
 
-    def from_dataset(
+    def _predict_from_dataset_cfg(
         self,
-        split: str = "test",
-        output_dir: str = "./output/spectrum_enhancement/predictions",
+        dataset_cfg,
+        output_dir: str,
     ):
-        split = self._normalize_split(split)
-        dataset_cfg = self.config.get("Dataset", {}).get(split, None)
-        if dataset_cfg is None:
-            raise KeyError(f"Dataset.{split} is not defined in config.")
-
         dataloader = build_dataloader(copy.deepcopy(dataset_cfg))
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -218,66 +198,88 @@ class SpectrumPredictor:
                 )
         return saved_paths
 
-    def _load_image(
+    @staticmethod
+    def _is_image_file(path: Path) -> bool:
+        return path.is_file() and path.suffix.lower() in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".bmp",
+            ".tif",
+            ".tiff",
+        }
+
+    @contextmanager
+    def _dataset_cfg_from_input_path(
         self,
-        image_path: Path,
-        scale_to_unit: bool = False,
-    ) -> paddle.Tensor:
-        image = Image.open(image_path).convert("L")
-        image_array = np.asarray(image, dtype=np.float32)
-        if scale_to_unit:
-            image_array = image_array / 255.0
-        return paddle.to_tensor(image_array).unsqueeze(0).unsqueeze(0)
+        input_path: str,
+        split: str = "test",
+    ):
+        split = self._normalize_split(split)
+        dataset_cfg = copy.deepcopy(self.config.get("Dataset", {}).get(split, None))
+        if dataset_cfg is None:
+            raise KeyError(f"Dataset.{split} is not defined in config.")
 
-    def collect_images(self, input_path: str):
-        path = Path(input_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Input path not found: {path}")
-        if path.is_file():
-            return [path]
+        init_params = dataset_cfg.get("dataset", {}).get("__init_params__", {})
+        noisy_subdir = init_params.get("noisy_subdir", "noisy")
+        input_path = Path(input_path)
 
-        image_files = []
-        for file_name in sorted(os.listdir(path)):
-            file_path = path / file_name
-            if file_path.is_file() and file_path.suffix.lower() in {
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".bmp",
-                ".tif",
-                ".tiff",
-            }:
-                image_files.append(file_path)
+        if not input_path.exists():
+            raise FileNotFoundError(f"Input path not found: {input_path}")
+
+        init_params["target_subdir"] = None
+        init_params["target_name"] = None
+        init_params["auto_download"] = False
+
+        if input_path.is_file():
+            with tempfile.TemporaryDirectory(
+                prefix="ppmat_spectrum_predict_"
+            ) as temp_dir:
+                temp_root = Path(temp_dir)
+                staged_noisy_dir = temp_root / noisy_subdir
+                staged_noisy_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(input_path, staged_noisy_dir / input_path.name)
+                init_params["data_path"] = str(temp_root)
+                yield dataset_cfg
+            return
+
+        if (input_path / noisy_subdir).is_dir():
+            init_params["data_path"] = str(input_path)
+            yield dataset_cfg
+            return
+
+        image_files = [
+            file_path
+            for file_path in sorted(input_path.iterdir())
+            if self._is_image_file(file_path)
+        ]
         if not image_files:
-            raise FileNotFoundError(f"No image files found under {path}.")
-        logger.info(f"Load {len(image_files)} noisy images from {path}")
-        return image_files
+            raise FileNotFoundError(f"No image files found under {input_path}.")
+
+        init_params["data_path"] = str(input_path.parent)
+        init_params["noisy_subdir"] = input_path.name
+        logger.info(f"Load {len(image_files)} noisy images from {input_path}")
+        yield dataset_cfg
+
+    def from_dataset(
+        self,
+        split: str = "test",
+        output_dir: str = "./output/spectrum_enhancement/predictions",
+    ):
+        split = self._normalize_split(split)
+        dataset_cfg = self.config.get("Dataset", {}).get(split, None)
+        if dataset_cfg is None:
+            raise KeyError(f"Dataset.{split} is not defined in config.")
+        return self._predict_from_dataset_cfg(dataset_cfg, output_dir)
 
     def from_image_path(
         self,
         input_path: str,
         output_dir: str = "./output/spectrum_enhancement/predictions",
-        scale_to_unit: Optional[bool] = None,
+        split: str = "test",
     ):
-        if scale_to_unit is None:
-            dataset_cfg = (
-                self.config.get("Dataset", {}).get("test", {}).get("dataset", {})
-            )
-            scale_to_unit = (
-                dataset_cfg.get("__init_params__", {}).get("scale_to_unit", False)
-            )
-
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        saved_paths = []
-        for image_path in tqdm(self.collect_images(input_path)):
-            batch = {self.input_name: self._load_image(image_path, scale_to_unit)}
-            output = self.predict_batch(batch)
-            saved_paths.append(
-                self._save_prediction(output, output_dir, image_path.name)
-            )
-        return saved_paths
+        with self._dataset_cfg_from_input_path(input_path, split) as dataset_cfg:
+            return self._predict_from_dataset_cfg(dataset_cfg, output_dir)
 
 
 def parse_args():
@@ -378,7 +380,7 @@ if __name__ == "__main__":
         predictor.config, args.config_path, args.model_name
     )
     if args.input_path is not None:
-        saved_paths = predictor.from_image_path(args.input_path, output_dir)
+        saved_paths = predictor.from_image_path(args.input_path, output_dir, args.split)
     else:
         saved_paths = predictor.from_dataset(args.split, output_dir)
     logger.info(f"Saved {len(saved_paths)} predictions to {output_dir}")
