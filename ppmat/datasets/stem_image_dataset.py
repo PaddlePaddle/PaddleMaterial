@@ -186,9 +186,15 @@ class STEMImageDataset(paddle.io.Dataset):
                 downloaded_root = parent_root
 
         if self.dataset_name in self.DATASET_URLS and not has_data_dirs(downloaded_root):
-            named_root = osp.join(downloaded_root, self.dataset_name)
-            if has_data_dirs(named_root):
-                downloaded_root = named_root
+            candidate_roots = [osp.join(downloaded_root, self.dataset_name)]
+            if self.url is not None:
+                url_stem = osp.splitext(osp.basename(self.url))[0]
+                candidate_roots.append(osp.join(downloaded_root, url_stem))
+
+            for candidate_root in candidate_roots:
+                if has_data_dirs(candidate_root):
+                    downloaded_root = candidate_root
+                    break
 
         logger.info(f"Dataset downloaded to: {downloaded_root}")
         return downloaded_root
