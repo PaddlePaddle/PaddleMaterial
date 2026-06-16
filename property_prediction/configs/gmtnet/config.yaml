@@ -1,0 +1,44 @@
+model:
+  name: GMTNet
+  target: dielectric
+  reduce_cell: false
+  use_mask: false
+
+dataset:
+  data_path: ./paddle_dielectric_data.pkl
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  seed: 32
+
+dataloader:
+  batch_size: 1
+  num_workers: 0
+
+optimizer:
+  name: AdamW
+  learning_rate: 1e-5
+  weight_decay: 1e-5
+
+lr_scheduler:
+  name: ConstantLR
+
+loss:
+  name: MSELoss
+
+metric:
+  name: MAE
+
+trainer:
+  epochs: 10
+  log_interval: 10
+  save_interval: 10
+
+save:
+  save_dir: ./output
+
+log:
+  log_dir: ./logs
+
+eval:
+  do_eval: true
