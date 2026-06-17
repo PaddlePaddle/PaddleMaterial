@@ -21,20 +21,40 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+MATCHER_CLASS_NAMES = {
+    "BuildMatchedNameSamples",
+    "BuildIndexedNameSamples",
+}
+
 
 def build_matched_name_samples(cfg: Dict):
-    """Build sample matcher from config."""
+    """Build sample matcher from config.
+
+    Supported input forms follow the repository's config-driven builder style:
+
+    1. A direct builder config:
+       {
+         "__class_name__": "BuildIndexedNameSamples",
+         "__init_params__": {}
+       }
+
+    2. A dataset/data config that nests the matcher config under
+       ``dataset.__init_params__.build_samples_cfg``.
+
+    3. A lightweight config that only provides ``build_samples_cfg`` or
+       ``strict_index_naming``.
+
+    Args:
+        cfg (Dict): Builder config, dataset config, or data config.
+
+    Returns:
+        object | None: Instantiated matcher, or ``None`` when cfg is ``None``.
+    """
     if cfg is None:
         return None
-    cfg = copy.deepcopy(cfg)
-
-    class_name = cfg.pop("__class_name__")
-    if not class_name:
-        raise ValueError(
-            "Sample matcher class name is not specified in the configuration."
-        )
-
-    init_params = cfg.pop("__init_params__", {})
+    matcher_cfg = _extract_matcher_cfg(cfg)
+    class_name = matcher_cfg.pop("__class_name__")
+    init_params = matcher_cfg.pop("__init_params__", {})
     cls = _locate_class(class_name)
     return cls(**init_params)
 
@@ -160,4 +180,40 @@ def _locate_class(class_name: str):
     if "." in class_name:
         mod, cls = class_name.rsplit(".", 1)
         return getattr(importlib.import_module(mod), cls)
+    if class_name not in globals():
+        raise ValueError(f"Unknown sample matcher class: {class_name}")
     return globals()[class_name]
+
+
+def _extract_matcher_cfg(cfg: Optional[Dict]) -> Dict:
+    """Normalize supported matcher config inputs to a standard builder config."""
+    cfg = copy.deepcopy(cfg)
+
+    if "dataset" in cfg:
+        return _extract_matcher_cfg(cfg["dataset"])
+
+    if "__class_name__" in cfg and "__init_params__" in cfg:
+        class_name = cfg.get("__class_name__")
+        init_params = cfg.get("__init_params__", {})
+        if class_name not in MATCHER_CLASS_NAMES:
+            return _extract_matcher_cfg(init_params)
+        return cfg
+
+    if "build_samples_cfg" in cfg:
+        nested_cfg = cfg.get("build_samples_cfg")
+        if nested_cfg is not None:
+            return _extract_matcher_cfg(nested_cfg)
+
+    strict_index_naming = cfg.get("strict_index_naming", True)
+    class_name = cfg.get("__class_name__")
+    if class_name is None:
+        class_name = (
+            "BuildIndexedNameSamples"
+            if strict_index_naming
+            else "BuildMatchedNameSamples"
+        )
+
+    return {
+        "__class_name__": class_name,
+        "__init_params__": copy.deepcopy(cfg.get("__init_params__", {})),
+    }

@@ -45,6 +45,11 @@ class STEMImageDataset(paddle.io.Dataset):
     If ``data_path`` is missing, the released SFIN archive is downloaded
     automatically according to the basename of ``data_path``. The model-facing
     keys are controlled by ``input_name`` and ``target_name``.
+
+    Sample pairing is delegated to ``build_matched_name_samples``. When
+    ``build_samples_cfg`` is not provided, this dataset chooses
+    ``BuildIndexedNameSamples`` if ``strict_index_naming=True`` and
+    ``BuildMatchedNameSamples`` otherwise.
     """
 
     name = "stem_image"
@@ -78,7 +83,8 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def __init__(
         self,
-        data_path: str,
+        data_path: Optional[str] = None,
+        path: Optional[str] = None,
         target_subdir: Optional[str] = "gt_enhance",
         input_name: str = "noisy",
         target_name: Optional[str] = None,
@@ -92,13 +98,24 @@ class STEMImageDataset(paddle.io.Dataset):
         url: Optional[str] = None,
         md5: Optional[str] = None,
         auto_download: bool = True,
+        **kwargs,
     ):
         super().__init__()
+        del kwargs
+
+        resolved_path = path if path is not None else data_path
+        if resolved_path is None:
+            raise ValueError("STEMImageDataset requires `path` or `data_path`.")
+        if path is not None and data_path is not None and path != data_path:
+            raise ValueError(
+                "`path` and `data_path` are both set but point to different values."
+            )
 
         if data_count is not None and int(data_count) < 0:
             raise ValueError("data_count must be None or a non-negative integer.")
 
-        self.data_path = data_path
+        self.path = resolved_path
+        self.data_path = resolved_path
         self.input_name = input_name
         self.target_name = target_name if target_name is not None else target_subdir
         self.noisy_subdir = noisy_subdir
@@ -108,23 +125,27 @@ class STEMImageDataset(paddle.io.Dataset):
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
-        self.dataset_name = osp.basename(osp.normpath(data_path))
+        self.dataset_name = osp.basename(osp.normpath(self.data_path))
         self.url = url if url is not None else self.DATASET_URLS.get(self.dataset_name)
         self.md5 = md5 if md5 is not None else self.DATASET_MD5S.get(self.dataset_name)
         self.auto_download = auto_download
         if build_samples_cfg is None:
-            class_name = (
-                "BuildIndexedNameSamples"
-                if strict_index_naming
-                else "BuildMatchedNameSamples"
-            )
             build_samples_cfg = {
-                "__class_name__": class_name,
+                "__class_name__": (
+                    "BuildIndexedNameSamples"
+                    if self.strict_index_naming
+                    else "BuildMatchedNameSamples"
+                ),
                 "__init_params__": {},
             }
-        self.sample_builder = build_matched_name_samples(build_samples_cfg)
+        self.sample_builder = build_matched_name_samples(
+            {
+                "build_samples_cfg": build_samples_cfg,
+                "strict_index_naming": self.strict_index_naming,
+            }
+        )
 
-        self.root = self._prepare_root(data_path, self.auto_download)
+        self.root = self._prepare_root(self.data_path, self.auto_download)
         self.data_root = self.root
         self.noisy_root = osp.join(self.data_root, self.noisy_subdir)
         self.target_root = (
@@ -265,6 +286,7 @@ class STEMImageDataset(paddle.io.Dataset):
         data = {
             self.input_name: noisy,
             "name": sample["name"],
+            "id": idx,
         }
         if self.target_root is not None:
             target = self._load_gray_image(osp.join(self.target_root, sample["target"]))
