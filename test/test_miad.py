@@ -20,10 +20,86 @@ from omegaconf import OmegaConf
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.models import build_model
 from ppmat.models.miad.collate import MiADCollator  # noqa: F401
+from ppmat.models.miad.miad import MiAD
+
+TINY_MODEL_CFG = {
+    "hidden_dim": 64,
+    "latent_dim": 32,
+    "num_layers": 2,
+    "max_atoms": 100,
+    "act_fn": "silu",
+    "dis_emb": "sin",
+    "num_freqs": 10,
+    "edge_style": "fc",
+    "ln": False,
+    "ip": True,
+    "smooth": True,
+    "pred_type": True,
+}
+
+TINY_DIFFUSION_CFG = {
+    "method": "DiffCSP",
+    "task": "gen_mp20",
+    "cont_time": False,
+    "num_steps": 10,
+    "time_embed_dim": 32,
+    "lat_diffusion": {"method": "ddpm", "scheduler": "diffcsp_cosine"},
+    "frac_diffusion": {"method": "wrapped_normal", "scheduler": "default_wrapped_normal"},
+    "type_diffusion": {"method": "d3pm", "scheduler": "default_d3pm"},
+}
+
+
+def _make_fake_batch(batch_size=2, atoms_per_crystal=5):
+    num_atoms = paddle.full([batch_size], atoms_per_crystal, dtype="int64")
+    total_atoms = batch_size * atoms_per_crystal
+    batch_idx = paddle.concat(
+        [paddle.full([atoms_per_crystal], i, dtype="int64") for i in range(batch_size)]
+    )
+    lattices = paddle.randn([batch_size, 3, 3], dtype="float32")
+    frac_coords = paddle.rand([total_atoms, 3], dtype="float32")
+    atom_types = paddle.randint(1, 10, [total_atoms], dtype="int64")
+    return {
+        "x0": [lattices, frac_coords, atom_types],
+        "batch_size": batch_size,
+        "num_atoms": num_atoms,
+        "batch_idx": batch_idx,
+        "atom_types": atom_types,
+    }
+
+
+class MiADSmokeTest(unittest.TestCase):
+    """Self-contained smoke tests for MiAD (no weights, no external files)."""
+
+    @classmethod
+    def setUpClass(cls):
+        paddle.seed(42)
+
+    def test_forward_smoke(self):
+        model = MiAD(model_cfg=TINY_MODEL_CFG, diffusion_cfg=TINY_DIFFUSION_CFG)
+        model.eval()
+        batch = _make_fake_batch()
+        with paddle.no_grad():
+            output = model(batch)
+        self.assertIn("loss_dict", output)
+        self.assertIn("loss", output["loss_dict"])
+        loss = output["loss_dict"]["loss"]
+        self.assertTrue(paddle.isfinite(loss))
+
+    def test_sample_output_format(self):
+        model = MiAD(model_cfg=TINY_MODEL_CFG, diffusion_cfg=TINY_DIFFUSION_CFG)
+        model.eval()
+        batch_data = {"num_atoms": paddle.to_tensor([5, 7], dtype="int64")}
+        result = model.sample(batch_data, num_inference_steps=5)
+        self.assertIn("result", result)
+        self.assertEqual(len(result["result"]), 2)
+        for entry in result["result"]:
+            for key in ("num_atoms", "atom_types", "frac_coords", "lattice"):
+                self.assertIn(key, entry)
+            self.assertEqual(entry["frac_coords"].shape[-1], 3)
 
 
 class MiADConfigTest(unittest.TestCase):
-    """Test that MiAD config can be parsed and model constructed."""
+    """Test MiAD construction via build_model from yaml config."""
 
     def test_config_load(self):
         config = OmegaConf.load("structure_generation/configs/miad/miad_mp20.yaml")
@@ -33,42 +109,37 @@ class MiADConfigTest(unittest.TestCase):
         self.assertIn("diffusion_cfg", config["Model"]["__init_params__"])
         self.assertIn("model_cfg", config["Model"]["__init_params__"])
 
-    def test_model_construction(self):
+    def test_build_model_path(self):
         config = OmegaConf.load("structure_generation/configs/miad/miad_mp20.yaml")
         config = OmegaConf.to_container(config, resolve=True)
         model = build_model(config["Model"])
-        self.assertIsNotNone(model)
+        self.assertIsInstance(model, MiAD)
         self.assertIsInstance(model, paddle.nn.Layer)
 
-    def test_model_forward(self):
+    def test_train_path(self):
         config = OmegaConf.load("structure_generation/configs/miad/miad_mp20.yaml")
         config = OmegaConf.to_container(config, resolve=True)
         model = build_model(config["Model"])
         model.eval()
-
-        batch_size = 2
-        num_atoms = paddle.to_tensor([5, 7], dtype="int64")
-        total_atoms = int(num_atoms.sum())
-        batch_idx = paddle.concat(
-            [paddle.full([int(n)], i, dtype="int64") for i, n in enumerate(num_atoms)]
-        )
-        lattices = paddle.randn([batch_size, 3, 3], dtype="float32")
-        frac_coords = paddle.rand([total_atoms, 3], dtype="float32")
-        atom_types = paddle.randint(1, 10, [total_atoms], dtype="int64")
-
-        batch = {
-            "x0": [lattices, frac_coords, atom_types],
-            "batch_size": batch_size,
-            "num_atoms": num_atoms,
-            "batch_idx": batch_idx,
-            "atom_types": atom_types,
-        }
-
+        batch = _make_fake_batch()
         with paddle.no_grad():
             output = model(batch)
-
         self.assertIn("loss_dict", output)
         self.assertIn("loss", output["loss_dict"])
+        self.assertTrue(paddle.isfinite(output["loss_dict"]["loss"]))
+
+    def test_sample_path(self):
+        config = OmegaConf.load("structure_generation/configs/miad/miad_mp20.yaml")
+        config = OmegaConf.to_container(config, resolve=True)
+        model = build_model(config["Model"])
+        model.eval()
+        batch_data = {"num_atoms": paddle.to_tensor([5, 7], dtype="int64")}
+        result = model.sample(batch_data, num_inference_steps=5)
+        self.assertIn("result", result)
+        self.assertEqual(len(result["result"]), 2)
+        for entry in result["result"]:
+            self.assertIn("num_atoms", entry)
+            self.assertIn("lattice", entry)
 
 
 class MiADDatasetTest(unittest.TestCase):
