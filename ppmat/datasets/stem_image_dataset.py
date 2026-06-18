@@ -42,9 +42,9 @@ class STEMImageDataset(paddle.io.Dataset):
       gt_detect/     # optional for prediction-only datasets
     ```
 
-    If ``data_path`` is missing, the released SFIN archive is downloaded
-    automatically according to the basename of ``data_path``. The model-facing
-    keys are controlled by ``input_name`` and ``target_name``.
+    If ``data_path`` is missing, the released SFIN archive can be downloaded
+    automatically. The model-facing keys are controlled by ``input_name`` and
+    ``target_name``.
 
     Sample pairing is delegated to ``build_matched_name_samples``. When
     ``build_samples_cfg`` is not provided, this dataset chooses
@@ -114,6 +114,21 @@ class STEMImageDataset(paddle.io.Dataset):
         if data_count is not None and int(data_count) < 0:
             raise ValueError("data_count must be None or a non-negative integer.")
 
+        dataset_name = osp.basename(osp.normpath(resolved_path))
+        resolved_url = url if url is not None else self.DATASET_URLS.get(dataset_name)
+        resolved_md5 = md5 if md5 is not None else self.DATASET_MD5S.get(dataset_name)
+        if not osp.exists(resolved_path):
+            if not auto_download or resolved_url is None:
+                raise FileNotFoundError(
+                    f"Dataset root {resolved_path} not found. "
+                    "Please check the path or enable auto_download with a valid url."
+                )
+            logger.message("The dataset is not found. Will download it now.")
+            resolved_path = download.get_datasets_path_from_url(
+                resolved_url,
+                resolved_md5,
+            )
+
         self.path = resolved_path
         self.data_path = resolved_path
         self.input_name = input_name
@@ -125,9 +140,9 @@ class STEMImageDataset(paddle.io.Dataset):
         self.strict_index_naming = strict_index_naming
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
-        self.dataset_name = osp.basename(osp.normpath(self.data_path))
-        self.url = url if url is not None else self.DATASET_URLS.get(self.dataset_name)
-        self.md5 = md5 if md5 is not None else self.DATASET_MD5S.get(self.dataset_name)
+        self.dataset_name = dataset_name
+        self.url = resolved_url
+        self.md5 = resolved_md5
         self.auto_download = auto_download
         if build_samples_cfg is None:
             build_samples_cfg = {
@@ -145,7 +160,7 @@ class STEMImageDataset(paddle.io.Dataset):
             }
         )
 
-        self.root = self._prepare_root(self.data_path, self.auto_download)
+        self.root = self.data_path
         self.data_root = self.root
         self.noisy_root = osp.join(self.data_root, self.noisy_subdir)
         self.target_root = (
@@ -160,66 +175,6 @@ class STEMImageDataset(paddle.io.Dataset):
         self.samples = self._build_samples()
         self.file_names = [sample["name"] for sample in self.samples]
 
-    def _prepare_root(
-        self,
-        data_path: str,
-        auto_download: bool,
-    ) -> str:
-        def has_data_dirs(root: str) -> bool:
-            noisy_root = osp.join(root, self.noisy_subdir)
-            target_root = (
-                osp.join(root, self.target_subdir)
-                if self.target_subdir is not None
-                else None
-            )
-            return osp.isdir(noisy_root) and (
-                target_root is None or osp.isdir(target_root)
-            )
-
-        if osp.exists(data_path):
-            if has_data_dirs(data_path):
-                return data_path
-            if (
-                self.dataset_name not in self.DATASET_URLS
-                or not auto_download
-                or self.url is None
-            ):
-                return data_path
-            logger.message(
-                f"Dataset root {data_path} exists but does not contain "
-                f"'{self.noisy_subdir}' and '{self.target_subdir}'. "
-                f"Downloading {self.name} from {self.url}."
-            )
-        else:
-            if not auto_download or self.url is None:
-                raise FileNotFoundError(
-                    f"Dataset path {data_path} not found. Please prepare data "
-                    "manually or enable auto download with a valid url."
-                )
-            logger.message(
-                f"Dataset root {data_path} not found. "
-                f"Downloading {self.name} from {self.url}."
-            )
-        downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
-        if not osp.exists(downloaded_root):
-            parent_root = osp.dirname(downloaded_root)
-            if parent_root and osp.isdir(parent_root):
-                downloaded_root = parent_root
-
-        if self.dataset_name in self.DATASET_URLS and not has_data_dirs(downloaded_root):
-            candidate_roots = [osp.join(downloaded_root, self.dataset_name)]
-            if self.url is not None:
-                url_stem = osp.splitext(osp.basename(self.url))[0]
-                candidate_roots.append(osp.join(downloaded_root, url_stem))
-
-            for candidate_root in candidate_roots:
-                if has_data_dirs(candidate_root):
-                    downloaded_root = candidate_root
-                    break
-
-        logger.info(f"Dataset downloaded to: {downloaded_root}")
-        return downloaded_root
-
     def _build_samples(self):
         noisy_files = sorted(
             [
@@ -232,7 +187,15 @@ class STEMImageDataset(paddle.io.Dataset):
             raise FileNotFoundError(f"No noisy images found under {self.noisy_root}.")
 
         if self.target_root is None:
-            return self._build_prediction_samples(noisy_files)
+            if self.data_count is not None:
+                noisy_files = noisy_files[: self.data_count]
+            return [
+                {
+                    "noisy": file_name,
+                    "name": file_name,
+                }
+                for file_name in noisy_files
+            ]
 
         target_files = sorted(
             [
@@ -257,19 +220,6 @@ class STEMImageDataset(paddle.io.Dataset):
                 f"No paired samples found under {self.noisy_root} "
                 f"and {self.target_root}."
             )
-        return samples
-
-    def _build_prediction_samples(self, noisy_files):
-        samples = [
-            {
-                "noisy": file_name,
-                "target": None,
-                "name": file_name,
-            }
-            for file_name in noisy_files
-        ]
-        if self.data_count is not None:
-            samples = samples[: self.data_count]
         return samples
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
