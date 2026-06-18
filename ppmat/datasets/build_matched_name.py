@@ -21,46 +21,31 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
-MATCHER_CLASS_NAMES = {
-    "BuildMatchedNameSamples",
-    "BuildIndexedNameSamples",
-}
-
 
 def build_matched_name_samples(cfg: Dict):
-    """Build sample matcher from config.
-
-    Supported input forms follow the repository's config-driven builder style:
-
-    1. A direct builder config:
-       {
-         "__class_name__": "BuildIndexedNameSamples",
-         "__init_params__": {}
-       }
-
-    2. A dataset/data config that nests the matcher config under
-       ``dataset.__init_params__.build_samples_cfg``.
-
-    3. A lightweight config that only provides ``build_samples_cfg`` or
-       ``strict_index_naming``.
-
-    Args:
-        cfg (Dict): Builder config, dataset config, or data config.
-
-    Returns:
-        object | None: Instantiated matcher, or ``None`` when cfg is ``None``.
-    """
+    """Build sample matcher from config."""
     if cfg is None:
         return None
-    matcher_cfg = _extract_matcher_cfg(cfg)
-    class_name = matcher_cfg.pop("__class_name__")
-    init_params = matcher_cfg.pop("__init_params__", {})
+    cfg = copy.deepcopy(cfg)
+    class_name = cfg.pop("__class_name__")
+    init_params = cfg.pop("__init_params__")
     cls = _locate_class(class_name)
     return cls(**init_params)
 
 
 class BuildMatchedNameSamples:
     """Match noisy and target samples by identical file names."""
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def build_one(file_name: str) -> Dict[str, str]:
+        return {
+            "noisy": file_name,
+            "target": file_name,
+            "name": file_name,
+        }
 
     def __call__(
         self,
@@ -90,17 +75,23 @@ class BuildMatchedNameSamples:
             common_names = common_names[: int(data_count)]
 
         return [
-            {
-                "noisy": file_name,
-                "target": file_name,
-                "name": file_name,
-            }
-            for file_name in common_names
+            BuildMatchedNameSamples.build_one(file_name) for file_name in common_names
         ]
 
 
 class BuildIndexedNameSamples:
     """Match noisy and target samples by integer file stem."""
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def build_one(noisy_file: str, target_file: str) -> Dict[str, str]:
+        return {
+            "noisy": noisy_file,
+            "target": target_file,
+            "name": noisy_file,
+        }
 
     @staticmethod
     def _build_index_map(file_names, directory: str, file_suffix: str):
@@ -147,7 +138,9 @@ class BuildIndexedNameSamples:
         noisy_map = self._build_index_map(noisy_files, noisy_root, file_suffix)
         target_map = self._build_index_map(target_files, target_root, file_suffix)
         if not noisy_map:
-            raise FileNotFoundError(f"No indexed noisy images found under {noisy_root}.")
+            raise FileNotFoundError(
+                f"No indexed noisy images found under {noisy_root}."
+            )
         if not target_map:
             raise FileNotFoundError(
                 f"No indexed target images found under {target_root}."
@@ -167,11 +160,7 @@ class BuildIndexedNameSamples:
             common_indices = common_indices[: int(data_count)]
 
         return [
-            {
-                "noisy": noisy_map[idx],
-                "target": target_map[idx],
-                "name": noisy_map[idx],
-            }
+            BuildIndexedNameSamples.build_one(noisy_map[idx], target_map[idx])
             for idx in common_indices
         ]
 
@@ -183,37 +172,3 @@ def _locate_class(class_name: str):
     if class_name not in globals():
         raise ValueError(f"Unknown sample matcher class: {class_name}")
     return globals()[class_name]
-
-
-def _extract_matcher_cfg(cfg: Optional[Dict]) -> Dict:
-    """Normalize supported matcher config inputs to a standard builder config."""
-    cfg = copy.deepcopy(cfg)
-
-    if "dataset" in cfg:
-        return _extract_matcher_cfg(cfg["dataset"])
-
-    if "__class_name__" in cfg and "__init_params__" in cfg:
-        class_name = cfg.get("__class_name__")
-        init_params = cfg.get("__init_params__", {})
-        if class_name not in MATCHER_CLASS_NAMES:
-            return _extract_matcher_cfg(init_params)
-        return cfg
-
-    if "build_samples_cfg" in cfg:
-        nested_cfg = cfg.get("build_samples_cfg")
-        if nested_cfg is not None:
-            return _extract_matcher_cfg(nested_cfg)
-
-    strict_index_naming = cfg.get("strict_index_naming", True)
-    class_name = cfg.get("__class_name__")
-    if class_name is None:
-        class_name = (
-            "BuildIndexedNameSamples"
-            if strict_index_naming
-            else "BuildMatchedNameSamples"
-        )
-
-    return {
-        "__class_name__": class_name,
-        "__init_params__": copy.deepcopy(cfg.get("__init_params__", {})),
-    }

@@ -28,17 +28,18 @@ from PIL import Image
 from tqdm import tqdm
 
 from ppmat.datasets import build_dataloader
-from ppmat.predictor import BasePredictor
+from ppmat.datasets.transform import build_post_transforms
+from ppmat.models import build_model
+from ppmat.models import build_model_from_name
 from ppmat.utils import logger
+from ppmat.utils import save_load
 
 
-class SpectrumPredictor(BasePredictor):
+class SpectrumPredictor:
     """Spectrum enhancement predictor.
 
-    The model-loading and post-process flow follows the repository predictor
-    entries such as ``property_prediction/predict.py``. Dataset prediction uses
-    the configured ``Dataset.<split>`` branch directly, so prediction stays
-    aligned with the training/evaluation data interface.
+    Dataset prediction uses the configured ``Dataset.<split>`` branch directly,
+    keeping prediction aligned with the training/evaluation data interface.
     """
 
     def __init__(
@@ -48,18 +49,50 @@ class SpectrumPredictor(BasePredictor):
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        super().__init__(
-            model_name=model_name,
-            weights_name=weights_name,
-            config_path=config_path,
-            checkpoint_path=checkpoint_path,
-            work_dir="",
-        )
-        self.load_inference_model()
+        # if model_name is not None, then config_path and checkpoint_path must be
+        # provided
+        if model_name is None:
+            assert config_path is not None and checkpoint_path is not None, (
+                "config_path and checkpoint_path must be provided when model_name is "
+                "None."
+            )
+            logger.info(
+                f"Loading configuration from {config_path} and model from "
+                f"{checkpoint_path}."
+            )
+
+            config = OmegaConf.load(config_path)
+            config = OmegaConf.to_container(config, resolve=True)
+
+            model_config = config.get("Model", None)
+            assert model_config is not None, "Model config must be provided."
+            model = build_model(model_config)
+            save_load.load_pretrain(model, checkpoint_path)
+        else:
+            logger.info("Since model_name is given, downloading it...")
+            model, config = build_model_from_name(model_name, weights_name)
+
+        self.model = model
+        self.config = config
+        self.model.eval()
+
+        predict_config = config.get("Predict", None)
+        self.predict_config = predict_config if predict_config is not None else {}
+        self.eval_with_no_grad = self.predict_config.get("eval_with_no_grad", True)
+        self.post_transforms_cfg = self.predict_config.get("post_transforms", None)
+        if self.post_transforms_cfg is not None:
+            self.post_transforms = build_post_transforms(self.post_transforms_cfg)
+        else:
+            self.post_transforms = None
 
         model_init = self.config.get("Model", {}).get("__init_params__", {})
         self.input_name = model_init.get("input_name", "noisy")
         self.target_name = model_init.get("target_name", "gt_enhance")
+
+    def post_process(self, data):
+        if self.post_transforms is None:
+            return data
+        return self.post_transforms(data)
 
     def predict_batch(self, batch):
         if self.eval_with_no_grad:
@@ -239,8 +272,7 @@ class SpectrumPredictor(BasePredictor):
         with self._dataset_cfg_from_input_path(input_path, split) as dataset_cfg:
             return self._predict_from_dataset_cfg(dataset_cfg, output_dir)
 
-
-def parse_args():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default=None, help="Model name.")
     parser.add_argument(
@@ -290,42 +322,18 @@ def parse_args():
         choices=["cpu", "gpu"],
         help="Device to run inference.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
 
-
-def _default_output_dir(
-    config,
-    config_path: Optional[str],
-    model_name: Optional[str],
-) -> str:
-    trainer_output_dir = config.get("Trainer", {}).get("output_dir")
-    if trainer_output_dir:
-        return osp.join(trainer_output_dir, "predictions")
-    if config_path:
-        return osp.join("./output", Path(config_path).stem, "predictions")
-    if model_name:
-        return osp.join("./output", model_name, "predictions")
-    return "./output/spectrum_enhancement/predictions"
-
-
-def _checkpoint_path_from_config(config_path: Optional[str]) -> Optional[str]:
-    if config_path is None:
-        return None
-    config = OmegaConf.load(config_path)
-    config = OmegaConf.to_container(config, resolve=True)
-    predict_config = config.get("Predict", None)
-    if predict_config is None:
-        return None
-    return predict_config.get("checkpoint_path", None)
-
-
-if __name__ == "__main__":
-    args = parse_args()
     paddle.set_device(args.device)
 
     checkpoint_path = args.checkpoint_path
     if args.model_name is None and checkpoint_path is None:
-        checkpoint_path = _checkpoint_path_from_config(args.config_path)
+        if args.config_path is not None:
+            config = OmegaConf.load(args.config_path)
+            config = OmegaConf.to_container(config, resolve=True)
+            predict_config = config.get("Predict", None)
+            if predict_config is not None:
+                checkpoint_path = predict_config.get("checkpoint_path", None)
 
     predictor = SpectrumPredictor(
         model_name=args.model_name,
@@ -334,11 +342,25 @@ if __name__ == "__main__":
         checkpoint_path=checkpoint_path,
     )
 
-    output_dir = args.output_dir or _default_output_dir(
-        predictor.config, args.config_path, args.model_name
-    )
+    if args.output_dir is not None:
+        output_dir = args.output_dir
+    else:
+        trainer_output_dir = predictor.config.get("Trainer", {}).get("output_dir")
+        if trainer_output_dir:
+            output_dir = osp.join(trainer_output_dir, "predictions")
+        elif args.config_path:
+            output_dir = osp.join("./output", Path(args.config_path).stem, "predictions")
+        elif args.model_name:
+            output_dir = osp.join("./output", args.model_name, "predictions")
+        else:
+            output_dir = "./output/spectrum_enhancement/predictions"
+
     if args.input_path is not None:
         saved_paths = predictor.from_image_path(args.input_path, output_dir, args.split)
     else:
         saved_paths = predictor.from_dataset(args.split, output_dir)
     logger.info(f"Saved {len(saved_paths)} predictions to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()
