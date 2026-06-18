@@ -160,24 +160,11 @@ class STEMImageDataset(paddle.io.Dataset):
 
     def _build_samples(self):
         noisy_files = self._list_image_files(self.noisy_root)
-        target_files = sorted(
-            [
-                file_name
-                for file_name in os.listdir(self.target_root)
-                if file_name.endswith(self.file_suffix)
-            ]
-        )
-        if not target_files:
-            raise FileNotFoundError(f"No target images found under {self.target_root}.")
-
-        samples = self.sample_builder(
-            noisy_files,
-            target_files,
-            noisy_root=self.noisy_root,
-            target_root=self.target_root,
-            file_suffix=self.file_suffix,
-            data_count=self.data_count,
-        )
+        target_files = self._list_image_files(self.target_root)
+        file_pairs = self._build_index_file_pairs(noisy_files, target_files)
+        if self.data_count is not None:
+            file_pairs = file_pairs[: self.data_count]
+        samples = self.sample_builder(file_pairs)
         if not samples:
             raise FileNotFoundError(
                 f"No paired samples found under {self.noisy_root} "
@@ -202,6 +189,48 @@ class STEMImageDataset(paddle.io.Dataset):
         if not file_names:
             raise FileNotFoundError(f"No images found under {root}.")
         return file_names
+
+    def _build_index_map(self, file_names, root: str):
+        index_map = {}
+        invalid_files = []
+        duplicate_files = []
+        for file_name in file_names:
+            stem = osp.splitext(file_name)[0]
+            if not stem.isdigit():
+                invalid_files.append(file_name)
+                continue
+            index = int(stem)
+            if index in index_map:
+                duplicate_files.append((index_map[index], file_name))
+                continue
+            index_map[index] = file_name
+
+        if invalid_files:
+            raise ValueError(
+                "Strict indexed naming requires files named like "
+                f"'0{self.file_suffix}' under {root}. "
+                f"Invalid files: {invalid_files[:10]}."
+            )
+        if duplicate_files:
+            raise ValueError(
+                "Strict indexed naming requires one file per integer index under "
+                f"{root}. Duplicate indexed files: {duplicate_files[:10]}."
+            )
+        return index_map
+
+    def _build_index_file_pairs(self, noisy_files, target_files):
+        noisy_map = self._build_index_map(noisy_files, self.noisy_root)
+        target_map = self._build_index_map(target_files, self.target_root)
+        common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
+        missing_target = sorted(set(noisy_map.keys()) - set(target_map.keys()))
+        missing_noisy = sorted(set(target_map.keys()) - set(noisy_map.keys()))
+        if missing_target or missing_noisy:
+            raise FileNotFoundError(
+                "Noisy and target images are not paired. "
+                f"Missing target indices: {missing_target[:10]}, "
+                f"missing noisy indices: {missing_noisy[:10]}."
+            )
+        return [(noisy_map[idx], target_map[idx]) for idx in common_indices]
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
         image = Image.open(file_path).convert("L")
