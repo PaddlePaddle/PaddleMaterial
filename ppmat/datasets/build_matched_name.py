@@ -41,55 +41,145 @@ def build_matched_name_samples(cfg: Dict):
 class BuildMatchedNameSamples:
     """Match noisy and target samples by identical file names."""
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        file_key: str = "file_name",
+        noisy_key: str = "noisy",
+        target_key: str = "target",
+        name_key: str = "name",
+    ):
+        self.file_key = file_key
+        self.noisy_key = noisy_key
+        self.target_key = target_key
+        self.name_key = name_key
 
     @staticmethod
-    def build_one(file_name: str) -> Dict[str, str]:
+    def build_one(
+        file_data: Union[Dict[str, str], str],
+        file_key: str,
+        noisy_key: str,
+        target_key: str,
+        name_key: str,
+    ) -> Dict[str, str]:
+        if isinstance(file_data, dict):
+            file_name = file_data.get(file_key)
+        else:
+            file_name = file_data
+        if not isinstance(file_name, str) or not file_name:
+            raise ValueError(
+                f"Expected non-empty file name, but got {type(file_name)}: {file_name}"
+            )
         return {
-            "noisy": file_name,
-            "target": file_name,
-            "name": file_name,
+            noisy_key: file_name,
+            target_key: file_name,
+            name_key: file_name,
         }
 
     def __call__(
-        self, file_names: Union[Sequence[str], str]
+        self,
+        file_names: Union[
+            Sequence[Union[Dict[str, str], str]],
+            Dict[str, str],
+            str,
+        ],
     ) -> Union[List[Dict[str, str]], Dict[str, str]]:
         if isinstance(file_names, (list, tuple)):
+            if len(file_names) == 0:
+                return []
             return [
-                BuildMatchedNameSamples.build_one(file_name) for file_name in file_names
+                BuildMatchedNameSamples.build_one(
+                    file_name,
+                    self.file_key,
+                    self.noisy_key,
+                    self.target_key,
+                    self.name_key,
+                )
+                for file_name in file_names
             ]
-        return BuildMatchedNameSamples.build_one(file_names)
+        return BuildMatchedNameSamples.build_one(
+            file_names,
+            self.file_key,
+            self.noisy_key,
+            self.target_key,
+            self.name_key,
+        )
 
 
 class BuildIndexedNameSamples:
     """Match noisy and target samples by integer file stem."""
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        noisy_file_key: str = "noisy_file",
+        target_file_key: str = "target_file",
+        noisy_key: str = "noisy",
+        target_key: str = "target",
+        name_key: str = "name",
+    ):
+        self.noisy_file_key = noisy_file_key
+        self.target_file_key = target_file_key
+        self.noisy_key = noisy_key
+        self.target_key = target_key
+        self.name_key = name_key
 
     @staticmethod
-    def build_one(file_pair: Sequence[str]) -> Dict[str, str]:
-        noisy_file, target_file = file_pair
+    def build_one(
+        sample_data: Dict[str, str],
+        noisy_file_key: str,
+        target_file_key: str,
+        noisy_key: str,
+        target_key: str,
+        name_key: str,
+    ) -> Dict[str, str]:
+        if not isinstance(sample_data, dict):
+            raise TypeError(
+                f"Indexed sample data must be a dict, but got {type(sample_data)}."
+            )
+        noisy_file = sample_data.get(noisy_file_key)
+        target_file = sample_data.get(target_file_key)
+        if not isinstance(noisy_file, str) or not noisy_file:
+            raise ValueError(
+                f"Expected non-empty noisy file name, but got {noisy_file}."
+            )
+        if not isinstance(target_file, str) or not target_file:
+            raise ValueError(
+                f"Expected non-empty target file name, but got {target_file}."
+            )
         return {
-            "noisy": noisy_file,
-            "target": target_file,
-            "name": noisy_file,
+            noisy_key: noisy_file,
+            target_key: target_file,
+            name_key: noisy_file,
         }
 
     def __call__(
-        self, file_pairs: Union[Sequence[Sequence[str]], Sequence[str]]
+        self,
+        sample_data_list: Union[
+            Sequence[Dict[str, str]],
+            Dict[str, str],
+        ],
     ) -> Union[List[Dict[str, str]], Dict[str, str]]:
-        if (
-            isinstance(file_pairs, (list, tuple))
-            and len(file_pairs) > 0
-            and isinstance(file_pairs[0], (list, tuple))
-        ):
+        if isinstance(sample_data_list, (list, tuple)):
+            if len(sample_data_list) == 0:
+                return []
             return [
-                BuildIndexedNameSamples.build_one(file_pair)
-                for file_pair in file_pairs
+                BuildIndexedNameSamples.build_one(
+                    sample_data,
+                    self.noisy_file_key,
+                    self.target_file_key,
+                    self.noisy_key,
+                    self.target_key,
+                    self.name_key,
+                )
+                for sample_data in sample_data_list
             ]
-        return BuildIndexedNameSamples.build_one(file_pairs)
+        return BuildIndexedNameSamples.build_one(
+            sample_data_list,
+            self.noisy_file_key,
+            self.target_file_key,
+            self.noisy_key,
+            self.target_key,
+            self.name_key,
+        )
 
 
 def _locate_class(class_name: str) -> Any:

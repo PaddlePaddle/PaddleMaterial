@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import os.path as osp
+from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Optional
@@ -84,6 +85,7 @@ class STEMImageDataset(paddle.io.Dataset):
         noisy_subdir: str = "noisy",
         file_suffix: str = ".png",
         data_count: Optional[int] = None,
+        build_samples_cfg: Optional[Dict[str, Any]] = None,
         scale_to_unit: bool = False,
         transforms: Optional[Callable] = None,
         url: Optional[str] = None,
@@ -109,14 +111,19 @@ class STEMImageDataset(paddle.io.Dataset):
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
         self.auto_download = auto_download
-        self.path = self._prepare_root(data_path, auto_download)
-        self.data_path = self.path
-        self.sample_builder = build_matched_name_samples(
-            {
+        if build_samples_cfg is None:
+            build_samples_cfg = {
                 "__class_name__": "BuildIndexedNameSamples",
                 "__init_params__": {},
             }
-        )
+            logger.message(
+                "The build_samples_cfg is not set, will use the default "
+                f"configs: {build_samples_cfg}"
+            )
+        self.build_samples_cfg = build_samples_cfg
+        self.path = self._prepare_root(data_path, auto_download)
+        self.data_path = self.path
+        self.sample_builder = build_matched_name_samples(self.build_samples_cfg)
 
         self.root = self.data_path
         self.data_root = self.root
@@ -137,7 +144,7 @@ class STEMImageDataset(paddle.io.Dataset):
         self.file_names = [sample["name"] for sample in self.samples]
 
     def _prepare_root(self, root: str, auto_download: bool) -> str:
-        if osp.exists(root):
+        if self._has_data_dirs(root):
             return root
         if not auto_download or self.url is None:
             raise FileNotFoundError(
@@ -146,25 +153,43 @@ class STEMImageDataset(paddle.io.Dataset):
             )
         logger.message("The dataset is not found. Will download it now.")
         downloaded_root = download.get_datasets_path_from_url(self.url, self.md5)
-        noisy_root = osp.join(downloaded_root, self.noisy_subdir)
-        if osp.isdir(noisy_root):
+        if self._has_data_dirs(downloaded_root):
             return downloaded_root
 
         nested_root = osp.join(
             downloaded_root, osp.basename(osp.normpath(downloaded_root))
         )
-        if osp.isdir(osp.join(nested_root, self.noisy_subdir)):
+        if self._has_data_dirs(nested_root):
             return nested_root
 
         return downloaded_root
 
+    def _has_data_dirs(self, root: str) -> bool:
+        if not osp.isdir(root):
+            return False
+        noisy_root = osp.join(root, self.noisy_subdir)
+        target_root = (
+            osp.join(root, self.target_subdir)
+            if self.target_subdir is not None
+            else None
+        )
+        return osp.isdir(noisy_root) and (
+            target_root is None or osp.isdir(target_root)
+        )
+
     def _build_samples(self):
         noisy_files = self._list_image_files(self.noisy_root)
         target_files = self._list_image_files(self.target_root)
-        file_pairs = self._build_index_file_pairs(noisy_files, target_files)
+        class_name = self.build_samples_cfg.get("__class_name__", "")
+        if class_name.endswith("BuildMatchedNameSamples"):
+            sample_data = self._build_matched_sample_data(noisy_files, target_files)
+        elif class_name.endswith("BuildIndexedNameSamples"):
+            sample_data = self._build_index_sample_data(noisy_files, target_files)
+        else:
+            raise ValueError(f"Unsupported sample builder class: {class_name}")
         if self.data_count is not None:
-            file_pairs = file_pairs[: self.data_count]
-        samples = self.sample_builder(file_pairs)
+            sample_data = sample_data[: self.data_count]
+        samples = self.sample_builder(sample_data)
         if not samples:
             raise FileNotFoundError(
                 f"No paired samples found under {self.noisy_root} "
@@ -218,7 +243,23 @@ class STEMImageDataset(paddle.io.Dataset):
             )
         return index_map
 
-    def _build_index_file_pairs(self, noisy_files, target_files):
+    def _build_matched_sample_data(self, noisy_files, target_files):
+        noisy_file_set = set(noisy_files)
+        target_file_set = set(target_files)
+        missing_target = sorted(noisy_file_set - target_file_set)
+        missing_noisy = sorted(target_file_set - noisy_file_set)
+        if missing_target or missing_noisy:
+            raise FileNotFoundError(
+                "Noisy and target images are not paired. "
+                f"Missing target files: {missing_target[:10]}, "
+                f"missing noisy files: {missing_noisy[:10]}."
+            )
+        return [
+            {"file_name": file_name}
+            for file_name in sorted(noisy_file_set & target_file_set)
+        ]
+
+    def _build_index_sample_data(self, noisy_files, target_files):
         noisy_map = self._build_index_map(noisy_files, self.noisy_root)
         target_map = self._build_index_map(target_files, self.target_root)
         common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
@@ -230,7 +271,13 @@ class STEMImageDataset(paddle.io.Dataset):
                 f"Missing target indices: {missing_target[:10]}, "
                 f"missing noisy indices: {missing_noisy[:10]}."
             )
-        return [(noisy_map[idx], target_map[idx]) for idx in common_indices]
+        return [
+            {
+                "noisy_file": noisy_map[idx],
+                "target_file": target_map[idx],
+            }
+            for idx in common_indices
+        ]
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
         image = Image.open(file_path).convert("L")
