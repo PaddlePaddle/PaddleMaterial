@@ -182,9 +182,9 @@ class STEMImageDataset(paddle.io.Dataset):
         target_files = self._list_image_files(self.target_root)
         class_name = self.build_samples_cfg.get("__class_name__", "")
         if class_name.endswith("BuildMatchedNameSamples"):
-            sample_data = self._build_matched_sample_data(noisy_files, target_files)
+            sample_data = self._prepare_matched_sample_data(noisy_files, target_files)
         elif class_name.endswith("BuildIndexedNameSamples"):
-            sample_data = self._build_index_sample_data(noisy_files, target_files)
+            sample_data = self._prepare_indexed_sample_data(noisy_files, target_files)
         else:
             raise ValueError(f"Unsupported sample builder class: {class_name}")
         if self.data_count is not None:
@@ -243,7 +243,7 @@ class STEMImageDataset(paddle.io.Dataset):
             )
         return index_map
 
-    def _build_matched_sample_data(self, noisy_files, target_files):
+    def _prepare_matched_sample_data(self, noisy_files, target_files):
         noisy_file_set = set(noisy_files)
         target_file_set = set(target_files)
         missing_target = sorted(noisy_file_set - target_file_set)
@@ -255,11 +255,14 @@ class STEMImageDataset(paddle.io.Dataset):
                 f"missing noisy files: {missing_noisy[:10]}."
             )
         return [
-            {"file_name": file_name}
+            {
+                "noisy_file": file_name,
+                "target_file": file_name,
+            }
             for file_name in sorted(noisy_file_set & target_file_set)
         ]
 
-    def _build_index_sample_data(self, noisy_files, target_files):
+    def _prepare_indexed_sample_data(self, noisy_files, target_files):
         noisy_map = self._build_index_map(noisy_files, self.noisy_root)
         target_map = self._build_index_map(target_files, self.target_root)
         common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
