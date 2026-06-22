@@ -161,6 +161,7 @@ class SFINDataset(Dataset):
             )
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            self._normalize_extracted_paths(root_path)
             for candidate in (
                 osp.join(root_path, self.split),
                 osp.join(root_path, self.dataset_name),
@@ -202,6 +203,47 @@ class SFINDataset(Dataset):
         self.file_names = self.row_data["name"]
         self._prepare_cache()
         logger.info(f"Load {self.num_samples} samples from {self.path}")
+
+    @staticmethod
+    def _normalize_extracted_paths(root_path: str):
+        """Normalize Windows-style zip entries after automatic download.
+
+        Some zip files generated on Windows may contain ``\\`` in entry names.
+        On Linux, ``zipfile.extract`` treats those backslashes as ordinary
+        filename characters instead of directory separators. Move such files to
+        their normalized nested paths so the canonical SFIN layout can be read.
+        """
+        if not osp.isdir(root_path):
+            return
+
+        file_move_pairs = []
+        dir_move_pairs = []
+        for current_root, dir_names, file_names in os.walk(root_path, topdown=False):
+            for file_name in file_names:
+                normalized_name = file_name.replace("\\", os.sep)
+                if normalized_name == file_name:
+                    continue
+                src_path = osp.join(current_root, file_name)
+                dst_path = osp.normpath(osp.join(current_root, normalized_name))
+                if osp.abspath(src_path) == osp.abspath(dst_path):
+                    continue
+                file_move_pairs.append((src_path, dst_path))
+
+            for dir_name in dir_names:
+                normalized_name = dir_name.replace("\\", os.sep)
+                if normalized_name == dir_name:
+                    continue
+                src_path = osp.join(current_root, dir_name)
+                dst_path = osp.normpath(osp.join(current_root, normalized_name))
+                if osp.abspath(src_path) == osp.abspath(dst_path):
+                    continue
+                dir_move_pairs.append((src_path, dst_path))
+
+        for src_path, dst_path in file_move_pairs + dir_move_pairs:
+            os.makedirs(osp.dirname(dst_path), exist_ok=True)
+            if osp.exists(dst_path):
+                continue
+            os.replace(src_path, dst_path)
 
     def read_data(self, path: str) -> Tuple[Dict[str, List[Any]], int]:
         """Read STEM image file names and build sample metadata."""

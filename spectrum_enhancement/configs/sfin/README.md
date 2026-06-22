@@ -20,30 +20,6 @@ SFIN uses two paired STEM image datasets: HAADF and BF. Each dataset contains
 `train` and `test` splits. A sample is one noisy grayscale input paired with
 two labels, `gt_enhance` and `gt_detect`.
 
-Expected directory structure:
-
-```text
-sfin_haadf/
-  train/
-    noisy/
-    gt_enhance/
-    gt_detect/
-  test/
-    noisy/
-    gt_enhance/
-    gt_detect/
-
-sfin_bf/
-  train/
-    noisy/
-    gt_enhance/
-    gt_detect/
-  test/
-    noisy/
-    gt_enhance/
-    gt_detect/
-```
-
 | Dataset | Train | Val/Test | Labels |
 | :---: | :---: | :---: | :---: |
 | [HAADF](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN/sfin_haadf.zip) | 1000 | 100 | `gt_enhance`, `gt_detect` |
