@@ -15,123 +15,204 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
-import math
 import os
 import os.path as osp
-import pickle ## for dump/load
+import pickle  # # for dump/load
 from collections import defaultdict
 from typing import Any
 from typing import Callable
 from typing import Dict
+from typing import List
 from typing import Optional
 from typing import Union
-from typing import List
 
 import numpy as np
 import paddle.distributed as dist
 from paddle.io import Dataset
 
-from ppmat.datasets.build_structure import BuildStructure
-from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
-from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils.io import read_json
-from ppmat.utils.misc import is_equal
 
 # Attempt to import tqdm for progress visualization
 try:
-    from tqdm import tqdm 
+    from tqdm import tqdm
 except ImportError:
+
     def tqdm(iterable, **kwargs):
         return iterable
 
+
 try:
-    import ase.io
-    import ase.data
     import ase.build
+    import ase.data
+    import ase.io
     from pymatgen.io.ase import AseAtomsAdaptor
-    
+
     read = ase.io.read
     symbols = ase.data.atomic_numbers
     ASE_AVAILABLE = True
 
 except ImportError:
-    
+
     def dummy_read(*args, **kwargs):
         """
         If ASE is not installed, this pseudo-read function will throw an error when called.
         In the `__init__` method of `QM9Dataset`, if `read` is not needed immediately,
         you can simply return `None` or an empty list. However, if it is needed, the error will be more explicit.
-        
+
         """
         raise RuntimeError(
             "Atomic Simulation Environment (ASE) is required but not installed. "
             "Please install it (e.g., pip install ase) to use QM9Dataset."
         )
-    read = dummy_read  
+
+    read = dummy_read
     symbols = None
     AseAtomsAdaptor = None
     ASE_AVAILABLE = False
-    print("Warning: ASE (Atomic Simulation Environment) not found. Data parsing functionality is disabled.")
+    print(
+        "Warning: ASE (Atomic Simulation Environment) not found. Data parsing functionality is disabled."
+    )
+
+# Symbol-to-atomic-number mapping (elements present in QM9 + common ones)
+_SYMBOL_TO_Z = {
+    "H": 1,
+    "He": 2,
+    "Li": 3,
+    "Be": 4,
+    "B": 5,
+    "C": 6,
+    "N": 7,
+    "O": 8,
+    "F": 9,
+    "Ne": 10,
+    "Na": 11,
+    "Mg": 12,
+    "Al": 13,
+    "Si": 14,
+    "P": 15,
+    "S": 16,
+    "Cl": 17,
+    "Ar": 18,
+    "K": 19,
+    "Ca": 20,
+}
+
+# Official QM9 second-line property order (the 15 numerical values)
+_QM9_PROP_NAMES = [
+    "A",
+    "B",
+    "C",
+    "mu",
+    "alpha",
+    "homo",
+    "lumo",
+    "gap",
+    "r2",
+    "zpve",
+    "U0",
+    "U",
+    "H",
+    "G",
+    "Cv",
+]
+
+
+def _parse_qm9_xyz(lines):
+    """Parse a single QM9 .xyz block into z, pos, and property dict.
+
+    Args:
+        lines: List of strings (first line = N_atoms, second = properties,
+               remaining N lines = atom entries).
+
+    Returns:
+        (z, pos, props) where z is int64 ndarray, pos is float32 ndarray (N, 3),
+        and props maps property name to float value.
+    """
+    n_atoms = int(lines[0].strip())
+    prop_line = lines[1].strip().replace("*^", "e")
+    parts = prop_line.split()
+    raw_vals = []
+    for p in parts:
+        try:
+            raw_vals.append(float(p))
+        except ValueError:
+            raw_vals.append(0.0)
+    props = {}
+    for k, name in enumerate(_QM9_PROP_NAMES):
+        idx = k + 2  # skip 'gdb' tag and numeric index at positions 0, 1
+        props[name] = raw_vals[idx] if idx < len(raw_vals) else 0.0
+
+    z_list = []
+    pos_list = []
+    for i in range(n_atoms):
+        atom_line = lines[2 + i].strip().replace("*^", "e")
+        atom_parts = atom_line.split()
+        symbol = atom_parts[0]
+        z_list.append(_SYMBOL_TO_Z.get(symbol, 0))
+        x, y, z = float(atom_parts[1]), float(atom_parts[2]), float(atom_parts[3])
+        pos_list.append([x, y, z])
+
+    return np.array(z_list, dtype=np.int64), np.array(pos_list, dtype=np.float32), props
+
 
 class QM9Dataset(Dataset):
     """
-    QM9 (GDB-9) Dataset Handler
-    In order to adapt to the CHGNet model, I made a forced mapping from 'lumo' to 'energy_per_atom'. 
-    The CHGNet model is used to run machine learning potentials, and the QM9 dataset may not be very suitable. 
-    LUMO is a property. Please be aware of this when using it to avoid misunderstandings. 
-    This code is for research purposes only and does not represent the optimal approach.——by wwaawwaaee
-    
-    **Dataset Overview**
-    this class downloads QM9 primiry(end with .xyz)and transfered into 
-    the input structures and quantum chemical property labels required 
-    by graph neural network (GNN) models.(maybe)
+     QM9 (GDB-9) Dataset Handler
+     In order to adapt to the CHGNet model, I made a forced mapping from 'lumo' to 'energy_per_atom'.
+     The CHGNet model is used to run machine learning potentials, and the QM9 dataset may not be very suitable.
+     LUMO is a property. Please be aware of this when using it to avoid misunderstandings.
+     This code is for research purposes only and does not represent the optimal approach.——by wwaawwaaee
 
-    **dataset format**
-    -----------------
-    - raw data: qm9.zip ()
-    - struncture file: a sample corresponds to a seperate .xyz file
-    - attribute(label): 19 quantum chemical properties are embedded in each .xyz file's
-    second line comment
+     **Dataset Overview**
+     this class downloads QM9 primiry(end with .xyz)and transfered into
+     the input structures and quantum chemical property labels required
+     by graph neural network (GNN) models.(maybe)
 
-    **source**:Original data available at https://figshare.com/ndownloader/files/3195389
+     **dataset format**
+     -----------------
+     - raw data: qm9.zip ()
+     - struncture file: a sample corresponds to a seperate .xyz file
+     - attribute(label): 19 quantum chemical properties are embedded in each .xyz file's
+     second line comment
 
-    The dataset can also be found at https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2
-    
-   **Key Properties List (Available for 'property_names' argument)**
-    -----------------------------------------------------------------
-    1.  mu (Dipole Moment, Debye)
-    2.  alpha (Isotropic Polarizability, Bohr^3)
-    3.  homo (HOMO Energy, Hartree)
-    4.  lumo (LUMO Energy, Hartree)
-    5.  gap (LUMO-HOMO Gap, Hartree)
-    6.  U0 (Internal Energy at 0 K, Hartree)
-    sly
-    # ... (remaining 13 properties here in their correct order)
-    
-    **__getitem__ Sample Contract**
-    ----------------------------------------
-    - 'atom_types': np.ndarray (dtype=int64) - Atomic numbers (Z).
-    - 'coords': np.ndarray (dtype=float32) - 3D Cartesian coordinates in Angstrom.
-    - [property_name]: np.ndarray (dtype=float32) - The target label value (e.g., 'lumo').
-    - 'graph': (Optional) The graph object constructed by the converter (if configured).
-    
-    Args:
-        path (str): The root directory to store downloaded and cache files.
-        property_names (Union[str, List[str]]): The name(s) of the target property 
-            to predict. Must be selected from the list above. Defaults to 'lumo'.
-        build_graph_cfg (Dict, optional): Configuration dictionary for building 
-            the graph representation from the molecular structure (e.g., cutoff radius). 
-            Defaults to None (structure is returned instead of graph).
-        transforms (Optional[Callable], optional): A preprocessing function to apply 
-            to the sample dictionary. Defaults to None.
-        cache_path (Optional[str], optional): Explicit path for the cache directory. 
-            Defaults to None.
-        overwrite (bool, optional): If True, forces the rebuilding of caches. 
-            Defaults to False.
-        filter_unvalid (bool, optional): Whether to filter out corrupted samples. 
-            Defaults to True.
+     **source**:Original data available at https://figshare.com/ndownloader/files/3195389
+
+     The dataset can also be found at https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2
+
+    **Key Properties List (Available for 'property_names' argument)**
+     -----------------------------------------------------------------
+     1.  mu (Dipole Moment, Debye)
+     2.  alpha (Isotropic Polarizability, Bohr^3)
+     3.  homo (HOMO Energy, Hartree)
+     4.  lumo (LUMO Energy, Hartree)
+     5.  gap (LUMO-HOMO Gap, Hartree)
+     6.  U0 (Internal Energy at 0 K, Hartree)
+     sly
+     # ... (remaining 13 properties here in their correct order)
+
+     **__getitem__ Sample Contract**
+     ----------------------------------------
+     - 'atom_types': np.ndarray (dtype=int64) - Atomic numbers (Z).
+     - 'coords': np.ndarray (dtype=float32) - 3D Cartesian coordinates in Angstrom.
+     - [property_name]: np.ndarray (dtype=float32) - The target label value (e.g., 'lumo').
+     - 'graph': (Optional) The graph object constructed by the converter (if configured).
+
+     Args:
+         path (str): The root directory to store downloaded and cache files.
+         property_names (Union[str, List[str]]): The name(s) of the target property
+             to predict. Must be selected from the list above. Defaults to 'lumo'.
+         build_graph_cfg (Dict, optional): Configuration dictionary for building
+             the graph representation from the molecular structure (e.g., cutoff radius).
+             Defaults to None (structure is returned instead of graph).
+         transforms (Optional[Callable], optional): A preprocessing function to apply
+             to the sample dictionary. Defaults to None.
+         cache_path (Optional[str], optional): Explicit path for the cache directory.
+             Defaults to None.
+         overwrite (bool, optional): If True, forces the rebuilding of caches.
+             Defaults to False.
+         filter_unvalid (bool, optional): Whether to filter out corrupted samples.
+             Defaults to True.
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2"
@@ -140,31 +221,33 @@ class QM9Dataset(Dataset):
 
     # Official QM9 second-line property order (including tag/index)
     PROP_ORDER = [
-        "tag",    # textual tag / molecule identifier (often 'gdb ...')
+        "tag",  # textual tag / molecule identifier (often 'gdb ...')
         "index",  # numeric index (maps to vals_float[0] after removing 'gdb')
-        "A",      # rotational constant A (GHz)
-        "B",      # rotational constant B (GHz)
-        "C",      # rotational constant C (GHz)
-        "mu",     # dipole moment (Debye)
+        "A",  # rotational constant A (GHz)
+        "B",  # rotational constant B (GHz)
+        "C",  # rotational constant C (GHz)
+        "mu",  # dipole moment (Debye)
         "alpha",  # isotropic polarizability (Bohr^3)
-        "homo",   # HOMO energy (Hartree)
-        "lumo",   # LUMO energy (Hartree)
-        "gap",    # LUMO-HOMO gap (Hartree)
-        "r2",     # electronic spatial extent (Bohr^2)
-        "zpve",   # zero point vibrational energy (Hartree)
-        "U0",     # internal energy at 0K (Hartree)
-        "U",      # internal energy at 298.15 K (Hartree)
-        "H",      # enthalpy at 298.15 K (Hartree)
-        "G",      # free energy at 298.15 K (Hartree)
-        "Cv",     # heat capacity at 298.15 K (cal/mol/K)
+        "homo",  # HOMO energy (Hartree)
+        "lumo",  # LUMO energy (Hartree)
+        "gap",  # LUMO-HOMO gap (Hartree)
+        "r2",  # electronic spatial extent (Bohr^2)
+        "zpve",  # zero point vibrational energy (Hartree)
+        "U0",  # internal energy at 0K (Hartree)
+        "U",  # internal energy at 298.15 K (Hartree)
+        "H",  # enthalpy at 298.15 K (Hartree)
+        "G",  # free energy at 298.15 K (Hartree)
+        "Cv",  # heat capacity at 298.15 K (cal/mol/K)
     ]
 
     def __init__(
         self,
         path: str,
-        url: Optional[str] = None, 
+        url: Optional[str] = None,
         property_names: Union[str, List[str]] = None,
         *,
+        mode: str = "packed",
+        split: Optional[str] = None,
         url_indices: Optional[List[int]] = None,
         build_graph_cfg: Dict = None,
         transforms: Optional[Callable] = None,
@@ -175,8 +258,18 @@ class QM9Dataset(Dataset):
     ) -> None:
         super().__init__()
 
-        # Use the ASE_AVAILABLE flag and AseAtomsAdaptor presence to validate dependencies
-        if not ASE_AVAILABLE or AseAtomsAdaptor is None:
+        if mode not in ("packed", "raw_tensor"):
+            raise ValueError(f"mode must be 'packed' or 'raw_tensor', got '{mode}'")
+        self.mode = mode
+
+        if split is not None and split not in ("train", "val", "test"):
+            raise ValueError(
+                f"split must be None, 'train', 'val', or 'test', got '{split}'"
+            )
+        self.split = split
+
+        # Validate ASE dependencies only for packed mode
+        if mode == "packed" and (not ASE_AVAILABLE or AseAtomsAdaptor is None):
             raise RuntimeError(
                 "QM9Dataset requires 'ase' and 'pymatgen'. "
                 "Please install them via: pip install ase pymatgen"
@@ -185,20 +278,20 @@ class QM9Dataset(Dataset):
         if property_names is None:
             raise ValueError("property_names must be provided for QM9Dataset")
 
-        if isinstance(property_names,str):
+        if isinstance(property_names, str):
             property_names = [property_names]
         self.property_names = list(property_names) if property_names else []
 
         # Handle URLs configuration
         self.url = url if url is not None else self.url
 
-        #Path Configuration
+        # Path Configuration
         os.makedirs(path, exist_ok=True)
         self.raw_dir = osp.join(path, "raw_qm9")
         os.makedirs(self.raw_dir, exist_ok=True)
 
         self.raw_xyz_path = osp.join(self.raw_dir, "dsgdb9nsd.xyz")
-        
+
         # Generate cache directory naming based on graph config
         if build_graph_cfg is not None:
             graph_converter_name = build_graph_cfg.get("__class_name__", "custom")
@@ -208,13 +301,15 @@ class QM9Dataset(Dataset):
         else:
             graph_converter_name = "none"
             cutoff_name = "none"
-        
-        base_cache = cache_path if cache_path is not None else path #determine the final path
+
+        base_cache = (
+            cache_path if cache_path is not None else path
+        )  # determine the final path
         self.cache_path = osp.join(
             base_cache,
             f"qm9_cache_{graph_converter_name}_cutoff_{cutoff_name}",
         )
-        
+
         self.transforms = transforms
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
@@ -230,29 +325,34 @@ class QM9Dataset(Dataset):
             os.makedirs(self.structures_dir, exist_ok=True)
             os.makedirs(self.graphs_dir, exist_ok=True)
             os.makedirs(self.props_dir, exist_ok=True)
-        
+
         #  =========== data operation ==============
-        
+
         # 1) Download and ensure shard files exist locally
         local_raw_file = self._ensure_raw_data()
 
-        # 2) Check or build Structures and Properties cache
+        # ====== mode split ======
+        if mode == "raw_tensor":
+            self._init_raw_tensor_mode()
+            return  # skip packed-mode logic below
+
+        # 2) Check or build Structures and Properties cache (packed mode only)
         if dist.get_rank() == 0:
             self._prepare_structures_and_properties(local_raw_file)
         # Only rank 0 performs the build process to avoid race conditions
-        
+
         if dist.is_initialized():
             dist.barrier()
-        
+
         # 3) Check or build Graphs cache (if configuration provided)
         if self.build_graph_cfg is not None:
             if dist.get_rank() == 0:
                 self._prepare_graphs()
             if dist.is_initialized():
                 dist.barrier()
-        
-        PROPERTY_FILE_MAP = {          
-        "energy_per_atom": "lumo", # cheat the model of the way it gets the data   
+
+        PROPERTY_FILE_MAP = {
+            "energy_per_atom": "lumo",  # cheat the model of the way it gets the data
         }
         # 4) Load file lists and property data into memory
         self.structures = [
@@ -271,21 +371,21 @@ class QM9Dataset(Dataset):
             self.graphs = None
 
         logger.info(f"Loading properties {self.property_names} into memory...")
-        
+
         self.property_data = {}
         for pname in self.property_names:
-        
+
             # Determine the actual file name: use the mapping table if available; otherwise, use the configuration name itself
             file_name = PROPERTY_FILE_MAP.get(pname, pname)
-        
+
             file_path = osp.join(self.props_dir, f"{file_name}.pkl")
-        
+
             if not osp.exists(file_path):
                 raise FileNotFoundError(
                     f"[QM9 Map Error]can't find the file: {file_path}. "
                     f"(require label: {pname}, actually find the file: {file_name}.pkl)"
                 )
-        
+
             # Although the name of file is lumo.pkl,The key stored in the dictionary is still pname (such as energy_per_atom)
             self.property_data[pname] = self._load_pickle(file_path)
 
@@ -294,7 +394,6 @@ class QM9Dataset(Dataset):
         #     for pname in self.property_names
         # }
 
-        
         # Sort files to ensure consistency across distributed ranks
         # 5) Filter invalid data based on properties and graphs
         if self.filter_unvalid:
@@ -307,15 +406,102 @@ class QM9Dataset(Dataset):
         self.num_samples = len(self.structures)
         logger.info(f"Final QM9Dataset samples: {self.num_samples}")
 
-    
+    def _init_raw_tensor_mode(self):
+        """Initialise QM9Dataset for raw tensor mode.
+
+        Builds a byte-offset index over the merged .xyz file and parses
+        the target property values from the second line of each molecule,
+        without requiring ASE or pymatgen.  When ``split`` is set, only
+        the corresponding subset (train/val/test) is exposed.
+        """
+        self._offsets = self._build_merged_index(self.raw_xyz_path)
+        raw_props = self._parse_all_properties(
+            self.raw_xyz_path, self._offsets, self.property_names
+        )
+
+        total = len(self._offsets)
+        # QM9 split sizes (matching DIG's PygQM93D conventions)
+        train_size = 110831
+        val_size = 10000
+        test_size = total - train_size - val_size  # 10000
+
+        if self.split == "train":
+            start, end = 0, train_size
+        elif self.split == "val":
+            start, end = train_size, train_size + val_size
+        elif self.split == "test":
+            start, end = train_size + val_size, train_size + val_size + test_size
+        else:
+            start, end = 0, total
+
+        self._offsets = self._offsets[start:end]
+        self._raw_properties = {name: arr[start:end] for name, arr in raw_props.items()}
+        self.num_samples = len(self._offsets)
+        logger.info(
+            f"QM9Dataset (raw_tensor) ready: {self.num_samples} samples, "
+            f"targets={self.property_names}, split={self.split}"
+        )
+
+    @staticmethod
+    def _build_merged_index(merged_path: str):
+        """Build byte-offset index for molecules in a merged QM9 .xyz file."""
+        index = []
+        with open(merged_path, "r") as f:
+            while True:
+                offset = f.tell()
+                line = f.readline()
+                if not line:
+                    break
+                n_atoms = int(line.strip())
+                for _ in range(1 + n_atoms):
+                    f.readline()
+                index.append(offset)
+        return index
+
+    @staticmethod
+    def _parse_all_properties(merged_path, offsets, property_names):
+        """Extract target property values from each molecule's second line."""
+        props = {
+            name: np.empty(len(offsets), dtype=np.float32) for name in property_names
+        }
+        with open(merged_path, "r") as f:
+            for i, offset in enumerate(offsets):
+                f.seek(offset)
+                f.readline()  # skip N_atoms line
+                prop_line = f.readline().strip().replace("*^", "e")
+                parts = prop_line.split()
+                raw_vals = []
+                for p in parts:
+                    try:
+                        raw_vals.append(float(p))
+                    except ValueError:
+                        raw_vals.append(0.0)
+                for k, name in enumerate(_QM9_PROP_NAMES):
+                    if name in property_names:
+                        idx = k + 2
+                        props[name][i] = raw_vals[idx] if idx < len(raw_vals) else 0.0
+        return props
+
+    def _read_one_molecule(self, idx: int):
+        """Read a single molecule from the merged .xyz file and return parsed data."""
+        offset = self._offsets[idx]
+        with open(self.raw_xyz_path, "r") as f:
+            f.seek(offset)
+            n_atoms = int(f.readline().strip())
+            prop_line = f.readline()
+            atom_lines = [f.readline() for _ in range(n_atoms)]
+        lines = [f"{n_atoms}\n", prop_line] + atom_lines
+        z, pos, _ = _parse_qm9_xyz(lines)
+        return z, pos
+
     def _prepare_structures_and_properties(self, raw_file_path: str):
         """
         Check if structures and properties are cached; rebuild if missing
         or overwrite is True.
         """
-        
+
         num_cached = self._count_files(self.structures_dir)
-        
+
         # Check if all property files exist
         props_exist = all(
             osp.exists(osp.join(self.props_dir, f"{p}.pkl"))
@@ -326,7 +512,6 @@ class QM9Dataset(Dataset):
         struct_done_flag = osp.join(self.structures_dir, "completed.flag")
         is_complete = osp.exists(struct_done_flag)
 
-        
         should_build = (
             self.overwrite or num_cached == 0 or not props_exist or not is_complete
         )
@@ -334,7 +519,7 @@ class QM9Dataset(Dataset):
         if should_build:
             if dist.get_rank() == 0:
                 logger.info("Building structures and properties from raw QM9 file...")
-                
+
                 # Clean old data to prevent mixing files
                 self._clean_dir(self.structures_dir)
                 self._clean_dir(self.props_dir)
@@ -342,14 +527,13 @@ class QM9Dataset(Dataset):
                 self._build_structures_and_properties(
                     raw_file_path, self.structures_dir, self.props_dir
                 )
-                
+
                 # Write completion flag
                 with open(struct_done_flag, "w") as f:
                     f.write("done")
         else:
             logger.info(f"Using cached structures ({num_cached}) and properties.")
-    
-        
+
     def _prepare_graphs(self):
         """
         Check if graphs are cached; rebuild if missing, incomplete,
@@ -484,7 +668,6 @@ class QM9Dataset(Dataset):
             for p in self.property_names:
                 self.property_data[p] = self.property_data[p][:min_len]
 
-
     def _clean_dir(self, directory: str):
         """Cleans a directory by removing all .pkl and .flag files."""
         for f in os.listdir(directory):
@@ -494,7 +677,6 @@ class QM9Dataset(Dataset):
                 except OSError:
                     pass
 
-    
     def _ensure_raw_data(self) -> str:
         """
         downloading self.url -> self.raw_xyz_path
@@ -502,33 +684,35 @@ class QM9Dataset(Dataset):
         # 1. if the final file exists , return.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
-            
+
         # 2. prepare the path to download
         tar_filename = "qm9_raw.tar.bz2"
         tar_path = osp.join(self.raw_dir, tar_filename)
-        
+
         # 3. downloading logic
         if not osp.exists(tar_path):
             if dist.get_rank() == 0:
                 logger.info(f"Downloading QM9 from {self.url}...")
                 import urllib.request
+
                 try:
                     urllib.request.urlretrieve(self.url, tar_path)
                 except Exception as e:
                     raise RuntimeError(f"Download failed: {e}")
             if dist.is_initialized():
                 dist.barrier()
-        
+
         # 4. extacting logic
         if dist.get_rank() == 0:
             logger.info("Extracting QM9...")
             import tarfile
+
             try:
                 with tarfile.open(tar_path, "r:bz2") as tar:
                     tar.extractall(path=self.raw_dir)
             except Exception as e:
                 raise RuntimeError(f"Extraction failed: {e}")
-                
+
         if dist.is_initialized():
             dist.barrier()
 
@@ -537,36 +721,42 @@ class QM9Dataset(Dataset):
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
 
-        
         # Case B：merge these .xyz files into a big file.
-        xyz_files = [f for f in os.listdir(self.raw_dir) if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"]
+        xyz_files = [
+            f
+            for f in os.listdir(self.raw_dir)
+            if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"
+        ]
         if len(xyz_files) > 0:
-            logger.info(f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz...")
+            logger.info(
+                f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz..."
+            )
             merged_path = self.raw_xyz_path
-            
+
             if osp.exists(merged_path):
                 os.remove(merged_path)
 
-            with open(merged_path, "w") as fout: # use "w" model to rewrite
+            with open(merged_path, "w") as fout:  # use "w" model to rewrite
                 for fname in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
                     full_path = osp.join(self.raw_dir, fname)
                     try:
                         with open(full_path, "r") as fin:
                             lines = fin.readlines()
 
-                        if not lines: continue
+                        if not lines:
+                            continue
                         natoms = int(lines[0].strip())
-                        
+
                         # 1. Number of atoms written
                         fout.write(f"{natoms}\n")
-                        # 2. Write attribute line 
-                        prop_line = lines[1].replace('*^', 'e').replace('\t', ' ')
+                        # 2. Write attribute line
+                        prop_line = lines[1].replace("*^", "e").replace("\t", " ")
                         fout.write(prop_line)
                         # 3. Write coordinate lines (only take natoms lines)
                         for i in range(2, 2 + natoms):
-                            coord_line = lines[i].replace('*^', 'e').replace('\t', ' ')
+                            coord_line = lines[i].replace("*^", "e").replace("\t", " ")
                             fout.write(coord_line)
-                        
+
                     except Exception as e:
                         logger.warning(f"Error processing {fname}: {e}")
                         continue
@@ -583,7 +773,7 @@ class QM9Dataset(Dataset):
             return len([n for n in os.listdir(directory) if n.endswith(".pkl")])
         except Exception:
             return 0
-    
+
     @staticmethod
     def _save_pickle(path: str, obj: Any) -> None:
         with open(path, "wb") as f:
@@ -594,48 +784,50 @@ class QM9Dataset(Dataset):
         with open(path, "rb") as f:
             return pickle.load(f)
 
-    def _build_structures_and_properties(self, raw_path: str, struct_dir: str, prop_dir: str) -> None:
+    def _build_structures_and_properties(
+        self, raw_path: str, struct_dir: str, prop_dir: str
+    ) -> None:
         """
         Core Constructor Function:analyse XYZ -> Pymatgen Structure -> Pickle
         """
         logger.info(f"Parsing {raw_path} using ASE...")
-        
+
         # 1. Read all data into memory (QM9 is about 100MB, which can easily fit into memory)
-        atoms_collection = read(raw_path, index=':')
-        
+        atoms_collection = read(raw_path, index=":")
+
         # 2. Read text lines to parse attributes (ASE attribute parsing is sometimes unreliable; manual parsing is more stable)
-        with open(raw_path, 'r') as f:
+        with open(raw_path, "r") as f:
             lines = f.readlines()
-            
+
         prop_buffers = defaultdict(list)
         current_line = 0
         valid_count = 0
-        
+
         total = len(atoms_collection)
         pbar = tqdm(total=total, desc="Processing QM9")
-        
+
         for i, atoms in enumerate(atoms_collection):
             try:
                 num_atoms = len(atoms)
                 prop_line = lines[current_line + 1]
-                
+
                 # clean the property line.
-                prop_line_cleaned = prop_line.replace('*^', 'e').replace('\t', ' ')
+                prop_line_cleaned = prop_line.replace("*^", "e").replace("\t", " ")
                 raw_vals = prop_line_cleaned.split()
-                
+
                 vals_float = []
                 for val_str in raw_vals:
                     try:
                         vals_float.append(float(val_str))
                     except ValueError:
-                        # for strings like 'gdb' 
-                        vals_float.append(0.0) 
+                        # for strings like 'gdb'
+                        vals_float.append(0.0)
 
                 # Mapping Attribute
                 for k, key in enumerate(self.PROP_ORDER):
-                    if key in ['tag', 'index']: 
+                    if key in ["tag", "index"]:
                         continue
-                    
+
                     # Alignment index: k=2 is 'A', corresponding to raw_vals[2]
                     if k < len(vals_float):
                         prop_buffers[key].append(vals_float[k])
@@ -645,25 +837,25 @@ class QM9Dataset(Dataset):
                 # --- B. building Structure (Fake crystal cell) ---
                 # Set up a large box to prevent the model from reporting errors due to the absence of cells
                 atoms.set_cell([20.0, 20.0, 20.0])
-                atoms.center() 
-                atoms.pbc = True 
+                atoms.center()
+                atoms.pbc = True
                 structure = AseAtomsAdaptor.get_structure(atoms)
-                
+
                 # --- C. save the struncture ---
                 self._save_pickle(osp.join(struct_dir, f"{i:06d}.pkl"), structure)
-                
+
                 # Update pointer
-                current_line += (num_atoms + 2)
+                current_line += num_atoms + 2
                 valid_count += 1
                 pbar.update(1)
-                
+
             except Exception as e:
                 logger.warning(f"Error processing molecule {i}: {e}. Skipping block.")
-                current_line += (len(atoms) + 2)
+                current_line += len(atoms) + 2
                 continue
-                
+
         pbar.close()
-        
+
         if valid_count == 0:
             raise RuntimeError("No valid samples processed from QM9 file!")
 
@@ -671,11 +863,9 @@ class QM9Dataset(Dataset):
         logger.info("Saving property arrays...")
         for key, val_list in prop_buffers.items():
             self._save_pickle(
-                osp.join(prop_dir, f"{key}.pkl"), 
-                np.array(val_list, dtype=np.float32)
+                osp.join(prop_dir, f"{key}.pkl"), np.array(val_list, dtype=np.float32)
             )
 
-    
     def _filter_by_properties(self) -> None:
         """
         Filter out samples that contain invalid property values (e.g., NaN, Inf).
@@ -737,6 +927,16 @@ class QM9Dataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        # raw_tensor mode: return atomic tensors without ASE/pymatgen
+        if self.mode == "raw_tensor":
+            z, pos = self._read_one_molecule(idx)
+            pname = self.property_names[0]
+            return {
+                "z": z,
+                "pos": pos,
+                pname: np.array([self._raw_properties[pname][idx]], dtype=np.float32),
+            }
+
         data = {}
         # 1. loading the info
         if self.graphs is not None:
@@ -744,9 +944,11 @@ class QM9Dataset(Dataset):
         else:
             struct = self._load_pickle(self.structures[idx])
             # turn into dictionary format
-            data["pos"] = np.array(struct.cart_coords, dtype='float32')
-            data["atomic_numbers"] = np.array([s.specie.Z for s in struct], dtype='int64')
-            data["cell"] = np.array(struct.lattice.matrix, dtype='float32')
+            data["pos"] = np.array(struct.cart_coords, dtype="float32")
+            data["atomic_numbers"] = np.array(
+                [s.specie.Z for s in struct], dtype="int64"
+            )
+            data["cell"] = np.array(struct.lattice.matrix, dtype="float32")
             data["natoms"] = len(struct)
             data["pbc"] = np.array([True, True, True], dtype=bool)
 
@@ -754,13 +956,13 @@ class QM9Dataset(Dataset):
         for pname in self.property_names:
             val = self.property_data[pname][idx]
             # data[pname] = np.array([val], dtype='float32')
-            if pname == 'lumo':
-                data['energy_per_atom'] = np.array([val], dtype='float32')
+            if pname == "lumo":
+                data["energy_per_atom"] = np.array([val], dtype="float32")
             else:
-                data[pname] = np.array([val], dtype='float32')
-            
+                data[pname] = np.array([val], dtype="float32")
+
         # 3. data transforms
         if self.transforms is not None:
             data = self.transforms(data)
-            
+
         return data

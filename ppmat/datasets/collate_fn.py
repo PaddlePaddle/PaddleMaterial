@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import numbers
+import warnings
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -24,7 +25,6 @@ from typing import List
 import numpy as np
 import paddle
 import pgl
-import warnings
 
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
@@ -33,24 +33,47 @@ from ppmat.datasets.geometric_data_type.data import Data
 
 
 class DefaultCollator(object):
+    """Default collator for Paddle DataLoader.
+
+    Supports standard types (Tensor, ndarray, dict, list, number, None,
+    ``pgl.Graph``, ``Data``) and automatically detects node-batch
+    (variable-length) dicts where arrays have varying first dimensions
+    — these are concatenated along axis 0 with a ``batch`` index tensor
+    injected, while scalar targets are stacked.
+
+    This collator is the single entry point; ``NodeBatchCollator`` from
+    earlier versions has been merged into this class.
+    """
+
     def __call__(self, batch: List[Any]) -> Any:
-        """Default_collate_fn for paddle dataloader.
-
-        NOTE: This `default_collate_fn` is different from official `default_collate_fn`
-        which specially adapt case where sample is `None` and `pgl.Graph`.
-
-        ref: https://github.com/PaddlePaddle/Paddle/blob/develop/python/paddle/io/dataloader/collate.py#L25
+        """Collate a batch of samples.
 
         Args:
-            batch (List[Any]): Batch of samples to be collated.
+            batch: List of samples from a DataLoader.
 
         Returns:
-            Any: Collated batch data.
+            Collated batch data.
         """
         sample = batch[0]
         if sample is None:
             return None
-        elif isinstance(sample, ConcatNumpyWarper):
+
+        # --- Node-batch detection (merged from NodeBatchCollator) ---
+        # Heuristic: dict where _all_ values are ndarray with ndim < 2 and
+        # shape[0] > 1 do NOT trigger node-batch (those are scalar targets).
+        # Node-batch is triggered when _some_ arrays have ndim >= 2.
+        if isinstance(sample, Mapping) and all(
+            isinstance(v, np.ndarray) for v in sample.values()
+        ):
+            # Check if this is a node-batch scenario
+            has_variable_arrays = any(
+                val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()
+            )
+            if has_variable_arrays:
+                return self._collate_node_batch(batch)
+
+        # --- Standard collation (original DefaultCollator logic) ---
+        if isinstance(sample, ConcatNumpyWarper):
             batch = np.concatenate(batch, axis=0)
             return batch
         elif isinstance(sample, np.ndarray):
@@ -62,7 +85,6 @@ class DefaultCollator(object):
             batch = np.array(batch)
             return batch
         elif isinstance(sample, Data):
-            # Geometric `Data` objects: batch them into a single `Batch`
             return Batch.from_data_list(batch)
         elif isinstance(sample, (str, bytes)):
             return batch
@@ -74,11 +96,7 @@ class DefaultCollator(object):
                 raise RuntimeError("Fields number not same among samples in a batch")
             return [self(fields) for fields in zip(*batch)]
         elif str(type(sample)) == "<class 'pgl.graph.Graph'>":
-            # use str(type()) instead of isinstance() in case of pgl is not installed.
             graphs = pgl.Graph.batch(batch)
-            # NOTE: when num_works >1, graphs.tensor() will convert numpy.ndarray to
-            # CPU Tensor, which will cause error in model training.
-            # graphs.tensor()
             return graphs
         elif isinstance(sample, ConcatData):
             return ConcatData.batch(batch)
@@ -86,6 +104,52 @@ class DefaultCollator(object):
             "batch data can only contains: paddle.Tensor, numpy.ndarray, "
             f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
         )
+
+    @staticmethod
+    def _collate_node_batch(batch: List[dict]) -> dict:
+        """Collate variable-length node tensors (merged NodeBatchCollator logic).
+
+        Each sample is a dict with node-level arrays (variable-length first dim)
+        and scalar targets. Arrays are concatenated along axis 0 and a ``batch``
+        index tensor maps each node back to its originating sample.
+
+        Returns:
+            Dict with concatenated node arrays, ``batch`` index, and stacked
+            target tensors.
+        """
+        sample = batch[0]
+        all_keys = list(sample.keys())
+
+        node_keys = []
+        target_keys = []
+        for k in all_keys:
+            arr = sample[k]
+            if arr.ndim >= 2 or arr.shape[0] > 1:
+                node_keys.append(k)
+            else:
+                target_keys.append(k)
+
+        node_tensors = {}
+        for k in node_keys:
+            node_tensors[k] = paddle.to_tensor(
+                np.concatenate([b[k] for b in batch]),
+            )
+
+        num_nodes_list = [b[node_keys[0]].shape[0] for b in batch]
+        batch_idx = paddle.concat(
+            [
+                paddle.full([n], i, dtype=paddle.int64)
+                for i, n in enumerate(num_nodes_list)
+            ]
+        )
+
+        target_tensors = {}
+        for k in target_keys:
+            target_tensors[k] = paddle.to_tensor(
+                np.stack([b[k] for b in batch]),
+            )
+
+        return {**node_tensors, "batch": batch_idx, **target_tensors}
 
 
 class DensityCollator:
@@ -108,7 +172,9 @@ class DensityCollator:
         self.sampling_mode = sampling_mode.lower()
         self.uniform_random_offset = bool(uniform_random_offset)
         self.sampling_seed = sampling_seed
-        self._rng = np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        self._rng = (
+            np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        )
         self.clip_max = clip_max
         self.importance_sampling = bool(importance_sampling)
         self.importance_threshold = importance_threshold
@@ -154,11 +220,18 @@ class DensityCollator:
                         extreme_mask = dense_vals >= self.extreme_threshold
                         extreme_idx = total_idx[extreme_mask]
                         # ensure extreme is subset of high
-                        extreme_idx = np.intersect1d(extreme_idx, high_idx, assume_unique=True)
+                        extreme_idx = np.intersect1d(
+                            extreme_idx, high_idx, assume_unique=True
+                        )
                     mid_idx = np.setdiff1d(high_idx, extreme_idx, assume_unique=True)
 
-                    high_quota = min(target_samples, max(0, int(target_samples * self.importance_ratio)))
-                    extreme_quota = min(target_samples, max(0, int(target_samples * self.extreme_ratio)))
+                    high_quota = min(
+                        target_samples,
+                        max(0, int(target_samples * self.importance_ratio)),
+                    )
+                    extreme_quota = min(
+                        target_samples, max(0, int(target_samples * self.extreme_ratio))
+                    )
 
                     extreme_take = min(len(extreme_idx), extreme_quota)
                     indices_extreme = (
@@ -178,11 +251,15 @@ class DensityCollator:
                     selected = np.concatenate([indices_extreme, indices_mid])
                     remaining = target_samples - len(selected)
                     if remaining > 0:
-                        low_candidates = np.setdiff1d(total_idx, selected, assume_unique=False)
+                        low_candidates = np.setdiff1d(
+                            total_idx, selected, assume_unique=False
+                        )
                         if len(low_candidates) == 0:
                             low_candidates = total_idx
                         replace_low = remaining > len(low_candidates)
-                        indices_low = np.random.choice(low_candidates, remaining, replace=replace_low)
+                        indices_low = np.random.choice(
+                            low_candidates, remaining, replace=replace_low
+                        )
                         indices = np.concatenate([selected, indices_low])
                     else:
                         indices = selected
@@ -192,14 +269,22 @@ class DensityCollator:
                             if self._rng is None:
                                 self._rng = np.random.default_rng()
                             step = (total - 1) / max(target_samples - 1, 1)
-                            offset = float(self._rng.uniform(0, max(step, 1.0))) if step > 0 else 0.0
+                            offset = (
+                                float(self._rng.uniform(0, max(step, 1.0)))
+                                if step > 0
+                                else 0.0
+                            )
                             idx = offset + step * np.arange(target_samples)
                             indices = np.clip(np.round(idx).astype(int), 0, total - 1)
                         else:
-                            indices = np.linspace(0, total - 1, num=target_samples, dtype=int)
+                            indices = np.linspace(
+                                0, total - 1, num=target_samples, dtype=int
+                            )
                     elif self.sampling_mode == "random":
                         replace = target_samples > total
-                        indices = np.random.choice(total, target_samples, replace=replace)
+                        indices = np.random.choice(
+                            total, target_samples, replace=replace
+                        )
                     else:
                         raise ValueError(
                             f"Unsupported sampling_mode '{self.sampling_mode}'. "
@@ -208,16 +293,16 @@ class DensityCollator:
                 indices.sort()
                 sampled_density.append(d[indices])
                 sampled_grid.append(coord[indices])
-                mask.append(
-                    paddle.ones_like(x=sampled_density[-1], dtype="float32")
-                )
+                mask.append(paddle.ones_like(x=sampled_density[-1], dtype="float32"))
             densities = paddle.stack(x=sampled_density, axis=0)
             grid_coord = paddle.stack(x=sampled_grid, axis=0)
             mask = paddle.stack(x=mask, axis=0)
 
         densities = densities * mask
         if self.clip_max is not None:
-            densities = paddle.clip(densities, min=self.padding_value, max=self.clip_max)
+            densities = paddle.clip(
+                densities, min=self.padding_value, max=self.clip_max
+            )
         return {
             "density": densities,
             "density_mask": mask,
@@ -282,6 +367,7 @@ class DensityVoxelCollator:
             "infos": list(infos),
         }
 
+
 # utils DensityCollator
 def pad_sequence(sequences, batch_first=False, padding_value=0):
     max_len = max([int(s.shape[0]) for s in sequences])  # 确保转换为Python整数
@@ -304,87 +390,7 @@ def pad_sequence(sequences, batch_first=False, padding_value=0):
     return out_tensor
 
 
-class ECDCollator(DefaultCollator):
-    def __call__(self, batch: List[Any]) -> Any:
-        batch = [list(x) for x in zip(*batch)]  # transpose
-        for i in range(len(batch)):  # Group into batches
-            batch[i] = Batch.from_data_list(batch[i])
-
-        batch0 = batch[0]
-        batch1 = batch[1]
-
-        # Unpack Data to Tensor dictionary
-        batch_atom_bond, batch_bond_angle = batch0, batch1
-        x, edge_index, edge_attr, query_mask = (
-            batch_atom_bond.x,
-            batch_atom_bond.edge_index,
-            batch_atom_bond.edge_attr,
-            batch_atom_bond.query_mask,
-        )
-        ba_edge_index, ba_edge_attr = (
-            batch_bond_angle.edge_index,
-            batch_bond_angle.edge_attr,
-        )
-        batch_data = batch_atom_bond.batch
-        pos_gt = batch_atom_bond.peak_position
-        height_gt = batch_atom_bond.peak_height
-        num_gt = batch_atom_bond.peak_num
-        return (
-            {
-                "x": x,
-                "edge_index": edge_index,
-                "edge_attr": edge_attr,
-                "batch_data": batch_data,
-                "ba_edge_index": ba_edge_index,
-                "ba_edge_attr": ba_edge_attr,
-                "query_mask": query_mask,
-            },
-            {
-                "peak_number": num_gt,
-                "peak_position": pos_gt,
-                "peak_height": height_gt,
-            },
-        )
-
-
-class IRCollator(DefaultCollator):
-    """IR dataset specific collator, returns Tensor dictionary"""
-
-    def __call__(self, batch: List[Any]) -> Any:
-        batch = [list(x) for x in zip(*batch)]  # transpose
-        for i in range(len(batch)):
-            batch[i] = Batch.from_data_list(batch[i])
-
-        batch_atom_bond, batch_bond_angle = batch[0], batch[1]
-
-        x, edge_index, edge_attr, query_mask = (
-            batch_atom_bond.x,
-            batch_atom_bond.edge_index,
-            batch_atom_bond.edge_attr,
-            batch_atom_bond.query_mask,
-        )
-        ba_edge_index, ba_edge_attr = (
-            batch_bond_angle.edge_index,
-            batch_bond_angle.edge_attr,
-        )
-        batch_data = batch_atom_bond.batch
-        pos_gt = batch_atom_bond.peak_position
-        height_gt = batch_atom_bond.peak_height
-        num_gt = batch_atom_bond.peak_num
-
-        return (
-            {
-                "x": x,
-                "edge_index": edge_index,
-                "edge_attr": edge_attr,
-                "batch_data": batch_data,
-                "ba_edge_index": ba_edge_index,
-                "ba_edge_attr": ba_edge_attr,
-                "query_mask": query_mask,
-            },
-            {
-                "peak_number": num_gt,
-                "peak_position": pos_gt,
-                "peak_height": height_gt,
-            },
-        )
+# NodeBatchCollator is merged into DefaultCollator.
+# This alias preserves backward compatibility for configs that
+# explicitly reference it by name.
+NodeBatchCollator = DefaultCollator

@@ -35,8 +35,8 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
-from ppmat.models.ecformer import ECFormerECD
-from ppmat.models.ecformer import ECFormerIR
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
@@ -45,6 +45,8 @@ from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.sfin.sfin import SFIN
+from ppmat.models.spherenet.spherenet import SphereNet
+from ppmat.models.spherenet.spherenet import SphereNetPP  # noqa: F401
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -71,6 +73,8 @@ __all__ = [
     "InfGCN",
     "MatENO",
     "SFIN",
+    "SphereNet",
+    "SphereNetPP",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

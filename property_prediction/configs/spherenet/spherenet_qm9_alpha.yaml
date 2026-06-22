@@ -1,0 +1,123 @@
+Global:
+  label_names:
+    - alpha
+  do_train: True
+  do_eval: True
+  do_test: True
+
+Model:
+  __class_name__: SphereNetPP
+  __init_params__:
+    energy_and_force: False
+    cutoff: 5.0
+    num_layers: 4
+    hidden_channels: 128
+    out_channels: 1
+    int_emb_size: 64
+    basis_emb_size_dist: 8
+    basis_emb_size_angle: 8
+    basis_emb_size_torsion: 8
+    out_emb_channels: 256
+    num_spherical: 7
+    num_radial: 6
+    envelope_exponent: 5
+    num_before_skip: 1
+    num_after_skip: 2
+    num_output_layers: 3
+    output_init: zeros
+    property_name: alpha
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: ./data/qm9
+        property_names: ['alpha']
+        mode: raw_tensor
+        split: train
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1280
+        shuffle: True
+        drop_last: True
+  val:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: ./data/qm9
+        property_names: ['alpha']
+        mode: raw_tensor
+        split: val
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1280
+        shuffle: False
+        drop_last: False
+  test:
+    dataset:
+      __class_name__: QM9Dataset
+      __init_params__:
+        path: ./data/qm9
+        property_names: ['alpha']
+        mode: raw_tensor
+        split: test
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1280
+        shuffle: False
+        drop_last: False
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 0.0005
+        eta_min: 0.00001
+        by_epoch: True
+
+Metric:
+  alpha:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Trainer:
+  # Max epochs to train
+  max_epochs: 500
+  # Random seed
+  seed: 42
+  # Save path for checkpoints and logs
+  output_dir: ./output/spherenet_qm9_alpha
+  # Save frequency [epoch]; set 0 to disable saving during training
+  save_freq: 50
+  # Logging frequency [step]
+  log_freq: 10
+  # Start evaluation epoch
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch]; set 0 to disable evaluation
+  eval_freq: 1
+  # Whether to use automatic mixed precision
+  use_amp: False
+  # Whether to run evaluation with no_grad (saves memory)
+  eval_with_no_grad: True
+  # Gradient accumulation steps
+  gradient_accumulation_steps: 1
+  # Best metric indicator: "train_loss", "eval_loss", "train_metric", "eval_metric"
+  best_metric_indicator: eval_metric
+  # Name of the best metric for checkpoint selection
+  name_for_best_metric: alpha
+  # Whether a greater metric value is better
+  greater_is_better: False
+  # Compute metric during training
+  compute_metric_during_train: False
+  # Metric computation strategy during eval: "step" or "epoch"
+  metric_strategy_during_eval: step
+  # Pretrained model path; null means no pretrained model
+  pretrained_model_path: null

@@ -80,6 +80,28 @@ def _scatter_mean(
     return out
 
 
+def _scatter_min(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
+    index = _broadcast(index, src, dim)
+    if out is None:
+        size = list(src.shape)
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        out = paddle.full(size, float("inf"), dtype=src.dtype)
+    return paddle.put_along_axis(
+        arr=out, indices=index, values=src, axis=dim, reduce="amin"
+    )
+
+
 def scatter(
     src: paddle.Tensor,
     index: paddle.Tensor,
@@ -95,8 +117,10 @@ def scatter(
         return _scatter_sum(src, index, dim, out, dim_size)
     elif reduce == "mean":
         return _scatter_mean(src, index, dim, out, dim_size)
+    elif reduce == "min":
+        return _scatter_min(src, index, dim, out, dim_size)
     else:
-        raise ValueError("Only support add or mean")
+        raise ValueError("Only support add, mean, or min")
 
 
 def scatter_mean(
@@ -117,3 +141,13 @@ def scatter_sum(
     dim_size: Optional[int] = None,
 ):
     return _scatter_sum(src, index, dim, out, dim_size)
+
+
+def scatter_min(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+):
+    return _scatter_min(src, index, dim, out, dim_size)
