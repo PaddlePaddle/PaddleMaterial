@@ -76,10 +76,6 @@ class TimeDistribution:
             t = paddle.full([batch["batch_size"]], t_val, dtype="float32")
             yield self._atom_expand(batch, t)
 
-    def to_cuda(self, t_vector, batch):
-        return t_vector
-
-
 def mean_interleave(t, num_repeats):
     """Compute per-group mean using paddle_scatter.scatter_mean.
 
@@ -94,3 +90,8 @@ def mean_interleave(t, num_repeats):
         paddle.arange(num_repeats.shape[0]), num_repeats
     )
     return scatter_mean(t, batch_idx, dim=0)
+
+
+def total_atoms_from_batch(batch):
+    num_atoms = batch["num_atoms"]
+    return int(num_atoms.sum()) if num_atoms.ndim > 0 else int(num_atoms)

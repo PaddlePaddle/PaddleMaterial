@@ -45,44 +45,18 @@ def parse_num_atoms_to_per_crystal(num_atoms_data):
     return paddle.to_tensor(num_atoms_np.astype("int64")), num_atoms_np
 
 
-def parse_batch(batch):
-    if "batch" in batch:
-        return {
-            "num_atoms": batch["batch"].num_atoms,
-            "batch_idx": batch["batch"].batch,
-            "atom_types": batch["batch"].atom_types,
-            "batch_size": batch["batch_size"],
-        }
-    if "batch_idx" in batch:
-        return {
-            "num_atoms": batch["num_atoms"],
-            "batch_idx": batch["batch_idx"],
-            "atom_types": batch["atom_types"],
-            "batch_size": batch.get("batch_size", len(batch["num_atoms"])),
-        }
-    raise ValueError("Cannot determine batch format: missing 'batch' or 'batch_idx'")
 
 
 def init_diffusion(diffusion_config, logger):
-    if hasattr(diffusion_config, "default_config") and diffusion_config.default_config:
-        diffusion_config = _apply_default_config(diffusion_config.default_config)
 
     switch = {
         "Default": CrystalGen,
-        "DiffCSP": DiffCSP,
+        "DiffCSP": CrystalGen,
     }
     method = diffusion_config.method
     if method in switch:
         return switch[method](diffusion_config, logger)
     raise NotImplementedError(f"Diffusion method '{method}' not implemented")
-
-
-def _apply_default_config(config_name):
-    from ppmat.models.miad.default_configs import DEFAULT_DIFFUSION_CONFIGS
-
-    if config_name in DEFAULT_DIFFUSION_CONFIGS:
-        return DEFAULT_DIFFUSION_CONFIGS[config_name]
-    raise KeyError(f"Unknown default config: '{config_name}'")
 
 
 class CrystalGen:
@@ -140,10 +114,18 @@ class CrystalGen:
 
     def reverse_step_sample(self, xt, t, model, batch):
         lt, ft, at = xt
-        batch["prediction"] = self.model_prediction(xt, t, model, batch)
-        l_pred, f_pred, a_pred = batch["prediction"]
-        lt_1 = self.lat_diffusion.reverse_step_sample(l_pred, lt, t[0], batch)
-        ft_1 = self.frac_diffusion.reverse_step_sample(f_pred, ft, t[1], batch)
+        if self.config.method == "DiffCSP":
+            _, f_pred, _ = self.model_prediction(xt, t, model, batch)
+            ft_05 = self.frac_diffusion.reverse_step_sample_part_1(f_pred, ft, t[1], batch)
+            xt_05 = [lt, ft_05, at]
+            l_pred, f_pred, a_pred = self.model_prediction(xt_05, t, model, batch)
+            lt_1 = self.lat_diffusion.reverse_step_sample(l_pred, lt, t[0], batch)
+            ft_1 = self.frac_diffusion.reverse_step_sample_part_2(f_pred, ft_05, t[1], batch)
+        else:
+            batch["prediction"] = self.model_prediction(xt, t, model, batch)
+            l_pred, f_pred, a_pred = batch["prediction"]
+            lt_1 = self.lat_diffusion.reverse_step_sample(l_pred, lt, t[0], batch)
+            ft_1 = self.frac_diffusion.reverse_step_sample(f_pred, ft, t[1], batch)
         at_1 = (
             self.type_diffusion.reverse_step_sample(a_pred, at, t[1], batch)
             if self.gen_type
@@ -152,10 +134,21 @@ class CrystalGen:
         return [lt_1, ft_1, at_1]
 
     def _get_batch_info(self, batch):
-        try:
-            return parse_batch(batch)
-        except ValueError:
-            return self._normalize_batch(batch)
+        if "batch" in batch:
+            return {
+                "num_atoms": batch["batch"].num_atoms,
+                "batch_idx": batch["batch"].batch,
+                "atom_types": batch["batch"].atom_types,
+                "batch_size": batch["batch_size"],
+            }
+        if "batch_idx" in batch:
+            return {
+                "num_atoms": batch["num_atoms"],
+                "batch_idx": batch["batch_idx"],
+                "atom_types": batch["atom_types"],
+                "batch_size": batch.get("batch_size", len(batch["num_atoms"])),
+            }
+        return self._normalize_batch(batch)
 
     def _normalize_batch(self, batch):
         if "structure_array" in batch:
@@ -197,34 +190,12 @@ class CrystalGen:
     def model_prediction(self, xt, t, model, batch):
         batch_info = self._get_batch_info(batch)
         lt, ft, at = xt
-        nn_pred = model(
-            t[0],
-            self.time_embedding(1000 * (t[0] / self.num_steps) + 1),
-            at,
-            ft,
-            lt,
-            batch_info["num_atoms"],
-            batch_info["batch_idx"],
-        )
+        time_emb = self.time_embedding(1000 * (t[0] / self.num_steps) + 1)
+        nn_pred = model(time_emb, at, ft, lt, batch_info["num_atoms"], batch_info["batch_idx"])
         l_pred = nn_pred[0]
         f_pred = nn_pred[1]
         a_pred = nn_pred[2] if self.gen_type else None
         return [l_pred, f_pred, a_pred]
-
-    def get_x0_prediction(self, pred, xt, t, batch):
-        l_pred, f_pred, a_pred = pred
-        lt, ft, at = xt
-        return [
-            self.lat_diffusion.get_x0_prediction(l_pred, lt, t[0], batch),
-            self.frac_diffusion.get_x0_prediction(f_pred, ft, t[1], batch),
-            (
-                self.type_diffusion.get_x0_prediction(
-                    a_pred, at, t[1], batch, x0_format="disc"
-                )
-                if self.gen_type
-                else at.clone().detach()
-            ),
-        ]
 
     def train_step(self, batch, model, mode):
         modifications = os.environ.get("MODIFICATIONS_FIELD", "")
@@ -309,7 +280,7 @@ class CrystalGen:
             batch, start_from=self.num_steps - 1
         )
         for t_vector in reverse_time_iterator:
-            batch["t"] = self.time_distribution.to_cuda(t_vector, batch)
+            batch["t"] = t_vector
             t_value = batch["t"][0][0].item()
             progress_printer(t_value)
             batch["xt"] = self.reverse_step_sample(
@@ -320,37 +291,13 @@ class CrystalGen:
         return batch
 
     def output_transform(self, x0, batch):
+        _out = lambda diff, x: diff.output_transform(x, batch) if hasattr(diff, 'output_transform') else x
         return [
-            self.lat_diffusion.output_transform(x0[0], batch),
-            self.frac_diffusion.output_transform(x0[1], batch),
+            _out(self.lat_diffusion, x0[0]),
+            _out(self.frac_diffusion, x0[1]),
             (
-                self.type_diffusion.output_transform(x0[2], batch)
+                _out(self.type_diffusion, x0[2])
                 if self.gen_type
                 else x0[2]
             ),
         ]
-
-
-class DiffCSP(CrystalGen):
-    """DiffCSP with two-step reverse sampling."""
-
-    def reverse_step_sample(self, xt, t, model, batch):
-        lt, ft, at = xt
-
-        # Step 1: only use fractional prediction
-        _, f_pred, _ = self.model_prediction(xt, t, model, batch)
-        ft_05 = self.frac_diffusion.reverse_step_sample_part_1(f_pred, ft, t[1], batch)
-        xt_05 = [lt, ft_05, at]
-
-        # Step 2: full prediction with corrected fractional coords
-        l_pred, f_pred, a_pred = self.model_prediction(xt_05, t, model, batch)
-        lt_1 = self.lat_diffusion.reverse_step_sample(l_pred, lt, t[0], batch)
-        ft_1 = self.frac_diffusion.reverse_step_sample_part_2(
-            f_pred, ft_05, t[1], batch
-        )
-        at_1 = (
-            self.type_diffusion.reverse_step_sample(a_pred, at, t[1], batch)
-            if self.gen_type
-            else at
-        )
-        return [lt_1, ft_1, at_1]

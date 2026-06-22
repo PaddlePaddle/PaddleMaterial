@@ -20,9 +20,42 @@ import paddle.nn as nn
 
 from ppmat.models.miad.crystal_diffusion import init_diffusion
 from ppmat.models.miad.crystal_diffusion import parse_num_atoms_to_per_crystal
-from ppmat.models.miad.miad_cspnet import CSPNet
+from ppmat.models.diffcsp.diffcsp import CSPNet
 from ppmat.utils import logger
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
+
+
+def _to_numpy(x):
+    if hasattr(x, "numpy"):
+        return x.numpy()
+    return np.asarray(x)
+
+
+def _extract_x0(batch):
+    if "x0" in batch:
+        return batch
+    sa = batch.get("structure_array", batch)
+    num_atoms_np = _to_numpy(sa["num_atoms"]).flatten().astype("int64")
+    frac_coords_np = _to_numpy(sa["frac_coords"]).astype("float32")
+    atom_types_np = _to_numpy(sa["atom_types"]).flatten().astype("int64")
+    lattice_np = _to_numpy(sa["lattice"]).astype("float32")
+    if lattice_np.ndim == 3 and lattice_np.shape[0] == 1:
+        lattice_np = lattice_np.reshape(3, 3)
+    batch_size = len(num_atoms_np)
+    total_atoms = int(num_atoms_np.sum())
+    batch_idx_np = np.concatenate(
+        [np.full(int(n), i) for i, n in enumerate(num_atoms_np)]
+    ).astype("int64")
+    batch["x0"] = [
+        paddle.to_tensor(lattice_np.reshape(batch_size, 3, 3)),
+        paddle.to_tensor(frac_coords_np.reshape(total_atoms, 3)),
+        paddle.to_tensor(atom_types_np.reshape(total_atoms)),
+    ]
+    batch["num_atoms"] = paddle.to_tensor(num_atoms_np)
+    batch["batch_idx"] = paddle.to_tensor(batch_idx_np)
+    batch["atom_types"] = paddle.to_tensor(atom_types_np)
+    batch["batch_size"] = batch_size
+    return batch
 
 
 def _dict_to_sns(d):
@@ -41,7 +74,27 @@ class MiAD(nn.Layer):
         model_cfg = model_cfg or {}
         diffusion_cfg = diffusion_cfg or {}
 
-        self.decoder = CSPNet(**model_cfg)
+        model_cfg = dict(model_cfg)
+        model_cfg.setdefault("num_classes", model_cfg.pop("max_atoms", 100))
+        _cspnet_keys = {
+            "hidden_dim", "latent_dim", "num_layers", "act_fn", "dis_emb",
+            "num_freqs", "edge_style", "ln", "ip", "smooth", "pred_type",
+            "prop_dim", "pred_scalar", "num_classes",
+        }
+        cspnet_kwargs = {k: v for k, v in model_cfg.items() if k in _cspnet_keys}
+        self.decoder = CSPNet(**cspnet_kwargs)
+        # Remove unused prop_mlp (parent creates it; checkpoint lacks these weights)
+        for i in range(self.decoder.num_layers):
+            layer = getattr(self.decoder, f"csp_layer_{i}", None)
+            if layer and hasattr(layer, "prop_mlp"):
+                del layer.prop_mlp
+        # Replace gen_edges with block_diag (parent meshgrid causes GPU crash on certain batch sizes)
+        def _gen_edges(num_atoms, frac_coords):
+            lis = [paddle.ones([int(n), int(n)], dtype="int64") for n in num_atoms]
+            fc_graph = paddle.block_diag(lis)
+            fc_edges = paddle.nonzero(fc_graph).t()
+            return fc_edges, (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]])
+        self.decoder.gen_edges = _gen_edges
         if isinstance(diffusion_cfg, dict):
             diffusion_cfg = _dict_to_sns(diffusion_cfg)
         self.diffusion = init_diffusion(diffusion_cfg, logger=None)
@@ -142,6 +195,7 @@ class MiAD(nn.Layer):
 
     def forward(self, batch, **kwargs):
         mode = "train" if self.training else "val"
+        batch = _extract_x0(batch)
         batch = self.diffusion.train_step(
             batch=batch,
             model=self.decoder,

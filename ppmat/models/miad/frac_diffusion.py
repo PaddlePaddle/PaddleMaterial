@@ -21,6 +21,7 @@ import os
 import paddle
 
 from ppmat.schedulers.miad_schedulers import scheduler as get_scheduler
+from ppmat.models.miad.diffusion_utils import total_atoms_from_batch
 
 
 class WrappedNormal:
@@ -55,12 +56,7 @@ class WrappedNormal:
         if self.step_lr is None:
             self.step_lr = _DEFAULT_GAMMA.get(diffusion_config.task, 1e-5)
 
-        self.drift_step_coef = paddle.ones([self.num_steps], dtype="float32")[:, None]
-        self.diff_step_coef = paddle.ones([self.num_steps], dtype="float32")[:, None]
         self.to_domain = lambda x: x
-
-    def output_transform(self, x0, batch):
-        return x0
 
     def forward_step_sample(self, x0, t, batch):
         st = self.sigmas_t[t.cast("int64")]
@@ -74,13 +70,8 @@ class WrappedNormal:
         snt = self.sigmas_norm_t[t_idx]
         step_size = self.step_lr * (st / self.sb) ** 2
         std_x = paddle.sqrt(2 * step_size)
-        drift = (
-            -step_size
-            * normed_score_pred
-            * paddle.sqrt(snt)
-            * self.drift_step_coef[t_idx]
-        )
-        diffusion = std_x * paddle.randn(xt.shape) * self.diff_step_coef[t_idx]
+        drift = -step_size * normed_score_pred * paddle.sqrt(snt)
+        diffusion = std_x * paddle.randn(xt.shape)
         xt_05 = xt + drift + diffusion
         return xt_05
 
@@ -91,13 +82,8 @@ class WrappedNormal:
         snt = self.sigmas_norm_t[t_idx]
         step_size = st**2 - st_1**2
         std_x = paddle.sqrt((st_1**2 * (st**2 - st_1**2)) / (st**2))
-        drift = (
-            -step_size
-            * normed_score_pred
-            * paddle.sqrt(snt)
-            * self.drift_step_coef[t_idx]
-        )
-        diffusion = std_x * paddle.randn(xt_05.shape) * self.diff_step_coef[t_idx]
+        drift = -step_size * normed_score_pred * paddle.sqrt(snt)
+        diffusion = std_x * paddle.randn(xt_05.shape)
         xt_1 = (xt_05 + drift + diffusion) % 1.0
         return xt_1
 
@@ -107,8 +93,7 @@ class WrappedNormal:
         return xt_1
 
     def prior_sample(self, batch):
-        num_atoms = batch["num_atoms"]
-        total_atoms = int(num_atoms.sum()) if num_atoms.ndim > 0 else int(num_atoms)
+        total_atoms = total_atoms_from_batch(batch)
         return paddle.rand([total_atoms, 3], dtype="float32")
 
     def loss(self, batch):
@@ -134,10 +119,6 @@ class WrappedNormal:
 
         return l2
 
-    def get_x0_prediction(self, normed_score_pred, xt, t, batch):
-        t_idx = t.cast("int64")
-        x0_pred = (xt - self.sigmas_t[t_idx] * normed_score_pred) % 1.0
-        return x0_pred
 
 
 class PFM:
@@ -148,13 +129,9 @@ class PFM:
         self.num_steps = diffusion_config.num_steps
         self.cont_time = diffusion_config.cont_time
         self.final_t = diffusion_config.num_steps
-        self.step_coef = paddle.ones([self.final_t], dtype="float32")[:, None]
         self.step = paddle.to_tensor(1.0 / self.final_t)
         self.to_domain = lambda x: x
         self.default_loss_scale = 10
-
-    def output_transform(self, x0, batch):
-        return x0
 
     def forward_step_sample(self, x0, t, batch):
         xT_minus_x0 = paddle.rand(x0.shape) - 0.5
@@ -164,20 +141,14 @@ class PFM:
         return xt
 
     def reverse_step_sample(self, vt, xt, t, batch):
-        t_idx = t.cast("int64")
-        xt_1 = (xt + self.step_coef[t_idx] * self.step * vt) % 1.0
+        xt_1 = (xt + self.step * vt) % 1.0
         return xt_1
 
     def prior_sample(self, batch):
-        num_atoms = batch["num_atoms"]
-        total_atoms = int(num_atoms.sum()) if num_atoms.ndim > 0 else int(num_atoms)
+        total_atoms = total_atoms_from_batch(batch)
         return paddle.rand([total_atoms, 3])
 
     def loss(self, batch):
         vt = batch["prediction"][1]
         l2 = ((vt - self.ut) ** 2).reshape([-1, 3]).mean(axis=1)
         return l2 * self.default_loss_scale
-
-    def get_x0_prediction(self, vt, xt, t, batch):
-        step = (1 + t[:, None]) * self.step
-        return (xt + step * vt) % 1.0

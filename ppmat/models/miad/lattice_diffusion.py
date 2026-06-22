@@ -67,14 +67,7 @@ class DDPM:
             self.betas_t * (1 - self.cumprod_alphas_t_1) / (1 - self.cumprod_alphas_t)
         )
 
-        # Pre-compute eps-to-x0 coefficients
-        self.eps_to_x0_c0 = paddle.sqrt(1 / self.cumprod_alphas_t)
-        self.eps_to_x0_c1 = paddle.sqrt(1 / self.cumprod_alphas_t - 1)
-
         self.to_domain = lambda x: x
-
-    def output_transform(self, x0, batch):
-        return x0
 
     def forward_step_sample(self, x0, t, batch):
         if self.cont_time and self.f_cumprod_alphas_t is not None:
@@ -104,11 +97,6 @@ class DDPM:
         )
         return l2
 
-    def get_x0_prediction(self, eps_pred, xt, t, batch):
-        t_idx = t.cast("int64")
-        x0_pred = self.eps_to_x0_c0[t_idx] * xt - self.eps_to_x0_c1[t_idx] * eps_pred
-        return x0_pred
-
 
 class FM:
     """Flow Matching for lattice diffusion."""
@@ -121,11 +109,7 @@ class FM:
         self.parameterization = getattr(
             diffusion_config.lat_diffusion, "parameterization", "eps"
         )
-        self.step_coef = paddle.ones([self.num_steps], dtype="float32")[:, None, None]
         self.to_domain = lambda x: x
-
-    def output_transform(self, x0, batch):
-        return x0
 
     def forward_step_sample(self, x0, t, batch):
         eps = paddle.randn(x0.shape)
@@ -148,7 +132,7 @@ class FM:
             vt = x0_pred - eps_pred
         elif self.parameterization == "v":
             vt = pred
-        xt_1 = xt + self.step_coef[t_idx] * self.step * vt
+        xt_1 = xt + self.step * vt
         return xt_1
 
     def prior_sample(self, batch):
@@ -158,19 +142,6 @@ class FM:
         vt = batch["prediction"][0]
         l2 = ((vt - self.ut) ** 2).reshape([-1, 9]).mean(axis=1)
         return l2
-
-    def get_x0_prediction(self, pred, xt, t, batch):
-        step = (1 + t[:, None, None]) * self.step
-        t_idx = t.cast("int64")
-        if self.parameterization == "eps":
-            if t_idx[0] >= 999:
-                return paddle.randn(xt.shape)
-            eps_pred = (-1) * pred
-            x0_pred = (xt - step * eps_pred) / (1 - step)
-            vt = x0_pred - eps_pred
-        elif self.parameterization == "v":
-            vt = pred
-        return xt + step * vt
 
 
 class FM_LenAng:
@@ -188,25 +159,17 @@ class FM_LenAng:
         self.angle_difference_bound = 20
         self.default_loss_scale = 0.45
 
-        self._lat2lenang = None
         self._lenang2lat = None
         self.to_domain = lambda x: x
 
-    def _get_converters(self):
-        if self._lat2lenang is None:
+    def _get_converter(self):
+        if self._lenang2lat is None:
             from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-            from ppmat.utils.crystal import lattices_to_params_shape_paddle
 
-            self._lat2lenang = lambda lat: paddle.concat(
-                lattices_to_params_shape_paddle(lat), axis=1
-            )
             self._lenang2lat = lambda la: lattice_params_to_matrix_paddle(
                 la[:, :3], la[:, 3:]
             )
-        return self._lat2lenang, self._lenang2lat
-
-    def output_transform(self, x0, batch):
-        return x0
+        return self._lenang2lat
 
     def forward_step_sample(self, x0, t, batch):
         xT = self.prior_sample(batch)
@@ -239,7 +202,7 @@ class FM_LenAng:
         valid = ang[check][:bs]
         lenang_xT[:, 3:] = valid
 
-        _, lenang2lat = self._get_converters()
+        lenang2lat = self._get_converter()
         xT = lenang2lat(lenang_xT)
         return xT
 
@@ -247,7 +210,3 @@ class FM_LenAng:
         vt = batch["prediction"][0]
         l2 = ((vt - self.ut) ** 2).reshape([-1, 9]).mean(axis=1)
         return self.default_loss_scale * l2
-
-    def get_x0_prediction(self, vt, xt, t, batch):
-        step = (1 + t[:, None, None]) * self.step
-        return xt + step * vt

@@ -17,9 +17,10 @@ import unittest
 import paddle
 from omegaconf import OmegaConf
 
+from ppmat.datasets.collate_fn import DefaultCollator
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.models import build_model
-from ppmat.models.miad.collate import MiADCollator  # noqa: F401
+from ppmat.models.miad.miad import _extract_x0
 from ppmat.models.miad.miad import MiAD
 
 TINY_MODEL_CFG = {
@@ -165,9 +166,10 @@ class MiADDatasetTest(unittest.TestCase):
         self.assertIn("num_atoms", sa)
 
     def test_collate_fn(self):
-        collator = MiADCollator()
+        collator = DefaultCollator()
         samples = [self.dataset[i] for i in range(min(4, len(self.dataset)))]
         batch = collator(samples)
+        batch = _extract_x0(batch)
         self.assertIn("x0", batch)
         self.assertIn("batch_size", batch)
         self.assertIn("num_atoms", batch)

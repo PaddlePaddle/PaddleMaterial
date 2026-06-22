@@ -19,6 +19,7 @@ Atom type diffusion models for MiAD.
 import paddle
 import paddle.nn.functional as F
 
+from ppmat.models.miad.diffusion_utils import total_atoms_from_batch
 from ppmat.models.miad.lattice_diffusion import DDPM
 from ppmat.schedulers.miad_schedulers import scheduler as get_scheduler
 
@@ -40,8 +41,6 @@ class DDPM_onehot(DDPM):
             "reverse_c0",
             "reverse_c1",
             "reverse_std_coef",
-            "eps_to_x0_c0",
-            "eps_to_x0_c1",
         ]
         for attr in _reshape_attrs:
             value = getattr(self, attr, None)
@@ -54,9 +53,6 @@ class DDPM_onehot(DDPM):
             types - 1, num_classes=self.num_types
         ).cast("float32")
         self.from_domain = lambda onehot: onehot.argmax(axis=-1) + 1
-
-    def output_transform(self, x0, batch):
-        return x0
 
     def forward_step_sample(self, x0, t, batch):
         onehot_x0 = self.to_domain(x0)
@@ -71,8 +67,7 @@ class DDPM_onehot(DDPM):
         return onehot_xt_1
 
     def prior_sample(self, batch):
-        num_atoms = batch["num_atoms"]
-        total_atoms = int(num_atoms.sum()) if num_atoms.ndim > 0 else int(num_atoms)
+        total_atoms = total_atoms_from_batch(batch)
         return paddle.randn([total_atoms, self.num_types], dtype="float32")
 
     def loss(self, batch):
@@ -83,13 +78,6 @@ class DDPM_onehot(DDPM):
             .mean(axis=1)
         )
         return l2
-
-    def get_x0_prediction(self, onehot_eps_pred, onehot_xt, t, batch, x0_format="disc"):
-        onehot_x0_pred = super().get_x0_prediction(onehot_eps_pred, onehot_xt, t, batch)
-        if x0_format == "onehot":
-            return onehot_x0_pred
-        elif x0_format == "disc":
-            return self.from_domain(onehot_x0_pred)
 
 
 class D3PM:
@@ -168,11 +156,6 @@ class D3PM:
     def reverse_step_sample(self, onehot_pred, onehot_xt, t, batch):
         onehot_x0 = self.prediction_to_domain(onehot_pred)
         xt_1_probs = self._reverse_step_distribution(onehot_x0, onehot_xt, t)
-        xt_1_probs = paddle.where(
-            paddle.isnan(xt_1_probs),
-            paddle.full_like(xt_1_probs, 1.0 / self.num_types),
-            xt_1_probs,
-        )
         if (t.cast("int64") == 0).all():
             return self.to_domain(self.from_domain(xt_1_probs.cast("float32")))
         xt_1 = (
@@ -184,8 +167,7 @@ class D3PM:
         return onehot_xt_1
 
     def prior_sample(self, batch):
-        num_atoms = batch["num_atoms"]
-        total_atoms = int(num_atoms.sum()) if num_atoms.ndim > 0 else int(num_atoms)
+        total_atoms = total_atoms_from_batch(batch)
         shape = [total_atoms, self.num_types]
         xT_probs = paddle.ones(shape, dtype="float32") / self.num_types
         xT = (
@@ -216,7 +198,3 @@ class D3PM:
             .sum(axis=-1)
         )
         return self.default_loss_scale * kl_loss
-
-    def get_x0_prediction(self, onehot_pred, onehot_xt, t, batch):
-        onehot_x0 = self.prediction_to_domain(onehot_pred)
-        return self.from_domain(onehot_x0)

@@ -26,7 +26,6 @@ import numpy as np
 import paddle
 
 from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
-from ppmat.schedulers.scheduling_sde_ve import p_wrapped_normal  # noqa: F401
 
 
 def scheduler(scheduler_name, num_steps):
