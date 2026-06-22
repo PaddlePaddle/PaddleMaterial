@@ -7,10 +7,10 @@ model:
   num_elements: 89
 
 dataset:
-  name: XYZDataset
-  train_path: data/mptrj/train.extxyz
-  valid_path: data/mptrj/valid.extxyz
-  test_path: data/mptrj/test.extxyz
+  name: MPtrjDataset
+  train_split: train
+  valid_split: valid
+  test_split: test
   r_max: 6.0
 
 dataloader:
