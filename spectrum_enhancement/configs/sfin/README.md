@@ -51,8 +51,8 @@ bf_data_test/              # BF validation/test
 | BF test | - | 100 | [bf_data_test.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip) |
 
 `STEMImageDataset` supports automatic download through the common
-`ppmat.utils.download` utilities. When `data_path` is missing and
-`auto_download=True`, the URL is inferred from the `data_path` basename:
+`ppmat.utils.download` utilities. When `path` is missing and
+`auto_download=True`, the URL is inferred from the `path` basename:
 `data`, `data_test`, `bf_data`, or `bf_data_test`.
 
 ## Model

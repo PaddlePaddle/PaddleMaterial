@@ -15,9 +15,7 @@
 from __future__ import annotations
 
 import copy
-import importlib
 import os.path as osp
-from typing import Any
 from typing import Dict
 from typing import List
 from typing import Sequence
@@ -27,16 +25,20 @@ from typing import Union
 def build_matched_name_samples(cfg: Dict):
     """Build sample matcher from config."""
     if cfg is None:
-        return None
+        raise ValueError("Sample matcher config must not be None.")
+
     cfg = copy.deepcopy(cfg)
-    class_name = cfg.pop("__class_name__")
-    if not class_name:
-        raise ValueError(
-            "Sample matcher class name is not specified in the configuration."
-        )
-    init_params = cfg.pop("__init_params__")
-    cls = _locate_class(class_name)
-    return cls(**init_params)
+
+    match_mode = cfg.pop("match_mode", "indexed")
+    if match_mode in ("indexed", "index", "BuildIndexedNameSamples"):
+        return BuildIndexedNameSamples(**cfg)
+    if match_mode in ("matched", "same_name", "BuildMatchedNameSamples"):
+        return BuildMatchedNameSamples(**cfg)
+
+    raise ValueError(
+        f"Unsupported match_mode: {match_mode}. "
+        "Expected one of {'indexed', 'matched'}."
+    )
 
 
 class BuildMatchedNameSamples:
@@ -218,11 +220,3 @@ class BuildIndexedNameSamples:
             self.target_key,
             self.name_key,
         )
-
-
-def _locate_class(class_name: str) -> Any:
-    """Resolve 'pkg.mod.Class' or a bare class name in the current globals()."""
-    if "." in class_name:
-        mod, cls = class_name.rsplit(".", 1)
-        return getattr(importlib.import_module(mod), cls)
-    return globals()[class_name]

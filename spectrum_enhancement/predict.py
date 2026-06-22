@@ -230,12 +230,12 @@ class SpectrumPredictor:
                 staged_noisy_dir = temp_root / noisy_subdir
                 staged_noisy_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_path, staged_noisy_dir / input_path.name)
-                init_params["data_path"] = str(temp_root)
+                init_params["path"] = str(temp_root)
                 yield dataset_cfg
             return
 
         if (input_path / noisy_subdir).is_dir():
-            init_params["data_path"] = str(input_path)
+            init_params["path"] = str(input_path)
             yield dataset_cfg
             return
 
@@ -247,7 +247,7 @@ class SpectrumPredictor:
         if not image_files:
             raise FileNotFoundError(f"No image files found under {input_path}.")
 
-        init_params["data_path"] = str(input_path.parent)
+        init_params["path"] = str(input_path.parent)
         init_params["noisy_subdir"] = input_path.name
         logger.info(f"Load {len(image_files)} noisy images from {input_path}")
         yield dataset_cfg

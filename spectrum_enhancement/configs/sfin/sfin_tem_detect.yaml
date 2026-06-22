@@ -72,7 +72,7 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "./data"
+        path: "./data"
         input_name: "noisy"
         target_name: "gt_detect"
         noisy_subdir: "noisy"
@@ -95,7 +95,7 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "./data_test"
+        path: "./data_test"
         input_name: "noisy"
         target_name: "gt_detect"
         noisy_subdir: "noisy"
@@ -118,7 +118,7 @@ Dataset:
     dataset:
       __class_name__: STEMImageDataset
       __init_params__:
-        data_path: "./data_test"
+        path: "./data_test"
         input_name: "noisy"
         target_name: "gt_detect"
         noisy_subdir: "noisy"
