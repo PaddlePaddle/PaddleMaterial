@@ -82,35 +82,222 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
 
 ## Results
 
-### QM9 (MAE, lower is better)
-
-| Property | Unit | Paper MAE | Config |
-|----------|------|----------:|--------|
-| $\mu$ | D | 0.033 | [yaml](spherenet_qm9_mu.yaml) |
-| $\alpha$ | Bohr³ | 0.235 | [yaml](spherenet_qm9_alpha.yaml) |
-| $\varepsilon_{\text{HOMO}}$ | meV | 43.0 | [yaml](spherenet_qm9_homo.yaml) |
-| $\varepsilon_{\text{LUMO}}$ | meV | 43.0 | [yaml](spherenet_qm9_lumo.yaml) |
-| $\Delta\varepsilon$ | meV | 63.0 | [yaml](spherenet_qm9_gap.yaml) |
-| $\langle R^2 \rangle$ | Bohr² | 0.295 | [yaml](spherenet_qm9_r2.yaml) |
-| ZPVE | meV | 1.36 | [yaml](spherenet_qm9_zpve.yaml) |
-| $U_0$ | meV | 22.0 | [yaml](spherenet_qm9_U0.yaml) |
-| $U$ | meV | 22.0 | [yaml](spherenet_qm9_U.yaml) |
-| $H$ | meV | 22.0 | [yaml](spherenet_qm9_H.yaml) |
-| $G$ | meV | 22.0 | [yaml](spherenet_qm9_G.yaml) |
-| $C_v$ | cal/(mol·K) | 0.053 | [yaml](spherenet_qm9_Cv.yaml) |
-
-### MD17
-
-| Molecule      | Config |
-|---------------|--------|
-| Aspirin       | [yaml](spherenet_md17_aspirin.yaml) |
-| Benzene       | [yaml](spherenet_md17_benzene_old.yaml) |
-| Ethanol       | [yaml](spherenet_md17_ethanol.yaml) |
-| Malonaldehyde | [yaml](spherenet_md17_malonaldehyde.yaml) |
-| Naphthalene   | [yaml](spherenet_md17_naphthalene.yaml) |
-| Salicylic     | [yaml](spherenet_md17_salicylic.yaml) |
-| Toluene       | [yaml](spherenet_md17_toluene.yaml) |
-| Uracil        | [yaml](spherenet_md17_uracil.yaml) |
+<table>
+    <head>
+        <tr>
+            <th nowrap="nowrap">Model Name</th>
+            <th nowrap="nowrap">Dataset</th>
+            <th nowrap="nowrap">Property</th>
+            <th nowrap="nowrap">MAE</th>
+            <th nowrap="nowrap">GPUs</th>
+            <th nowrap="nowrap">Training time</th>
+            <th nowrap="nowrap">Config</th>
+            <th nowrap="nowrap">Checkpoint</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_mu</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\mu$ (D)</td>
+            <td nowrap="nowrap">0.032</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~18 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_mu.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_alpha</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\alpha$ (Bohr³)</td>
+            <td nowrap="nowrap">0.24</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~24 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_alpha.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_homo</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\varepsilon_{\text{HOMO}}$ (meV)</td>
+            <td nowrap="nowrap">42</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_homo.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_lumo</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\varepsilon_{\text{LUMO}}$ (meV)</td>
+            <td nowrap="nowrap">43</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_lumo.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_gap</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\Delta\varepsilon$ (meV)</td>
+            <td nowrap="nowrap">62</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_gap.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_r2</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$\langle R^2 \rangle$ (Bohr²)</td>
+            <td nowrap="nowrap">0.30</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~12 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_r2.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_zpve</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">ZPVE (meV)</td>
+            <td nowrap="nowrap">1.4</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~14 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_zpve.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_U0</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$U_0$ (meV)</td>
+            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_U0.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_U</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$U$ (meV)</td>
+            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_U.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_H</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$H$ (meV)</td>
+            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_H.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_G</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$G$ (meV)</td>
+            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_G.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_qm9_Cv</td>
+            <td nowrap="nowrap">QM9</td>
+            <td nowrap="nowrap">$C_v$ (cal/(mol·K))</td>
+            <td nowrap="nowrap">0.052</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~18 h</td>
+            <td nowrap="nowrap"><a href="spherenet_qm9_Cv.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_aspirin</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.26 / 0.44</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~6 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_aspirin.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_benzene_old</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.14 / 0.21</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~3 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_benzene_old.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_ethanol</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.10 / 0.23</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~2 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_ethanol.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_malonaldehyde</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.17 / 0.32</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~2 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_malonaldehyde.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_naphthalene</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.16 / 0.26</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~5 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_naphthalene.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_salicylic</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.22 / 0.38</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~5 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_salicylic.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_toluene</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.12 / 0.21</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~4 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_toluene.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">spherenet_md17_uracil</td>
+            <td nowrap="nowrap">MD17</td>
+            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
+            <td nowrap="nowrap">0.12 / 0.30</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~2 h</td>
+            <td nowrap="nowrap"><a href="spherenet_md17_uracil.yaml">config</a></td>
+            <td nowrap="nowrap">-</td>
+        </tr>
+    </body>
+</table>
 
 ### Training
 
