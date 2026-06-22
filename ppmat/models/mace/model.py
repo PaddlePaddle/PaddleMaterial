@@ -1,3 +1,17 @@
+# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
@@ -48,80 +62,43 @@ class MACE(nn.Layer):
             stress: Stress tensor (Voigt notation), shape [6], optional
         """
         # Convert atomic numbers to indices
-        atom_indices = atomic_number_to_index(atomic_numbers)
-        atom_indices = paddle.to_tensor(atom_indices, dtype='int64')
-
-        # Get edge vectors and distances
+        indices = paddle.to_tensor(atomic_number_to_index(atomic_numbers), dtype='int64')
+        
+        # Get initial embeddings
+        x = self.embedding(indices)
+        
+        # Compute edge vectors and distances
         edge_vectors, edge_distances = get_edge_vectors(positions, cell, pbc)
-
-        # Create edge indices
-        num_atoms = positions.shape[0]
-        edge_indices = paddle.meshgrid(paddle.arange(num_atoms), paddle.arange(num_atoms))
-        edge_indices = paddle.stack(edge_indices, axis=0).reshape((2, -1))
-
-        # Remove self-edges
-        mask = edge_indices[0] != edge_indices[1]
-        edge_indices = edge_indices[:, mask]
-        edge_distances = edge_distances.reshape((-1,))[mask]
-
-        # Filter edges by distance
-        distance_mask = edge_distances < self.r_max
-        edge_indices = edge_indices[:, distance_mask]
-        edge_distances = edge_distances[distance_mask]
-
-        # Initialize node features
-        x = self.embedding(atom_indices)
-
-        # Pass through equivariant layers
+        
+        # Filter edges within cutoff radius
+        mask = edge_distances < self.r_max
+        edge_indices = paddle.where(mask)
+        edge_distances = edge_distances[mask]
+        edge_vectors = edge_vectors[mask]
+        
+        # Forward pass through equivariant layers
         for layer in self.layers:
             x = layer(x, edge_indices, edge_distances)
-
-        # Aggregate node features
-        atomic_energies = self.output(x)
-        total_energy = atomic_energies.sum()
-
-        # Compute forces by differentiating energy with respect to positions
-        forces = -paddle.grad(total_energy, positions, create_graph=compute_stress)[0]
-
-        if compute_stress and cell is not None:
-            # Compute stress tensor by differentiating energy with respect to cell
-            # stress_ij = (1/V) * sum_k(dE/dcell_ik * cell_jk)
-            volume = paddle.abs(paddle.linalg.det(cell))
-            dE_dcell = paddle.grad(total_energy, cell, create_graph=False)[0]
-            
-            # Compute stress tensor
-            stress = paddle.zeros([3, 3])
-            for i in range(3):
-                for j in range(3):
-                    stress[i, j] = paddle.sum(dE_dcell[i, :] * cell[j, :]) / volume
-            
-            # Convert to Voigt notation: [xx, yy, zz, yz, xz, xy]
-            stress_voigt = paddle.stack([
-                stress[0, 0],
-                stress[1, 1],
-                stress[2, 2],
-                (stress[1, 2] + stress[2, 1]) / 2.0,
-                (stress[0, 2] + stress[2, 0]) / 2.0,
-                (stress[0, 1] + stress[1, 0]) / 2.0
-            ])
-            
-            return total_energy, forces, stress_voigt
-
-        return total_energy, forces
-
-    def predict(self, atomic_numbers, positions, cell=None, pbc=False, compute_stress=False):
-        """Predict energy, forces and optionally stress.
         
-        Args:
-            atomic_numbers: Atomic numbers of atoms
-            positions: Atomic positions, shape [num_atoms, 3]
-            cell: Unit cell matrix, shape [3, 3], optional
-            pbc: Periodic boundary conditions, default False
-            compute_stress: Whether to compute stress tensor, default False
-            
-        Returns:
-            total_energy: Total energy of the system
-            forces: Forces on atoms, shape [num_atoms, 3]
-            stress: Stress tensor (Voigt notation), shape [6], optional
-        """
-        return self.forward(atomic_numbers, positions, cell, pbc, compute_stress)
+        # Predict atomic energies
+        atomic_energies = self.output(x)
+        
+        # Total energy
+        total_energy = paddle.sum(atomic_energies)
+        
+        # Compute forces (negative gradient of energy w.r.t. positions)
+        positions.stop_gradient = False
+        forces = -paddle.grad(total_energy, positions, create_graph=True)[0]
+        
+        # Compute stress if requested
+        stress = None
+        if compute_stress and cell is not None:
+            # Stress computation using energy-strain relation
+            stress = paddle.grad(total_energy, cell, create_graph=True)[0]
+            # Convert to Voigt notation
+            stress = paddle.stack([
+                stress[0, 0], stress[1, 1], stress[2, 2],
+                stress[1, 2], stress[0, 2], stress[0, 1]
+            ])
+        
+        return total_energy, forces, stress
