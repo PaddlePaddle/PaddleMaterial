@@ -764,7 +764,7 @@ def _precompute_U_blocks_euler_aligned(
     Args:
         lmax: Maximum angular momentum
         dtype: Real dtype (float32 or float64)
-        device: Torch device
+        device: Paddle device
         lmin: Minimum angular momentum (default 0)
 
     Returns:
@@ -781,17 +781,8 @@ def _precompute_U_blocks_euler_aligned(
         dtype=complex_dtype,
         device=device,
     )
-    jd_path = Path(__file__).parent.parent.parent / "Jd.pt"
-    try:
-        Jd_list = paddle.load(path=str(jd_path))
-    except Exception:
-        import torch
-
-        Jd_list_torch = torch.load(str(jd_path), map_location="cpu")
-        Jd_list = [
-            paddle.to_tensor(x.detach().cpu().numpy() if hasattr(x, "detach") else x)
-            for x in Jd_list_torch
-        ]
+    jd_path = Path(__file__).parent.parent.parent / "Jd.pdparams"
+    Jd_list = paddle.load(path=str(jd_path))
     U_combined = []
     for ell in range(lmin, lmax + 1):
         U_ell = _build_u_matrix(ell, complex_dtype, device)

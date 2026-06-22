@@ -35,6 +35,12 @@ from ppmat.utils.pgl_compat import patch_pgl_empty_edge_batch
 patch_pgl_empty_edge_batch()
 
 
+def _ensure_list(x):
+    if isinstance(x, list):
+        return x
+    return [x]
+
+
 class DefaultCollator(object):
     def __call__(self, batch: List[Any]) -> Any:
         """Default_collate_fn for paddle dataloader.
@@ -123,6 +129,70 @@ class RadiusGraphCollator:
         )
         result["graph"] = graph
         return result
+
+
+class UMASingleCollator:
+    """Collate UMA atomistic samples into a batched dictionary."""
+
+    def __call__(self, batch: List[dict[str, Any]]) -> dict[str, Any]:
+        if not batch:
+            raise ValueError("Cannot collate empty batch.")
+
+        out: dict[str, Any] = {}
+        node_keys = ["pos", "atomic_numbers", "fixed", "tags", "forces"]
+        graph_keys = ["cell", "pbc", "natoms", "charge", "spin", "energy", "stress"]
+
+        for key in node_keys + graph_keys:
+            values = [d[key] for d in batch if key in d]
+            if values:
+                out[key] = paddle.concat(values, axis=0)
+
+        batch_idx = []
+        sid_list: list[str] = []
+        dataset_list: list[str] = []
+        dataset_name_list: list[str] = []
+        edge_index_list = []
+        cell_offsets_list = []
+        nedges_list = []
+        node_offset = 0
+
+        has_edge = all(
+            "edge_index" in d and "cell_offsets" in d and "nedges" in d for d in batch
+        )
+        for i, sample in enumerate(batch):
+            natoms_i = int(sample["natoms"].reshape([-1])[0].item())
+            batch_idx.append(paddle.full([natoms_i], i, dtype="int64"))
+            sid_list.extend(
+                [str(x) for x in _ensure_list(sample.get("sid", [f"sample_{i}"]))]
+            )
+            dataset_list.extend(
+                [str(x) for x in _ensure_list(sample.get("dataset", ["uma"]))]
+            )
+            dataset_name_list.extend(
+                [
+                    str(x)
+                    for x in _ensure_list(
+                        sample.get("dataset_name", sample.get("dataset", ["uma"]))
+                    )
+                ]
+            )
+
+            if has_edge:
+                edge_index_list.append(sample["edge_index"] + node_offset)
+                cell_offsets_list.append(sample["cell_offsets"])
+                nedges_list.append(sample["nedges"])
+            node_offset += natoms_i
+
+        out["batch"] = paddle.concat(batch_idx, axis=0)
+        out["sid"] = sid_list
+        out["dataset"] = dataset_list
+        out["dataset_name"] = dataset_name_list
+
+        if has_edge:
+            out["edge_index"] = paddle.concat(edge_index_list, axis=1)
+            out["cell_offsets"] = paddle.concat(cell_offsets_list, axis=0)
+            out["nedges"] = paddle.concat(nedges_list, axis=0)
+        return out
 
 
 class DensityCollator:

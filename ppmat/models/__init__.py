@@ -43,6 +43,9 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.models.spherenet.spherenet import SphereNet
+from ppmat.models.mateno.mateno import MatENO
+from ppmat.models.uma.escn_md import UMASingleTaskModel
+from ppmat.models.uma.uma_graph_converter import UMAGraphConverter
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -73,6 +76,9 @@ __all__ = [
     "InfGCN",
     "SFIN",
     "SphereNet",
+    "MatENO",
+    "UMAGraphConverter",
+    "UMASingleTaskModel",
 ]
 
 # Warning:

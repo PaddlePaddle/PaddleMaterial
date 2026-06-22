@@ -26,6 +26,8 @@ import numpy as np
 import paddle
 from paddle.io import Dataset
 
+from ppmat.models import build_graph_converter
+
 
 def _ensure_list(x):
     if isinstance(x, list):
@@ -187,14 +189,6 @@ class UMASingleCollator:
         return uma_data_list_to_batch(batch)
 
 
-def register_uma_collator() -> None:
-    # build_dataloader resolves collate class from ppmat.datasets.collate_fn.
-    from ppmat.datasets import collate_fn as ppmat_collate_fn
-
-    if not hasattr(ppmat_collate_fn, "UMASingleCollator"):
-        ppmat_collate_fn.UMASingleCollator = UMASingleCollator
-
-
 class UMASingleDataset(Dataset):
     """ASE-backed single dataset for UMA.
 
@@ -221,9 +215,9 @@ class UMASingleDataset(Dataset):
         default_charge: int = 0,
         default_spin: int = 0,
         force_pbc: bool | None = None,
+        build_graph_cfg: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        register_uma_collator()
         self.dtype = dtype
         self.dataset_name = dataset_name
         self.task_name = task_name or dataset_name
@@ -238,6 +232,11 @@ class UMASingleDataset(Dataset):
         self.default_charge = default_charge
         self.default_spin = default_spin
         self.force_pbc = force_pbc
+        self.graph_converter = (
+            build_graph_converter(build_graph_cfg)
+            if build_graph_cfg is not None
+            else None
+        )
         self.ase_read_args = dict(ase_read_args or {})
         self.paths = _collect_paths(src, pattern)
         self.sample_ids = self._build_sample_ids()
@@ -338,6 +337,8 @@ class UMASingleDataset(Dataset):
                 except Exception:
                     stress_value = np.full((3, 3), np.nan, dtype=np.float32)
             sample["stress"] = _to_stress_1x9(stress_value, dtype=self.dtype)
+        if self.graph_converter is not None:
+            sample.update(self.graph_converter(sample))
         return sample
 
 
@@ -368,9 +369,9 @@ class UMAAseDBDataset(Dataset):
         default_charge: int = 0,
         default_spin: int = 0,
         force_pbc: bool | None = None,
+        build_graph_cfg: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        register_uma_collator()
         self.dataset_name = dataset_name
         self.task_name = task_name or dataset_name
         self.dtype = dtype
@@ -385,6 +386,11 @@ class UMAAseDBDataset(Dataset):
         self.default_charge = default_charge
         self.default_spin = default_spin
         self.force_pbc = force_pbc
+        self.graph_converter = (
+            build_graph_converter(build_graph_cfg)
+            if build_graph_cfg is not None
+            else None
+        )
         self.connect_args = dict(connect_args or {})
         self.select_args = dict(select_args or {})
         global_offset = int(self.select_args.pop("offset", 0))
@@ -681,6 +687,8 @@ class UMAAseDBDataset(Dataset):
                 stress_value = np.full((3, 3), np.nan, dtype=np.float32)
             sample["stress"] = _to_stress_1x9(stress_value, dtype=self.dtype)
 
+        if self.graph_converter is not None:
+            sample.update(self.graph_converter(sample))
         return sample
 
     def __del__(self):
@@ -708,7 +716,6 @@ class UMAMultiDataset(Dataset):
 
     def __init__(self, datasets: list[dict[str, Any] | Dataset]) -> None:
         super().__init__()
-        register_uma_collator()
         if not datasets:
             raise ValueError("UMAMultiDataset requires at least one dataset config.")
         self.datasets = [

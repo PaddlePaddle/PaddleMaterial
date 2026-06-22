@@ -94,36 +94,20 @@ def _resolve_jd_path() -> str:
             f"PPMAT_UMA_JD_PATH points to a missing file: {override_path}"
         )
     here = Path(__file__).resolve().parent
-    jd_path = here / "Jd.pt"
+    jd_path = here / "Jd.pdparams"
     if jd_path.exists():
         return str(jd_path)
     raise FileNotFoundError(
-        "UMA requires `Jd.pt`. Please place it under `ppmat/models/uma/` "
+        "UMA requires `Jd.pdparams`. Please place it under `ppmat/models/uma/` "
         "or set PPMAT_UMA_JD_PATH to its location."
     )
 
 
 def _load_jd_tensors() -> list[paddle.Tensor]:
-    """Load `Jd.pt` from either Paddle or Torch serialization format."""
+    """Load precomputed Wigner-d coefficient tensors."""
     jd_path = _resolve_jd_path()
-    try:
-        jd_list = paddle.load(path=jd_path)
-        return [paddle.to_tensor(x) for x in jd_list]
-    except Exception:
-        try:
-            import torch
-        except Exception as e:
-            raise RuntimeError(
-                "Failed to load `Jd.pt` via `paddle.load`, and `torch` is unavailable "
-                "for fallback deserialization."
-            ) from e
-        jd_list_torch = torch.load(jd_path, map_location="cpu")
-        return [
-            paddle.to_tensor(
-                x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
-            )
-            for x in jd_list_torch
-        ]
+    jd_list = paddle.load(path=jd_path)
+    return [paddle.to_tensor(x) for x in jd_list]
 
 
 def _record_function(_name: str):
@@ -1403,7 +1387,7 @@ class UMASingleTaskModel(paddle.nn.Layer):
         return out
 
     def predict(self, data):
-        from .single_dataset import UMASingleCollator
+        from ppmat.datasets.collate_fn import UMASingleCollator
 
         if isinstance(data, list):
             batch_data = UMASingleCollator()(data)

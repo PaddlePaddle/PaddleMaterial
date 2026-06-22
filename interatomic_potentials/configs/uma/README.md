@@ -6,118 +6,91 @@
 
 UMA is a family of universal machine learning interatomic potentials for
 atomistic systems. The PaddleMaterials implementation provides a Paddle-based
-UMA/eSCN backbone, direct energy and force prediction heads, ASELMDB data
-loading, single-domain training, and lightweight multi-task validation through
-the standard `interatomic_potentials/train.py` workflow.
+UMA/eSCN model for structure-to-energy-and-force tasks. It follows the
+PaddleMaterials interatomic-potential workflow: datasets are built under
+`ppmat.datasets`, graphs are constructed through `Global.graph_converter` and
+`Dataset.*.build_graph_cfg`, and training/evaluation runs through
+`interatomic_potentials/train.py`.
 
-The default UMA configurations in this directory target S2EF-style training:
-given atomic numbers, periodic structures, and positions, the model predicts the
-total energy and per-atom forces.
+```mermaid
+flowchart LR
+    A[Atomic structure] --> B[UMA dataset]
+    B --> C[UMAGraphConverter]
+    C --> D[Neighbor graph]
+    D --> E[UMA / eSCN backbone]
+    E --> F[Energy head]
+    E --> G[Force head]
+```
 
 ## Datasets
 
-UMA reads ASELMDB files containing atomistic structures and the following labels:
+UMA uses atomistic structures with total energy and atomic force labels.
 
 | Field | Description |
 | :-- | :-- |
 | `energy` | Total structure energy |
 | `forces` | Atomic forces with shape `[num_atoms, 3]` |
 
+The current configs use ASELMDB data. `UMAAseDBDataset` is implemented in
+`ppmat.datasets.uma_dataset` and supports graph construction through
+`build_graph_cfg`.
+
 ### OMat24
 
-The OMat24 `rattled-500` split is used by the default material-domain training
-configuration.
+The OMat24 `rattled-500` split is used for material-domain S2EF training.
 
-| Dataset | Train | Val | Test | Download |
-| :-- | --: | --: | --: | :-- |
-| OMat24 rattled-500 | configurable | configurable | configurable | [train](https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-500.tar.gz), [val](https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-500.tar.gz) |
+| Dataset | Split | Download |
+| :-- | :-- | :-- |
+| OMat24 rattled-500 | train | [official source](https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-500.tar.gz) |
+| OMat24 rattled-500 | val | [official source](https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-500.tar.gz) |
 
 Default paths:
 
 ```text
-data/omat24/train/rattled-500/train.aselmdb
-data/omat24/val/rattled-500/val.aselmdb
-data/omat24/test/rattled-500/test.aselmdb
+data/omat24/train/rattled-500
+data/omat24/val/rattled-500
+data/omat24/test/rattled-500
 ```
 
 ### OC20 S2EF
 
-The OC20 S2EF 200K and val-id splits are used for OC20-domain validation.
-Official OC20 files are distributed as compressed `extxyz` files, so this
-directory provides a converter that writes UMA-compatible ASELMDB files.
+OC20 S2EF is used for catalyst-domain S2EF validation. The official files are
+distributed in compressed `extxyz` format and should be converted to ASELMDB
+before using the provided UMA configs.
 
-```bash
-mkdir -p ./data/oc20/raw
-curl -L https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_200K.tar -o ./data/oc20/raw/s2ef_train_200K.tar
-curl -L https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_id.tar -o ./data/oc20/raw/s2ef_val_id.tar
-tar -xf ./data/oc20/raw/s2ef_train_200K.tar -C ./data/oc20/raw
-tar -xf ./data/oc20/raw/s2ef_val_id.tar -C ./data/oc20/raw
-```
+| Dataset | Split | Download |
+| :-- | :-- | :-- |
+| OC20 S2EF 200K | train | [official source](https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_200K.tar) |
+| OC20 S2EF | val-id | [official source](https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_id.tar) |
 
-```bash
-python interatomic_potentials/configs/uma/prepare_oc20_s2ef_aselmdb.py \
-  --raw-dir ./data/oc20/raw/s2ef_train_200K/s2ef_train_200K \
-  --val-raw-dir ./data/oc20/raw/s2ef_val_id/s2ef_val_id \
-  --out-dir ./data/oc20/uma_aselmdb \
-  --train 50000 \
-  --val 5000 \
-  --test 5000
-```
-
-The converted directory follows this layout:
+Default converted paths:
 
 ```text
-data/oc20/uma_aselmdb/
-  train/train.aselmdb
-  val/val.aselmdb
-  test/test.aselmdb
+data/oc20/uma_aselmdb/train/train.aselmdb
+data/oc20/uma_aselmdb/val/val.aselmdb
+data/oc20/uma_aselmdb/test/test.aselmdb
 ```
-
-### Budget Validation Data
-
-For migration validation on a single GPU, the following script prepares fixed
-OMat24 and OC20 subsets:
-
-```bash
-bash interatomic_potentials/configs/uma/prepare_budget_data.sh ./data
-```
-
-| Config | Train | Val | Test |
-| :-- | :-- | :-- | :-- |
-| `uma_omat24_r500_budget_s2ef.yaml` | OMat24 rattled-500 train 50k | OMat24 rattled-500 val offset 0, 5k | OMat24 rattled-500 val offset 5k, 5k |
-| `uma_oc20_50k_budget_s2ef.yaml` | OC20 S2EF train 50k | OC20 S2EF val-id offset 0, 5k | OC20 S2EF val-id offset 5k, 5k |
-
-The required Python packages, including `ase`, `lmdb`, and `omegaconf`, are
-listed in the PaddleMaterials `requirements.txt`. UMA uses the e3nn-compatible
-operators implemented in `ppmat.models.common.e3nn`.
 
 ## Models
 
-The PaddleMaterials UMA model builds neighbor graphs from periodic atomistic
-structures, embeds atom types and optional dataset/task names, and applies an
-eSCN-style equivariant message-passing backbone. The model predicts total
-energy directly and trains forces as supervised vector targets.
+UMA constructs local atomic neighborhoods and applies an eSCN-style equivariant
+message-passing backbone. Atomic numbers, positions, periodic cells, charges,
+spins, and optional task names are embedded into the model. The graph converter
+builds neighbor edges and periodic cell offsets, then the backbone updates
+spherical node features through equivariant interaction blocks. Prediction heads
+map the learned atomic representations to total energy and atomic forces.
 
-The default single-domain model is
-`ppmat.models.uma.escn_md.UMASingleTaskModel`.
+The PaddleMaterials implementation exposes:
 
-| Setting | Value |
+| Component | PaddleMaterials entry |
 | :-- | :-- |
-| Backbone | UMA/eSCN |
-| Layers | 4 |
-| `lmax` / `mmax` | 2 / 2 |
-| Hidden / sphere / edge channels | 128 |
-| Distance basis | 64 |
-| Cutoff | 6.0 |
-| Max neighbors | 30 |
-| Optimizer | AdamW |
-| Learning rate | `8e-4` with cosine decay to `8e-6` |
-| Weight decay | `1e-3` |
-| Loss weights | energy 10.0, forces 30.0 |
+| Model | `ppmat.models.uma.escn_md.UMASingleTaskModel` |
+| Dataset | `ppmat.datasets.uma_dataset.UMAAseDBDataset` |
+| Graph converter | `ppmat.models.uma.uma_graph_converter.UMAGraphConverter` |
+| Collator | `ppmat.datasets.collate_fn.UMASingleCollator` |
 
-`ppmat/models/uma/Jd.pt` stores precomputed Wigner-d coefficients used by UMA
-rotation modules. If the file is placed outside the packaged model directory,
-set `PPMAT_UMA_JD_PATH` before running training or evaluation.
+Precomputed Wigner-d coefficients required by the UMA rotation module are stored
+as Paddle tensors in `ppmat/models/uma/Jd.pdparams`.
 
 ## Results
 
@@ -142,7 +115,7 @@ set `PPMAT_UMA_JD_PATH` before running training or evaluation.
             <td nowrap="nowrap">0.412024</td>
             <td nowrap="nowrap">1 x RTX 4090</td>
             <td nowrap="nowrap">~1h09m</td>
-            <td nowrap="nowrap"><a href="uma_omat24_r500_budget_s2ef.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="../../../test/uma/uma_omat24_r500_budget_s2ef.yaml">config</a></td>
             <td nowrap="nowrap">To be released</td>
         </tr>
         <tr>
@@ -152,47 +125,24 @@ set `PPMAT_UMA_JD_PATH` before running training or evaluation.
             <td nowrap="nowrap">0.182028</td>
             <td nowrap="nowrap">1 x RTX 4090</td>
             <td nowrap="nowrap">~55m</td>
-            <td nowrap="nowrap"><a href="uma_oc20_50k_budget_s2ef.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="../../../test/uma/uma_oc20_50k_budget_s2ef.yaml">config</a></td>
             <td nowrap="nowrap">To be released</td>
         </tr>
     </body>
 </table>
 
-The table reports validation metrics from fixed budget subsets. These results
-are intended to verify the Paddle migration, data loading, training, evaluation,
-and checkpoint workflows, rather than to reproduce the full-scale fairchem UMA
-benchmark.
+The table reports fixed-budget migration validation results. Full-scale UMA
+benchmark reproduction is not claimed in this PR.
 
 ## Training
-
-Single-GPU training:
 
 ```bash
 python interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_omat24_r500_s2ef.yaml
 ```
 
-Multi-GPU training:
-
 ```bash
-python -m paddle.distributed.launch --gpus="0,1,2,3" interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_omat24_r500_s2ef.yaml
+python interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_oc20_200k_s2ef.yaml
 ```
-
-Budget validation:
-
-```bash
-python interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_omat24_r500_budget_s2ef.yaml
-python interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_oc20_50k_budget_s2ef.yaml
-```
-
-Multi-task smoke validation:
-
-```bash
-python interatomic_potentials/train.py -c interatomic_potentials/configs/uma/uma_multitask_budget_smoke.yaml
-```
-
-The multi-task smoke configuration uses real OC20 samples and OMat24 subsets as
-task proxies to validate task-name propagation, dataset embedding, forward,
-loss, backward, evaluation, and checkpoint saving.
 
 ## Evaluation
 

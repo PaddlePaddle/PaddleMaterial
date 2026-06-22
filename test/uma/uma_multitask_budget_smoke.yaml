@@ -1,26 +1,32 @@
-# Lightweight mixed-task training check.
-# The five task names below reuse OMat24 subsets as stand-ins, so this validates
-# task propagation, dataset embedding, loss, backward, and trainer integration.
+# Small mixed-task training check using the prepared budget data only.
+# OMat24/OC20 subsets are reused as stand-ins for all UMA task names so this
+# verifies task propagation, dataset embedding, loss, backward, eval, and ckpt.
 Global:
   do_train: True
   do_eval: True
   do_test: True
   label_names: ["energy", "forces"]
+  graph_converter:
+    __class_name__: UMAGraphConverter
+    __init_params__:
+      cutoff: 6.0
+      max_neighbors: 30
+      radius_pbc_version: 1
   prim_eager_enabled: True
   prim_backward_white_list: ["stack_grad", "assign_grad"]
 
 Trainer:
-  max_epochs: 3
+  max_epochs: 1
   seed: 42
-  output_dir: ./output/uma_multitask_omat_subsets_train
+  output_dir: ./output/uma_multitask_budget_smoke
   save_freq: 1
-  log_freq: 5
+  log_freq: 2
   start_eval_epoch: 1
   eval_freq: 1
   pretrained_model_path: null
   pretrained_weight_name: null
   resume_from_checkpoint: null
-  use_amp: False
+  use_amp: True
   amp_level: "O1"
   eval_with_no_grad: False
   gradient_accumulation_steps: 1
@@ -34,7 +40,7 @@ Trainer:
   use_tensorboard: False
 
 Model:
-  __class_name__: __import__("ppmat.models.uma.escn_md", fromlist=["UMASingleTaskModel"]).UMASingleTaskModel
+  __class_name__: UMASingleTaskModel
   __init_params__:
     freeze_backbone: False
     head_name: MLP_EFS_Direct_Head
@@ -54,7 +60,7 @@ Model:
       num_layers: 4
       lmax: 2
       mmax: 2
-      otf_graph: True
+      otf_graph: False
       max_neighbors: 30
       cutoff: 6.0
       direct_forces: True
@@ -100,59 +106,59 @@ Metric:
 Dataset:
   train:
     dataset:
-      __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAMultiDataset"]).UMAMultiDataset
+      __class_name__: UMAMultiDataset
       __init_params__:
         datasets:
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/train/rattled-500/train.aselmdb
-              dataset_name: omat24-train-r500
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/train/rattled-500
+              dataset_name: omat24-train-as-omat
               task_name: omat
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 16
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 8, offset: 0}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/oc20/uma_aselmdb/train/train.aselmdb
-              dataset_name: oc20-s2ef-200k-train
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/train/train.aselmdb
+              dataset_name: oc20-train-as-oc20
               task_name: oc20
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 16
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 8, offset: 0}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/train/aimd-from-PBE-1000-nvt/train.aselmdb
-              dataset_name: omat24-train-aimd1000nvt-as-omol
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/train/rattled-500
+              dataset_name: omat24-train-as-omol
               task_name: omol
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 16
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 8, offset: 16}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/train/aimd-from-PBE-3000-nvt/train.aselmdb
-              dataset_name: omat24-train-aimd3000nvt-as-odac
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-val-as-odac
               task_name: odac
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 16
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 8, offset: 0}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/train/rattled-relax/train.aselmdb
-              dataset_name: omat24-train-relax-as-omc
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/train/train.aselmdb
+              dataset_name: oc20-train-as-omc
               task_name: omc
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 16
+              select_args: {limit: 8, offset: 16}
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -166,59 +172,59 @@ Dataset:
 
   val:
     dataset:
-      __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAMultiDataset"]).UMAMultiDataset
+      __class_name__: UMAMultiDataset
       __init_params__:
         datasets:
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/val/rattled-500/val.aselmdb
-              dataset_name: omat24-val-r500
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-val-as-omat
               task_name: omat
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 16}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/oc20/uma_aselmdb/val/val.aselmdb
-              dataset_name: oc20-s2ef-200k-val
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/val/val.aselmdb
+              dataset_name: oc20-val-as-oc20
               task_name: oc20
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 0}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/val/aimd-from-PBE-1000-nvt/val.aselmdb
-              dataset_name: omat24-val-aimd1000nvt-as-omol
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-val-as-omol
               task_name: omol
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 24}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/val/aimd-from-PBE-3000-nvt/val.aselmdb
-              dataset_name: omat24-val-aimd3000nvt-as-odac
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-val-as-odac
               task_name: odac
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 32}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/val/rattled-relax/val.aselmdb
-              dataset_name: omat24-val-relax-as-omc
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/val/val.aselmdb
+              dataset_name: oc20-val-as-omc
               task_name: omc
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
+              select_args: {limit: 2, offset: 2}
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -232,59 +238,59 @@ Dataset:
 
   test:
     dataset:
-      __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAMultiDataset"]).UMAMultiDataset
+      __class_name__: UMAMultiDataset
       __init_params__:
         datasets:
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/test/rattled-500/test.aselmdb
-              dataset_name: omat24-test-r500
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-test-as-omat
               task_name: omat
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 40}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/oc20/uma_aselmdb/test/test.aselmdb
-              dataset_name: oc20-s2ef-200k-test
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/test/test.aselmdb
+              dataset_name: oc20-test-as-oc20
               task_name: oc20
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 0}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/test/aimd-from-PBE-1000-nvt/test.aselmdb
-              dataset_name: omat24-test-aimd1000nvt-as-omol
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-test-as-omol
               task_name: omol
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 48}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/test/aimd-from-PBE-3000-nvt/test.aselmdb
-              dataset_name: omat24-test-aimd3000nvt-as-odac
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/omat24/val/rattled-500
+              dataset_name: omat24-test-as-odac
               task_name: odac
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+              select_args: {limit: 2, offset: 56}
+          - __class_name__: UMAAseDBDataset
             __init_params__:
-              src: ./data/omat24/test/rattled-relax/test.aselmdb
-              dataset_name: omat24-test-relax-as-omc
+              build_graph_cfg: ${Global.graph_converter}
+              src: ./data/oc20/uma_budget_aselmdb/test/test.aselmdb
+              dataset_name: oc20-test-as-omc
               task_name: omc
               include_energy: True
               include_forces: True
               include_stress: False
-              select_args:
-                limit: 4
+              select_args: {limit: 2, offset: 2}
     loader:
       num_workers: 0
       use_shared_memory: False

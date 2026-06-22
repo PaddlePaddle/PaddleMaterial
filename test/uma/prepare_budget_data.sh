@@ -109,7 +109,7 @@ extract_once \
   "${DATA_ROOT}/oc20/raw" \
   "${DATA_ROOT}/oc20/raw/.s2ef_val_id.extracted"
 
-"${PYTHON_BIN}" interatomic_potentials/configs/uma/prepare_oc20_s2ef_aselmdb.py \
+"${PYTHON_BIN}" test/uma/prepare_oc20_s2ef_aselmdb.py \
   --raw-dir "${DATA_ROOT}/oc20/raw/s2ef_train_200K/s2ef_train_200K" \
   --val-raw-dir "${DATA_ROOT}/oc20/raw/s2ef_val_id/s2ef_val_id" \
   --out-dir "${DATA_ROOT}/oc20/uma_budget_aselmdb" \

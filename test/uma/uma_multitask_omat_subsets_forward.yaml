@@ -6,6 +6,12 @@ Global:
   do_eval: True
   do_test: True
   label_names: ["energy", "forces"]
+  graph_converter:
+    __class_name__: UMAGraphConverter
+    __init_params__:
+      cutoff: 6.0
+      max_neighbors: 30
+      radius_pbc_version: 1
   prim_eager_enabled: True
   prim_backward_white_list: ["stack_grad", "assign_grad"]
 
@@ -34,7 +40,7 @@ Trainer:
   use_tensorboard: False
 
 Model:
-  __class_name__: __import__("ppmat.models.uma.escn_md", fromlist=["UMASingleTaskModel"]).UMASingleTaskModel
+  __class_name__: UMASingleTaskModel
   __init_params__:
     freeze_backbone: False
     head_name: MLP_EFS_Direct_Head
@@ -54,7 +60,7 @@ Model:
       num_layers: 4
       lmax: 2
       mmax: 2
-      otf_graph: True
+      otf_graph: False
       max_neighbors: 30
       cutoff: 6.0
       direct_forces: True
@@ -89,11 +95,12 @@ Metric:
 Dataset:
   val:
     dataset:
-      __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAMultiDataset"]).UMAMultiDataset
+      __class_name__: UMAMultiDataset
       __init_params__:
         datasets:
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/val/rattled-500/val.aselmdb
               dataset_name: omat24-val-r500
               task_name: omat
@@ -102,8 +109,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/oc20/uma_aselmdb/val/val.aselmdb
               dataset_name: oc20-s2ef-200k-val
               task_name: oc20
@@ -112,8 +120,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/val/aimd-from-PBE-1000-nvt/val.aselmdb
               dataset_name: omat24-val-aimd1000nvt-as-omol
               task_name: omol
@@ -122,8 +131,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/val/aimd-from-PBE-3000-nvt/val.aselmdb
               dataset_name: omat24-val-aimd3000nvt-as-odac
               task_name: odac
@@ -132,8 +142,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/val/rattled-relax/val.aselmdb
               dataset_name: omat24-val-relax-as-omc
               task_name: omc
@@ -155,11 +166,12 @@ Dataset:
 
   test:
     dataset:
-      __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAMultiDataset"]).UMAMultiDataset
+      __class_name__: UMAMultiDataset
       __init_params__:
         datasets:
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/test/rattled-500/test.aselmdb
               dataset_name: omat24-test-r500
               task_name: omat
@@ -168,8 +180,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/oc20/uma_aselmdb/test/test.aselmdb
               dataset_name: oc20-s2ef-200k-test
               task_name: oc20
@@ -178,8 +191,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/test/aimd-from-PBE-1000-nvt/test.aselmdb
               dataset_name: omat24-test-aimd1000nvt-as-omol
               task_name: omol
@@ -188,8 +202,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/test/aimd-from-PBE-3000-nvt/test.aselmdb
               dataset_name: omat24-test-aimd3000nvt-as-odac
               task_name: odac
@@ -198,8 +213,9 @@ Dataset:
               include_stress: False
               select_args:
                 limit: 2
-          - __class_name__: __import__("ppmat.models.uma.single_dataset", fromlist=["UMAAseDBDataset"]).UMAAseDBDataset
+          - __class_name__: UMAAseDBDataset
             __init_params__:
+              build_graph_cfg: ${Global.graph_converter}
               src: ./data/omat24/test/rattled-relax/test.aselmdb
               dataset_name: omat24-test-relax-as-omc
               task_name: omc
