@@ -1,0 +1,138 @@
+Global:
+  label_names: ["Conductivity [S/cm]"]
+  do_train: True
+  do_eval: False
+  do_test: False
+
+Trainer:
+  # Max epochs to train
+  max_epochs: 20
+  # Random seed
+  seed: 1
+  # Save path for checkpoints and logs
+  output_dir: ./output/transpolymer_pe_i
+  # Save frequency [epoch], set 0 to disable saving during training
+  save_freq: 1
+  # Logging frequency [step]
+  log_freq: 20
+  # Start evaluation epoch
+  start_eval_epoch: 1
+  # Evaluation frequency [epoch]
+  eval_freq: 1
+  # Resume from checkpoint path, useful for resuming training
+  resume_from_checkpoint: null
+  # Whether use automatic mixed precision
+  use_amp: False
+  # Automatic mixed precision level
+  amp_level: "O1"
+  # Whether run the model on no_grad mode during evaluation
+  eval_with_no_grad: True
+  # Gradient accumulation steps
+  gradient_accumulation_steps: 1
+  # Best metric settings
+  best_metric_indicator: "eval_metric"
+  name_for_best_metric: "Conductivity [S/cm]"
+  greater_is_better: True
+  # Compute metric during training or evaluation
+  compute_metric_during_train: True
+  metric_strategy_during_eval: "epoch"
+  # Logging backends
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+  # Early stop tolerance
+  tolerance: 5
+
+Model:
+  __class_name__: TransPolymerRegressor
+  __init_params__:
+    pretrained_model_path: ./ckpt/pretrain.pt
+    property_name: ${Global.label_names}
+    tokenizer_name_or_path: roberta-base
+    vocab_sup_file: ./data/vocab/vocab_sup_PE_I.csv
+    blocksize: 411
+    smiles_key: smiles
+    use_token_cache: True
+    drop_rate: 0.1
+    hidden_dropout_prob: 0.1
+    attention_probs_dropout_prob: 0.1
+    data_mean: 0.0
+    data_std: 1.0
+    loss_type: mse_loss
+
+Metric:
+  Conductivity [S/cm]:
+    __class_name__: R2Metric
+    __init_params__: {}
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    lr:
+      __class_name__: Linear
+      __init_params__:
+        learning_rate: 0.00005
+        warmup_epoch: 1
+        warmup_start_lr: 0.0
+        by_epoch: False
+    weight_decay: 0.01
+    no_weight_decay_name: "bias LayerNorm.bias LayerNorm.weight layer_norm.bias layer_norm.weight"
+
+Dataset:
+  transform:
+    __class_name__: mean_std_scaling
+    __init_params__: {}
+
+  train:
+    dataset:
+      __class_name__: TransPolymerCsvDataset
+      __init_params__:
+        path: ./data/train_PE_I.csv
+        property_names: ${Global.label_names}
+        smiles_key: smiles
+    loader:
+      num_workers: 8
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: False
+        batch_size: 32
+
+  val:
+    dataset:
+      __class_name__: TransPolymerCsvDataset
+      __init_params__:
+        path: ./data/test_PE_I.csv
+        property_names: ${Global.label_names}
+        smiles_key: smiles
+    loader:
+      num_workers: 8
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32
+
+  test:
+    dataset:
+      __class_name__: TransPolymerCsvDataset
+      __init_params__:
+        path: ./data/test_PE_I.csv
+        property_names: ${Global.label_names}
+        smiles_key: smiles
+    loader:
+      num_workers: 8
+      use_shared_memory: False
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 32

@@ -22,15 +22,14 @@ import pandas as pd
 import paddle
 from paddle.io import Dataset
 
-from ppmat.models.transpolymer.tokenizer import PolymerSmilesTokenizer
 from ppmat.utils import logger
 
 
 class TransPolymerCsvDataset(Dataset):
     """TransPolymer CSV Dataset Handler
 
-    This class loads polymer SMILES strings and regression targets from CSV files
-    and tokenizes the strings with the TransPolymer tokenizer.
+    This class loads polymer SMILES strings and regression targets from CSV files.
+    Tokenization and model input construction are handled by the TransPolymer model.
 
     **Data Format**
     The dataset is stored in CSV format. The first column is the polymer sequence
@@ -46,11 +45,8 @@ class TransPolymerCsvDataset(Dataset):
         path (str, optional): Path to the CSV file. Defaults to None.
         property_names (Optional[list[str]], optional): Target property names. Only
             one target is supported currently. Defaults to None.
-        tokenizer_name_or_path (str, optional): Tokenizer checkpoint or local path.
-            Defaults to "roberta-base".
-        vocab_sup_file (Optional[str], optional): Supplementary vocabulary CSV path.
-            Defaults to None.
-        blocksize (int, optional): Maximum token sequence length. Defaults to 411.
+        smiles_key (str, optional): Key used for returning polymer sequences.
+            Defaults to "smiles".
         transforms (Optional[Callable], optional): Preprocess transforms for each
             sample. Defaults to None.
         file_path (str, optional): Deprecated alias of `path`. Defaults to None.
@@ -62,10 +58,7 @@ class TransPolymerCsvDataset(Dataset):
         self,
         path: Optional[str] = None,
         property_names: Optional[list[str]] = None,
-        tokenizer=None,
-        tokenizer_name_or_path: str = "roberta-base",
-        vocab_sup_file: Optional[str] = None,
-        blocksize: int = 411,
+        smiles_key: str = "smiles",
         transforms: Optional[Callable] = None,
         file_path: Optional[str] = None,
         label_name: Optional[str] = None,
@@ -86,13 +79,7 @@ class TransPolymerCsvDataset(Dataset):
 
         self.path = path
         self.data = pd.read_csv(path)
-        self.tokenizer = tokenizer or PolymerSmilesTokenizer.from_pretrained(
-            tokenizer_name_or_path, max_len=blocksize
-        )
-        if vocab_sup_file is not None:
-            vocab_sup = pd.read_csv(vocab_sup_file, header=None).values.flatten()
-            self.tokenizer.add_tokens(vocab_sup.tolist())
-        self.blocksize = blocksize
+        self.smiles_key = smiles_key
         self.property_names = property_names or [label_name or self.data.columns[1]]
         self.transforms = transforms
         logger.info(f"Load {len(self.data)} samples from {path}")
@@ -107,20 +94,8 @@ class TransPolymerCsvDataset(Dataset):
         label = (
             float(row[property_name]) if property_name in row else float(row.iloc[1])
         )
-        encoding = self.tokenizer(
-            seq,
-            add_special_tokens=True,
-            max_length=self.blocksize,
-            return_token_type_ids=False,
-            padding="max_length",
-            truncation=True,
-            return_attention_mask=True,
-        )
         sample = {
-            "input_ids": paddle.to_tensor(encoding["input_ids"], dtype="int64"),
-            "attention_mask": paddle.to_tensor(
-                encoding["attention_mask"], dtype="int64"
-            ),
+            self.smiles_key: seq,
             property_name: paddle.to_tensor([label], dtype="float32"),
         }
         if self.transforms is not None:

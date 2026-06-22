@@ -26,9 +26,11 @@ class TransPolymerRegressor(nn.Layer):
         attention_probs_dropout_prob=0.1,
         drop_rate=0.1,
         resize_vocab_size=None,
-        tokenizer_name_or_path=None,
+        tokenizer_name_or_path="roberta-base",
         vocab_sup_file=None,
         blocksize=411,
+        smiles_key="smiles",
+        use_token_cache=True,
         property_name="Conductivity [S/cm]",
         data_mean=0.0,
         data_std=1.0,
@@ -53,15 +55,20 @@ class TransPolymerRegressor(nn.Layer):
         encoder.config.hidden_dropout_prob = hidden_dropout_prob
         encoder.config.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.encoder = deepcopy(encoder)
-        if resize_vocab_size is None and vocab_sup_file is not None:
-            tokenizer = PolymerSmilesTokenizer.from_pretrained(
-                tokenizer_name_or_path or "roberta-base", max_len=blocksize
-            )
+        self.tokenizer = PolymerSmilesTokenizer.from_pretrained(
+            tokenizer_name_or_path, max_len=blocksize
+        )
+        if vocab_sup_file is not None:
             vocab_sup = pd.read_csv(vocab_sup_file, header=None).values.flatten()
-            tokenizer.add_tokens(vocab_sup.tolist())
-            resize_vocab_size = len(tokenizer)
+            self.tokenizer.add_tokens(vocab_sup.tolist())
+        if resize_vocab_size is None:
+            resize_vocab_size = len(self.tokenizer)
         if resize_vocab_size is not None:
             self.encoder.resize_token_embeddings(resize_vocab_size)
+        self.blocksize = blocksize
+        self.smiles_key = smiles_key
+        self.use_token_cache = use_token_cache
+        self._token_cache = {}
         if isinstance(property_name, list):
             self.property_name = property_name[0]
         else:
@@ -94,14 +101,54 @@ class TransPolymerRegressor(nn.Layer):
         cls_embedding = outputs.last_hidden_state[:, 0, :]
         return self.regressor(cls_embedding)
 
-    def forward(self, data, attention_mask=None, return_loss=True, return_prediction=True):
+    def _encode_smiles(self, smiles):
+        if self.use_token_cache and smiles in self._token_cache:
+            return self._token_cache[smiles]
+
+        encoding = self.tokenizer(
+            smiles,
+            add_special_tokens=True,
+            max_length=self.blocksize,
+            return_token_type_ids=False,
+            padding="max_length",
+            truncation=True,
+            return_attention_mask=True,
+        )
+        if self.use_token_cache:
+            self._token_cache[smiles] = encoding
+        return encoding
+
+    def _build_model_inputs(self, data):
+        if "input_ids" in data and "attention_mask" in data:
+            return data["input_ids"], data["attention_mask"]
+
+        smiles_batch = data[self.smiles_key]
+        if isinstance(smiles_batch, str):
+            smiles_batch = [smiles_batch]
+        encodings = [self._encode_smiles(str(smiles)) for smiles in smiles_batch]
+        input_ids = paddle.to_tensor(
+            [encoding["input_ids"] for encoding in encodings], dtype="int64"
+        )
+        attention_mask = paddle.to_tensor(
+            [encoding["attention_mask"] for encoding in encodings], dtype="int64"
+        )
+        return input_ids, attention_mask
+
+    def forward(
+        self,
+        data,
+        attention_mask=None,
+        return_loss=True,
+        return_prediction=True,
+    ):
         if not isinstance(data, dict):
             return self._forward(data, attention_mask)
 
         assert (
             return_loss or return_prediction
         ), "At least one of return_loss or return_prediction must be True."
-        pred = self._forward(data["input_ids"], data["attention_mask"])
+        input_ids, attention_mask = self._build_model_inputs(data)
+        pred = self._forward(input_ids, attention_mask)
 
         loss_dict = {}
         if return_loss:
