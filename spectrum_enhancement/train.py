@@ -27,7 +27,6 @@ from omegaconf import OmegaConf
 
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import set_signal_handlers
-from ppmat.metrics import build_metric
 from ppmat.models import build_model
 from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
@@ -157,7 +156,6 @@ def main():
         optimizer, lr_scheduler = None, None
 
     metric_cfg = config.get("Metric")
-    metric_func = build_metric(metric_cfg) if metric_cfg is not None else None
 
     trainer = BaseTrainer(
         config["Trainer"],
@@ -166,8 +164,9 @@ def main():
         val_dataloader=val_loader,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
-        compute_metric_func_dict=metric_func,
+        compute_metric_func_dict=None,
     )
+    trainer.attach_metrics(metric_cfg, model=model)
 
     if config["Global"].get("do_train", True):
         trainer.train()

@@ -20,8 +20,8 @@ Trainer:
   eval_with_no_grad: True
   gradient_accumulation_steps: 1
 
-  best_metric_indicator: "eval_metric"
-  name_for_best_metric: "gt_enhance"
+  best_metric_indicator: null
+  name_for_best_metric: null
   greater_is_better: True
 
   compute_metric_during_train: True
@@ -58,10 +58,10 @@ Optimizer:
     weight_decay: 0.0
 
 Metric:
-  gt_enhance:
-    __class_name__: PSNRMetric
-    __init_params__:
-      data_range: 255.0
+  __class_name__: SFINStreamingAdapter
+  __init_params__:
+    target_name: "gt_enhance"
+    data_range: 255.0
 
 Predict:
   eval_with_no_grad: True

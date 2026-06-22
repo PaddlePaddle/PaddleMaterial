@@ -89,15 +89,45 @@ The four configs share the same network and optimizer settings unless noted:
 | LR scheduler | MultiStepDecay, milestones `[250, 400, 425, 450, 475]`, gamma `0.5` |
 | Batch size | 8 for training, 1 for validation/test |
 | Loss | L1 |
-| Metric | PSNR |
+| Metric | PSNR, SSIM |
+
+## Metric
+
+The configs report PSNR and SSIM using the PaddleMaterials raw/global protocol.
+Predictions and targets are evaluated as raw tensors with value range
+`[0, 255]`. For `N` images with shape `C x H x W`, the global mean squared
+error is computed over all pixels:
+
+```math
+\mathrm{MSE}_{global}
+= \frac{1}{NCHW}
+\sum_{n=1}^{N}\sum_{c=1}^{C}\sum_{h=1}^{H}\sum_{w=1}^{W}
+\left(\hat{I}_{nchw} - I_{nchw}\right)^2
+```
+
+```math
+\mathrm{PSNR}_{global}
+= 10\log_{10}
+\left(
+\frac{L^2}{\max(\mathrm{MSE}_{global}, \epsilon)}
+\right),
+\quad L=255,\ \epsilon=10^{-12}
+```
+
+SSIM is computed on raw tensors using an `11 x 11` Gaussian window with
+`sigma=1.5`:
+
+```math
+\mathrm{SSIM}(x,y)
+=
+\frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}
+{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}
+```
+
+where `C1=(0.01L)^2`, `C2=(0.03L)^2`, and `L=255`. The reported SSIM is the
+mean value of the SSIM map over all evaluated images.
 
 ## Results
-
-Unless otherwise noted, the table reports the raw/global alignment protocol:
-
-```text
-raw tensor -> global PSNR / SSIM
-```
 
 <table>
     <head>
@@ -105,9 +135,7 @@ raw tensor -> global PSNR / SSIM
             <th nowrap="nowrap">Model Name</th>
             <th nowrap="nowrap">Dataset</th>
             <th nowrap="nowrap">Target</th>
-            <th nowrap="nowrap">Paddle PSNR / SSIM</th>
-            <th nowrap="nowrap">Torch PSNR / SSIM</th>
-            <th nowrap="nowrap">Status</th>
+            <th nowrap="nowrap">PSNR / SSIM(Test dataset)</th>
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
@@ -120,8 +148,6 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">HAADF test</td>
             <td nowrap="nowrap">gt_enhance</td>
             <td nowrap="nowrap">37.440395 / 0.967452</td>
-            <td nowrap="nowrap">37.085558 / 0.958724</td>
-            <td nowrap="nowrap">aligned, PSNR rel. diff 0.957%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.5 hours</td>
             <td nowrap="nowrap"><a href="sfin_tem_enhance.yaml">sfin_tem_enhance</a></td>
@@ -132,8 +158,6 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">HAADF test</td>
             <td nowrap="nowrap">gt_detect</td>
             <td nowrap="nowrap">26.013702 / 0.964492</td>
-            <td nowrap="nowrap">25.919255 / 0.963871</td>
-            <td nowrap="nowrap">aligned, PSNR rel. diff 0.364%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.2 hours</td>
             <td nowrap="nowrap"><a href="sfin_tem_detect.yaml">sfin_tem_detect</a></td>
@@ -144,8 +168,6 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">BF test</td>
             <td nowrap="nowrap">gt_enhance</td>
             <td nowrap="nowrap">31.339841 / 0.992708</td>
-            <td nowrap="nowrap">31.507519 / 0.989180</td>
-            <td nowrap="nowrap">aligned, PSNR rel. diff 0.532%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~19.1 hours</td>
             <td nowrap="nowrap"><a href="sfin_bf_enhance.yaml">sfin_bf_enhance</a></td>
@@ -156,8 +178,6 @@ raw tensor -> global PSNR / SSIM
             <td nowrap="nowrap">BF test</td>
             <td nowrap="nowrap">gt_detect</td>
             <td nowrap="nowrap">23.826540 / 0.943309</td>
-            <td nowrap="nowrap">23.820280 / 0.943306</td>
-            <td nowrap="nowrap">aligned, PSNR rel. diff 0.026%</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.3 hours</td>
             <td nowrap="nowrap"><a href="sfin_bf_detect.yaml">sfin_bf_detect</a></td>
@@ -165,22 +185,6 @@ raw tensor -> global PSNR / SSIM
         </tr>
     </body>
 </table>
-
-For HAADF enhance, the original SFIN-main metric protocol
-(`clip -> uint8 -> per-image average`) was also verified on 100 HAADF test
-images: Paddle `38.739602 / 0.962186`, Torch `38.420514 / 0.958101`.
-
-For HAADF detect, the original SFIN-main metric protocol was also verified on
-100 HAADF test images: Paddle `28.768660 / 0.963753`, Torch
-`28.671135 / 0.963961`.
-
-For BF enhance, the original SFIN-main metric protocol was also verified on 100
-BF test images: Paddle `31.985411 / 0.987993`, Torch
-`32.295260 / 0.988141`.
-
-For BF detect, the original SFIN-main metric protocol was also verified on 100
-BF test images: Paddle `25.816507 / 0.942792`, Torch
-`25.816014 / 0.943252`.
 
 ## Command
 

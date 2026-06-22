@@ -14,7 +14,15 @@
 
 from __future__ import annotations
 
+from typing import Dict
+from typing import Optional
+from typing import Sequence
+from typing import Set
+
 import paddle
+
+from ppmat.metrics.streaming_base import StreamingMetricBase
+from ppmat.metrics.streaming_base import _all_reduce_sum_
 
 
 def calc_psnr(
@@ -152,3 +160,94 @@ class SSIMMetric:
             k2=self.k2,
             nonnegative_ssim=self.nonnegative_ssim,
         )
+
+
+class SFINStreamingAdapter(StreamingMetricBase):
+    """Streaming PSNR/SSIM adapter for SFIN image restoration."""
+
+    def __init__(
+        self,
+        target_name: str,
+        pred_name: Optional[str] = None,
+        psnr_name: str = "psnr",
+        ssim_name: str = "ssim",
+        data_range: float = 255.0,
+        eps: float = 1e-12,
+        win_size: int = 11,
+        win_sigma: float = 1.5,
+        k1: float = 0.01,
+        k2: float = 0.03,
+        nonnegative_ssim: bool = False,
+        stages: Optional[Sequence[str]] = None,
+    ):
+        self.target_name = target_name
+        self.pred_name = pred_name or target_name
+        self.psnr_name = psnr_name
+        self.ssim_name = ssim_name
+        self.data_range = data_range
+        self.eps = eps
+        self.win_size = win_size
+        self.win_sigma = win_sigma
+        self.k1 = k1
+        self.k2 = k2
+        self.nonnegative_ssim = nonnegative_ssim
+        self.stages: Set[str] = set(stages or ("train", "eval"))
+        self.reset()
+
+    def reset(self):
+        self._sse = 0.0
+        self._numel = 0.0
+        self._ssim_sum = 0.0
+        self._ssim_count = 0.0
+
+    def update_step(self, *, result: Dict, batch: Dict, stage: str):
+        if stage not in self.stages:
+            return
+        pred_dict = result.get("pred_dict", {})
+        if self.pred_name not in pred_dict or self.target_name not in batch:
+            return
+
+        with paddle.no_grad():
+            pred = pred_dict[self.pred_name]
+            label = batch[self.target_name]
+
+            pred64 = pred.astype("float64")
+            label64 = label.astype("float64")
+            diff = pred64 - label64
+            self._sse += float(paddle.sum(diff * diff).numpy().item())
+            self._numel += float(pred.numel())
+
+            ssim = calc_ssim(
+                pred=pred,
+                label=label,
+                data_range=self.data_range,
+                win_size=self.win_size,
+                win_sigma=self.win_sigma,
+                k1=self.k1,
+                k2=self.k2,
+                nonnegative_ssim=self.nonnegative_ssim,
+            )
+            batch_size = float(pred.shape[0])
+            self._ssim_sum += float(ssim.numpy().item()) * batch_size
+            self._ssim_count += batch_size
+
+    def compute_epoch(self, *, stage: str) -> Dict[str, float]:
+        if stage not in self.stages or self._numel <= 0:
+            return {}
+
+        values = paddle.to_tensor(
+            [self._sse, self._numel, self._ssim_sum, self._ssim_count],
+            dtype="float64",
+        )
+        values = _all_reduce_sum_(values)
+        sse, numel, ssim_sum, ssim_count = [float(v) for v in values.numpy()]
+
+        mse = max(sse / max(numel, 1.0), self.eps)
+        psnr = 10.0 * paddle.log10(
+            paddle.to_tensor((self.data_range**2) / mse, dtype="float64")
+        )
+        ssim = ssim_sum / max(ssim_count, 1.0)
+        return {
+            self.psnr_name: float(psnr.numpy().item()),
+            self.ssim_name: float(ssim),
+        }
