@@ -7,7 +7,7 @@ Global:
 Trainer:
   max_epochs: 500
   seed: 42
-  output_dir: ./output/sfin_tem_detect
+  output_dir: ./output/sfin_haadf_enhance
   save_freq: 100
   log_freq: 100
   start_eval_epoch: 1
@@ -38,7 +38,7 @@ Model:
     base_channels: 64
     num_blocks: 8
     input_name: "noisy"
-    target_name: "gt_detect"
+    target_name: "gt_enhance"
     loss_type: "l1"
     loss_weight: 1.0
 
@@ -60,25 +60,27 @@ Optimizer:
 Metric:
   __class_name__: SFINStreamingAdapter
   __init_params__:
-    target_name: "gt_detect"
+    target_name: "gt_enhance"
     data_range: 255.0
 
 Predict:
   eval_with_no_grad: True
-  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_hd.pdparams
+  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_enhance.zip
 
 Dataset:
   train:
     dataset:
-      __class_name__: STEMImageDataset
+      __class_name__: SFINDataset
       __init_params__:
-        path: "./data"
+        path: "./sfin_haadf"
+        split: "train"
         input_name: "noisy"
-        target_name: "gt_detect"
+        target_name: "gt_enhance"
         noisy_subdir: "noisy"
-        target_subdir: "gt_detect"
+        target_subdir: "gt_enhance"
         file_suffix: ".png"
         scale_to_unit: False
+        cache: False
         auto_download: True
     sampler:
       __class_name__: BatchSampler
@@ -93,15 +95,17 @@ Dataset:
 
   val:
     dataset:
-      __class_name__: STEMImageDataset
+      __class_name__: SFINDataset
       __init_params__:
-        path: "./data_test"
+        path: "./sfin_haadf"
+        split: "test"
         input_name: "noisy"
-        target_name: "gt_detect"
+        target_name: "gt_enhance"
         noisy_subdir: "noisy"
-        target_subdir: "gt_detect"
+        target_subdir: "gt_enhance"
         file_suffix: ".png"
         scale_to_unit: False
+        cache: False
         auto_download: True
     sampler:
       __class_name__: BatchSampler
@@ -114,25 +118,4 @@ Dataset:
       use_shared_memory: False
       collate_fn: DefaultCollator
 
-  test:
-    dataset:
-      __class_name__: STEMImageDataset
-      __init_params__:
-        path: "./data_test"
-        input_name: "noisy"
-        target_name: "gt_detect"
-        noisy_subdir: "noisy"
-        target_subdir: "gt_detect"
-        file_suffix: ".png"
-        scale_to_unit: False
-        auto_download: True
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        shuffle: False
-        drop_last: False
-        batch_size: 1
-    loader:
-      num_workers: 0
-      use_shared_memory: False
-      collate_fn: DefaultCollator
+  test: ${Dataset.val}

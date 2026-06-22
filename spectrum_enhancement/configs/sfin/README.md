@@ -9,63 +9,59 @@ severe noise and missing structural details under low-dose acquisition.
 SFIN introduces a noise calibration and spatial-frequency interaction network
 for paired STEM image restoration. PaddleMaterials provides four SFIN configs
 covering HAADF and BF inputs, with `gt_enhance` and `gt_detect` as the two
-supervised targets.
+supervised targets. `gt_enhance` is the image enhancement target, used to
+recover a clean STEM image with improved contrast and structural details.
+`gt_detect` is the detection-oriented target, used to highlight structural
+features such as atom-column responses for downstream structure localization.
 
-## Datasets:
+## Datasets
 
-SFIN uses the paired HAADF and BF datasets released with the reference
-implementation. Each sample contains a noisy grayscale input and one
-ground-truth target image for the configured task. The submitted configs use
-the released training split for optimization, the released test split for
-validation, and keep testing as an explicit standalone step.
+SFIN uses two paired STEM image datasets: HAADF and BF. Each dataset contains
+`train` and `test` splits. A sample is one noisy grayscale input paired with
+two labels, `gt_enhance` and `gt_detect`.
 
 Expected directory structure:
 
 ```text
-data/                      # HAADF train
-  noisy/
-  gt_enhance/
-  gt_detect/
+sfin_haadf/
+  train/
+    noisy/
+    gt_enhance/
+    gt_detect/
+  test/
+    noisy/
+    gt_enhance/
+    gt_detect/
 
-data_test/                 # HAADF validation/test
-  noisy/
-  gt_enhance/
-  gt_detect/
-
-bf_data/                   # BF train
-  noisy/
-  gt_enhance/
-  gt_detect/
-
-bf_data_test/              # BF validation/test
-  noisy/
-  gt_enhance/
-  gt_detect/
+sfin_bf/
+  train/
+    noisy/
+    gt_enhance/
+    gt_detect/
+  test/
+    noisy/
+    gt_enhance/
+    gt_detect/
 ```
 
-| Dataset | Train | Val/Test | Link |
+| Dataset | Train | Val/Test | Labels |
 | :---: | :---: | :---: | :---: |
-| HAADF train | 1000 | - | [haadf_data.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data.zip) |
-| HAADF test | - | 100 | [haadf_data_test.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/haadf_data_test.zip) |
-| BF train | 1000 | - | [bf_data.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data.zip) |
-| BF test | - | 100 | [bf_data_test.zip](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN_datasets/bf_data_test.zip) |
-
-`STEMImageDataset` supports automatic download through the common
-`ppmat.utils.download` utilities. When `path` is missing and
-`auto_download=True`, the URL is inferred from the `path` basename:
-`data`, `data_test`, `bf_data`, or `bf_data_test`.
+| [HAADF](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN/sfin_haadf.zip) | 1000 | 100 | `gt_enhance`, `gt_detect` |
+| [BF](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/SFIN/sfin_bf.zip) | 1000 | 100 | `gt_enhance`, `gt_detect` |
 
 ## Model
 
-SFIN uses an explicit PaddleMaterials data contract:
+<p align="center">
+  <img src="sfin_architecture.jpg" width="900" alt="SFIN model architecture">
+</p>
 
-- dataset input key: config-controlled by `input_name` (default: `noisy`)
-- dataset target key: config-controlled by `target_name`
-  (`gt_enhance` or `gt_detect`)
-- model prediction key: same as configured target key
-
-The Paddle implementation follows the common trainer interface and returns
-`loss_dict` and `pred_dict` during training/evaluation.
+SFIN contains a noise calibration module and a spatial-frequency interaction
+network. The noise calibration module estimates and suppresses low-dose
+acquisition noise before restoration. The spatial-frequency interaction
+network combines spatial-domain features, which preserve local morphology and
+atom-column structures, with frequency-domain features, which capture global
+periodic and contrast information. Their interaction helps recover fine
+structural details while reducing noise and artifacts.
 
 Training objective:
 
@@ -73,30 +69,11 @@ Training objective:
 \mathcal{L} = \left\| \hat{I} - I_{gt} \right\|_1
 ```
 
-The four configs share the same network and optimizer settings unless noted:
-
-| Config | Mode | Target | Epochs | Output Dir |
-| :---: | :---: | :---: | :---: | :---: |
-| [sfin_tem_enhance.yaml](sfin_tem_enhance.yaml) | HAADF | `gt_enhance` | 500 | `./output/sfin_tem_enhance` |
-| [sfin_tem_detect.yaml](sfin_tem_detect.yaml) | HAADF | `gt_detect` | 500 | `./output/sfin_tem_detect` |
-| [sfin_bf_enhance.yaml](sfin_bf_enhance.yaml) | BF | `gt_enhance` | 434 | `./output/sfin_bf_enhance` |
-| [sfin_bf_detect.yaml](sfin_bf_detect.yaml) | BF | `gt_detect` | 500 | `./output/sfin_bf_detect` |
-
-| Setting | Value |
-| :---: | :---: |
-| Optimizer | Adam |
-| Learning rate | `2.0e-4` |
-| LR scheduler | MultiStepDecay, milestones `[250, 400, 425, 450, 475]`, gamma `0.5` |
-| Batch size | 8 for training, 1 for validation/test |
-| Loss | L1 |
-| Metric | PSNR, SSIM |
-
 ## Metric
 
-The configs report PSNR and SSIM using the PaddleMaterials raw/global protocol.
-Predictions and targets are evaluated as raw tensors with value range
-`[0, 255]`. For `N` images with shape `C x H x W`, the global mean squared
-error is computed over all pixels:
+Predictions and targets are evaluated with value range `[0, 255]`. For `N`
+images with shape `C x H x W`, the global mean squared error is computed over
+all pixels:
 
 ```math
 \mathrm{MSE}_{global}
@@ -144,24 +121,24 @@ mean value of the SSIM map over all evaluated images.
     </head>
     <body>
         <tr>
-            <td nowrap="nowrap">sfin_tem_enhance</td>
+            <td nowrap="nowrap">sfin_haadf_enhance</td>
             <td nowrap="nowrap">HAADF test</td>
             <td nowrap="nowrap">gt_enhance</td>
             <td nowrap="nowrap">37.440395 / 0.967452</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.5 hours</td>
-            <td nowrap="nowrap"><a href="sfin_tem_enhance.yaml">sfin_tem_enhance</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_he_500.zip">checkpoint | log</a></td>
+            <td nowrap="nowrap"><a href="sfin_haadf_enhance.yaml">sfin_haadf_enhance</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_enhance.zip">checkpoint</a></td>
         </tr>
         <tr>
-            <td nowrap="nowrap">sfin_tem_detect</td>
+            <td nowrap="nowrap">sfin_haadf_detect</td>
             <td nowrap="nowrap">HAADF test</td>
             <td nowrap="nowrap">gt_detect</td>
             <td nowrap="nowrap">26.013702 / 0.964492</td>
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.2 hours</td>
-            <td nowrap="nowrap"><a href="sfin_tem_detect.yaml">sfin_tem_detect</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_hd.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_hd_run.log">log</a></td>
+            <td nowrap="nowrap"><a href="sfin_haadf_detect.yaml">sfin_haadf_detect</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip">checkpoint</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">sfin_bf_enhance</td>
@@ -171,7 +148,7 @@ mean value of the SSIM map over all evaluated images.
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~19.1 hours</td>
             <td nowrap="nowrap"><a href="sfin_bf_enhance.yaml">sfin_bf_enhance</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_be.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_be_run.log">log</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip">checkpoint</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">sfin_bf_detect</td>
@@ -181,7 +158,7 @@ mean value of the SSIM map over all evaluated images.
             <td nowrap="nowrap">1 (V100-32GB)</td>
             <td nowrap="nowrap">~21.3 hours</td>
             <td nowrap="nowrap"><a href="sfin_bf_detect.yaml">sfin_bf_detect</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_epoch_500.pdparams">checkpoint</a> | <a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_run.log">log</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip">checkpoint</a></td>
         </tr>
     </body>
 </table>
@@ -193,11 +170,11 @@ mean value of the SSIM map over all evaluated images.
 ```bash
 # HAADF enhance
 python spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml
+  -c spectrum_enhancement/configs/sfin/sfin_haadf_enhance.yaml
 
 # HAADF detect
 python spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_detect.yaml
+  -c spectrum_enhancement/configs/sfin/sfin_haadf_detect.yaml
 
 # BF enhance
 python spectrum_enhancement/train.py \
@@ -213,7 +190,7 @@ python spectrum_enhancement/train.py \
 ```bash
 # Use Global.do_eval=True and provide a checkpoint path.
 python spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
+  -c spectrum_enhancement/configs/sfin/sfin_haadf_enhance.yaml \
   Global.do_train=False \
   Global.do_eval=True \
   Global.do_test=False \
@@ -225,7 +202,7 @@ python spectrum_enhancement/train.py \
 ```bash
 # Evaluate on the test dataset.
 python spectrum_enhancement/train.py \
-  -c spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml \
+  -c spectrum_enhancement/configs/sfin/sfin_haadf_enhance.yaml \
   Global.do_train=False \
   Global.do_eval=False \
   Global.do_test=True \
@@ -234,13 +211,13 @@ python spectrum_enhancement/train.py \
 
 ### Prediction
 
-Use a config whose `Predict.checkpoint_path` is available:
+Pretrained prediction is available through registered model names:
 
 ```bash
-# Mode 1: use checkpoint URL from Predict.checkpoint_path and build the
-# Dataset.test dataloader from the config.
+# Mode 1: use registered pretrained weights by model name.
 python spectrum_enhancement/predict.py \
-  --config_path spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml
+  --model_name sfin_haadf_enhance \
+  --split val
 ```
 
 Or override the checkpoint and data path explicitly:
@@ -249,16 +226,15 @@ Or override the checkpoint and data path explicitly:
 # Mode 2: custom config + checkpoint + local noisy-image directory.
 python spectrum_enhancement/predict.py \
   --config_path spectrum_enhancement/configs/sfin/sfin_bf_detect.yaml \
-  --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_epoch_500.pdparams \
-  --input_path ./bf_data_test/noisy \
-  --split test \
+  --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip \
+  --input_path ./sfin_bf/test/noisy \
+  --split val \
   --output_dir ./output/sfin_predictions
 ```
 
 When `--input_path` is provided, prediction only reads noisy input images and
 does not require the target sub-directory to exist. Without `--input_path`,
-prediction uses the configured `Dataset.<split>` branch through the common
-dataset factory/dataloader flow.
+prediction reads the selected split from the config.
 
 ## References
 

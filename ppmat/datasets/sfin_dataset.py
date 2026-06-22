@@ -15,12 +15,15 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import os
 import os.path as osp
+import pickle
 from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 
 import numpy as np
@@ -35,56 +38,54 @@ from ppmat.utils import io
 from ppmat.utils import logger
 
 
-class STEMImageDataset(Dataset):
-    """Paired STEM image dataset for spectrum enhancement tasks.
+class SFINDataset(Dataset):
+    """Paired SFIN image dataset for spectrum enhancement tasks.
 
     Expected layout:
 
     ```text
     root/
-      noisy/
-      gt_enhance/    # optional for prediction-only datasets
-      gt_detect/     # optional for prediction-only datasets
+      train/
+        noisy/
+        gt_enhance/
+        gt_detect/
+      test/
+        noisy/
+        gt_enhance/
+        gt_detect/
     ```
 
-    If the dataset root is missing, the released SFIN archive can be downloaded
-    automatically. The model-facing keys are controlled by ``input_name`` and
-    ``target_name``.
+    Each noisy image is paired with both ``gt_enhance`` and ``gt_detect`` labels
+    in the canonical SFIN layout. The model-facing input key is controlled by
+    ``input_name``; ``target_name`` selects the label consumed by the current
+    task while the other label remains available in the sample dictionary.
     """
 
-    name = "stem_image"
+    name = "sfin"
     url = None
     md5 = None
 
     DATASET_URLS: Dict[str, str] = {
-        "data": (
+        "sfin_haadf": (
             "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-            "SFIN_datasets/haadf_data.zip"
+            "SFIN/sfin_haadf.zip"
         ),
-        "data_test": (
+        "sfin_bf": (
             "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-            "SFIN_datasets/haadf_data_test.zip"
-        ),
-        "bf_data": (
-            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-            "SFIN_datasets/bf_data.zip"
-        ),
-        "bf_data_test": (
-            "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-            "SFIN_datasets/bf_data_test.zip"
+            "SFIN/sfin_bf.zip"
         ),
     }
     DATASET_MD5S: Dict[str, Optional[str]] = {
-        "data": None,
-        "data_test": None,
-        "bf_data": None,
-        "bf_data_test": None,
+        "sfin_haadf": None,
+        "sfin_bf": None,
     }
 
     def __init__(
         self,
         path: Optional[str] = None,
+        split: str = "train",
         target_subdir: Optional[str] = "gt_enhance",
+        label_subdirs: Optional[Sequence[str]] = None,
         input_name: str = "noisy",
         target_name: Optional[str] = None,
         noisy_subdir: str = "noisy",
@@ -93,6 +94,9 @@ class STEMImageDataset(Dataset):
         build_samples_cfg: Optional[Dict[str, Any]] = None,
         scale_to_unit: bool = False,
         transforms: Optional[Callable] = None,
+        cache: bool = False,
+        cache_path: Optional[str] = None,
+        overwrite: bool = False,
         url: Optional[str] = None,
         md5: Optional[str] = None,
         auto_download: bool = True,
@@ -100,22 +104,36 @@ class STEMImageDataset(Dataset):
     ):
         super().__init__()
         if path is None:
-            raise ValueError("STEMImageDataset requires `path`.")
+            raise ValueError("SFINDataset requires `path`.")
 
         if data_count is not None and int(data_count) < 0:
             raise ValueError("data_count must be None or a non-negative integer.")
 
+        if split not in ("train", "test"):
+            raise ValueError(f"Unsupported split '{split}', expected 'train' or 'test'.")
+
         self.dataset_name = osp.basename(osp.normpath(path))
+        self.split = split
         self.url = url if url is not None else self.DATASET_URLS.get(self.dataset_name)
         self.md5 = md5 if md5 is not None else self.DATASET_MD5S.get(self.dataset_name)
         self.input_name = input_name
         self.target_name = target_name if target_name is not None else target_subdir
         self.noisy_subdir = noisy_subdir
         self.target_subdir = target_subdir
+        if self.target_subdir is None:
+            self.label_subdirs = tuple()
+        else:
+            label_subdirs = label_subdirs or ("gt_enhance", "gt_detect")
+            self.label_subdirs = tuple(dict.fromkeys(label_subdirs))
+            if self.target_subdir not in self.label_subdirs:
+                self.label_subdirs = self.label_subdirs + (self.target_subdir,)
         self.file_suffix = file_suffix
         self.data_count = int(data_count) if data_count is not None else None
         self.scale_to_unit = scale_to_unit
         self.transforms = transforms
+        self.cache = cache
+        self.cache_path = cache_path
+        self.overwrite = overwrite
         self.auto_download = auto_download
         if build_samples_cfg is None:
             build_samples_cfg = {"match_mode": "indexed"}
@@ -126,14 +144,14 @@ class STEMImageDataset(Dataset):
         self.build_samples_cfg = build_samples_cfg
         self.sample_builder = build_matched_name_samples(build_samples_cfg)
 
-        noisy_root = osp.join(path, self.noisy_subdir)
-        target_root = (
-            osp.join(path, self.target_subdir)
-            if self.target_subdir is not None
-            else None
-        )
-        has_data_dirs = osp.isdir(noisy_root) and (
-            target_root is None or osp.isdir(target_root)
+        data_root = osp.join(path, self.split)
+        noisy_root = osp.join(data_root, self.noisy_subdir)
+        target_roots = {
+            label_name: osp.join(data_root, label_name)
+            for label_name in self.label_subdirs
+        }
+        has_data_dirs = osp.isdir(noisy_root) and all(
+            osp.isdir(target_root) for target_root in target_roots.values()
         )
         if not has_data_dirs:
             if not auto_download or self.url is None:
@@ -144,30 +162,37 @@ class STEMImageDataset(Dataset):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
             for candidate in (
-                root_path,
+                osp.join(root_path, self.split),
                 osp.join(root_path, self.dataset_name),
+                osp.join(root_path, self.dataset_name, self.split),
+                root_path,
                 osp.join(root_path, osp.basename(osp.normpath(root_path))),
             ):
                 noisy_root = osp.join(candidate, self.noisy_subdir)
-                target_root = (
-                    osp.join(candidate, self.target_subdir)
-                    if self.target_subdir is not None
-                    else None
-                )
-                if osp.isdir(noisy_root) and (
-                    target_root is None or osp.isdir(target_root)
+                target_roots = {
+                    label_name: osp.join(candidate, label_name)
+                    for label_name in self.label_subdirs
+                }
+                if osp.isdir(noisy_root) and all(
+                    osp.isdir(target_root) for target_root in target_roots.values()
                 ):
-                    path = candidate
+                    data_root = candidate
                     break
             else:
-                path = root_path
+                data_root = root_path
+        else:
+            data_root = osp.join(path, self.split)
 
         self.path = path
         self.root = self.path
-        self.data_root = self.root
+        self.data_root = data_root
         self.noisy_root = osp.join(self.data_root, self.noisy_subdir)
+        self.target_roots = {
+            label_name: osp.join(self.data_root, label_name)
+            for label_name in self.label_subdirs
+        }
         self.target_root = (
-            osp.join(self.data_root, self.target_subdir)
+            self.target_roots.get(self.target_subdir)
             if self.target_subdir is not None
             else None
         )
@@ -175,22 +200,22 @@ class STEMImageDataset(Dataset):
         self.row_data, self.num_samples = self.read_data(self.path)
         self.samples = self.row_data["samples"]
         self.file_names = self.row_data["name"]
+        self._prepare_cache()
         logger.info(f"Load {self.num_samples} samples from {self.path}")
 
     def read_data(self, path: str) -> Tuple[Dict[str, List[Any]], int]:
         """Read STEM image file names and build sample metadata."""
         if not osp.isdir(self.noisy_root):
             raise FileNotFoundError(f"Noisy directory not found: {self.noisy_root}")
-        if self.target_root is not None and not osp.isdir(self.target_root):
-            raise FileNotFoundError(f"Target directory not found: {self.target_root}")
+        for label_name, target_root in self.target_roots.items():
+            if not osp.isdir(target_root):
+                raise FileNotFoundError(f"Target directory not found: {target_root}")
 
         noisy_files = io.list_files_by_suffix(self.noisy_root, self.file_suffix)
         if self.target_root is None:
             samples = build_prediction_samples(noisy_files)
         else:
-            target_files = io.list_files_by_suffix(
-                self.target_root, self.file_suffix
-            )
+            target_files = io.list_files_by_suffix(self.target_root, self.file_suffix)
             samples = self.sample_builder(
                 noisy_files,
                 target_files,
@@ -198,6 +223,24 @@ class STEMImageDataset(Dataset):
                 self.target_root,
                 self.file_suffix,
             )
+            for label_name, target_root in self.target_roots.items():
+                if label_name == self.target_subdir:
+                    for sample in samples:
+                        sample[label_name] = sample["target"]
+                    continue
+                label_files = io.list_files_by_suffix(target_root, self.file_suffix)
+                label_samples = self.sample_builder(
+                    noisy_files,
+                    label_files,
+                    self.noisy_root,
+                    target_root,
+                    self.file_suffix,
+                )
+                label_file_by_name = {
+                    sample["name"]: sample["target"] for sample in label_samples
+                }
+                for sample in samples:
+                    sample[label_name] = label_file_by_name[sample["name"]]
         if self.data_count is not None:
             samples = samples[: self.data_count]
         if not samples and self.data_count != 0:
@@ -213,6 +256,8 @@ class STEMImageDataset(Dataset):
         }
         if self.target_root is not None:
             row_data["target"] = [sample["target"] for sample in samples]
+            for label_name in self.label_subdirs:
+                row_data[label_name] = [sample[label_name] for sample in samples]
         return row_data, len(samples)
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
@@ -222,7 +267,39 @@ class STEMImageDataset(Dataset):
             image_array = image_array / 255.0
         return paddle.to_tensor(image_array).unsqueeze(0)
 
-    def __getitem__(self, idx: int):
+    def _prepare_cache(self):
+        self.cache_files = []
+        if not self.cache:
+            return
+
+        target_name = self.target_name if self.target_name is not None else "predict"
+        if self.cache_path is None:
+            self.cache_path = osp.join(
+                f"{self.path}_cache",
+                self.split,
+                str(target_name),
+            )
+        sample_cache_path = osp.join(self.cache_path, "samples")
+        os.makedirs(sample_cache_path, exist_ok=True)
+
+        self.cache_files = [
+            osp.join(sample_cache_path, f"{idx:010d}.pkl")
+            for idx in range(self.num_samples)
+        ]
+        cache_ready = all(osp.exists(cache_file) for cache_file in self.cache_files)
+        if cache_ready and not self.overwrite:
+            logger.info(f"Using cached STEM image samples from {sample_cache_path}")
+            return
+
+        logger.info(
+            f"Caching {self.num_samples} STEM image samples to {sample_cache_path}"
+        )
+        for idx, cache_file in enumerate(self.cache_files):
+            data = self._build_item(idx)
+            with open(cache_file, "wb") as f:
+                pickle.dump(data, f)
+
+    def _build_item(self, idx: int):
         noisy = self._load_gray_image(
             osp.join(self.noisy_root, self.row_data["noisy"][idx])
         )
@@ -232,11 +309,29 @@ class STEMImageDataset(Dataset):
             "name": self.row_data["name"][idx],
             "id": idx,
         }
-        if self.target_root is not None:
-            target = self._load_gray_image(
-                osp.join(self.target_root, self.row_data["target"][idx])
+        for label_name, target_root in self.target_roots.items():
+            data[label_name] = self._load_gray_image(
+                osp.join(target_root, self.row_data[label_name][idx])
             )
-            data[self.target_name] = target
+        if (
+            self.target_subdir is not None
+            and self.target_name not in data
+            and self.target_subdir in data
+        ):
+            data[self.target_name] = data[self.target_subdir]
+        return data
+
+    def load_from_cache(self, cache_path: str):
+        if not osp.exists(cache_path):
+            raise FileNotFoundError(f"No such file or directory: {cache_path}")
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+
+    def __getitem__(self, idx: int):
+        if self.cache and self.cache_files and idx < len(self.cache_files):
+            data = self.load_from_cache(self.cache_files[idx])
+        else:
+            data = self._build_item(idx)
         data = self.transforms(data) if self.transforms is not None else data
         return data
 

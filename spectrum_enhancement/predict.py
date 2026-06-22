@@ -49,8 +49,8 @@ class SpectrumPredictor:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        # if model_name is not None, then config_path and checkpoint_path must be
-        # provided
+        # Match the common predictor pattern: registered models are loaded by
+        # model_name; custom models require both config_path and checkpoint_path.
         if model_name is None:
             assert config_path is not None and checkpoint_path is not None, (
                 "config_path and checkpoint_path must be provided when model_name is "
@@ -212,6 +212,7 @@ class SpectrumPredictor:
             raise KeyError(f"Dataset.{split} is not defined in config.")
 
         init_params = dataset_cfg.get("dataset", {}).get("__init_params__", {})
+        dataset_split = init_params.get("split", "test")
         noisy_subdir = init_params.get("noisy_subdir", "noisy")
         input_path = Path(input_path)
 
@@ -227,15 +228,24 @@ class SpectrumPredictor:
                 prefix="ppmat_spectrum_predict_"
             ) as temp_dir:
                 temp_root = Path(temp_dir)
-                staged_noisy_dir = temp_root / noisy_subdir
+                staged_noisy_dir = temp_root / dataset_split / noisy_subdir
                 staged_noisy_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_path, staged_noisy_dir / input_path.name)
                 init_params["path"] = str(temp_root)
                 yield dataset_cfg
             return
 
-        if (input_path / noisy_subdir).is_dir():
+        if (input_path / dataset_split / noisy_subdir).is_dir():
             init_params["path"] = str(input_path)
+            yield dataset_cfg
+            return
+
+        if input_path.name == noisy_subdir and input_path.parent.name in (
+            "train",
+            "test",
+        ):
+            init_params["path"] = str(input_path.parent.parent)
+            init_params["split"] = input_path.parent.name
             yield dataset_cfg
             return
 
@@ -247,10 +257,15 @@ class SpectrumPredictor:
         if not image_files:
             raise FileNotFoundError(f"No image files found under {input_path}.")
 
-        init_params["path"] = str(input_path.parent)
-        init_params["noisy_subdir"] = input_path.name
-        logger.info(f"Load {len(image_files)} noisy images from {input_path}")
-        yield dataset_cfg
+        with tempfile.TemporaryDirectory(prefix="ppmat_spectrum_predict_") as temp_dir:
+            temp_root = Path(temp_dir)
+            staged_noisy_dir = temp_root / dataset_split / noisy_subdir
+            staged_noisy_dir.mkdir(parents=True, exist_ok=True)
+            for image_file in image_files:
+                shutil.copy2(image_file, staged_noisy_dir / image_file.name)
+            init_params["path"] = str(temp_root)
+            logger.info(f"Load {len(image_files)} noisy images from {input_path}")
+            yield dataset_cfg
 
     def from_dataset(
         self,
@@ -272,6 +287,7 @@ class SpectrumPredictor:
         with self._dataset_cfg_from_input_path(input_path, split) as dataset_cfg:
             return self._predict_from_dataset_cfg(dataset_cfg, output_dir)
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default=None, help="Model name.")
@@ -291,7 +307,10 @@ def main():
         "--checkpoint_path",
         type=str,
         default=None,
-        help="Path to the checkpoint file.",
+        help=(
+            "Path to the checkpoint file. If omitted in custom-model mode, "
+            "Predict.checkpoint_path in the config is used."
+        ),
     )
     parser.add_argument(
         "--input_path",

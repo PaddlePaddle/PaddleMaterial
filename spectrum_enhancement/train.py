@@ -78,7 +78,7 @@ def parse_args():
         "-c",
         "--config",
         type=str,
-        default="./spectrum_enhancement/configs/sfin/sfin_tem_enhance.yaml",
+        default="./spectrum_enhancement/configs/sfin/sfin_haadf_enhance.yaml",
         help="Path to config file.",
     )
     parser.add_argument(

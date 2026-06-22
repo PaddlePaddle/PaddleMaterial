@@ -65,20 +65,22 @@ Metric:
 
 Predict:
   eval_with_no_grad: True
-  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bd_epoch_500.pdparams
+  checkpoint_path: https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip
 
 Dataset:
   train:
     dataset:
-      __class_name__: STEMImageDataset
+      __class_name__: SFINDataset
       __init_params__:
-        path: "./bf_data"
+        path: "./sfin_bf"
+        split: "train"
         input_name: "noisy"
         target_name: "gt_detect"
         noisy_subdir: "noisy"
         target_subdir: "gt_detect"
         file_suffix: ".png"
         scale_to_unit: False
+        cache: False
         auto_download: True
     sampler:
       __class_name__: BatchSampler
@@ -93,15 +95,17 @@ Dataset:
 
   val:
     dataset:
-      __class_name__: STEMImageDataset
+      __class_name__: SFINDataset
       __init_params__:
-        path: "./bf_data_test"
+        path: "./sfin_bf"
+        split: "test"
         input_name: "noisy"
         target_name: "gt_detect"
         noisy_subdir: "noisy"
         target_subdir: "gt_detect"
         file_suffix: ".png"
         scale_to_unit: False
+        cache: False
         auto_download: True
     sampler:
       __class_name__: BatchSampler
@@ -114,25 +118,4 @@ Dataset:
       use_shared_memory: False
       collate_fn: DefaultCollator
 
-  test:
-    dataset:
-      __class_name__: STEMImageDataset
-      __init_params__:
-        path: "./bf_data_test"
-        input_name: "noisy"
-        target_name: "gt_detect"
-        noisy_subdir: "noisy"
-        target_subdir: "gt_detect"
-        file_suffix: ".png"
-        scale_to_unit: False
-        auto_download: True
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        shuffle: False
-        drop_last: False
-        batch_size: 1
-    loader:
-      num_workers: 0
-      use_shared_memory: False
-      collate_fn: DefaultCollator
+  test: ${Dataset.val}
