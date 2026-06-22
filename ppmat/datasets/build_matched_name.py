@@ -18,6 +18,7 @@ import copy
 import os.path as osp
 from typing import Dict
 from typing import List
+from typing import Optional
 from typing import Sequence
 from typing import Union
 
@@ -39,6 +40,117 @@ def build_matched_name_samples(cfg: Dict):
         f"Unsupported match_mode: {match_mode}. "
         "Expected one of {'indexed', 'matched'}."
     )
+
+
+def build_prediction_samples(
+    noisy_files: Sequence[str],
+    noisy_key: str = "noisy",
+    name_key: str = "name",
+) -> List[Dict[str, str]]:
+    return [{noisy_key: file_name, name_key: file_name} for file_name in noisy_files]
+
+
+def _pair_files_by_name(
+    noisy_files: Sequence[str],
+    target_files: Sequence[str],
+    noisy_file_key: str,
+    target_file_key: str,
+) -> List[Dict[str, str]]:
+    """Pair noisy and target files by exactly matched file names.
+
+    This helper only prepares file-name pairs for the sample builder. It does
+    not read image contents or depend on a dataset instance.
+    """
+    noisy_file_set = set(noisy_files)
+    target_file_set = set(target_files)
+    missing_target = sorted(noisy_file_set - target_file_set)
+    missing_noisy = sorted(target_file_set - noisy_file_set)
+    if missing_target or missing_noisy:
+        raise FileNotFoundError(
+            "Noisy and target images are not paired. "
+            f"Missing target files: {missing_target[:10]}, "
+            f"missing noisy files: {missing_noisy[:10]}."
+        )
+    return [
+        {
+            noisy_file_key: file_name,
+            target_file_key: file_name,
+        }
+        for file_name in sorted(noisy_file_set & target_file_set)
+    ]
+
+
+def _collect_indexed_file_map(
+    file_names: Sequence[str],
+    root: Optional[str],
+    file_suffix: Optional[str],
+) -> Dict[int, str]:
+    """Validate strict integer file stems and map index to file name.
+
+    Files such as ``0.png`` and ``00.png`` are treated as the same integer
+    index. Invalid stems and duplicate integer indices are rejected here so the
+    builder can fail before producing ambiguous noisy/target pairs.
+    """
+    index_map = {}
+    invalid_files = []
+    duplicate_files = []
+    for file_name in file_names:
+        stem = osp.splitext(file_name)[0]
+        if not stem.isdigit():
+            invalid_files.append((root, file_name))
+            continue
+        index = int(stem)
+        if index in index_map:
+            duplicate_files.append((root, index_map[index], file_name))
+            continue
+        index_map[index] = file_name
+
+    if invalid_files:
+        expected_name = f"0{file_suffix}" if file_suffix is not None else "0.*"
+        raise ValueError(
+            "Strict indexed naming requires files named like "
+            f"'{expected_name}'. Invalid files: {invalid_files[:10]}."
+        )
+    if duplicate_files:
+        raise ValueError(
+            "Strict indexed naming requires one file per integer index. "
+            f"Duplicate indexed files: {duplicate_files[:10]}."
+        )
+    return index_map
+
+
+def _pair_files_by_index(
+    noisy_files: Sequence[str],
+    target_files: Sequence[str],
+    noisy_file_key: str,
+    target_file_key: str,
+    noisy_root: Optional[str] = None,
+    target_root: Optional[str] = None,
+    file_suffix: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    """Pair noisy and target files by integer file stems.
+
+    The returned dictionaries are still passed through ``BuildIndexedNameSamples``
+    so the existing per-sample validation remains the final source of truth.
+    """
+    noisy_map = _collect_indexed_file_map(noisy_files, noisy_root, file_suffix)
+    target_map = _collect_indexed_file_map(target_files, target_root, file_suffix)
+    common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
+    missing_target = sorted(set(noisy_map.keys()) - set(target_map.keys()))
+    missing_noisy = sorted(set(target_map.keys()) - set(noisy_map.keys()))
+    if missing_target or missing_noisy:
+        raise FileNotFoundError(
+            "Noisy and target images are not paired. "
+            f"Missing target indices: {missing_target[:10]}, "
+            f"missing noisy indices: {missing_noisy[:10]}."
+        )
+    return [
+        {
+            noisy_file_key: noisy_map[idx],
+            target_file_key: target_map[idx],
+        }
+        for idx in common_indices
+    ]
 
 
 class BuildMatchedNameSamples:
@@ -106,7 +218,19 @@ class BuildMatchedNameSamples:
             Dict[str, str],
             str,
         ],
+        target_file_names: Optional[Sequence[str]] = None,
+        noisy_root: Optional[str] = None,
+        target_root: Optional[str] = None,
+        file_suffix: Optional[str] = None,
     ) -> Union[List[Dict[str, str]], Dict[str, str]]:
+        if target_file_names is not None:
+            file_names = _pair_files_by_name(
+                file_names,
+                target_file_names,
+                self.noisy_file_key,
+                self.target_file_key,
+            )
+
         if isinstance(file_names, (list, tuple)):
             if len(file_names) == 0:
                 return []
@@ -197,7 +321,22 @@ class BuildIndexedNameSamples:
             Sequence[Dict[str, str]],
             Dict[str, str],
         ],
+        target_file_names: Optional[Sequence[str]] = None,
+        noisy_root: Optional[str] = None,
+        target_root: Optional[str] = None,
+        file_suffix: Optional[str] = None,
     ) -> Union[List[Dict[str, str]], Dict[str, str]]:
+        if target_file_names is not None:
+            sample_data_list = _pair_files_by_index(
+                sample_data_list,
+                target_file_names,
+                self.noisy_file_key,
+                self.target_file_key,
+                noisy_root,
+                target_root,
+                file_suffix,
+            )
+
         if isinstance(sample_data_list, (list, tuple)):
             if len(sample_data_list) == 0:
                 return []

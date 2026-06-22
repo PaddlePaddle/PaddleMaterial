@@ -15,7 +15,6 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
-import os
 import os.path as osp
 from typing import Any
 from typing import Callable
@@ -29,8 +28,10 @@ import paddle
 from paddle.io import Dataset
 from PIL import Image
 
+from ppmat.datasets.build_matched_name import build_prediction_samples
 from ppmat.datasets.build_matched_name import build_matched_name_samples
 from ppmat.utils import download
+from ppmat.utils import io
 from ppmat.utils import logger
 
 
@@ -125,15 +126,41 @@ class STEMImageDataset(Dataset):
         self.build_samples_cfg = build_samples_cfg
         self.sample_builder = build_matched_name_samples(build_samples_cfg)
 
-        if not self._has_data_dirs(path):
+        noisy_root = osp.join(path, self.noisy_subdir)
+        target_root = (
+            osp.join(path, self.target_subdir)
+            if self.target_subdir is not None
+            else None
+        )
+        has_data_dirs = osp.isdir(noisy_root) and (
+            target_root is None or osp.isdir(target_root)
+        )
+        if not has_data_dirs:
             if not auto_download or self.url is None:
                 raise FileNotFoundError(
                     f"Dataset root {path} not found. "
                     "Please check the path or enable auto_download with a valid url."
-                )
+            )
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            path = self._resolve_data_root(root_path)
+            for candidate in (
+                root_path,
+                osp.join(root_path, self.dataset_name),
+                osp.join(root_path, osp.basename(osp.normpath(root_path))),
+            ):
+                noisy_root = osp.join(candidate, self.noisy_subdir)
+                target_root = (
+                    osp.join(candidate, self.target_subdir)
+                    if self.target_subdir is not None
+                    else None
+                )
+                if osp.isdir(noisy_root) and (
+                    target_root is None or osp.isdir(target_root)
+                ):
+                    path = candidate
+                    break
+            else:
+                path = root_path
 
         self.path = path
         self.root = self.path
@@ -150,33 +177,6 @@ class STEMImageDataset(Dataset):
         self.file_names = self.row_data["name"]
         logger.info(f"Load {self.num_samples} samples from {self.path}")
 
-    def _resolve_data_root(self, root: str) -> str:
-        if self._has_data_dirs(root):
-            return root
-
-        nested_root = osp.join(root, osp.basename(osp.normpath(root)))
-        if self._has_data_dirs(nested_root):
-            return nested_root
-
-        dataset_root = osp.join(root, self.dataset_name)
-        if self._has_data_dirs(dataset_root):
-            return dataset_root
-
-        return root
-
-    def _has_data_dirs(self, root: str) -> bool:
-        if not osp.isdir(root):
-            return False
-        noisy_root = osp.join(root, self.noisy_subdir)
-        target_root = (
-            osp.join(root, self.target_subdir)
-            if self.target_subdir is not None
-            else None
-        )
-        return osp.isdir(noisy_root) and (
-            target_root is None or osp.isdir(target_root)
-        )
-
     def read_data(self, path: str) -> Tuple[Dict[str, List[Any]], int]:
         """Read STEM image file names and build sample metadata."""
         if not osp.isdir(self.noisy_root):
@@ -184,10 +184,27 @@ class STEMImageDataset(Dataset):
         if self.target_root is not None and not osp.isdir(self.target_root):
             raise FileNotFoundError(f"Target directory not found: {self.target_root}")
 
+        noisy_files = io.list_files_by_suffix(self.noisy_root, self.file_suffix)
         if self.target_root is None:
-            samples = self._build_prediction_samples()
+            samples = build_prediction_samples(noisy_files)
         else:
-            samples = self._build_samples()
+            target_files = io.list_files_by_suffix(
+                self.target_root, self.file_suffix
+            )
+            samples = self.sample_builder(
+                noisy_files,
+                target_files,
+                self.noisy_root,
+                self.target_root,
+                self.file_suffix,
+            )
+        if self.data_count is not None:
+            samples = samples[: self.data_count]
+        if not samples and self.data_count != 0:
+            raise FileNotFoundError(
+                f"No paired samples found under {self.noisy_root} "
+                f"and {self.target_root}."
+            )
 
         row_data = {
             "samples": samples,
@@ -197,111 +214,6 @@ class STEMImageDataset(Dataset):
         if self.target_root is not None:
             row_data["target"] = [sample["target"] for sample in samples]
         return row_data, len(samples)
-
-    def _build_samples(self):
-        noisy_files = self._list_image_files(self.noisy_root)
-        target_files = self._list_image_files(self.target_root)
-        class_name = self.sample_builder.__class__.__name__
-        if class_name.endswith("BuildMatchedNameSamples"):
-            sample_data = self._prepare_matched_sample_data(noisy_files, target_files)
-        elif class_name.endswith("BuildIndexedNameSamples"):
-            sample_data = self._prepare_indexed_sample_data(noisy_files, target_files)
-        else:
-            raise ValueError(f"Unsupported sample builder class: {class_name}")
-        if self.data_count is not None:
-            sample_data = sample_data[: self.data_count]
-        samples = self.sample_builder(sample_data)
-        if not samples and self.data_count != 0:
-            raise FileNotFoundError(
-                f"No paired samples found under {self.noisy_root} "
-                f"and {self.target_root}."
-            )
-        return samples
-
-    def _build_prediction_samples(self):
-        noisy_files = self._list_image_files(self.noisy_root)
-        if self.data_count is not None:
-            noisy_files = noisy_files[: self.data_count]
-        return [{"noisy": file_name, "name": file_name} for file_name in noisy_files]
-
-    def _list_image_files(self, root: str):
-        file_names = sorted(
-            [
-                file_name
-                for file_name in os.listdir(root)
-                if file_name.endswith(self.file_suffix)
-            ]
-        )
-        if not file_names:
-            raise FileNotFoundError(f"No images found under {root}.")
-        return file_names
-
-    def _build_index_map(self, file_names, root: str):
-        index_map = {}
-        invalid_files = []
-        duplicate_files = []
-        for file_name in file_names:
-            stem = osp.splitext(file_name)[0]
-            if not stem.isdigit():
-                invalid_files.append(file_name)
-                continue
-            index = int(stem)
-            if index in index_map:
-                duplicate_files.append((index_map[index], file_name))
-                continue
-            index_map[index] = file_name
-
-        if invalid_files:
-            raise ValueError(
-                "Strict indexed naming requires files named like "
-                f"'0{self.file_suffix}' under {root}. "
-                f"Invalid files: {invalid_files[:10]}."
-            )
-        if duplicate_files:
-            raise ValueError(
-                "Strict indexed naming requires one file per integer index under "
-                f"{root}. Duplicate indexed files: {duplicate_files[:10]}."
-            )
-        return index_map
-
-    def _prepare_matched_sample_data(self, noisy_files, target_files):
-        noisy_file_set = set(noisy_files)
-        target_file_set = set(target_files)
-        missing_target = sorted(noisy_file_set - target_file_set)
-        missing_noisy = sorted(target_file_set - noisy_file_set)
-        if missing_target or missing_noisy:
-            raise FileNotFoundError(
-                "Noisy and target images are not paired. "
-                f"Missing target files: {missing_target[:10]}, "
-                f"missing noisy files: {missing_noisy[:10]}."
-            )
-        return [
-            {
-                "noisy_file": file_name,
-                "target_file": file_name,
-            }
-            for file_name in sorted(noisy_file_set & target_file_set)
-        ]
-
-    def _prepare_indexed_sample_data(self, noisy_files, target_files):
-        noisy_map = self._build_index_map(noisy_files, self.noisy_root)
-        target_map = self._build_index_map(target_files, self.target_root)
-        common_indices = sorted(set(noisy_map.keys()) & set(target_map.keys()))
-        missing_target = sorted(set(noisy_map.keys()) - set(target_map.keys()))
-        missing_noisy = sorted(set(target_map.keys()) - set(noisy_map.keys()))
-        if missing_target or missing_noisy:
-            raise FileNotFoundError(
-                "Noisy and target images are not paired. "
-                f"Missing target indices: {missing_target[:10]}, "
-                f"missing noisy indices: {missing_noisy[:10]}."
-            )
-        return [
-            {
-                "noisy_file": noisy_map[idx],
-                "target_file": target_map[idx],
-            }
-            for idx in common_indices
-        ]
 
     def _load_gray_image(self, file_path: str) -> paddle.Tensor:
         image = Image.open(file_path).convert("L")
