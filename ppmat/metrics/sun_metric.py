@@ -38,6 +38,8 @@ from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Structure
 from tqdm import tqdm
 
+from ppmat.datasets.build_structure import BuildStructure
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,35 +48,15 @@ def _composition_hash(structure: Structure) -> str:
     return str(sorted(list(structure.atomic_numbers)))
 
 
-def _structures_from_cif_strings(cif_strings: List[str]) -> List[Optional[Structure]]:
-    """Parse CIF strings into pymatgen Structures."""
-    structures = []
-    for cif in cif_strings:
+def _parse_structures(raw_list, format_str):
+    """Parse a list of raw data into Structures, returning None on failure."""
+    results = []
+    for item in raw_list:
         try:
-            structures.append(Structure.from_str(cif, fmt="cif"))
+            results.append(BuildStructure.build_one(item, format_str, niggli=False, canocial=False))
         except Exception:
-            structures.append(None)
-    return structures
-
-
-def _structures_from_dicts(structure_dicts: List[dict]) -> List[Optional[Structure]]:
-    """Build Structures from dict lists with lattice, atom_types, frac_coords."""
-    from pymatgen.core import Lattice
-
-    structures = []
-    for d in structure_dicts:
-        try:
-            lattice = Lattice(d["lattice"])
-            struct = Structure(
-                lattice,
-                d["atom_types"],
-                d["frac_coords"],
-                coords_are_cartesian=False,
-            )
-            structures.append(struct)
-        except Exception:
-            structures.append(None)
-    return structures
+            results.append(None)
+    return results
 
 
 def compute_uniqueness(
@@ -307,9 +289,7 @@ class SUNMetric:
         self._reference_structures = []
         for cif_str in tqdm(df["cif"], desc="Loading reference structures"):
             try:
-                self._reference_structures.append(
-                    Structure.from_str(cif_str, fmt="cif")
-                )
+                self._reference_structures.append(BuildStructure.build_one(cif_str, "cif_str", niggli=False, canocial=False))
             except Exception:
                 pass
         logger.info(f"Loaded {len(self._reference_structures)} reference structures")
@@ -335,16 +315,16 @@ class SUNMetric:
         # Parse structures
         if isinstance(generated, pd.DataFrame):
             if "cif" in generated.columns:
-                structures = _structures_from_cif_strings(generated["cif"].tolist())
+                structures = _parse_structures(generated["cif"].tolist(), "cif_str")
             elif "structure" in generated.columns:
                 structures = generated["structure"].tolist()
             else:
                 raise ValueError("DataFrame must have 'cif' or 'structure' column")
         elif isinstance(generated, list) and len(generated) > 0:
             if isinstance(generated[0], str):
-                structures = _structures_from_cif_strings(generated)
+                structures = _parse_structures(generated, "cif_str")
             elif isinstance(generated[0], dict):
-                structures = _structures_from_dicts(generated)
+                structures = _parse_structures(generated, "array")
             else:
                 structures = generated
         else:
