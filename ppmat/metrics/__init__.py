@@ -23,9 +23,27 @@ __all__ = [
     "build_metric",
     "CSPMetric",
     "DiffNMRStreamingAdapter",
+    "R2Metric",
+    "RMSEMetric",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
 ]
+
+
+class R2Metric:
+    def __call__(self, pred, label):
+        pred = pred.reshape([-1])
+        label = label.reshape([-1])
+        ss_res = paddle.sum((label - pred) ** 2)
+        ss_tot = paddle.sum((label - paddle.mean(label)) ** 2)
+        one = paddle.ones([], dtype=pred.dtype)
+        zero = paddle.zeros([], dtype=pred.dtype)
+        return paddle.where(ss_tot > 0, one - ss_res / ss_tot, zero)
+
+
+class RMSEMetric:
+    def __call__(self, pred, label):
+        return paddle.sqrt(paddle.mean((pred - label) ** 2))
 
 
 class IgnoreNanMetricWrapper:

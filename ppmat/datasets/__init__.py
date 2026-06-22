@@ -51,7 +51,6 @@ from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
 from ppmat.datasets.transpolymer_dataset import TransPolymerCsvDataset
-from ppmat.datasets.transpolymer_dataset import transpolymer_collate_fn
 
 __all__ = [
     "MP20Dataset",

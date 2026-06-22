@@ -9,8 +9,8 @@ import yaml
 from paddle.io import DataLoader
 from sklearn.preprocessing import StandardScaler
 
+from ppmat.datasets import collate_fn
 from ppmat.datasets.transpolymer_dataset import TransPolymerCsvDataset
-from ppmat.datasets.transpolymer_dataset import transpolymer_collate_fn
 from ppmat.models.transpolymer.tokenizer import PolymerSmilesTokenizer
 from ppmat.models.transpolymer.transpolymer import TransPolymerRegressor
 
@@ -44,6 +44,44 @@ def r2_score(pred, true):
     return float(1.0 - ss_res / ss_tot) if ss_tot != 0 else 0.0
 
 
+def build_dataset(split_config, tokenizer, label_mean, label_std):
+    dataset_config = split_config["dataset"]
+    dataset_name = dataset_config["__class_name__"]
+    dataset_params = dict(dataset_config["__init_params__"])
+    dataset_params.update(
+        {
+            "tokenizer": tokenizer,
+            "label_mean": label_mean,
+            "label_std": label_std,
+        }
+    )
+    if dataset_name != "TransPolymerCsvDataset":
+        raise ValueError(f"Unsupported TransPolymer dataset: {dataset_name}")
+    return TransPolymerCsvDataset(**dataset_params)
+
+
+def build_dataloader(split_config, dataset):
+    loader_config = dict(split_config.get("loader", {}))
+    sampler_config = split_config["sampler"]
+    sampler_name = sampler_config["__class_name__"]
+    sampler_params = dict(sampler_config["__init_params__"])
+    sampler_cls = getattr(paddle.io, sampler_name)
+    batch_sampler = sampler_cls(dataset, **sampler_params)
+
+    collator_name = loader_config.pop("collate_fn", "DefaultCollator")
+    collator_params = loader_config.pop("collate_params", {})
+    collator_cls = getattr(collate_fn, collator_name)
+    collator = collator_cls(**collator_params)
+
+    return DataLoader(
+        dataset=dataset,
+        batch_sampler=batch_sampler,
+        return_list=True,
+        collate_fn=collator,
+        **loader_config,
+    )
+
+
 def evaluate(model, dataloader, scaler):
     model.eval()
     pred_all, true_all = [], []
@@ -59,9 +97,13 @@ def evaluate(model, dataloader, scaler):
 
 
 def main(config):
-    paddle.seed(config["Trainer"].get("seed", 1))
-    np.random.seed(config["Trainer"].get("seed", 1))
-    paddle.set_device(config["Trainer"].get("device", "gpu"))
+    trainer_config = config["Trainer"]
+    optimizer_config = config["Optimizer"]["__init_params__"]
+    model_config = config["Model"]["__init_params__"]
+
+    paddle.seed(trainer_config.get("seed", 1))
+    np.random.seed(trainer_config.get("seed", 1))
+    paddle.set_device(trainer_config.get("device", "gpu"))
 
     tokenizer = PolymerSmilesTokenizer.from_pretrained(
         config["Tokenizer"]["pretrained_name_or_path"],
@@ -72,59 +114,37 @@ def main(config):
         vocab_sup = pd.read_csv(vocab_sup_file, header=None).values.flatten().tolist()
         tokenizer.add_tokens(vocab_sup)
 
-    train_file = config["Dataset"]["train_file"]
-    test_file = config["Dataset"]["test_file"]
+    train_config = config["Dataset"]["train"]
+    test_config = config["Dataset"]["test"]
+    train_file = train_config["dataset"]["__init_params__"]["file_path"]
     train_df = pd.read_csv(train_file)
     scaler = StandardScaler()
     scaler.fit(train_df.iloc[:, 1].values.reshape(-1, 1))
     label_mean = float(scaler.mean_[0])
     label_std = float(scaler.scale_[0])
 
-    train_dataset = TransPolymerCsvDataset(
-        train_file,
-        tokenizer=tokenizer,
-        blocksize=config["Tokenizer"]["blocksize"],
-        label_mean=label_mean,
-        label_std=label_std,
-    )
-    test_dataset = TransPolymerCsvDataset(
-        test_file,
-        tokenizer=tokenizer,
-        blocksize=config["Tokenizer"]["blocksize"],
-        label_mean=label_mean,
-        label_std=label_std,
-    )
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config["Dataset"]["batch_size"],
-        shuffle=True,
-        num_workers=config["Dataset"].get("num_workers", 0),
-        collate_fn=transpolymer_collate_fn,
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=config["Dataset"]["batch_size"],
-        shuffle=False,
-        num_workers=config["Dataset"].get("num_workers", 0),
-        collate_fn=transpolymer_collate_fn,
-    )
+    train_dataset = build_dataset(train_config, tokenizer, label_mean, label_std)
+    test_dataset = build_dataset(test_config, tokenizer, label_mean, label_std)
+    train_loader = build_dataloader(train_config, train_dataset)
+    test_loader = build_dataloader(test_config, test_dataset)
 
+    model_name = config["Model"]["__class_name__"]
+    if model_name != "TransPolymerRegressor":
+        raise ValueError(f"Unsupported TransPolymer model: {model_name}")
+    model_config = dict(model_config)
+    model_config["resize_vocab_size"] = len(tokenizer)
     model = TransPolymerRegressor(
-        pretrained_model_path=config["Model"].get("pretrained_model_path"),
-        resize_vocab_size=len(tokenizer),
-        drop_rate=config["Model"].get("drop_rate", 0.1),
-        hidden_dropout_prob=config["Model"].get("hidden_dropout_prob", 0.1),
-        attention_probs_dropout_prob=config["Model"].get(
-            "attention_probs_dropout_prob", 0.1
-        ),
+        **model_config,
     )
 
-    total_steps = len(train_loader) * config["Trainer"]["max_epochs"]
-    warmup_steps = int(total_steps * config["Optimizer"].get("warmup_ratio", 0.05))
+    if config["Optimizer"]["__class_name__"] != "AdamW":
+        raise ValueError("TransPolymer finetuning currently supports AdamW only.")
+    total_steps = len(train_loader) * trainer_config["max_epochs"]
+    warmup_steps = int(total_steps * optimizer_config.get("warmup_ratio", 0.05))
     lr_scheduler = LinearWarmupDecay(
-        config["Optimizer"]["lr_rate"], total_steps, warmup_steps
+        optimizer_config["lr_rate"], total_steps, warmup_steps
     )
-    regressor_lr_scale = config["Optimizer"]["lr_rate_reg"] / config["Optimizer"]["lr_rate"]
+    regressor_lr_scale = optimizer_config["lr_rate_reg"] / optimizer_config["lr_rate"]
     optimizer = paddle.optimizer.AdamW(
         learning_rate=lr_scheduler,
         parameters=[
@@ -132,17 +152,17 @@ def main(config):
             {
                 "params": model.regressor.parameters(),
                 "learning_rate": regressor_lr_scale,
-                "weight_decay": config["Optimizer"].get("weight_decay", 0.01),
+                "weight_decay": optimizer_config.get("weight_decay", 0.01),
             },
         ],
     )
     loss_fn = nn.MSELoss()
 
-    output_dir = config["Trainer"]["output_dir"]
+    output_dir = trainer_config["output_dir"]
     os.makedirs(output_dir, exist_ok=True)
     best_r2 = -float("inf")
     stale_epochs = 0
-    for epoch in range(config["Trainer"]["max_epochs"]):
+    for epoch in range(trainer_config["max_epochs"]):
         model.train()
         for batch in train_loader:
             pred = model(batch["input_ids"], batch["attention_mask"])
@@ -154,21 +174,23 @@ def main(config):
 
         train_rmse, train_r2 = evaluate(model, train_loader, scaler)
         test_rmse, test_r2 = evaluate(model, test_loader, scaler)
-        print(f"epoch: {epoch + 1}/{config['Trainer']['max_epochs']}")
+        print(f"epoch: {epoch + 1}/{trainer_config['max_epochs']}")
         print(f"train RMSE = {train_rmse:.6f}")
         print(f"train r^2 = {train_r2:.6f}")
         print(f"test RMSE = {test_rmse:.6f}")
         print(f"test r^2 = {test_r2:.6f}")
 
         state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "epoch": epoch}
-        paddle.save(state, os.path.join(output_dir, "latest.pdparams"))
+        save_freq = trainer_config.get("save_freq", 1)
+        if save_freq and (epoch + 1) % save_freq == 0:
+            paddle.save(state, os.path.join(output_dir, "latest.pdparams"))
         if test_r2 > best_r2:
             best_r2 = test_r2
             stale_epochs = 0
             paddle.save(state, os.path.join(output_dir, "best.pdparams"))
         else:
             stale_epochs += 1
-        if stale_epochs >= config["Trainer"].get("tolerance", 5):
+        if stale_epochs >= trainer_config.get("tolerance", 5):
             print("Early stop")
             break
 

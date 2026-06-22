@@ -15,40 +15,21 @@ Reference implementation and paper:
 
 The PE-I benchmark predicts `Conductivity [S/cm]`.
 
-Dataset files and converted Paddle checkpoint are packed together:
-
-- Download link: https://pan.baidu.com/s/1wPVmTP1H0x3qSZi8HV0r9g
-- Extraction code: `1227`
-
-Archive layout:
-
-```text
-transpolymer_artifacts/data/train_PE_I.csv
-transpolymer_artifacts/data/test_PE_I.csv
-transpolymer_artifacts/data/vocab/vocab_sup_PE_I.csv
-transpolymer_artifacts/ckpt/pretrain.pt/config.json
-transpolymer_artifacts/ckpt/pretrain.pt/model_state.pdparams
-```
-
-Place or copy the extracted files under the PaddleMaterials root as:
+Expected files:
 
 ```text
 data/train_PE_I.csv
 data/test_PE_I.csv
 data/vocab/vocab_sup_PE_I.csv
-ckpt/pretrain.pt/config.json
-ckpt/pretrain.pt/model_state.pdparams
 ```
 
-The train/test split follows the original TransPolymer repository. The training
-split contains augmented PE-I training entries, while `test_PE_I.csv` is the
-held-out PE-I test split. The supplementary vocabulary file adds PE-I-specific
-tokens before finetuning.
+The train/test split follows the original TransPolymer repository. Dataset files
+and pretrained checkpoints should be uploaded to BCE by the reviewer and the
+download links should be filled in here before merge.
 
 ## Pretrained Checkpoint
 
-The archive above already contains the converted Paddle checkpoint. If starting
-from the original PyTorch checkpoint, it can be converted with:
+The original PyTorch checkpoint can be converted with:
 
 ```bash
 python tools/convert_torch_ckpt_to_paddle.py \
@@ -79,7 +60,7 @@ RTX 4090, NVIDIA driver 550.142
 Run from PaddleMaterials root:
 
 ```bash
-python property_prediction/transpolymer_train.py \
+python property_prediction/train.py \
   -c property_prediction/configs/transpolymer/transpolymer_pe_i_finetune.yaml
 ```
 
@@ -87,43 +68,37 @@ python property_prediction/transpolymer_train.py \
 
 Key options are defined in `transpolymer_pe_i_finetune.yaml`:
 
-- `Tokenizer.blocksize`: maximum sequence length after tokenization.
-- `Tokenizer.vocab_sup_file`: supplementary PE-I vocabulary file.
-- `Model.pretrained_model_path`: converted Paddle checkpoint directory.
-- `Optimizer.lr_rate`: encoder learning rate.
-- `Optimizer.lr_rate_reg`: regression head learning rate.
+- `Dataset.*.dataset.__init_params__.blocksize`: maximum sequence length after tokenization.
+- `Dataset.*.dataset.__init_params__.vocab_sup_file`: supplementary PE-I vocabulary file.
+- `Model.__init_params__.pretrained_model_path`: converted Paddle checkpoint directory.
+- `Optimizer.lr.__init_params__.learning_rate`: finetuning learning rate.
 - `Trainer.max_epochs`: maximum finetuning epochs.
 
-## Reference Results
+## Results
 
-Validated local Paddle result after tokenizer and optimizer fixes:
-
-```text
-PE-I test RMSE: 0.8993
-PE-I test R2:   0.4508
-```
-
-Local PyTorch baseline in the same server environment:
-
-```text
-PE-I test RMSE: 0.9813
-PE-I test R2:   0.3461
-```
-
-Paper reference result:
-
-```text
-PE-I test RMSE: approximately 0.67
-PE-I test R2:   approximately 0.69
-```
-
-The remaining gap to the paper result should be documented in the PR if exact
-paper-level reproduction is not achieved.
-
-## Notes
-
-This contribution includes a transitional task-specific training entry because
-PaddleMaterials' current generic property prediction trainer is graph-model
-oriented, while TransPolymer consumes tokenized polymer strings. The model and
-dataset are still placed under `ppmat/models` and `ppmat/datasets` so they can
-be further integrated into the unified trainer later.
+<table>
+    <head>
+        <tr>
+            <th nowrap="nowrap">Model Name</th>
+            <th nowrap="nowrap">Dataset</th>
+            <th nowrap="nowrap">Property</th>
+            <th nowrap="nowrap">RMSE / R2(Test dataset)</th>
+            <th nowrap="nowrap">GPUs</th>
+            <th nowrap="nowrap">Training time</th>
+            <th nowrap="nowrap">Config</th>
+            <th nowrap="nowrap">Checkpoint | Log</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td nowrap="nowrap">transpolymer_pe_i_finetune</td>
+            <td nowrap="nowrap">PE-I</td>
+            <td nowrap="nowrap">Conductivity [S/cm]</td>
+            <td nowrap="nowrap">0.8993 / 0.4508</td>
+            <td nowrap="nowrap">1</td>
+            <td nowrap="nowrap">~3 hours</td>
+            <td nowrap="nowrap"><a href="transpolymer_pe_i_finetune.yaml">transpolymer_pe_i_finetune</a></td>
+            <td nowrap="nowrap"><a href="https://pan.baidu.com/s/1SB2KP7zYkWkBF7Z1Q1EG8w">checkpoint | log</a> (code: 1227)</td>
+        </tr>
+    </body>
+</table>
