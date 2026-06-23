@@ -25,8 +25,8 @@
 
 ### Supported Materials
 
-- **Inorganic Crystals** - Well-supported with multiple datasets (MP2018, MP2024, JARVIS) and pretrained models
-- **Organic Molecules** - Support for small molecule datasets (QM9) and property prediction
+- **Inorganic Crystals** - Well-supported with multiple datasets and pretrained models
+- **Organic Molecules** - Support for small molecule datasets and property prediction
 - *Polymers, catalysts, and amorphous materials are under development*
 
 ### Why PaddleMaterials?
@@ -34,7 +34,6 @@
 - ✅ **Rich Pretrained Models** - 50+ pretrained models ready for inference
 - ✅ **Multi-Task Integration** - Unified framework across PP, SG, MLIP, MLES, SE, SPEN
 - ✅ **Domestic Hardware Support** - Full support for MetaX GPUs and NVIDIA GPUs
-- ✅ **PaddlePaddle Ecosystem** - Seamless integration with PaddlePaddle tools
 - ✅ **Production-Ready** - Distributed training, mixed precision, checkpoint recovery
 
 ---
@@ -98,11 +97,45 @@ python interatomic_potentials/run_md.py
     --temperature=300
 ```
 
+### Electronic Structure
+
+Run prediction of elcutorninc density:
+
+```bash
+python interatomic_potentials/run_md.py 
+    --model_name='mattersim_1M' 
+    --structure_path='input.cif' 
+    --temperature=300
+```
+
+### Spectrum Elucidation
+
+Run NMR spectrum elucidate:
+
+```bash
+python spectrum_elucidation/sample.py 
+    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' 
+    --weights_name='DiffNMR_nless15_best.pdparams' 
+    --save_path='result_diffnmr_nless15/' 
+    --checkpoint_path="pretrained"
+```
+
+### Spectrum Enhancement
+
+Run prediction of elcutorninc density:
+
+```bash
+python spectrum_enhancement/predict.py 
+    --model_name sfin_haadf_enhance 
+    --split val
+```
+
 ---
 
 ### Train Your Own Model
 
 For training and fine-tuning, refer to the [documentation](get_started.md).
+
 
 ### Contribute to PaddleMaterials
 
@@ -118,9 +151,10 @@ For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
 | **Structure Generation** | MatterGen, DiffCSP | MP20, ALEX |
 | **Interatomic Potentials** | CHGNet, MatterSim | MPTRJ |
 | **Electronic Structure** | InfGCN | Custom datasets |
+| **Spectrum Elucidation** | DiffNMR | MSD_NMR |
 | **Spectrum Enhancement** | SFIN | HAADF/BF STEM image datasets |
 
-Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py)
+Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
 
 ---
 
