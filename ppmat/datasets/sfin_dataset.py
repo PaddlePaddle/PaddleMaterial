@@ -28,6 +28,7 @@ from typing import Tuple
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 from paddle.io import Dataset
 from PIL import Image
 
@@ -36,6 +37,7 @@ from ppmat.datasets.build_matched_name import build_matched_name_samples
 from ppmat.utils import download
 from ppmat.utils import io
 from ppmat.utils import logger
+from ppmat.utils.misc import is_equal
 
 
 class SFINDataset(Dataset):
@@ -76,8 +78,8 @@ class SFINDataset(Dataset):
         ),
     }
     DATASET_MD5S: Dict[str, Optional[str]] = {
-        "sfin_haadf": None,
-        "sfin_bf": None,
+        "sfin_haadf": "f96dea9ac1f722d6ca55c7e49c1b3a41",
+        "sfin_bf": "74ec1c1959e162669cc8cbbc8713bda0",
     }
 
     def __init__(
@@ -322,24 +324,173 @@ class SFINDataset(Dataset):
                 str(target_name),
             )
         sample_cache_path = osp.join(self.cache_path, "samples")
-        os.makedirs(sample_cache_path, exist_ok=True)
+        sample_done_flag = osp.join(sample_cache_path, "completed.flag")
+        build_samples_cfg_path = osp.join(self.cache_path, "build_samples_cfg.pkl")
+        image_cfg_path = osp.join(self.cache_path, "image_cfg.pkl")
+        image_cfg = {
+            "input_name": self.input_name,
+            "target_name": self.target_name,
+            "target_subdir": self.target_subdir,
+            "label_subdirs": self.label_subdirs,
+            "noisy_subdir": self.noisy_subdir,
+            "file_suffix": self.file_suffix,
+            "scale_to_unit": self.scale_to_unit,
+        }
+        logger.info(f"Cache path: {self.cache_path}")
+
+        cache_exists = osp.exists(self.cache_path)
+        overwrite = self.overwrite
+        if cache_exists and not self.overwrite:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "settings used in match your current settings."
+            )
+            try:
+                build_samples_cfg_cache = self.load_from_cache(build_samples_cfg_path)
+                if is_equal(build_samples_cfg_cache, self.build_samples_cfg):
+                    logger.info(
+                        "The cached build_samples_cfg configuration matches "
+                        "the current settings. Reusing cached STEM image samples."
+                    )
+                else:
+                    logger.warning(
+                        "build_samples_cfg is different from "
+                        "build_samples_cfg_cache. Will rebuild the samples."
+                    )
+                    overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                logger.warning(
+                    "Failed to load build_samples_cfg.pkl from cache. "
+                    "Will rebuild the samples."
+                )
+                overwrite = True
+
+            if not overwrite:
+                try:
+                    image_cfg_cache = self.load_from_cache(image_cfg_path)
+                    if is_equal(image_cfg_cache, image_cfg):
+                        logger.info(
+                            "The cached image_cfg configuration matches "
+                            "the current settings."
+                        )
+                    else:
+                        logger.warning(
+                            "image_cfg is different from image_cfg_cache. "
+                            "Will rebuild the samples."
+                        )
+                        overwrite = True
+                except Exception as e:
+                    logger.warning(e)
+                    logger.warning(
+                        "Failed to load image_cfg.pkl from cache. "
+                        "Will rebuild the samples."
+                    )
+                    overwrite = True
+
+            if not overwrite:
+                num_cached = self._count_cache_files(sample_cache_path)
+                is_complete = osp.exists(sample_done_flag)
+                if is_complete and num_cached == self.num_samples:
+                    logger.info(
+                        f"Using cached STEM image samples ({num_cached}) "
+                        f"from {sample_cache_path}."
+                    )
+                else:
+                    logger.warning(
+                        f"Cached STEM image samples are incomplete "
+                        f"(cached={num_cached}, expected={self.num_samples}, "
+                        f"complete={is_complete}). Will rebuild the samples."
+                    )
+                    overwrite = True
+
+        if overwrite or not cache_exists:
+            self._build_cache(
+                sample_cache_path,
+                sample_done_flag,
+                build_samples_cfg_path,
+                image_cfg_path,
+                image_cfg,
+            )
+
+        if dist.is_initialized():
+            dist.barrier()
 
         self.cache_files = [
             osp.join(sample_cache_path, f"{idx:010d}.pkl")
             for idx in range(self.num_samples)
         ]
-        cache_ready = all(osp.exists(cache_file) for cache_file in self.cache_files)
-        if cache_ready and not self.overwrite:
-            logger.info(f"Using cached STEM image samples from {sample_cache_path}")
+        if not all(osp.exists(cache_file) for cache_file in self.cache_files):
+            raise RuntimeError(
+                f"No complete cached STEM image samples found under "
+                f"{sample_cache_path}."
+            )
+
+    def _build_cache(
+        self,
+        sample_cache_path: str,
+        sample_done_flag: str,
+        build_samples_cfg_path: str,
+        image_cfg_path: str,
+        image_cfg: Dict[str, Any],
+    ):
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        if rank != 0:
             return
 
-        logger.info(
+        os.makedirs(self.cache_path, exist_ok=True)
+        os.makedirs(sample_cache_path, exist_ok=True)
+        self._clean_cache_dir(sample_cache_path)
+
+        self.save_to_cache(build_samples_cfg_path, self.build_samples_cfg)
+        self.save_to_cache(image_cfg_path, image_cfg)
+        logger.message(
             f"Caching {self.num_samples} STEM image samples to {sample_cache_path}"
         )
-        for idx, cache_file in enumerate(self.cache_files):
+        for idx in range(self.num_samples):
             data = self._build_item(idx)
-            with open(cache_file, "wb") as f:
-                pickle.dump(data, f)
+            payload = self._serialize_item(data)
+            self.save_to_cache(osp.join(sample_cache_path, f"{idx:010d}.pkl"), payload)
+        with open(sample_done_flag, "w") as f:
+            f.write("done")
+        logger.info(f"Finished caching STEM image samples to {sample_cache_path}")
+
+    @staticmethod
+    def _count_cache_files(cache_path: str) -> int:
+        if not osp.isdir(cache_path):
+            return 0
+        return sum(
+            1
+            for file_name in os.listdir(cache_path)
+            if file_name.endswith(".pkl")
+        )
+
+    @staticmethod
+    def _clean_cache_dir(cache_path: str):
+        if not osp.isdir(cache_path):
+            return
+        for file_name in os.listdir(cache_path):
+            if file_name.endswith(".pkl") or file_name.endswith(".flag"):
+                os.remove(osp.join(cache_path, file_name))
+
+    def _serialize_item(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        payload = {}
+        for key, value in data.items():
+            if isinstance(value, paddle.Tensor):
+                payload[key] = value.detach().cpu().numpy()
+            else:
+                payload[key] = value
+        return payload
+
+    def _deserialize_item(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        data = {}
+        for key, value in payload.items():
+            if isinstance(value, np.ndarray):
+                data[key] = paddle.to_tensor(value)
+            else:
+                data[key] = value
+        return data
 
     def _build_item(self, idx: int):
         noisy = self._load_gray_image(
@@ -363,6 +514,11 @@ class SFINDataset(Dataset):
             data[self.target_name] = data[self.target_subdir]
         return data
 
+    def save_to_cache(self, cache_path: str, data: Any):
+        os.makedirs(osp.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as f:
+            pickle.dump(data, f)
+
     def load_from_cache(self, cache_path: str):
         if not osp.exists(cache_path):
             raise FileNotFoundError(f"No such file or directory: {cache_path}")
@@ -371,7 +527,12 @@ class SFINDataset(Dataset):
 
     def __getitem__(self, idx: int):
         if self.cache and self.cache_files and idx < len(self.cache_files):
-            data = self.load_from_cache(self.cache_files[idx])
+            try:
+                payload = self.load_from_cache(self.cache_files[idx])
+                data = self._deserialize_item(payload)
+            except Exception as e:
+                logger.warning(f"Failed to load cached STEM image sample {idx}: {e}")
+                data = self._build_item(idx)
         else:
             data = self._build_item(idx)
         data = self.transforms(data) if self.transforms is not None else data
