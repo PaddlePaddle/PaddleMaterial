@@ -36,14 +36,7 @@
 - ✅ **Domestic Hardware Support** - Full support for MetaX GPUs and NVIDIA GPUs
 - ✅ **Production-Ready** - Distributed training, mixed precision, checkpoint recovery
 
----
-
-## 📣 News
-
-
----
-
-## 📑 Tasks
+### 📑 Support Tasks
 
 | Task | Description | Link |
 |------|-------------|------|
@@ -54,16 +47,32 @@
 | **Spectrum Elucidation (SE)** | Reconstruct molecular structures from NMR spectra | [README](spectrum_elucidation/README.md) |
 | **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectrum signals | [README](spectrum_enhancement/README.md) |
 
+### 🎯 Available Pretrained Models
 
-## 🔧 Installation
+| Task | Models | Dataset |
+|------|--------|---------|
+| **Property Prediction** | MEGNet, iComformer, DimeNet++ | MP2018, MP2024, JARVIS |
+| **Structure Generation** | MatterGen, DiffCSP | MP20, ALEX |
+| **Interatomic Potentials** | CHGNet, MatterSim | MPTRJ |
+| **Electronic Structure** | InfGCN | Custom datasets |
+| **Spectrum Elucidation** | DiffNMR | MSD_NMR |
+| **Spectrum Enhancement** | SFIN | HAADF/BF STEM image datasets |
 
-Please refer to the installation [document](Install.md) for your hardware environment. See [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaptation information.
+Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
 
 ---
 
 ## ⚡ Get Started
 
-### Property Prediction
+### 🔧 Installation
+
+Please refer to the installation [document](Install.md) for your hardware environment. See [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaptation information.
+
+---
+
+### Mimi Inference
+
+#### Property Prediction
 
 Predict material formation energy using a pretrained MEGNet model:
 
@@ -75,7 +84,7 @@ python property_prediction/predict.py \
     --save_path='result.csv'
 ```
 
-### Structure Generation
+#### Structure Generation
 
 Generate novel crystal structures:
 
@@ -86,7 +95,7 @@ python structure_generation/predict.py \
     --save_path='generated_structures/'
 ```
 
-### Interatomic Potentials
+#### Interatomic Potentials
 
 Run molecular dynamics with ML potentials:
 
@@ -97,7 +106,7 @@ python interatomic_potentials/run_md.py
     --temperature=300
 ```
 
-### Electronic Structure
+#### Electronic Structure
 
 Run prediction of elcutorninc density:
 
@@ -108,7 +117,7 @@ python interatomic_potentials/run_md.py
     --temperature=300
 ```
 
-### Spectrum Elucidation
+#### Spectrum Elucidation
 
 Run NMR spectrum elucidate:
 
@@ -120,7 +129,7 @@ python spectrum_elucidation/sample.py
     --checkpoint_path="pretrained"
 ```
 
-### Spectrum Enhancement
+#### Spectrum Enhancement
 
 Run prediction of elcutorninc density:
 
@@ -136,51 +145,32 @@ python spectrum_enhancement/predict.py
 
 For training and fine-tuning, refer to the [documentation](get_started.md).
 
-
-### Contribute to PaddleMaterials
-
-For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
-
 ---
 
-## 🎯 Available Pretrained Models
+## 👩‍👩‍👧‍👦 Contributors & Cooperation & Community
 
-| Task | Models | Dataset |
-|------|--------|---------|
-| **Property Prediction** | MEGNet, iComformer, DimeNet++ | MP2018, MP2024, JARVIS |
-| **Structure Generation** | MatterGen, DiffCSP | MP20, ALEX |
-| **Interatomic Potentials** | CHGNet, MatterSim | MPTRJ |
-| **Electronic Structure** | InfGCN | Custom datasets |
-| **Spectrum Elucidation** | DiffNMR | MSD_NMR |
-| **Spectrum Enhancement** | SFIN | HAADF/BF STEM image datasets |
+Thanks to all contributors who have helped build PaddleMaterials！
+<a href="https://github.com/PaddlePaddle/PaddleMaterials/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=PaddlePaddle/PaddleMaterials" />
+</a>
 
-Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
-
----
-
-## ⭐️ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterilas&type=date&legend=top-left)
-
----
-
-## 👩‍👩‍👧‍👦 Cooperation
-
+Thanks for the following organiziton for cooprative support!
 <p align="left">
  <img src="docs/logo_SZNL_2.jpeg" align="middle" width = "240"/>
  <img src="docs/logo_SinochemDI_2.jpeg" align="middle" width = "240"/>
  <img src="docs/logo_MetaX.png" align="middle" width = "240"/>
 <p align="left">
 
----
-
-## 👩‍👩‍👧‍👦 Community
+[![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterilas&type=date&legend=top-left)
 
 Join the PaddleMaterials WeChat group to discuss with us!
+<p align="left">
+ <img src="docs/wechat_group.png" align="middle" width = "100"/>
+<p align="left">
 
-<p align="left">
- <img src="docs/wechat_group.png" align="middle" width = "200"/>
-<p align="left">
+## Contribute to PaddleMaterials
+
+For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
 
 ---
 
