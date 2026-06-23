@@ -100,8 +100,6 @@ class SFINDataset(Dataset):
             matching.
         transforms (Optional[Callable], optional): Preprocess transforms for
             each sample. Defaults to None.
-        cache (bool, optional): Whether to cache decoded images as pickle files
-            for faster subsequent loading. Defaults to False.
         cache_path (Optional[str], optional): Explicit path for the cache
             directory. Defaults to None.
         overwrite (bool, optional): Whether to rebuild existing cache files.
@@ -114,20 +112,12 @@ class SFINDataset(Dataset):
         "SFIN/sfin_haadf.zip"
     )
     md5 = "f96dea9ac1f722d6ca55c7e49c1b3a41"
+    bf_url = (
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+        "SFIN/sfin_bf.zip"
+    )
+    bf_md5 = "74ec1c1959e162669cc8cbbc8713bda0"
     label_subdirs = ("gt_enhance", "gt_detect")
-    dataset_infos: Dict[str, Dict[str, Optional[str]]] = {
-        "sfin_haadf": {
-            "url": url,
-            "md5": md5,
-        },
-        "sfin_bf": {
-            "url": (
-                "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-                "SFIN/sfin_bf.zip"
-            ),
-            "md5": "74ec1c1959e162669cc8cbbc8713bda0",
-        },
-    }
 
     def __init__(
         self,
@@ -137,7 +127,6 @@ class SFINDataset(Dataset):
         data_count: Optional[int] = None,
         build_samples_cfg: Optional[Dict[str, Any]] = None,
         transforms: Optional[Callable] = None,
-        cache: bool = False,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
     ):
@@ -161,16 +150,12 @@ class SFINDataset(Dataset):
         self.target_subdir = target_subdir
         self.data_count = int(data_count) if data_count is not None else None
         self.transforms = transforms
-        self.cache = cache
         self.cache_path = cache_path
         self.overwrite = overwrite
-
-        dataset_info = self.dataset_infos.get(self.dataset_name, {})
-        self.url = dataset_info.get("url", self.url)
-        self.md5 = dataset_info.get("md5", self.md5)
+        self.url, self.md5 = self._get_dataset_url_md5()
 
         if not osp.exists(path):
-            if self.dataset_name not in self.dataset_infos:
+            if self.url is None:
                 raise FileNotFoundError(f"Dataset root not found: {path}")
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
@@ -202,6 +187,14 @@ class SFINDataset(Dataset):
         self.file_names = self.row_data["name"]
         self._prepare_cache()
         logger.info(f"Load {self.num_samples} samples from {self.path}")
+
+    def _get_dataset_url_md5(self) -> Tuple[Optional[str], Optional[str]]:
+        """Return download metadata for known SFIN dataset folders."""
+        if self.dataset_name == "sfin_haadf":
+            return self.url, self.md5
+        if self.dataset_name == "sfin_bf":
+            return self.bf_url, self.bf_md5
+        return None, None
 
     def _get_downloaded_dataset_path(self, root_path: str) -> str:
         """Resolve the dataset root returned by the shared download utility."""
@@ -274,10 +267,6 @@ class SFINDataset(Dataset):
                 sample[label_name] = label_file_by_name[sample["name"]]
 
     def _prepare_cache(self):
-        self.cache_files = []
-        if not self.cache:
-            return
-
         if self.cache_path is None:
             target_name = (
                 self.target_subdir if self.target_subdir is not None else "predict"
@@ -325,7 +314,11 @@ class SFINDataset(Dataset):
     def _cache_cfg(self) -> Dict[str, Any]:
         return {
             "build_samples_cfg": self.build_samples_cfg,
+            "path": osp.abspath(self.path),
+            "split": self.split,
             "target_subdir": self.target_subdir,
+            "sample_names": self.file_names,
+            "num_samples": self.num_samples,
         }
 
     def _is_cache_valid(
@@ -440,10 +433,7 @@ class SFINDataset(Dataset):
             return pickle.load(f)
 
     def __getitem__(self, idx: int):
-        if self.cache:
-            data = self._deserialize_item(self.load_from_cache(self.cache_files[idx]))
-        else:
-            data = self._build_item(idx)
+        data = self._deserialize_item(self.load_from_cache(self.cache_files[idx]))
         data = self.transforms(data) if self.transforms is not None else data
         return data
 
