@@ -28,7 +28,7 @@ two labels, `gt_enhance` and `gt_detect`.
 ## Model
 
 <p align="center">
-  <img src="sfin_architecture.jpg" width="900" alt="SFIN model architecture">
+  <img src="../../docs/sfin_architecture.jpg" width="900" alt="SFIN model architecture">
 </p>
 
 SFIN contains a noise calibration module and a spatial-frequency interaction
