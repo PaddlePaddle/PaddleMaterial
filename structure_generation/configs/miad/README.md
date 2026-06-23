@@ -1,45 +1,70 @@
 # MiAD
 
-MiAD (Mirage Atom Diffusion) is a diffusion-based framework for de novo crystal generation. It introduces the concept of Mirage Infusion, a mechanism that allows diffusion models to dynamically adjust the number of atoms in a crystal structure during the generation trajectory  By treating a variable number of atoms as "mirage" atoms (sentinel states), MiAD achieves state-of-the-art performance in generating stable, unique, and novel (S.U.N.) materials.
+[Mirage Atom Diffusion for De Novo Crystal Generation](https://arxiv.org/abs/2511.14426)
 
-## How It Works
+## Abstract
 
-1. Mirage Atoms: The model uses sentinel nodes called "mirage atoms" (assigned atom_type = 0) that can be transformed into real chemical elements or discarded as empty space during the diffusion trajectory .
+MiAD introduces Mirage Infusion, a mechanism that allows diffusion models to dynamically adjust the number of atoms in a crystal structure during the generation trajectory. By treating a variable number of atoms as "mirage" atoms (sentinel states), MiAD achieves state-of-the-art performance in generating stable, unique, and novel (S.U.N.) materials. It uses DiffCsp as the backbone denoising architecture.
 
-2. Training Phase: Real crystals are padded with mirage atoms up to a maximum limit (e.g., 25 atoms), where mirage nodes have random fractional coordinates and type 0 .
+![MiAD Overview](https://github.com/andrey-okhotin/miad/blob/main/pictures_from_paper/miad_method_scheme.png)
 
-3. Generation Phase: The model initializes all crystals with the maximum atom count and predicts which nodes should materialize into real atoms versus remaining as mirage atoms .
+---
 
-4. Post-Processing: Remaining mirage atoms are stripped before exporting to final CIF files .
+## Model Description
 
-## Architecture
+### Overview
 
-MiAD uses DiffCSP as its backbone architecture, with the CrystalGen orchestrator handling the diffusion process for lattice parameters, fractional coordinates, and atom types.
+A crystal is represented by three components within its unit cell:
+- atom types: $A = (a_1,\ldots,a_N)$
+- fractional coordinates: $F = (f_1,\ldots,f_N),\; f_i \in [0,1)^3$
+- lattice matrix: $L \in \mathbb{R}^{3 \times 3}$
+
+MiAD defines separate forward corruption processes for $(L, F, A)$ and trains a CSPNet-based denoiser to reverse them. During sampling, mirage atoms (type 0) can be transformed into real elements or discarded, allowing the model to adjust atom counts dynamically.
+
+### Method
+
+#### 1) Lattice diffusion
+The lattice is diffused with a standard DDPM Gaussian process. Supports Flow Matching as an alternative:
+
+$$
+L_t = \sqrt{\bar{\alpha}_t}\,L_0 + \sqrt{1 - \bar{\alpha}_t}\,\epsilon,\quad \epsilon \sim \mathcal{N}(0, I)
+$$
+
+#### 2) Fractional-coordinate diffusion on a torus
+Fractional coordinates live on a 3D torus $[0,1)^3$. Wrapped Normal noise is used:
+
+$$
+x_t = (x_0 + \sigma(t)\,\epsilon) \bmod 1,\quad \epsilon \sim \mathcal{N}(0, I)
+$$
+
+Also supports Periodic Flow Matching.
+
+#### 3) Atom-type diffusion
+Atom types use D3PM (uniform transition + cosine schedule) or DDPM with one-hot encoding.
+
+#### 4) Mirage Infusion
+During sampling, atoms with type 0 are treated as mirage atoms. The model dynamically decides which mirage atoms should materialize into real elements, allowing the final structure to have fewer atoms than the initial maximum. This is the core innovation enabling variable-atom-count generation.
+
+---
 
 ## Dataset
 
-[Original dataset address](https://drive.google.com/file/d/1BLI3VtvzfIIXlH6UHQ4o-gQaCIOZ1UR7/view?usp=sharing)
+| Source                | Link |
+|-----------------------|------|
+| Original Google Drive | [Google Drive](https://drive.google.com/file/d/1BLI3VtvzfIIXlH6UHQ4o-gQaCIOZ1UR7/view?usp=sharing) |
+| Mirror AiStudio       | [AIStudio](https://aistudio.baidu.com/modelsdetail/48578/intro) |
 
-[Mirror AIStudio address](https://aistudio.baidu.com/modelsdetail/48578/intro)
+Extract to `./data/mp_20/` so that CSV files are at `./data/mp_20/train.csv`, `./data/mp_20/val.csv`, and `./data/mp_20/test.csv`.
 
-Extract the data to `./data/mp_20/` so that the CSV files are at `./data/mp_20/train.csv`, `./data/mp_20/val.csv`, and `./data/mp_20/test.csv`.
+---
 
-## Environment Dependencies
+## Results
 
-- Python >= 3.10
-- PaddlePaddle >= 3.3.0 (official release)
-- paddle_scatter >= 2.1.2
-- numpy, pymatgen, omegaconf
+| Metric | CHGNet | eq-V2 |
+|--------|--------|-------|
+| S.U.N. | 12.21% | 5.64% |
 
-## Checkpoints
-
-[Original checkpoints address](https://drive.google.com/file/d/1KyD6KzvjYFPfU8lutFyO_0b8EbeHSGqf/view?usp=sharing)
-
-[Mirror AIStudio address](https://aistudio.baidu.com/modelsdetail/48578/intro)
-
-[Paddle checkpoints address](https://aistudio.baidu.com/modelsdetail/48638/intro)
-
-
+---
 
 ## Commands
 
@@ -59,19 +84,34 @@ python -m paddle.distributed.launch --gpus="0,1,2,3" structure_generation/train.
 python structure_generation/train.py -c structure_generation/configs/miad/miad_mp20.yaml Global.do_eval=True Global.do_train=False Global.do_test=False Trainer.pretrained_model_path='path/to/model.pdparams'
 ```
 
-### Sampling (Structure Generation)
+### Sampling
 
 ```bash
-# Option 1: Use pre-trained model (auto-download)
+# Mode 1: pre-trained model (auto-download)
 python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --save_path='result_miad/' --mode='by_num_atoms' --num_atoms=20
 
-# Option 2: Custom checkpoint
+# Mode 2: custom checkpoint
 python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --save_path='result_miad/' --mode='by_dataloader'
 ```
 
-### Evaluation (Compute Metrics)
+### Checkpoints
 
-```bash
-# Evaluate generated structures against ground truth using CSPMetric
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='latest.pdparams' --save_path='result_eval/' --mode='compute_metric'
+| Source                         | Link |
+|--------------------------------|------|
+| Original (PyTorch format)      | [Google Drive](https://drive.google.com/file/d/1KyD6KzvjYFPfU8lutFyO_0b8EbeHSGqf/view?usp=sharing) |
+| Mirror (PyTorch format)        | [AIStudio](https://aistudio.baidu.com/modelsdetail/48578/intro) |
+| PaddleMaterials(Paddle format) | [AIStudio](https://aistudio.baidu.com/modelsdetail/48638/intro) |
+
+---
+
+## Citation
+
+```bibtex
+@article{okhotin2025miad,
+  title={MiAD: Mirage Atom Diffusion for De Novo Crystal Generation},
+  author={Andrey Okhotin, Maksim Nakhodnov, Nikita Kazeev, Andrey E Ustyuzhanin, Dmitry Vetrov},
+  journal={arXiv preprint arXiv:2511.14426},
+  year={2025},
+  url={https://arxiv.org/abs/2511.14426}
+}
 ```

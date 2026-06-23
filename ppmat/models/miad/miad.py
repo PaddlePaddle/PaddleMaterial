@@ -18,10 +18,9 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.miad.crystal_diffusion import init_diffusion
+from ppmat.models.miad.crystal_diffusion import CrystalGen
 from ppmat.models.miad.crystal_diffusion import parse_num_atoms_to_per_crystal
 from ppmat.models.diffcsp.diffcsp import CSPNet
-from ppmat.utils import logger
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
 
@@ -97,101 +96,17 @@ class MiAD(nn.Layer):
         self.decoder.gen_edges = _gen_edges
         if isinstance(diffusion_cfg, dict):
             diffusion_cfg = _dict_to_sns(diffusion_cfg)
-        self.diffusion = init_diffusion(diffusion_cfg, logger=None)
+        self.diffusion = CrystalGen(diffusion_cfg, logger=None)
 
     def set_state_dict(self, state_dict, use_structured_name=True):
-        """
-        Load checkpoint with automatic legacy format detection.
-
-        MiAD wraps CSPNet as self.decoder, so all parameter keys in a native
-        Paddle checkpoint are prefixed with "decoder."
-        (e.g. decoder.csp_layer_0.edge_mlp.0.weight).
-
-        Legacy PyTorch checkpoints have bare keys (e.g. csp_layer_0.edge_mlp.0.weight)
-        and Linear weights stored in (out_features, in_features) format.
-        This method auto-detects and converts them: adds decoder. prefix and transposes
-        all 2D weight tensors to Paddle's (in_features, out_features) format.
-
-        For legacy checkpoints, ALL 2D Linear weights are unconditionally transposed.
-        Shape-based detection cannot distinguish square matrices (e.g. 512x512) where
-        both (out,in) and (in,out) have the same shape. The only safe approach is to
-        always transpose for legacy-format checkpoints.
-        """
-        model_state = self.state_dict()
-        model_keys = set(model_state.keys())
-        state_keys = set(state_dict.keys())
-
-        if len(state_keys) == 0:
-            return super().set_state_dict(state_dict, use_structured_name)
-
-        has_decoder_prefix = any(k.startswith("decoder.") for k in state_keys)
-        keys_native = state_keys == model_keys or state_keys.issubset(model_keys)
-
-        if keys_native and has_decoder_prefix:
-            return super().set_state_dict(state_dict, use_structured_name)
-
-        is_legacy = not has_decoder_prefix
+        if not any(k.startswith("decoder.") for k in state_dict.keys()):
+            state_dict = {f"decoder.{k}": v for k, v in state_dict.items()}
         processed = {}
-        num_transposed = 0
-        num_copied = 0
         for k, v in state_dict.items():
-            new_key = f"decoder.{k}" if is_legacy else k
-            val_np = v.numpy() if hasattr(v, "numpy") else v
-
-            # Legacy checkpoints always store Linear weights in PyTorch format
-            # (out_features, in_features). For square matrices (e.g. 512x512),
-            # shape-based detection cannot work because both orientations have
-            # identical shapes. Therefore we unconditionally transpose all 2D
-            # Linear weights when loading from a legacy checkpoint.
-            if is_legacy and new_key.endswith(".weight") and len(v.shape) == 2:
-                val_np = val_np.T
-                num_transposed += 1
-            elif is_legacy:
-                num_copied += 1
-
-            processed[new_key] = val_np
-
-        model_in_keys = set(model_keys) - set(processed.keys())
-        extra_in_ckpt = set(processed.keys()) - set(model_keys)
-        if model_in_keys:
-            logger.info(
-                f"[MiAD] {len(model_in_keys)} model keys missing from checkpoint"
-                f" (buffers/renamed): {sorted(model_in_keys)[:3]}..."
-            )
-        if extra_in_ckpt:
-            logger.info(
-                f"[MiAD] {len(extra_in_ckpt)} checkpoint keys not in model"
-                f" (skipped): {sorted(extra_in_ckpt)[:3]}..."
-            )
-        if is_legacy:
-            logger.info(
-                f"[MiAD] Added decoder. prefix; transposed {num_transposed}"
-                f" Linear weights, direct copied {num_copied} non-Linear params"
-            )
-
-        # Load parameters one by one via set_value to bypass Paddle's
-        # set_state_dict that may report success without actually loading values.
-        loaded_missing = []
-        loaded_unexpected = []
-        for name, param in self.named_parameters():
-            if name in processed:
-                proc_val = processed[name]
-                if proc_val.shape != tuple(param.shape):
-                    logger.warning(
-                        f"[MiAD] SHAPE MISMATCH: {name}, model={param.shape},"
-                        f" loaded={proc_val.shape} - SKIPPED"
-                    )
-                    continue
-                param.set_value(proc_val)
-            else:
-                loaded_missing.append(name)
-
-        extra_loaded = set(processed.keys()) - set(model_keys)
-        if extra_loaded:
-            loaded_unexpected = list(extra_loaded)
-
-        loaded = (loaded_missing, loaded_unexpected)
-        return loaded
+            if k.endswith(".weight") and len(v.shape) == 2:
+                v = v.T
+            processed[k] = v
+        return super().set_state_dict(processed, use_structured_name)
 
     def forward(self, batch, **kwargs):
         mode = "train" if self.training else "val"
