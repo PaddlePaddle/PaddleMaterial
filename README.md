@@ -21,6 +21,7 @@
 | **Interatomic Potential (IP)** | Replace DFT with ML potentials | Molecular dynamics, large-scale simulations |
 | **Electronic Structure (ES)** | Predict electronic properties | Band structure, density of states |
 | **Spectrum Elucidation (SE)** | Reconstruct structures from spectra | NMR structure elucidation |
+| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectrum signals | STEM image enhancement, denoising |
 
 ### Supported Materials
 
@@ -31,7 +32,7 @@
 ### Why PaddleMaterials?
 
 - ✅ **Rich Pretrained Models** - 50+ pretrained models ready for inference
-- ✅ **Multi-Task Integration** - Unified framework across PP, SG, MLIP, MLES, SE
+- ✅ **Multi-Task Integration** - Unified framework across PP, SG, MLIP, MLES, SE, SPEN
 - ✅ **Domestic Hardware Support** - Full support for MetaX GPUs and NVIDIA GPUs
 - ✅ **PaddlePaddle Ecosystem** - Seamless integration with PaddlePaddle tools
 - ✅ **Production-Ready** - Distributed training, mixed precision, checkpoint recovery
@@ -52,8 +53,8 @@
 | **Interatomic Potential (IP)** | DFT-accurate potentials for molecular dynamics | [README](interatomic_potentials/README.md) |
 | **Electronic Structure (ES)** | Predict electronic structure properties | [README](electronic_structure/README.md) |
 | **Spectrum Elucidation (SE)** | Reconstruct molecular structures from NMR spectra | [README](spectrum_elucidation/README.md) |
+| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectrum signals | [README](spectrum_enhancement/README.md) |
 
----
 
 ## 🔧 Installation
 
@@ -117,6 +118,7 @@ For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
 | **Structure Generation** | MatterGen, DiffCSP | MP20, ALEX |
 | **Interatomic Potentials** | CHGNet, MatterSim | MPTRJ |
 | **Electronic Structure** | InfGCN | Custom datasets |
+| **Spectrum Enhancement** | SFIN | HAADF/BF STEM image datasets |
 
 Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py)
 
