@@ -213,6 +213,7 @@ class SpectrumPredictor:
 
         init_params = dataset_cfg.get("dataset", {}).get("__init_params__", {})
         dataset_split = init_params.get("split", "test")
+        disk_split = "test" if dataset_split == "val" else dataset_split
         noisy_subdir = init_params.get("noisy_subdir", "noisy")
         input_path = Path(input_path)
 
@@ -220,22 +221,21 @@ class SpectrumPredictor:
             raise FileNotFoundError(f"Input path not found: {input_path}")
 
         init_params["target_subdir"] = None
-        init_params["target_name"] = None
-        init_params["auto_download"] = False
+        init_params.pop("target_name", None)
 
         if input_path.is_file():
             with tempfile.TemporaryDirectory(
                 prefix="ppmat_spectrum_predict_"
             ) as temp_dir:
                 temp_root = Path(temp_dir)
-                staged_noisy_dir = temp_root / dataset_split / noisy_subdir
+                staged_noisy_dir = temp_root / disk_split / noisy_subdir
                 staged_noisy_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_path, staged_noisy_dir / input_path.name)
                 init_params["path"] = str(temp_root)
                 yield dataset_cfg
             return
 
-        if (input_path / dataset_split / noisy_subdir).is_dir():
+        if (input_path / disk_split / noisy_subdir).is_dir():
             init_params["path"] = str(input_path)
             yield dataset_cfg
             return
@@ -259,7 +259,7 @@ class SpectrumPredictor:
 
         with tempfile.TemporaryDirectory(prefix="ppmat_spectrum_predict_") as temp_dir:
             temp_root = Path(temp_dir)
-            staged_noisy_dir = temp_root / dataset_split / noisy_subdir
+            staged_noisy_dir = temp_root / disk_split / noisy_subdir
             staged_noisy_dir.mkdir(parents=True, exist_ok=True)
             for image_file in image_files:
                 shutil.copy2(image_file, staged_noisy_dir / image_file.name)

@@ -74,14 +74,7 @@ Dataset:
       __init_params__:
         path: "./sfin_haadf"
         split: "train"
-        input_name: "noisy"
-        target_name: "gt_enhance"
-        noisy_subdir: "noisy"
         target_subdir: "gt_enhance"
-        file_suffix: ".png"
-        scale_to_unit: False
-        cache: False
-        auto_download: True
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -98,15 +91,8 @@ Dataset:
       __class_name__: SFINDataset
       __init_params__:
         path: "./sfin_haadf"
-        split: "test"
-        input_name: "noisy"
-        target_name: "gt_enhance"
-        noisy_subdir: "noisy"
+        split: "val"
         target_subdir: "gt_enhance"
-        file_suffix: ".png"
-        scale_to_unit: False
-        cache: False
-        auto_download: True
     sampler:
       __class_name__: BatchSampler
       __init_params__:
