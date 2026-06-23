@@ -75,8 +75,6 @@ Dataset:
         path: "./sfin_bf"
         split: "train"
         target_subdir: "gt_detect"
-        cache_path: "./sfin_bf_cache/train/gt_detect"
-        overwrite: False
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -95,8 +93,6 @@ Dataset:
         path: "./sfin_bf"
         split: "val"
         target_subdir: "gt_detect"
-        cache_path: "./sfin_bf_cache/test/gt_detect"
-        overwrite: False
     sampler:
       __class_name__: BatchSampler
       __init_params__:
