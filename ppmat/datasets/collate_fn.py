@@ -30,7 +30,7 @@ from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.datasets.geometric_data_type.batch import Batch
 from ppmat.datasets.geometric_data_type.data import Data
-from ppmat.models.omatg.utils.collate import OMATGStructureCollator  # noqa
+
 
 class DefaultCollator(object):
     def __call__(self, batch: List[Any]) -> Any:

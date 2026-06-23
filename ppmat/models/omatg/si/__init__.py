@@ -12,108 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Stochastic Interpolants (SI) module for OMatG.
-"""
-
-from ppmat.models.omatg.si.abstracts import (
-    Corrector,
-    Epsilon,
-    Interpolant,
-    LatentGamma,
-    Sigma,
-    StochasticInterpolant,
-    StochasticInterpolantSpecies,
-    TimeChecker,
-    Tau,
-)
-from ppmat.models.omatg.si.corrector import (
-    IdentityCorrector,
-    PeriodicBoundaryConditionsCorrector,
-)
-from ppmat.models.omatg.si.gamma import (
-    LatentGammaSqrt,
-    LatentGammaEncoderDecoder,
-)
-from ppmat.models.omatg.si.epsilon import (
-    ConstantEpsilon,
-    VanishingEpsilon,
-)
-from ppmat.models.omatg.si.sigma import GeometricSigma
-from ppmat.models.omatg.si.tau import (
-    TauConstantSchedule,
-    TauLinearSchedule,
-    TauCosineSchedule,
-)
-from ppmat.models.omatg.si.interpolants import (
-    EncoderDecoderInterpolant,
-    ExponentialInterpolant,
-    LinearInterpolant,
-    PeriodicLinearInterpolant,
-    PeriodicEncoderDecoderInterpolant,
-    ScoreBasedDiffusionModelInterpolantVE,
-    ScoreBasedDiffusionModelInterpolantVP,
-    TrigonometricInterpolant,
-)
-from ppmat.models.omatg.si.discrete_flow_matching_mask import (
-    DiscreteFlowMatchingMask,
-)
-from ppmat.models.omatg.si.single_stochastic_interpolant import (
-    DifferentialEquationType,
-    SingleStochasticInterpolant,
-)
-from ppmat.models.omatg.si.single_stochastic_interpolant_os import (
-    SingleStochasticInterpolantOS,
-)
-from ppmat.models.omatg.si.single_stochastic_interpolant_identity import (
-    SingleStochasticInterpolantIdentity,
-)
-from ppmat.models.omatg.si.stochastic_interpolants import (
-    BIG_TIME,
-    DataField,
-    SMALL_TIME,
-    reshape_t,
+from .core import (
+    BIG_TIME, SMALL_TIME,
     StochasticInterpolants,
+    SingleStochasticInterpolant, SingleStochasticInterpolantIdentity,
+    SingleStochasticInterpolantOS, DiscreteFlowMatchingMask,
+    build_si_from_cfg, build_sampler_from_cfg,
 )
-from ppmat.models.omatg.si.factory import build_si_from_cfg, build_sampler_from_cfg
+from .interpolants import LinearInterpolant, PeriodicLinearInterpolant
 
 __all__ = [
-    "Corrector",
-    "Epsilon",
-    "Interpolant",
-    "LatentGamma",
-    "Sigma",
-    "StochasticInterpolant",
-    "StochasticInterpolantSpecies",
-    "TimeChecker",
-    "Tau",
-    "IdentityCorrector",
-    "PeriodicBoundaryConditionsCorrector",
-    "LatentGammaSqrt",
-    "LatentGammaEncoderDecoder",
-    "ConstantEpsilon",
-    "VanishingEpsilon",
-    "GeometricSigma",
-    "TauConstantSchedule",
-    "TauLinearSchedule",
-    "TauCosineSchedule",
-    "EncoderDecoderInterpolant",
-    "ExponentialInterpolant",
-    "LinearInterpolant",
-    "PeriodicLinearInterpolant",
-    "PeriodicEncoderDecoderInterpolant",
-    "ScoreBasedDiffusionModelInterpolantVE",
-    "ScoreBasedDiffusionModelInterpolantVP",
-    "TrigonometricInterpolant",
-    "DiscreteFlowMatchingMask",
-    "DifferentialEquationType",
-    "SingleStochasticInterpolant",
-    "SingleStochasticInterpolantOS",
-    "SingleStochasticInterpolantIdentity",
-    "BIG_TIME",
-    "DataField",
-    "SMALL_TIME",
-    "reshape_t",
     "StochasticInterpolants",
-    "build_si_from_cfg",
-    "build_sampler_from_cfg",
+    "SingleStochasticInterpolant", "SingleStochasticInterpolantIdentity",
+    "SingleStochasticInterpolantOS", "DiscreteFlowMatchingMask",
+    "LinearInterpolant", "PeriodicLinearInterpolant",
+    "BIG_TIME", "SMALL_TIME",
+    "build_si_from_cfg", "build_sampler_from_cfg",
 ]

@@ -163,10 +163,7 @@ from ppmat.models.omatg.si import (
     SingleStochasticInterpolantIdentity,
     PeriodicLinearInterpolant, LinearInterpolant,
 )
-from ppmat.models.omatg.sampler import (
-    IndependentSampler, UniformPositionDistribution,
-    InformedLatticeDistribution, MirrorSpecies,
-)
+from ppmat.models.omatg.model import IndependentSampler
 
 # Build SI instance (Linear-ODE)
 si = StochasticInterpolants(
@@ -187,11 +184,7 @@ si = StochasticInterpolants(
     data_fields=["species", "pos", "cell"],
     integration_time_steps=210,
 )
-sampler = IndependentSampler(
-    position_distribution=UniformPositionDistribution(),
-    cell_distribution=InformedLatticeDistribution("mp_20"),
-    species_distribution=MirrorSpecies(),
-)
+sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
 costs = {"species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006}
 
 model = OMATGCSPNetFull(hidden_dim=512, num_layers=6, max_atoms=100,
@@ -242,10 +235,9 @@ si_cfg = {
     "relative_si_costs": {"species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006},
 }
 sampler_cfg = {
-    "position_distribution": {"__class_name__": "UniformPositionDistribution"},
-    "cell_distribution": {"__class_name__": "InformedLatticeDistribution",
-                          "__init_params__": {"dataset_name": "mp_20"}},
-    "species_distribution": {"__class_name__": "MirrorSpecies"},
+    "dataset_name": "mp_20",
+    "mirror_species": True,
+    "mask_species": False,
 }
 model = OMATGCSPNetFull(hidden_dim=512, num_layers=6, max_atoms=100,
                         time_embed_dim=256, pred_type=False,

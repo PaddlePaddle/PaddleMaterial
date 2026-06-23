@@ -50,7 +50,7 @@ from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
-from ppmat.datasets.omatg.structure_dataset import StructureDataset as OMATGStructureDataset
+from ppmat.datasets.omatg_dataset import StructureDataset as OMATGStructureDataset
 
 __all__ = [
     "MP20Dataset",

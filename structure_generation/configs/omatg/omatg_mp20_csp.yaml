@@ -65,7 +65,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: OMATGStructureCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -84,7 +84,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: OMATGStructureCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -103,7 +103,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: OMATGStructureCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: DistributedBatchSampler
       __init_params__:

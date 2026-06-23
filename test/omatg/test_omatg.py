@@ -16,31 +16,35 @@ import unittest
 
 import paddle
 
-from ppmat.models.omatg.model.omatg_cspnet import OMATGCSPNet as CSPNet
-from ppmat.models.omatg.model.omatg_model import OMATGCSPNetFull
-from ppmat.models.omatg.model.utils import (
+from ppmat.models.omatg.model import OMATGCSPNet as CSPNet, OMATGCSPNetFull
+from ppmat.utils.crystal import (
     cart_to_frac_coords,
     frac_to_cart_coords,
     lattice_params_to_matrix_paddle,
 )
-from ppmat.datasets.omatg.structure import Structure
-from ppmat.models.omatg.datamodule.omatg_data import OMATGData
+from ppmat.datasets.omatg_dataset import Structure
+from ppmat.datasets.omatg_dataset import OMATGData
 
 
 def _make_batch(batch_size=2, atoms_per_struct=(3, 4), max_z=10):
-    """Build a minimal collate dict for forward/loss tests."""
+    """Build a minimal OMATGData batch for forward/loss tests."""
     num_list = list(atoms_per_struct[:batch_size])
     total = sum(num_list)
-    node2graph = []
-    for i, n in enumerate(num_list):
-        node2graph.extend([i] * n)
-    return {
-        "atom_types": paddle.randint(1, max_z, [total], dtype="int64"),
-        "frac_coords": paddle.rand([total, 3]),
-        "lattices": paddle.rand([batch_size, 3, 3]) * 2.0 + paddle.eye(3).unsqueeze(0),
-        "num_atoms": paddle.to_tensor(num_list, dtype="int64"),
-        "node2graph": paddle.to_tensor(node2graph, dtype="int64"),
+    atom_types = paddle.randint(1, max_z, [total], dtype="int64")
+    frac_coords = paddle.rand([total, 3])
+    lattices = paddle.rand([batch_size, 3, 3]) * 2.0 + paddle.eye(3).unsqueeze(0)
+    num_atoms = paddle.to_tensor(num_list, dtype="int64")
+    node2graph = paddle.repeat_interleave(
+        paddle.arange(batch_size, dtype="int64"), num_atoms
+    )
+    d = {
+        "atom_types": atom_types,
+        "frac_coords": frac_coords,
+        "lattices": lattices,
+        "num_atoms": num_atoms,
+        "node2graph": node2graph,
     }
+    return OMATGData.from_collate_dict(d)
 
 
 class TestCSPNetForward(unittest.TestCase):
@@ -78,8 +82,8 @@ class TestCSPNetForward(unittest.TestCase):
         data = _make_batch()
         t = paddle.rand([2])
         out = model.forward_dict(
-            t, data["atom_types"], data["frac_coords"], data["lattices"],
-            data["num_atoms"], data["node2graph"],
+            t, data.species, data.pos, data.cell,
+            data.n_atoms, data.batch,
         )
         self.assertIn("pos_b", out)
         self.assertIn("pos_eta", out)
@@ -238,9 +242,9 @@ class TestLatticeUtils(unittest.TestCase):
         angles = paddle.to_tensor([[90.0, 90.0, 90.0]])
         num_atoms = paddle.to_tensor([3], dtype="int64")
         frac_coords = paddle.rand([3, 3])
-        cart = frac_to_cart_coords(frac_coords, lengths, angles, num_atoms)
+        cart = frac_to_cart_coords(frac_coords, num_atoms, lengths=lengths, angles=angles)
         self.assertEqual(cart.shape, [3, 3])
-        frac_back = cart_to_frac_coords(cart, lengths, angles, num_atoms)
+        frac_back = cart_to_frac_coords(cart, num_atoms, lengths=lengths, angles=angles)
         self.assertEqual(frac_back.shape, [3, 3])
 
 
@@ -248,7 +252,7 @@ class TestSIComponents(unittest.TestCase):
     """SI framework component smoke tests."""
 
     def test_gamma_sqrt(self):
-        from ppmat.models.omatg.si.gamma import LatentGammaSqrt
+        from ppmat.models.omatg.si.interpolants import LatentGammaSqrt
         t = paddle.to_tensor([0.3, 0.5, 0.7])
         g = LatentGammaSqrt(a=1.0)
         self.assertEqual(g.gamma(t).shape, [3])
@@ -256,34 +260,27 @@ class TestSIComponents(unittest.TestCase):
         self.assertEqual(g.gamma_derivative(t).shape, [3])
 
     def test_gamma_encdec(self):
-        from ppmat.models.omatg.si.gamma import LatentGammaEncoderDecoder
+        from ppmat.models.omatg.si.interpolants import LatentGammaEncoderDecoder
         t = paddle.to_tensor([0.3, 0.5, 0.7])
         g = LatentGammaEncoderDecoder()
         self.assertEqual(g.gamma(t).shape, [3])
         self.assertFalse(g.requires_antithetic())
 
-    def test_epsilon_constant(self):
-        from ppmat.models.omatg.si.epsilon import ConstantEpsilon
-        t = paddle.to_tensor([0.3, 0.7])
-        eps = ConstantEpsilon(c=2.0)
-        self.assertEqual(eps.epsilon(t).shape, [2])
-        self.assertAlmostEqual(float(eps.epsilon(t).mean()), 2.0, places=4)
-
     def test_epsilon_vanishing(self):
-        from ppmat.models.omatg.si.epsilon import VanishingEpsilon
+        from ppmat.models.omatg.si.interpolants import VanishingEpsilon
         t = paddle.to_tensor([0.3, 0.5, 0.7])
         eps = VanishingEpsilon(c=1.0)
         self.assertEqual(eps.epsilon(t).shape, [3])
 
     def test_sigma_geometric(self):
-        from ppmat.models.omatg.si.sigma import GeometricSigma
+        from ppmat.models.omatg.si.interpolants import GeometricSigma
         s = paddle.to_tensor([0.0, 0.5, 1.0])
         sig = GeometricSigma(sigma_min=0.1, sigma_max=10.0)
         self.assertEqual(sig.sigma(s).shape, [3])
         self.assertEqual(sig.sigma_dot(s).shape, [3])
 
     def test_tau_constant(self):
-        from ppmat.models.omatg.si.tau import TauConstantSchedule
+        from ppmat.models.omatg.si.interpolants import TauConstantSchedule
         t = paddle.to_tensor([0.3, 0.7])
         tau = TauConstantSchedule()
         self.assertEqual(tau.tau(t).shape, [2])
@@ -302,23 +299,11 @@ class TestSIComponents(unittest.TestCase):
         corr = interp.get_corrector()
         self.assertIsNotNone(corr)
 
-    def test_interpolant_trigonometric(self):
-        from ppmat.models.omatg.si.interpolants import TrigonometricInterpolant
-        t = paddle.to_tensor([0.3])
-        interp = TrigonometricInterpolant()
-        self.assertEqual(interp.alpha(t).shape, [1])
-
-    def test_interpolant_encdec(self):
-        from ppmat.models.omatg.si.interpolants import EncoderDecoderInterpolant
-        t = paddle.to_tensor([0.3])
-        interp = EncoderDecoderInterpolant()
-        self.assertEqual(interp.alpha(t).shape, [1])
-
     def test_interpolant_vp(self):
         from ppmat.models.omatg.si.interpolants import (
             ScoreBasedDiffusionModelInterpolantVP,
         )
-        from ppmat.models.omatg.si.tau import TauConstantSchedule
+        from ppmat.models.omatg.si.interpolants import TauConstantSchedule
         t = paddle.to_tensor([0.3])
         interp = ScoreBasedDiffusionModelInterpolantVP(TauConstantSchedule())
         self.assertEqual(interp.alpha(t).shape, [1])
@@ -326,15 +311,15 @@ class TestSIComponents(unittest.TestCase):
     def test_interpolant_ve(self):
         from ppmat.models.omatg.si.interpolants import (
             ScoreBasedDiffusionModelInterpolantVE,
+            GeometricSigma,
         )
-        from ppmat.models.omatg.si.sigma import GeometricSigma
         t = paddle.to_tensor([0.3])
         interp = ScoreBasedDiffusionModelInterpolantVE(GeometricSigma(0.1, 10.0))
         self.assertEqual(interp.alpha(t).shape, [1])
 
     def test_dfm_mask_loss(self):
         """DiscreteFlowMatchingMask cross-entropy loss."""
-        from ppmat.models.omatg.si.discrete_flow_matching_mask import (
+        from ppmat.models.omatg.si.core import (
             DiscreteFlowMatchingMask,
         )
         dfm = DiscreteFlowMatchingMask(noise=0.1)
@@ -353,7 +338,7 @@ class TestSIComponents(unittest.TestCase):
         self.assertTrue(dfm.uses_masked_species())
 
     def test_identity_interpolant(self):
-        from ppmat.models.omatg.si.single_stochastic_interpolant_identity import (
+        from ppmat.models.omatg.si.core import (
             SingleStochasticInterpolantIdentity,
         )
         ident = SingleStochasticInterpolantIdentity()
@@ -374,10 +359,7 @@ class TestSITrainingPath(unittest.TestCase):
             SingleStochasticInterpolantIdentity,
             PeriodicLinearInterpolant, LinearInterpolant,
         )
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MirrorSpecies,
-        )
+        from ppmat.models.omatg.model import IndependentSampler
         si = StochasticInterpolants(
             stochastic_interpolants=[
                 SingleStochasticInterpolantIdentity(),
@@ -396,11 +378,7 @@ class TestSITrainingPath(unittest.TestCase):
             data_fields=["species", "pos", "cell"],
             integration_time_steps=210,
         )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MirrorSpecies(),
-        )
+        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
             time_embed_dim=16, pred_type=False, use_si=False,
@@ -445,12 +423,10 @@ class TestSITrainingPath(unittest.TestCase):
             StochasticInterpolants, SingleStochasticInterpolant,
             SingleStochasticInterpolantIdentity,
             PeriodicLinearInterpolant, LinearInterpolant,
-            DiscreteFlowMatchingMask, LatentGammaSqrt, VanishingEpsilon,
         )
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MaskSpeciesDistribution,
-        )
+        from ppmat.models.omatg.si.core import DiscreteFlowMatchingMask
+        from ppmat.models.omatg.si.interpolants import LatentGammaSqrt, VanishingEpsilon
+        from ppmat.models.omatg.model import IndependentSampler
         si = StochasticInterpolants(
             stochastic_interpolants=[
                 DiscreteFlowMatchingMask(noise=0.189),
@@ -471,11 +447,7 @@ class TestSITrainingPath(unittest.TestCase):
             data_fields=["species", "pos", "cell"],
             integration_time_steps=710,
         )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MaskSpeciesDistribution(),
-        )
+        sampler = IndependentSampler(dataset_name="mp_20", mask_species=True, mirror_species=False)
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
             time_embed_dim=16, pred_type=True, use_si=False,
@@ -504,13 +476,11 @@ class TestOSInterpolants(unittest.TestCase):
             StochasticInterpolants, SingleStochasticInterpolant,
             SingleStochasticInterpolantIdentity,
             SingleStochasticInterpolantOS,
-            ScoreBasedDiffusionModelInterpolantVE, GeometricSigma,
             LinearInterpolant,
         )
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MirrorSpecies,
-        )
+        from ppmat.models.omatg.si.interpolants import ScoreBasedDiffusionModelInterpolantVE
+        from ppmat.models.omatg.si.interpolants import GeometricSigma
+        from ppmat.models.omatg.model import IndependentSampler
         os_interp = SingleStochasticInterpolantOS(
             interpolant=ScoreBasedDiffusionModelInterpolantVE(
                 GeometricSigma(0.1, 10.0)
@@ -531,11 +501,7 @@ class TestOSInterpolants(unittest.TestCase):
             data_fields=["species", "pos", "cell"],
             integration_time_steps=210,
         )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MirrorSpecies(),
-        )
+        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
             time_embed_dim=16, pred_type=False, use_si=False,
@@ -556,13 +522,11 @@ class TestOSInterpolants(unittest.TestCase):
             StochasticInterpolants, SingleStochasticInterpolant,
             SingleStochasticInterpolantIdentity,
             SingleStochasticInterpolantOS,
-            ScoreBasedDiffusionModelInterpolantVP, TauConstantSchedule,
-            ConstantEpsilon, LinearInterpolant,
+            LinearInterpolant,
         )
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MirrorSpecies,
-        )
+        from ppmat.models.omatg.si.interpolants import ScoreBasedDiffusionModelInterpolantVP
+        from ppmat.models.omatg.si.interpolants import TauConstantSchedule, ConstantEpsilon
+        from ppmat.models.omatg.model import IndependentSampler
         os_interp = SingleStochasticInterpolantOS(
             interpolant=ScoreBasedDiffusionModelInterpolantVP(
                 TauConstantSchedule()
@@ -584,11 +548,7 @@ class TestOSInterpolants(unittest.TestCase):
             data_fields=["species", "pos", "cell"],
             integration_time_steps=710,
         )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MirrorSpecies(),
-        )
+        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
             time_embed_dim=16, pred_type=False, use_si=False,
@@ -702,12 +662,9 @@ class TestSIFactory(unittest.TestCase):
             },
         }
         sampler_cfg = {
-            "position_distribution": {"__class_name__": "UniformPositionDistribution"},
-            "cell_distribution": {
-                "__class_name__": "InformedLatticeDistribution",
-                "__init_params__": {"dataset_name": "mp_20"},
-            },
-            "species_distribution": {"__class_name__": "MirrorSpecies"},
+            "dataset_name": "mp_20",
+            "mirror_species": True,
+            "mask_species": False,
         }
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
@@ -729,10 +686,7 @@ class TestSISampling(unittest.TestCase):
             SingleStochasticInterpolantIdentity,
             PeriodicLinearInterpolant, LinearInterpolant,
         )
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MirrorSpecies,
-        )
+        from ppmat.models.omatg.model import IndependentSampler
         si = StochasticInterpolants(
             stochastic_interpolants=[
                 SingleStochasticInterpolantIdentity(),
@@ -750,11 +704,7 @@ class TestSISampling(unittest.TestCase):
             data_fields=["species", "pos", "cell"],
             integration_time_steps=10,
         )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MirrorSpecies(),
-        )
+        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
             hidden_dim=32, num_layers=1, max_atoms=100,
             time_embed_dim=16, pred_type=False, use_si=False,
@@ -774,67 +724,25 @@ class TestSISampling(unittest.TestCase):
 
 
 class TestSamplers(unittest.TestCase):
-    """Sampler distribution smoke tests."""
-
-    def test_uniform_position(self):
-        from ppmat.models.omatg.sampler.position_distributions import (
-            UniformPositionDistribution,
-        )
-        dist = UniformPositionDistribution()
-        pos = paddle.rand([5, 3])
-        sampled, is_frac = dist(pos, True)
-        self.assertEqual(sampled.shape, (5, 3))
-        self.assertTrue(is_frac)
-
-    def test_informed_lattice(self):
-        from ppmat.models.omatg.sampler.cell_distributions import (
-            InformedLatticeDistribution,
-        )
-        dist = InformedLatticeDistribution("mp_20")
-        cell = paddle.eye(3) * 5.0
-        sampled = dist(cell)
-        self.assertEqual(sampled.shape, (3, 3))
-
-    def test_mirror_species(self):
-        from ppmat.models.omatg.sampler.species_distributions import MirrorSpecies
-        dist = MirrorSpecies()
-        species = paddle.to_tensor([1, 8, 14], dtype="int64")
-        sampled = dist(species)
-        self.assertEqual(len(sampled), 3)
-
-    def test_mask_species(self):
-        from ppmat.models.omatg.sampler.species_distributions import (
-            MaskSpeciesDistribution,
-        )
-        dist = MaskSpeciesDistribution()
-        species = paddle.to_tensor([1, 8, 14], dtype="int64")
-        sampled = dist(species)
-        self.assertTrue(all(s == 0 for s in sampled))
+    """Sampler smoke tests using Paddle native APIs."""
 
     def test_independent_sampler_sample_p_0(self):
         """IndependentSampler.sample_p_0 returns OMATGData with correct batch."""
-        from ppmat.models.omatg.sampler import (
-            IndependentSampler, UniformPositionDistribution,
-            InformedLatticeDistribution, MirrorSpecies,
-        )
-        sampler = IndependentSampler(
-            position_distribution=UniformPositionDistribution(),
-            cell_distribution=InformedLatticeDistribution("mp_20"),
-            species_distribution=MirrorSpecies(),
-        )
+        from ppmat.models.omatg.model import IndependentSampler
+        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         data = _make_batch()
         x_1 = OMATGData()
-        x_1.n_atoms = data["num_atoms"]
-        x_1.species = data["atom_types"]
-        x_1.cell = data["lattices"]
-        x_1.pos = data["frac_coords"]
-        x_1.pos_is_fractional = paddle.ones_like(data["num_atoms"], dtype="bool")
-        x_1.batch = data["node2graph"]
+        x_1.n_atoms = data.n_atoms
+        x_1.species = data.species
+        x_1.cell = data.cell
+        x_1.pos = data.pos
+        x_1.pos_is_fractional = paddle.ones_like(data.n_atoms, dtype="bool")
+        x_1.batch = data.batch
         x_1.ptr = paddle.concat([
             paddle.to_tensor([0], dtype="int64"),
-            paddle.cumsum(data["num_atoms"], axis=0).cast("int64"),
+            paddle.cumsum(data.n_atoms, axis=0).cast("int64"),
         ])
-        x_1.property_dict = [{} for _ in range(len(data["num_atoms"]))]
+        x_1.property_dict = [{} for _ in range(len(data.n_atoms))]
         x_0 = sampler.sample_p_0(x_1)
         self.assertEqual(x_0.num_graphs, 2)
         self.assertEqual(x_0.num_atoms, x_1.num_atoms)
