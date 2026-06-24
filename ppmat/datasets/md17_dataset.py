@@ -29,12 +29,19 @@ import os.path as osp
 
 import numpy as np
 import paddle
-import paddle.distributed as dist
 from paddle.io import Dataset
 
 from ppmat.utils import logger
+from ppmat.utils.download import get_datasets_path_from_url
 
-# Available MD17 molecules and their download URLs
+# bcebos mirror (fast download within mainland China)
+BCEBOS_URL = (
+    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
+)
+# MD5 extracted from bcebos ETag
+BCEBOS_MD5 = "5d5d97a14ccef9e938e500f5f4601a59"
+
+# Fallback individual molecule URLs (used when bcebos is unavailable)
 MD17_MOLECULES = {
     "aspirin": "http://quantum-machine.org/gdml/data/npz/aspirin_dft.npz",
     "benzene_old": "http://quantum-machine.org/gdml/data/npz/benzene_old_dft.npz",
@@ -64,6 +71,8 @@ class MD17Dataset(Dataset):
 
     Each sample contains atomic numbers, 3D positions, total energy,
     and atomic forces from DFT-based molecular dynamics trajectories.
+    Downloads from the bcebos mirror by default, with fallback to
+    individual molecule URLs from quantum-machine.org.
 
     Args:
         path: Root directory for storing raw and processed data.
@@ -96,12 +105,11 @@ class MD17Dataset(Dataset):
             )
         self.name = name
         self.force_key = force_key
-        self.url = MD17_MOLECULES[name]
 
         os.makedirs(path, exist_ok=True)
         self.root = path
 
-        # Download raw npz file if needed
+        # Download raw data — prefer bcebos bundle, fall back to single-file URL
         raw_path = self._ensure_raw_data()
 
         # Load npz data
@@ -145,24 +153,45 @@ class MD17Dataset(Dataset):
         )
 
     def _ensure_raw_data(self):
-        """Download raw npz file to local cache if not already present."""
+        """Download raw npz file to local cache if not already present.
+
+        Tries the bcebos bundle (all 8 molecules in a single tar.gz) first.
+        Falls back to the individual molecule URL when the bcebos download
+        is unavailable or the extracted npz is missing.
+        """
         raw_dir = osp.join(self.root, "raw")
         os.makedirs(raw_dir, exist_ok=True)
-        raw_path = osp.join(raw_dir, f"{self.name}_dft.npz")
 
-        if not osp.exists(raw_path):
-            if dist.get_rank() == 0:
-                logger.info(f"Downloading MD17/{self.name} from {self.url} ...")
-                import urllib.request
+        # Check if raw npz already exists from a previous download
+        individual_path = osp.join(raw_dir, f"{self.name}_dft.npz")
+        if osp.exists(individual_path):
+            return individual_path
 
-                try:
-                    urllib.request.urlretrieve(self.url, raw_path)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to download MD17/{self.name}: {e}")
-            if dist.is_initialized():
-                dist.barrier()
+        # Try bcebos bundle download (distributed-safe via get_datasets_path_from_url)
+        try:
+            extract_dir = get_datasets_path_from_url(BCEBOS_URL, BCEBOS_MD5)
+            bundle_npz_path = osp.join(extract_dir, f"{self.name}_dft.npz")
+            if osp.exists(bundle_npz_path):
+                return bundle_npz_path
+        except Exception as e:
+            logger.warning(
+                f"bcebos download failed for MD17/{self.name}: {e}. "
+                "Falling back to individual URL."
+            )
 
-        return raw_path
+        # Fallback to individual molecule URL
+        import urllib.request
+
+        url = MD17_MOLECULES[self.name]
+        logger.info(f"Downloading MD17/{self.name} from {url} ...")
+        try:
+            urllib.request.urlretrieve(url, individual_path)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to download MD17/{self.name} from {url}: {e}. "
+                "The bcebos mirror may also be unavailable."
+            )
+        return individual_path
 
     def __getitem__(self, idx):
         real_idx = self._indices[idx]
