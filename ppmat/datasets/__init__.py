@@ -176,10 +176,6 @@ def build_dataloader(cfg: Dict):
     num_workers = loader_config.pop("num_workers", 0)
     use_shared_memory = loader_config.pop("use_shared_memory", True)
 
-    # Allow per-dataset override from dataset config level
-    num_workers = dataset_cfg.pop("num_workers", num_workers)
-    use_shared_memory = dataset_cfg.pop("use_shared_memory", use_shared_memory)
-
     # collate_obj = getattr(
     #     collate_fn, loader_config.pop("collate_fn", "DefaultCollator")
     # )()

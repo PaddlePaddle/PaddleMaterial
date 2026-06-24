@@ -85,6 +85,7 @@ Dataset:
         property_names: [homo]
         mode: raw_tensor
         split: train
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:
@@ -101,6 +102,7 @@ Dataset:
         property_names: [homo]
         mode: raw_tensor
         split: val
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:
@@ -117,6 +119,7 @@ Dataset:
         property_names: [homo]
         mode: raw_tensor
         split: test
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:

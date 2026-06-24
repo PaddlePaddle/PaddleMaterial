@@ -69,6 +69,7 @@ Dataset:
         name: ethanol
         split: train
         force_key: force
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:
@@ -85,6 +86,7 @@ Dataset:
         name: ethanol
         split: val
         force_key: force
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:
@@ -101,6 +103,7 @@ Dataset:
         name: ethanol
         split: test
         force_key: force
+    loader:
       num_workers: 4
       use_shared_memory: false
     sampler:
