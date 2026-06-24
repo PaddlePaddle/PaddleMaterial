@@ -50,16 +50,13 @@ class DefaultCollator(object):
         sample = batch[0]
         if sample is None:
             return None
-
-        # Dict with all-ndarray values: detect node-batch (variable-length)
-        # by checking if any array has ndim >= 2 or shape[0] > 1.
-        if isinstance(sample, Mapping) and all(
+        elif isinstance(sample, Mapping) and all(
             isinstance(v, np.ndarray) for v in sample.values()
+        ) and any(
+            val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()
         ):
-            if any(val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()):
-                return self._collate_node_batch(batch)
-
-        if isinstance(sample, ConcatNumpyWarper):
+            return self._collate_node_batch(batch)
+        elif isinstance(sample, ConcatNumpyWarper):
             batch = np.concatenate(batch, axis=0)
             return batch
         elif isinstance(sample, np.ndarray):
