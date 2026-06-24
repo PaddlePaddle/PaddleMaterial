@@ -17,6 +17,8 @@ import ast
 import hashlib
 import json
 import os
+import os.path as osp
+from typing import List
 
 import numpy as np
 
@@ -60,6 +62,18 @@ def read_json(path):
     with open(path, "r") as f:
         content = json.load(f)
     return content
+
+
+def list_files_by_suffix(path: str, suffix: str) -> List[str]:
+    """List files under path with the given suffix."""
+    if not osp.isdir(path):
+        raise FileNotFoundError(f"Directory not found: {path}")
+    file_names = sorted(
+        file_name for file_name in os.listdir(path) if file_name.endswith(suffix)
+    )
+    if not file_names:
+        raise FileNotFoundError(f"No files ending with {suffix} found under {path}.")
+    return file_names
 
 
 def update_json(path, data):
