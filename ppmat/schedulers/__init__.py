@@ -35,6 +35,7 @@ __all__ = [
     "LatticeVPSDEScheduler",
     "NumAtomsVarianceAdjustedWrappedVESDE",
     "D3PMScheduler",
+    "NoiseScheduler",
     "ASUVESDEScheduler",
 ]
 
