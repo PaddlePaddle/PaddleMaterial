@@ -11,21 +11,38 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""MD17 molecular dynamics dataset.
+"""MD17 molecular dynamics dataset for energy and force prediction.
 
-Each molecule has a single .npz file containing:
+Each molecule trajectory is stored as a single .npz file containing:
     - E: energies (N,)
     - F: forces  (N, num_atoms, 3)
     - R: positions (N, num_atoms, 3)
     - z: atomic numbers (num_atoms,)
 
-Available molecules (8 total):
+Supported molecules (8 total):
     aspirin, benzene_old, ethanol, malonaldehyde,
     naphthalene, salicylic, toluene, uracil
+
+**STATS:**
++----------------+----------+--------+-------+----------+-------+
+| Molecule       | #samples | #atoms | #tasks| #targets | Split |
++================+==========+========+=======+==========+=======+
+| Aspirin        | 211,762  | 21     | 2     | E + F    | 1k/500/1k|
+| Benzene (old)  | 627,983  | 12     | 2     | E + F    | 1k/500/1k|
+| Ethanol        | 555,092  | 9      | 2     | E + F    | 1k/500/1k|
+| Malonaldehyde  | 993,237  | 9      | 2     | E + F    | 1k/500/1k|
+| Naphthalene    | 326,250  | 10     | 2     | E + F    | 1k/500/1k|
+| Salicylic      | 320,231  | 16     | 2     | E + F    | 1k/500/1k|
+| Toluene        | 442,790  | 15     | 2     | E + F    | 1k/500/1k|
+| Uracil         | 133,770  | 12     | 2     | E + F    | 1k/500/1k|
++----------------+----------+--------+-------+----------+-------+
 """
 
 import os
 import os.path as osp
+from typing import Callable
+from typing import Dict
+from typing import Optional
 
 import numpy as np
 import paddle
@@ -34,15 +51,8 @@ from paddle.io import Dataset
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
 
-# bcebos mirror (fast download within mainland China)
-BCEBOS_URL = (
-    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
-)
-# MD5 extracted from bcebos ETag
-BCEBOS_MD5 = "5d5d97a14ccef9e938e500f5f4601a59"
-
 # Fallback individual molecule URLs (used when bcebos is unavailable)
-MD17_MOLECULES = {
+_MOLECULE_URLS = {
     "aspirin": "http://quantum-machine.org/gdml/data/npz/aspirin_dft.npz",
     "benzene_old": "http://quantum-machine.org/gdml/data/npz/benzene_old_dft.npz",
     "ethanol": "http://quantum-machine.org/gdml/data/npz/ethanol_dft.npz",
@@ -53,8 +63,8 @@ MD17_MOLECULES = {
     "uracil": "http://quantum-machine.org/gdml/data/npz/uracil_dft.npz",
 }
 
-# Train/val/test split sizes (same as DIG SphereNet defaults)
-DEFAULT_SPLITS = {
+# Default train/val/test split sizes (same as DIG SphereNet defaults)
+_DEFAULT_SPLITS = {
     "aspirin": (1000, 500, 1000),
     "benzene_old": (1000, 500, 1000),
     "ethanol": (1000, 500, 1000),
@@ -71,12 +81,14 @@ class MD17Dataset(Dataset):
 
     Each sample contains atomic numbers, 3D positions, total energy,
     and atomic forces from DFT-based molecular dynamics trajectories.
+
     Downloads from the bcebos mirror by default, with fallback to
     individual molecule URLs from quantum-machine.org.
 
     Args:
         path: Root directory for storing raw and processed data.
-        name: Molecule name (one of the 8 supported molecules).
+        name: Molecule name. Supported: aspirin, benzene_old, ethanol,
+            malonaldehyde, naphthalene, salicylic, toluene, uracil.
         split: One of ``None`` (all data), ``'train'``, ``'val'``, or
             ``'test'``.
         train_size: Number of training samples.
@@ -84,7 +96,14 @@ class MD17Dataset(Dataset):
         test_size: Number of test samples.
         force_key: Key name for forces in the output dict.
             Default: ``'force'``.
+        transforms: Optional transforms to apply to each sample.
+            Defaults to None.
+        **kwargs: Additional arguments (for compatibility).
     """
+
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
+    md5 = "5d5d97a14ccef9e938e500f5f4601a59"
+    name = "md17"
 
     def __init__(
         self,
@@ -95,16 +114,19 @@ class MD17Dataset(Dataset):
         val_size=None,
         test_size=None,
         force_key="force",
+        transforms: Optional[Callable] = None,
+        **kwargs,
     ):
         super().__init__()
 
-        if name not in MD17_MOLECULES:
+        if name not in _MOLECULE_URLS:
             raise ValueError(
                 f"Unknown MD17 molecule '{name}'. "
-                f"Supported: {list(MD17_MOLECULES.keys())}"
+                f"Supported: {list(_MOLECULE_URLS.keys())}"
             )
-        self.name = name
+        self.mol_name = name
         self.force_key = force_key
+        self.transforms = transforms
 
         os.makedirs(path, exist_ok=True)
         self.root = path
@@ -128,9 +150,9 @@ class MD17Dataset(Dataset):
         rng.shuffle(indices)
 
         # Apply split
-        ts = train_size or DEFAULT_SPLITS[name][0]
-        vs = val_size or DEFAULT_SPLITS[name][1]
-        tes = test_size or DEFAULT_SPLITS[name][2]
+        ts = train_size or _DEFAULT_SPLITS[name][0]
+        vs = val_size or _DEFAULT_SPLITS[name][1]
+        tes = test_size or _DEFAULT_SPLITS[name][2]
 
         if split == "train":
             self._indices = indices[:ts]
@@ -163,44 +185,47 @@ class MD17Dataset(Dataset):
         os.makedirs(raw_dir, exist_ok=True)
 
         # Check if raw npz already exists from a previous download
-        individual_path = osp.join(raw_dir, f"{self.name}_dft.npz")
+        individual_path = osp.join(raw_dir, f"{self.mol_name}_dft.npz")
         if osp.exists(individual_path):
             return individual_path
 
         # Try bcebos bundle download (distributed-safe via get_datasets_path_from_url)
         try:
-            extract_dir = get_datasets_path_from_url(BCEBOS_URL, BCEBOS_MD5)
-            bundle_npz_path = osp.join(extract_dir, f"{self.name}_dft.npz")
+            extract_dir = get_datasets_path_from_url(self.url, self.md5)
+            bundle_npz_path = osp.join(extract_dir, f"{self.mol_name}_dft.npz")
             if osp.exists(bundle_npz_path):
                 return bundle_npz_path
         except Exception as e:
             logger.warning(
-                f"bcebos download failed for MD17/{self.name}: {e}. "
+                f"bcebos download failed for MD17/{self.mol_name}: {e}. "
                 "Falling back to individual URL."
             )
 
         # Fallback to individual molecule URL
         import urllib.request
 
-        url = MD17_MOLECULES[self.name]
-        logger.info(f"Downloading MD17/{self.name} from {url} ...")
+        url = _MOLECULE_URLS[self.mol_name]
+        logger.info(f"Downloading MD17/{self.mol_name} from {url} ...")
         try:
             urllib.request.urlretrieve(url, individual_path)
         except Exception as e:
             raise RuntimeError(
-                f"Failed to download MD17/{self.name} from {url}: {e}. "
+                f"Failed to download MD17/{self.mol_name} from {url}: {e}. "
                 "The bcebos mirror may also be unavailable."
             )
         return individual_path
 
     def __getitem__(self, idx):
         real_idx = self._indices[idx]
-        return {
+        sample = {
             "z": self._z.numpy(),
             "pos": self._pos[real_idx].numpy(),
             "energy": np.array([float(self._energy[real_idx])], dtype=np.float32),
             self.force_key: self._forces[real_idx].numpy(),
         }
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+        return sample
 
     def __len__(self):
         return self.num_samples
