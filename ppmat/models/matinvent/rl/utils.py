@@ -46,58 +46,9 @@ def get_device(device: Optional[str] = None) -> str:
 
 
 def create_optimizer(
-    model: nn.Layer, lr: float = 5e-4, opt_type: str = "Adam", **kwargs
+    model: nn.Layer, lr: float = 5e-4, **kwargs
 ) -> paddle.optimizer.Optimizer:
-    """Create optimizer using ppmat optimizer factory pattern.
-    Args:
-        model: Model to optimize
-        lr: Learning rate
-        opt_type: Optimizer type ('Adam', 'AdamW', etc.)
-        **kwargs: Additional optimizer parameters (weight_decay, grad_clip, etc.)
-
-    Returns:
-        PaddlePaddle optimizer
-    """
-    from ppmat.optimizer.optimizer import Adam as PpmatAdam
-    from ppmat.optimizer.optimizer import AdamW as PpmatAdamW
-
-    if opt_type == "Adam":
-        optimizer = PpmatAdam(learning_rate=lr, **kwargs)(model)
-    elif opt_type == "AdamW":
-        optimizer = PpmatAdamW(learning_rate=lr, **kwargs)(model)
-    else:
-        raise ValueError(f"Unsupported optimizer type: {opt_type}")
-
-    return optimizer
-
-
-def create_scheduler(
-    optimizer: paddle.optimizer.Optimizer, scheduler_type: str = "LinearLR", **kwargs
-) -> Optional[paddle.optimizer.lr.LRScheduler]:
-    """Create learning rate scheduler.
-
-    Args:
-        optimizer: Optimizer to schedule
-        scheduler_type: Scheduler type
-        **kwargs: Scheduler parameters (e.g., start_factor, total_iters)
-
-    Returns:
-        LRScheduler or None
-    """
-    if scheduler_type == "LinearLR":
-        start_factor = kwargs.get("start_factor", 0.1)
-        total_iters = kwargs.get("total_iters", 10)
-        scheduler = paddle.optimizer.lr.LinearLR(
-            learning_rate=optimizer.get_lr(),
-            start_factor=start_factor,
-            total_iters=total_iters,
-        )
-    elif scheduler_type is None or scheduler_type == "None":
-        return None
-    else:
-        raise ValueError(f"Unsupported scheduler type: {scheduler_type}")
-
-    return scheduler
+    return paddle.optimizer.Adam(learning_rate=lr, parameters=model.parameters(), **kwargs)
 
 
 def setup_rl_logger(log_file: Optional[str] = None, log_level: int = 20):

@@ -27,7 +27,6 @@ from typing import Tuple
 
 import numpy as np
 import paddle
-from ase.io import write
 from omegaconf import DictConfig
 from pymatgen.core.structure import Structure
 
@@ -35,6 +34,7 @@ from ppmat.models.matinvent.rewards.reward import Reward
 from ppmat.models.matinvent.rl.base import ReinL
 from ppmat.models.matinvent.rl.models.base import ModelSuite
 from ppmat.models.matinvent.rl.training_utils import is_valid_structure
+from ppmat.models.matinvent.rl.training_utils import save_structures
 from ppmat.models.matinvent.rl.utils import create_optimizer
 from ppmat.utils.scatter import scatter
 
@@ -113,7 +113,7 @@ class MatInvent(ReinL):
             valid_data = []
             valid_struc = []
             for data, struc in zip(sample_data, sample_struc):
-                if self._is_valid_structure(struc):
+                if is_valid_structure(struc):
                     valid_data.append(data)
                     valid_struc.append(struc)
 
@@ -128,8 +128,7 @@ class MatInvent(ReinL):
             logging.warning("No valid structures generated after retries!")
             return [], [], "", {}
 
-        # save all generated valid structures
-        self._save_structures(
+        save_structures(
             structures=valid_struc,
             save_dir=self.sample_dir,
             filename=f"step_{self.step:0>4d}_valid.extxyz",
@@ -150,52 +149,13 @@ class MatInvent(ReinL):
                 valid_data = valid_data[:max_num]
                 valid_struc = valid_struc[:max_num]
 
-        # save structures for evaluation
-        eval_xyz_path = self._save_structures(
+        eval_xyz_path = save_structures(
             structures=valid_struc,
             save_dir=self.sample_dir,
             filename=f"step_{self.step:0>4d}_eval.extxyz",
         )
 
         return valid_data, valid_struc, eval_xyz_path, metrics
-
-    def _is_valid_structure(self, struc: Structure) -> bool:
-        """Check if a structure is valid.
-
-        Delegates to training_utils.is_valid_structure for code reuse.
-        """
-        return is_valid_structure(struc)
-
-    def _save_structures(
-        self,
-        structures: List[Structure],
-        save_dir: str,
-        filename: str,
-    ) -> str:
-        """Save structures to extxyz file.
-
-        Args:
-            structures: List of pymatgen Structure objects
-            save_dir: Directory to save to
-            filename: Output filename
-
-        Returns:
-            Path to saved file
-        """
-        os.makedirs(save_dir, exist_ok=True)
-        out_path = os.path.join(save_dir, filename)
-
-        # Convert pymatgen structures to ASE atoms and write
-        from pymatgen.io.ase import AseAtomsAdaptor
-
-        adaptor = AseAtomsAdaptor()
-
-        with open(out_path, "w"):
-            for struc in structures:
-                atoms = adaptor.get_atoms(struc)
-                write(out_path, atoms, append=True)
-
-        return out_path
 
     def ft_step(self, data_list: List, rewards: np.ndarray, baseline: float):
         """Fine-tune the agent model on high-reward samples.
@@ -381,14 +341,12 @@ class MatInvent(ReinL):
             rewards, penalty_idx, tol_n, buff_n = self.ltm.div_filter(
                 sample_struc, rewards, **self.df_args
             )
-            [sample_list[p] for p in penalty_idx]
             penalty_strucs = [sample_struc[p] for p in penalty_idx]
             logging.info(f"Diversity filter: tol_n={tol_n}, buff_n={buff_n}")
 
         # topk data points
         sort_idx = np.argsort(rewards)[::-1]
         topk_idx = sort_idx[: int(self.finetune_cfg.batch_size * self.topk_ratio)]
-        [sample_list[_i] for _i in topk_idx]
         strucs_topk = [sample_struc[_i] for _i in topk_idx]
         reward_topk = rewards[topk_idx]
 
@@ -444,259 +402,142 @@ class MatInvent(ReinL):
         logging.info(f"Total time taken: {int(end_time - start_time)} s.")
 
     def _add_noise_to_model(self, model, batch, timestep: int):
-        """Add noise to batch for reinforcement learning fine-tuning.
-
-        This code is adapted from:
-
-        Args:
-            model: The diffusion model (agent or prior)
-            batch: Input batch data structure
-            timestep: Diffusion timestep (0 to num_train_timesteps-1)
-
-        Returns:
-            Tuple of (noisy_batch, clean_batch, timesteps)
-        """
-        # DiffCSP 等模型自带与自身 scheduler 兼容的 add_noise()，直接委托
-        if callable(getattr(model, "add_noise", None)):
-            return model.add_noise(batch, timestep)
-
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
-        batch_idx = paddle.repeat_interleave(
-            paddle.arange(batch_size), repeats=num_atoms
-        )
-
-        # Normalize timestep to [0, max_t] range
+        batch_idx = paddle.repeat_interleave(paddle.arange(batch_size), repeats=num_atoms)
         N = model.num_train_timesteps
-        max_t = model.max_t if hasattr(model, "max_t") else 1.0
-        time_list = paddle.linspace(max_t, 1.0 / N, N)
-        t = paddle.full([batch_size], time_list[timestep])
+        has_atom = hasattr(model, "atom_scheduler")
 
-        # Pre-corruption: normalize frac_coords to [0, 1)
+        if has_atom:
+            max_t = model.max_t if hasattr(model, "max_t") else 1.0
+            t = paddle.full([batch_size], paddle.linspace(max_t, 1.0 / N, N)[timestep])
+        else:
+            t = paddle.full([batch_size], timestep, dtype="int64")
+
         frac_coords = structure_array["frac_coords"] % 1.0
-
-        # Add noise to coordinates
         rand_x = paddle.randn(shape=frac_coords.shape, dtype=frac_coords.dtype)
-        input_frac_coords = model.coord_scheduler.add_noise(
-            frac_coords, rand_x, timesteps=t, batch_idx=batch_idx, num_atoms=num_atoms
-        )
 
-        # Add noise to lattice
-        if "lattice" in structure_array.keys():
+        if has_atom:
+            input_frac_coords = model.coord_scheduler.add_noise(
+                frac_coords, rand_x, timesteps=t, batch_idx=batch_idx, num_atoms=num_atoms
+            )
+        else:
+            input_frac_coords = model.coord_scheduler.add_noise(
+                frac_coords, rand_x, timesteps=t.repeat_interleave(repeats=num_atoms)
+            )
+            input_frac_coords = input_frac_coords % 1.0
+
+        if "lattice" in structure_array:
             lattices = structure_array["lattice"]
         else:
             from ppmat.models.mattergen.mattergen import lattice_params_to_matrix_paddle
-
-            lattices = lattice_params_to_matrix_paddle(
-                structure_array["lengths"], structure_array["angles"]
-            )
+            lattices = lattice_params_to_matrix_paddle(structure_array["lengths"], structure_array["angles"])
         rand_l = paddle.randn(shape=lattices.shape, dtype=lattices.dtype)
-        from ppmat.models.mattergen.mattergen import (  # isort: skip
-            make_noise_symmetric_preserve_variance,
-        )
 
-        rand_l = make_noise_symmetric_preserve_variance(rand_l)
-        input_lattice = model.lattice_scheduler.add_noise(
-            lattices, rand_l, timesteps=t, num_atoms=num_atoms
-        )
+        if has_atom:
+            from ppmat.models.mattergen.mattergen import make_noise_symmetric_preserve_variance
+            rand_l = make_noise_symmetric_preserve_variance(rand_l)
+        ls_kwargs = {"timesteps": t}
+        if has_atom:
+            ls_kwargs["num_atoms"] = num_atoms
+        input_lattice = model.lattice_scheduler.add_noise(lattices, rand_l, **ls_kwargs)
 
-        # Add noise to atom types
-        atom_type = structure_array["atom_types"]
-        atom_type_zero_based = atom_type - 1
-        input_atom_type_zero_based = model.atom_scheduler.add_noise(
-            atom_type_zero_based, timesteps=t, batch_idx=batch_idx
-        )
-        input_atom_type = input_atom_type_zero_based + 1
+        noisy_batch = {"structure_array": {"frac_coords": input_frac_coords, "lattice": input_lattice, "num_atoms": num_atoms}, "batch_idx": batch_idx, "rand_l": rand_l, "rand_x": rand_x, "clean_frac_coords": frac_coords}
 
-        # Create noisy batch structure
-        noisy_batch = {
-            "structure_array": {
-                "frac_coords": input_frac_coords,
-                "lattice": input_lattice,
-                "atom_types": input_atom_type,
-                "num_atoms": num_atoms,
-            },
-            "batch_idx": batch_idx,
-            # Store noise / clean tensors for loss calculation
-            "rand_l": rand_l,
-            "rand_x": rand_x,
-            "clean_frac_coords": frac_coords,
-            "atom_type_zero_based": atom_type_zero_based,
-            "input_atom_type_zero_based": input_atom_type_zero_based,
-        }
+        if has_atom:
+            atom_type = structure_array["atom_types"]
+            atom_type_zero_based = atom_type - 1
+            input_atom_type_zero_based = model.atom_scheduler.add_noise(atom_type_zero_based, timesteps=t, batch_idx=batch_idx)
+            input_atom_type = input_atom_type_zero_based + 1
+            noisy_batch["structure_array"]["atom_types"] = input_atom_type
+            noisy_batch["atom_type_zero_based"] = atom_type_zero_based
+            noisy_batch["input_atom_type_zero_based"] = input_atom_type_zero_based
+        else:
+            noisy_batch["structure_array"]["atom_types"] = structure_array["atom_types"]
 
-        # Return tuple format expected by calc_sample_loss
         return noisy_batch, batch, t
 
     def _calc_sample_loss_from_model(self, model, noised_input):
-        """Calculate sample loss for reinforcement learning fine-tuning.
-
-        This code is adapted from:
-
-        Args:
-            model: The diffusion model (agent or prior)
-            noised_input: Tuple of (noisy_batch, clean_batch, timesteps)
-
-        Returns:
-            Tuple of (loss, prediction_dict)
-        """
-        # DiffCSP 等模型自带与自身 scheduler 兼容的 calc_sample_loss()，直接委托
-        if callable(getattr(model, "calc_sample_loss", None)):
-            return model.calc_sample_loss(noised_input)
-
         noisy_batch, clean_batch, t = noised_input
-
         batch_idx = noisy_batch["batch_idx"]
-        structure_array_noisy = noisy_batch["structure_array"]
-        num_atoms = structure_array_noisy["num_atoms"]
-        batch_size = num_atoms.shape[0]
+        sn = noisy_batch["structure_array"]
+        num_atoms = sn["num_atoms"]
+        has_atom = hasattr(model, "atom_scheduler")
 
-        # Build the noise_batch dict that the model expects
-        noise_batch = {
-            "frac_coords": structure_array_noisy["frac_coords"],
-            "lattice": structure_array_noisy["lattice"],
-            "atom_types": structure_array_noisy["atom_types"],
-            "num_atoms": num_atoms,
-            "batch": batch_idx,
-        }
-
-        # Backward compatibility:
-        # - legacy path: decoder(...) -> tuple
-        # - current MatterGen path: model.model(x, t) -> dict
-        if hasattr(model, "decoder"):
-            eps_pos, lattice_update, atom_type_logits = model.decoder(
-                z=model.noise_level_encoding(t),
-                frac_coords=noise_batch["frac_coords"],
-                atom_types=noise_batch["atom_types"],
-                num_atoms=noise_batch["num_atoms"],
-                batch=noise_batch["batch"],
-                lattice=noise_batch["lattice"],
-            )
+        if has_atom:
+            nb = {"frac_coords": sn["frac_coords"], "lattice": sn["lattice"],
+                  "atom_types": sn["atom_types"], "num_atoms": num_atoms, "batch": batch_idx}
+            o = model.model(nb, t)
+            eps_pos, lattice_update = o["frac_coords"], o["lattice"]
         else:
-            score_model_output = model.model(noise_batch, t)
-            eps_pos = score_model_output["frac_coords"]
-            lattice_update = score_model_output["lattice"]
-            atom_type_logits = score_model_output["atom_types"]
+            pred_l, eps_pos = model.decoder(
+                model.time_embedding(t), sn["atom_types"] - 1,
+                sn["frac_coords"], sn["lattice"], num_atoms, batch_idx,
+            )
+            lattice_update = pred_l
 
-        # Retrieve stored noise/clean tensors from add_noise
         rand_l = noisy_batch["rand_l"]
         clean_frac_coords = noisy_batch["clean_frac_coords"]
-        atom_type_zero_based = noisy_batch["atom_type_zero_based"]
-        input_atom_type_zero_based = noisy_batch["input_atom_type_zero_based"]
 
-        # ----- coord loss: wrapped_normal_loss (score matching) -----
-        from ppmat.models.mattergen.mattergen import wrapped_normal_loss
-
-        clean_structure_array = clean_batch["structure_array"]
-        loss_coord = wrapped_normal_loss(
-            corruption=model.coord_scheduler,
-            score_model_output=eps_pos,
-            t=t,
-            batch_idx=batch_idx,
-            batch_size=batch_size,
-            x=clean_frac_coords,
-            noisy_x=structure_array_noisy["frac_coords"],
-            reduce="sum",
-            batch=clean_structure_array,
-        )
-
-        # ----- lattice loss: (pred + rand_l)^2 -----
-        loss_lattice = (lattice_update + rand_l).square().mean(axis=[1, 2])
-
-        # ----- atom type loss: D3PM -----
-        loss_atom_type, _, _ = model.atom_scheduler.compute_loss(
-            score_model_output=atom_type_logits,
-            t=t,
-            batch_idx=batch_idx,
-            batch_size=batch_size,
-            x=atom_type_zero_based,
-            noisy_x=input_atom_type_zero_based,
-            reduce="sum",
-            d3pm_hybrid_lambda=(
-                model.d3pm_hybrid_lambda
-                if hasattr(model, "d3pm_hybrid_lambda")
-                else None
-            ),
-        )
-
-        # Weighted per-sample loss (same weights as training)
-        coord_weight = getattr(model, "coord_loss_weight", 0.1)
-        lattice_weight = getattr(model, "lattice_loss_weight", 1.0)
-        atom_weight = getattr(model, "atom_loss_weight", 1.0)
-
-        total_loss = (
-            coord_weight * loss_coord
-            + lattice_weight * loss_lattice
-            + atom_weight * loss_atom_type
-        )
-
-        # Prediction dict for KL regularization
-        prediction_dict = {
-            "pos": eps_pos,
-            "cell": lattice_update,
-            "atomic_numbers": atom_type_logits,
-        }
+        if has_atom:
+            loss_lattice = (lattice_update + rand_l).square().mean(axis=[1, 2])
+            from ppmat.models.mattergen.mattergen import wrapped_normal_loss
+            loss_coord = wrapped_normal_loss(
+                corruption=model.coord_scheduler, score_model_output=eps_pos, t=t,
+                batch_idx=batch_idx, batch_size=num_atoms.shape[0],
+                x=clean_frac_coords, noisy_x=sn["frac_coords"],
+                reduce="sum", batch=clean_batch["structure_array"],
+            )
+            atom_type_zero_based = noisy_batch["atom_type_zero_based"]
+            input_atom_type_zero_based = noisy_batch["input_atom_type_zero_based"]
+            loss_atom_type, _, _ = model.atom_scheduler.compute_loss(
+                score_model_output=sn["atom_types"], t=t, batch_idx=batch_idx,
+                batch_size=num_atoms.shape[0], x=atom_type_zero_based,
+                noisy_x=input_atom_type_zero_based, reduce="sum",
+                d3pm_hybrid_lambda=getattr(model, "d3pm_hybrid_lambda", None),
+            )
+            cw = getattr(model, "coord_loss_weight", 0.1)
+            lw = getattr(model, "lattice_loss_weight", 1.0)
+            aw = getattr(model, "atom_loss_weight", 1.0)
+            total_loss = cw * loss_coord + lw * loss_lattice + aw * loss_atom_type
+            prediction_dict = {"pos": eps_pos, "cell": lattice_update, "atomic_numbers": sn["atom_types"]}
+        else:
+            loss_lattice = (lattice_update - rand_l).square().mean(axis=[1, 2])
+            loss_coord = paddle.pow(eps_pos - clean_frac_coords, 2).mean(axis=1)
+            loss_coord = scatter(loss_coord, batch_idx, dim=0, reduce="mean")
+            cw = getattr(model, "coord_loss_weight", 1.0)
+            lw = getattr(model, "lattice_loss_weight", 1.0)
+            total_loss = cw * loss_coord + lw * loss_lattice
+            prediction_dict = {"coords": eps_pos, "lattice": lattice_update}
 
         return total_loss, prediction_dict
 
     def _calc_kl_reg_from_models(self, agent_pred, prior_pred, batch):
-        """Calculate KL divergence regularization for reinforcement learning.
-
-
-        Uses paddle.scatter to replace torch_scatter.
-
-        Args:
-            agent_pred: Prediction dict from agent model
-                with keys 'pos', 'cell', 'atomic_numbers'
-            prior_pred: Prediction dict from prior
-                (frozen) model with same keys
-            batch: Input batch data
-
-        Returns:
-            KL divergence loss per sample (tensor of shape batch_size)
-        """
-        # DiffCSP 等模型自带与自身 prediction_dict 格式匹配的 calc_kl_reg()，直接委托
-        if callable(getattr(self.agent, "calc_kl_reg", None)):
-            return self.agent.calc_kl_reg(agent_pred, prior_pred, batch)
-
-        # Extract predictions from agent and prior
-        pred_x, pred_l, pred_t = (
-            agent_pred["pos"],
-            agent_pred["cell"],
-            agent_pred["atomic_numbers"],
-        )
-        pred_x_p, pred_l_p, pred_t_p = (
-            prior_pred["pos"].detach(),
-            prior_pred["cell"].detach(),
-            prior_pred["atomic_numbers"].detach(),
-        )
-
-        # Get batch index for aggregation
         if "batch_idx" in batch:
             batch_idx = batch["batch_idx"]
         elif "structure_array" in batch:
-            structure_array = batch["structure_array"]
-            num_atoms = structure_array["num_atoms"]
-            batch_size = num_atoms.shape[0]
-            batch_idx = paddle.repeat_interleave(
-                paddle.arange(batch_size), repeats=num_atoms
-            )
+            num_atoms = batch["structure_array"]["num_atoms"]
+            batch_idx = paddle.repeat_interleave(paddle.arange(num_atoms.shape[0]), repeats=num_atoms)
         else:
             raise ValueError("Cannot find batch index in batch input")
 
-        # Compute KL divergence for lattice (per sample)
-        kl_term0 = paddle.pow(pred_l - pred_l_p, 2).mean(axis=(1, 2))
+        if "pos" in agent_pred:
+            pred_x, pred_l = agent_pred["pos"], agent_pred["cell"]
+            pred_x_p, pred_l_p = prior_pred["pos"].detach(), prior_pred["cell"].detach()
+        else:
+            pred_x, pred_l = agent_pred["coords"], agent_pred["lattice"]
+            pred_x_p, pred_l_p = prior_pred["coords"].detach(), prior_pred["lattice"].detach()
 
-        # Compute KL divergence for positions (per atom, then aggregate to per sample)
+        kl_lattice = paddle.pow(pred_l - pred_l_p, 2).mean(axis=(1, 2))
         x_ap = paddle.pow(pred_x - pred_x_p, 2).mean(axis=1)
-        kl_term1 = scatter(x_ap, batch_idx, dim=0, reduce="mean")
+        kl_coord = scatter(x_ap, batch_idx, dim=0, reduce="mean")
+        kl_term = kl_lattice + kl_coord
 
-        # Compute KL divergence for atom types (per atom, then aggregate to per sample)
-        t_ap = paddle.pow(pred_t - pred_t_p, 2).mean(axis=1)
-        kl_term2 = scatter(t_ap, batch_idx, dim=0, reduce="mean")
-
-        # Total KL divergence is sum of all three terms
-        kl_term = kl_term0 + kl_term1 + kl_term2
+        if "pos" in agent_pred:
+            pred_t = agent_pred["atomic_numbers"]
+            pred_t_p = prior_pred["atomic_numbers"].detach()
+            t_ap = paddle.pow(pred_t - pred_t_p, 2).mean(axis=1)
+            kl_term += scatter(t_ap, batch_idx, dim=0, reduce="mean")
 
         return kl_term

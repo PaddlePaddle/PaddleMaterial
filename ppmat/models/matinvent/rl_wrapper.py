@@ -1,17 +1,12 @@
 #!/usr/bin/env python
 # Copyright (c) 2025 PaddlePaddle Materials Authors. All Rights Reserved.
 
-import builtins
 import os
 import sys
 
 import paddle
 import paddle.nn as nn
 from omegaconf import OmegaConf
-
-import ppmat.models
-
-builtins.ppmat = ppmat
 
 
 class RLWrapperModel(nn.Layer):
@@ -118,70 +113,39 @@ class RLWrapperModel(nn.Layer):
             self._sample_model.train()
         return self
 
+    CONFIG_CANDIDATES = [
+        "structure_generation/configs/matinvent/matinvent_mattergen.yaml",
+        "configs/matinvent/matinvent_mattergen.yaml",
+        "structure_generation/configs/mattergen/mattergen_mp20.yaml",
+    ]
+    MODEL_TYPE = "mattergen"
+
+    @classmethod
+    def _find_config(cls):
+        config_path = os.environ.get("CONFIG_PATH")
+        if not config_path:
+            for c in cls.CONFIG_CANDIDATES:
+                if os.path.exists(c):
+                    config_path = c
+                    break
+        if not config_path:
+            raise ValueError("Set CONFIG_PATH environment variable to a matinvent yaml config.")
+        return config_path
+
     def forward(self, batch_data):
-        """Execute RL training when forward is called."""
-        # Get config path from environment variable or current working directory
-        config_path = os.environ.get("CONFIG_PATH", None)
-
-        # If config_path not set, try to find it from common locations
-        if not config_path:
-            # Check current directory
-            if os.path.exists(
-                "structure_generation/configs/matinvent" "/matinvent_mattergen.yaml"
-            ):
-                config_path = (
-                    "structure_generation/configs/matinvent" "/matinvent_mattergen.yaml"
-                )
-            elif os.path.exists("configs/matinvent/matinvent_mattergen.yaml"):
-                config_path = "configs/matinvent/matinvent_mattergen.yaml"
-            else:
-                # Try to find any yaml file in configs directory
-                import glob
-
-                yaml_files = glob.glob("**/*.yaml", recursive=True)
-                if yaml_files:
-                    config_path = yaml_files[0]
-
-        if not config_path:
-            raise ValueError(
-                "Could not find config file. " "Set CONFIG_PATH environment variable."
-            )
-
-        # Load config to determine model type
+        config_path = self._find_config()
         config = OmegaConf.load(config_path)
-        model_type = "mattergen"
-        if (
-            "diffcsp" in config_path.lower()
-            or "diffcsp" in str(config.get("Model", {})).lower()
-        ):
-            model_type = "diffcsp"
-
-        # Get output directory from config (prefer trainer output_dir).
         output_dir = config.get("Trainer", {}).get(
             "output_dir",
             config.get("Global", {}).get("output_dir", "./output/matinvent"),
         )
 
-        # Build RL training arguments
-        rl_args = [
-            "--config",
-            config_path,
-            "--model",
-            model_type,
-            "--output_dir",
-            output_dir,
-        ]
-
-        # Temporarily modify sys.argv and execute RL training
         original_argv = sys.argv
-        sys.argv = ["rl_wrapper.py"] + rl_args
-
+        sys.argv = ["rl_wrapper.py", "--config", config_path, "--model", self.MODEL_TYPE, "--output_dir", output_dir]
         try:
             from ppmat.models.matinvent.rl_train import main as rl_main
-
             rl_main()
         finally:
             sys.argv = original_argv
 
-        # Return a dummy loss dict to satisfy the trainer
         return {"loss_dict": {"loss": self._dummy_param * 0.0}}

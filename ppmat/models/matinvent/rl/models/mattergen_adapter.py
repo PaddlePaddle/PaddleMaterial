@@ -23,7 +23,6 @@ Replaces the monkey patching approach in compat.py.
 """
 
 from typing import Dict
-from typing import List
 
 import paddle
 
@@ -135,10 +134,9 @@ class MatterGenRLAdapter:
         if hasattr(self._base_model, "noise_level_encoding"):
             return self._base_model.noise_level_encoding(t)
         else:
-            # Fallback: use sinusoidal embedding
-            from ppmat.models.common.sinusoidal_embedding import SinusoidalEmbedding
+            from ppmat.models.common.sinusoidal_embedding import SinusoidalEmbeddings
 
-            return SinusoidalEmbedding(dim=self.time_dim)(t)
+            return SinusoidalEmbeddings(dim=self.time_dim)(t)
 
     # MatterGen 不实现 add_noise / calc_sample_loss / calc_kl_reg；
     # 这些计算由 MatInvent._add_noise_to_model / _calc_sample_loss_from_model /
@@ -175,65 +173,5 @@ class MatterGenRLAdapter:
         return self._base_model(*args, **kwargs)
 
 
-class MatterGenAdapterFactory:
-    """Factory for creating adapted MatterGen models.
-
-    This factory provides a clean interface for creating RL-adapted
-    MatterGen models while preserving the original model's weights.
-    """
-
-    @staticmethod
-    def create_adapter(base_model) -> MatterGenRLAdapter:
-        """Create an RL adapter for a MatterGen model.
-
-        Args:
-            base_model: An instance of MatterGen or MatterGenWithCondition
-
-        Returns:
-            MatterGenRLAdapter wrapping the base model
-
-        Example:
-            >>> base_model = MatterGen(...)
-            >>> adapted = MatterGenAdapterFactory.create_adapter(base_model)
-            >>> # Use adapted.model for all operations
-        """
-        return MatterGenRLAdapter(base_model)
-
-    @staticmethod
-    def create_adapted_batch(
-        models: List, adapter_class: type = MatterGenRLAdapter
-    ) -> List:
-        """Create adapters for a batch of models.
-
-        Args:
-            models: List of MatterGen instances
-            adapter_class: Adapter class to use (for testing/customization)
-
-        Returns:
-            List of adapted models
-        """
-        return [adapter_class(model) for model in models]
-
-
 def create_matinvent_adapter(model) -> MatterGenRLAdapter:
-    """Convenience function to create an adapter.
-
-    This is the main entry point for creating RL-adapted MatterGen models.
-
-    Args:
-        model: MatterGen or MatterGenWithCondition instance
-
-    Returns:
-        MatterGenRLAdapter instance
-
-    Example:
-        >>> from ppmat.models.mattergen.mattergen import MatterGen
-        >>> from ppmat.models.matinvent.rl.models.mattergen_adapter import (  # noqa
-        ...     create_matinvent_adapter,
-        ... )
-        >>>
-        >>> base_model = MatterGen(...)
-        >>> agent = create_matinvent_adapter(base_model)
-        >>> prior = create_matinvent_adapter(base_model)
-    """
-    return MatterGenAdapterFactory.create_adapter(model)
+    return MatterGenRLAdapter(model)

@@ -30,8 +30,6 @@ from pymatgen.core.structure import Structure
 from ppmat.models.matinvent.memory.ltm import LongTimeMem
 from ppmat.models.matinvent.memory.replay_buffer import ReplayBuffer
 from ppmat.models.matinvent.rewards.reward import Reward
-from ppmat.models.matinvent.rl.utils import create_optimizer
-from ppmat.models.matinvent.rl.utils import create_scheduler
 from ppmat.models.matinvent.rl.utils import get_device
 
 
@@ -84,25 +82,6 @@ class ReinL:
             self.replay = ReplayBuffer(**replay_args)
         else:
             self.replay = None
-
-    def init_optimizer(self, lr=5e-4, opt_type="Adam", **kwargs):
-        """Initialize optimizer using ppmat utility."""
-        self.optimizer = create_optimizer(
-            model=self.agent, lr=lr, opt_type=opt_type, **kwargs
-        )
-
-    def init_scheduler(self, scheduler_type="LinearLR", **kwargs):
-        """Initialize learning rate scheduler using ppmat utility."""
-        self.scheduler = create_scheduler(
-            optimizer=self.optimizer, scheduler_type=scheduler_type, **kwargs
-        )
-
-    def freeze_model(self, freeze):
-        """Freeze model parameters."""
-        n_freeze = freeze * 4 + 1
-        for i, param in enumerate(self.agent.network.parameters()):
-            if i < n_freeze:  # Freeze parameter
-                param.stop_gradient = True
 
     def reward_step(
         self,
