@@ -572,6 +572,89 @@ class MolecularGraphConverter:
             )
 
 
+class SphereNetRadiusGraph:
+    """Build radius graph from raw 3D coordinates for spherical message passing.
+
+    Unlike other graph converters in this module which operate on material
+    structures during dataset preprocessing, this converter works on raw
+    tensors during the model forward pass, as SphereNet processes molecular
+    coordinates dynamically.
+
+    Args:
+        cutoff: Neighbor cutoff distance in Ångström.
+    """
+
+    def __init__(self, cutoff: float = 5.0):
+        self.cutoff = cutoff
+
+    def __call__(self, pos, batch, loop=False):
+        """Compute edge indices within cutoff radius.
+
+        Args:
+            pos: Tensor [num_nodes, 3] — coordinates.
+            batch: Tensor [num_nodes] — batch assignment.
+            loop: Whether to include self-loops.
+
+        Returns:
+            edge_index: Tensor [2, num_edges] — (src, dst).
+        """
+        return _radius_graph_impl(pos, self.cutoff, batch, loop)
+
+
+def _radius_graph_impl(pos, r, batch, loop=False, max_num_neighbors=32):
+    """Build a radius graph from 3D positions (internal implementation).
+
+    Computes all pairwise distances within the same molecule (determined by
+    the batch assignment) and returns edges where the distance is within the
+    cutoff radius.
+
+    This is a pure-Paddle implementation (no external cluster library needed)
+    using the full N x N distance matrix. For large systems, a grid-based
+    approach may be more efficient.
+
+    Args:
+        pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
+        r: Cutoff radius.
+        batch: Tensor of shape [num_nodes] — batch assignment (int64).
+        loop: Whether to include self-loops. Defaults to False.
+        max_num_neighbors: Maximum number of neighbors per node (not enforced
+            in this simple implementation — use a grid-based method for large
+            systems).
+
+    Returns:
+        edge_index: Tensor of shape [2, num_edges] — (source, target) indices.
+    """
+    pos = paddle.cast(pos, paddle.get_default_dtype())
+    num_nodes = pos.shape[0]
+
+    # Pairwise squared distances using: ||a-b||^2 = ||a||^2 + ||b||^2 - 2*a·b
+    pos_sq = paddle.sum(pos * pos, axis=-1)  # [N]
+    pos_sq_expand = pos_sq.unsqueeze(0).expand([num_nodes, -1])  # [N, N]
+    pos_dot = paddle.mm(pos, pos.transpose([1, 0]))  # [N, N]
+    dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
+
+    # Mask: within cutoff
+    mask = dist_sq <= r * r
+
+    # Mask: same molecule (batch)
+    batch_x = batch.unsqueeze(0).expand([num_nodes, -1])  # [N, N]
+    batch_y = batch.unsqueeze(-1).expand([-1, num_nodes])  # [N, N]
+    same_batch = batch_x == batch_y
+    mask = mask & same_batch
+
+    if not loop:
+        # Mask out self-loops (float eye cast to bool for GPU compat)
+        diag_mask = paddle.eye(num_nodes, dtype=paddle.get_default_dtype()).cast(
+            paddle.bool
+        )
+        mask = mask & ~diag_mask
+
+    # Get edge indices
+    edge_index = paddle.nonzero(mask, as_tuple=False).transpose([1, 0])
+
+    return edge_index
+
+
 def subgraph(
     subset: Union[np.ndarray, List[int]],
     edge_index: np.ndarray,

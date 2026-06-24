@@ -21,7 +21,7 @@ from ppmat.models.common.initializer import glorot_orthogonal_
 from ppmat.models.common.spherical_fourier_bessel import AngleEmbedding
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
 from ppmat.models.common.spherical_fourier_bessel import TorsionEmbedding
-from ppmat.utils.graph_utils import radius_graph
+from ppmat.models.common.graph_converter import SphereNetRadiusGraph
 from ppmat.utils.scatter import scatter_sum
 from ppmat.utils.xyz_utils import xyz_to_dat
 
@@ -340,6 +340,7 @@ class SphereNet(paddle.nn.Layer):
         self.cutoff = cutoff
         self.energy_and_force = energy_and_force
         self.use_extra_node_feature = use_extra_node_feature
+        self.radius_graph = SphereNetRadiusGraph(cutoff=cutoff)
 
         if use_extra_node_feature:
             self.extra_emb = Linear(extra_node_feature_dim, hidden_channels)
@@ -430,7 +431,7 @@ class SphereNet(paddle.nn.Layer):
             extra_node_feature = None
 
         with paddle.no_grad():
-            edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+            edge_index = self.radius_graph(pos, batch=batch)
             num_nodes = z.shape[0]
             dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
                 pos, edge_index, num_nodes, use_torsion=True
