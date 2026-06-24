@@ -17,16 +17,12 @@ import copy
 import paddle  # noqa
 
 from ppmat.metrics.csp_metric import CSPMetric
-from ppmat.metrics.ecd_metric import ECDMetrics
-from ppmat.metrics.ir_metric import IRMetrics
 from ppmat.metrics.diffnmr_streaming_adapter import DiffNMRStreamingAdapter
 from ppmat.metrics.sfin_metric import SFINStreamingAdapter
 
 __all__ = [
     "build_metric",
     "CSPMetric",
-    "ECDMetrics",
-    "IRMetrics",
     "DiffNMRStreamingAdapter",
     "SFINStreamingAdapter",
     # "DiffNMRMetric",

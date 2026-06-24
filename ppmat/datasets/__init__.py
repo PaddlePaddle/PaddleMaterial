@@ -30,9 +30,11 @@ from paddle.io import DataLoader
 from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
+from ppmat.datasets.density_dataset import DensityDataset
 from ppmat.datasets.high_level_water_dataset import HighLevelWaterDataset
 from ppmat.datasets.jarvis_dataset import JarvisDataset
 from ppmat.datasets.matbench_dataset import MatbenchDataset
+from ppmat.datasets.md17_dataset import MD17Dataset  # noqa
 from ppmat.datasets.mp20_dataset import AlexMP20MatterGenDataset
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
@@ -45,12 +47,9 @@ from ppmat.datasets.density_dataset import DensityDataset
 from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.sfin_dataset import SFINDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
-from ppmat.datasets.md17_dataset import MD17Dataset  # noqa
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
-from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
-from ppmat.datasets.ir_dataset import IRDataset
-from ppmat.datasets.ecd_dataset import ECDDataset
+from ppmat.datasets.qm9_dataset import QM9Dataset  # noqa
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.utils import logger
@@ -68,13 +67,11 @@ __all__ = [
     "HighLevelWaterDataset",
     "MSDnmrDataset",
     "MatbenchDataset",
-    "DensityDataset", 
+    "DensityDataset",
     "SmallDensityDataset",
     "SFINDataset",
     "OMol25Dataset",
     "MD17Dataset",
-    "IRDataset",
-    "ECDDataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
@@ -106,6 +103,7 @@ def term_mp(sig_num, frame):
     print("main proc {} exit, kill process group " "{}".format(pid, pgid))
     os.killpg(pgid, signal.SIGKILL)
 
+
 def set_signal_handlers():
     """
     Set up signal handlers for safe process group termination.
@@ -115,7 +113,7 @@ def set_signal_handlers():
     2. The current process is the process group leader
 
     This allows safe termination of the entire process group via:
-    - Ctrl+C (SIGINT) 
+    - Ctrl+C (SIGINT)
     - Termination signals (SIGTERM)
 
     Safety Notes:
@@ -285,7 +283,7 @@ def set_build_sample(sampler_cfg, world_size, dataset):
             )
         batch_sampler = getattr(io, batch_sampler_cls)(
             dataset,
-            batch_size=2, # use default batch_size=2 to avoid error when batch_sampler is not specified
+            batch_size=init_params["batch_size"],
             shuffle=False,
             drop_last=False,
         )

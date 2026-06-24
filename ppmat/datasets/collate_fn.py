@@ -33,46 +33,32 @@ from ppmat.datasets.geometric_data_type.data import Data
 
 
 class DefaultCollator(object):
-    """Default collator for Paddle DataLoader.
-
-    Supports standard types (Tensor, ndarray, dict, list, number, None,
-    ``pgl.Graph``, ``Data``) and automatically detects node-batch
-    (variable-length) dicts where arrays have varying first dimensions
-    — these are concatenated along axis 0 with a ``batch`` index tensor
-    injected, while scalar targets are stacked.
-
-    This collator is the single entry point; ``NodeBatchCollator`` from
-    earlier versions has been merged into this class.
-    """
-
     def __call__(self, batch: List[Any]) -> Any:
-        """Collate a batch of samples.
+        """Default_collate_fn for paddle dataloader.
+
+        NOTE: This `default_collate_fn` is different from official `default_collate_fn`
+        which specially adapt case where sample is `None` and `pgl.Graph`.
+
+        ref: https://github.com/PaddlePaddle/Paddle/blob/develop/python/paddle/io/dataloader/collate.py#L25
 
         Args:
-            batch: List of samples from a DataLoader.
+            batch (List[Any]): Batch of samples to be collated.
 
         Returns:
-            Collated batch data.
+            Any: Collated batch data.
         """
         sample = batch[0]
         if sample is None:
             return None
 
-        # --- Node-batch detection (merged from NodeBatchCollator) ---
-        # Heuristic: dict where _all_ values are ndarray with ndim < 2 and
-        # shape[0] > 1 do NOT trigger node-batch (those are scalar targets).
-        # Node-batch is triggered when _some_ arrays have ndim >= 2.
+        # Dict with all-ndarray values: detect node-batch (variable-length)
+        # by checking if any array has ndim >= 2 or shape[0] > 1.
         if isinstance(sample, Mapping) and all(
             isinstance(v, np.ndarray) for v in sample.values()
         ):
-            # Check if this is a node-batch scenario
-            has_variable_arrays = any(
-                val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()
-            )
-            if has_variable_arrays:
+            if any(val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()):
                 return self._collate_node_batch(batch)
 
-        # --- Standard collation (original DefaultCollator logic) ---
         if isinstance(sample, ConcatNumpyWarper):
             batch = np.concatenate(batch, axis=0)
             return batch
@@ -85,6 +71,7 @@ class DefaultCollator(object):
             batch = np.array(batch)
             return batch
         elif isinstance(sample, Data):
+            # Geometric `Data` objects: batch them into a single `Batch`
             return Batch.from_data_list(batch)
         elif isinstance(sample, (str, bytes)):
             return batch
@@ -96,7 +83,11 @@ class DefaultCollator(object):
                 raise RuntimeError("Fields number not same among samples in a batch")
             return [self(fields) for fields in zip(*batch)]
         elif str(type(sample)) == "<class 'pgl.graph.Graph'>":
+            # use str(type()) instead of isinstance() in case of pgl is not installed.
             graphs = pgl.Graph.batch(batch)
+            # NOTE: when num_works >1, graphs.tensor() will convert numpy.ndarray to
+            # CPU Tensor, which will cause error in model training.
+            # graphs.tensor()
             return graphs
         elif isinstance(sample, ConcatData):
             return ConcatData.batch(batch)
@@ -106,35 +97,21 @@ class DefaultCollator(object):
         )
 
     @staticmethod
-    def _collate_node_batch(batch: List[dict]) -> dict:
-        """Collate variable-length node tensors (merged NodeBatchCollator logic).
+    def _collate_node_batch(batch):
+        """Collate variable-length node arrays from a dict of ndarrays.
 
-        Each sample is a dict with node-level arrays (variable-length first dim)
-        and scalar targets. Arrays are concatenated along axis 0 and a ``batch``
-        index tensor maps each node back to its originating sample.
-
-        Returns:
-            Dict with concatenated node arrays, ``batch`` index, and stacked
-            target tensors.
+        Arrays with variable first dimension are concatenated along axis 0;
+        a ``batch`` index tensor maps each row back to its originating sample.
+        Scalar arrays (ndim < 2, shape[0] <= 1) are stacked.
         """
         sample = batch[0]
-        all_keys = list(sample.keys())
+        node_keys = [k for k, v in sample.items() if v.ndim >= 2 or v.shape[0] > 1]
+        target_keys = [k for k in sample.keys() if k not in node_keys]
 
-        node_keys = []
-        target_keys = []
-        for k in all_keys:
-            arr = sample[k]
-            if arr.ndim >= 2 or arr.shape[0] > 1:
-                node_keys.append(k)
-            else:
-                target_keys.append(k)
-
-        node_tensors = {}
-        for k in node_keys:
-            node_tensors[k] = paddle.to_tensor(
-                np.concatenate([b[k] for b in batch]),
-            )
-
+        node_tensors = {
+            k: paddle.to_tensor(np.concatenate([b[k] for b in batch]))
+            for k in node_keys
+        }
         num_nodes_list = [b[node_keys[0]].shape[0] for b in batch]
         batch_idx = paddle.concat(
             [
@@ -142,13 +119,9 @@ class DefaultCollator(object):
                 for i, n in enumerate(num_nodes_list)
             ]
         )
-
-        target_tensors = {}
-        for k in target_keys:
-            target_tensors[k] = paddle.to_tensor(
-                np.stack([b[k] for b in batch]),
-            )
-
+        target_tensors = {
+            k: paddle.to_tensor(np.stack([b[k] for b in batch])) for k in target_keys
+        }
         return {**node_tensors, "batch": batch_idx, **target_tensors}
 
 
@@ -390,7 +363,87 @@ def pad_sequence(sequences, batch_first=False, padding_value=0):
     return out_tensor
 
 
-# NodeBatchCollator is merged into DefaultCollator.
-# This alias preserves backward compatibility for configs that
-# explicitly reference it by name.
-NodeBatchCollator = DefaultCollator
+class ECDCollator(DefaultCollator):
+    def __call__(self, batch: List[Any]) -> Any:
+        batch = [list(x) for x in zip(*batch)]  # transpose
+        for i in range(len(batch)):  # Group into batches
+            batch[i] = Batch.from_data_list(batch[i])
+
+        batch0 = batch[0]
+        batch1 = batch[1]
+
+        # Unpack Data to Tensor dictionary
+        batch_atom_bond, batch_bond_angle = batch0, batch1
+        x, edge_index, edge_attr, query_mask = (
+            batch_atom_bond.x,
+            batch_atom_bond.edge_index,
+            batch_atom_bond.edge_attr,
+            batch_atom_bond.query_mask,
+        )
+        ba_edge_index, ba_edge_attr = (
+            batch_bond_angle.edge_index,
+            batch_bond_angle.edge_attr,
+        )
+        batch_data = batch_atom_bond.batch
+        pos_gt = batch_atom_bond.peak_position
+        height_gt = batch_atom_bond.peak_height
+        num_gt = batch_atom_bond.peak_num
+        return (
+            {
+                "x": x,
+                "edge_index": edge_index,
+                "edge_attr": edge_attr,
+                "batch_data": batch_data,
+                "ba_edge_index": ba_edge_index,
+                "ba_edge_attr": ba_edge_attr,
+                "query_mask": query_mask,
+            },
+            {
+                "peak_number": num_gt,
+                "peak_position": pos_gt,
+                "peak_height": height_gt,
+            },
+        )
+
+
+class IRCollator(DefaultCollator):
+    """IR dataset specific collator, returns Tensor dictionary"""
+
+    def __call__(self, batch: List[Any]) -> Any:
+        batch = [list(x) for x in zip(*batch)]  # transpose
+        for i in range(len(batch)):
+            batch[i] = Batch.from_data_list(batch[i])
+
+        batch_atom_bond, batch_bond_angle = batch[0], batch[1]
+
+        x, edge_index, edge_attr, query_mask = (
+            batch_atom_bond.x,
+            batch_atom_bond.edge_index,
+            batch_atom_bond.edge_attr,
+            batch_atom_bond.query_mask,
+        )
+        ba_edge_index, ba_edge_attr = (
+            batch_bond_angle.edge_index,
+            batch_bond_angle.edge_attr,
+        )
+        batch_data = batch_atom_bond.batch
+        pos_gt = batch_atom_bond.peak_position
+        height_gt = batch_atom_bond.peak_height
+        num_gt = batch_atom_bond.peak_num
+
+        return (
+            {
+                "x": x,
+                "edge_index": edge_index,
+                "edge_attr": edge_attr,
+                "batch_data": batch_data,
+                "ba_edge_index": ba_edge_index,
+                "ba_edge_attr": ba_edge_attr,
+                "query_mask": query_mask,
+            },
+            {
+                "peak_number": num_gt,
+                "peak_position": pos_gt,
+                "peak_height": height_gt,
+            },
+        )
