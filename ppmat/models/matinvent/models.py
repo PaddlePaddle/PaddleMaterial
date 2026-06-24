@@ -22,9 +22,9 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 from pymatgen.core.structure import Structure
 
-from ppmat.models.matinvent.rl.data import create_rl_dataloader
-from ppmat.models.matinvent.rl.data import DiffCSPSampler
-from ppmat.models.matinvent.rl.data import MatterGenSampler
+from ppmat.models.matinvent.data import create_rl_dataloader
+from ppmat.models.matinvent.data import DiffCSPSampler
+from ppmat.models.matinvent.data import MatterGenSampler
 
 
 _DIFFCSP_DEFAULT_CFG = dict(

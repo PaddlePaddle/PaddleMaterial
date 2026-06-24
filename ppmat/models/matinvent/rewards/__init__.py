@@ -14,8 +14,6 @@
 
 """
 Reward system for reinforcement learning.
-
-This code is adapted from:
 """
 
 from ppmat.models.matinvent.rewards.base import Calculator

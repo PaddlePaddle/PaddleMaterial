@@ -26,11 +26,11 @@ from omegaconf import OmegaConf
 from pymatgen.core.structure import Structure
 
 from ppmat.models.matinvent.rewards.reward import Reward
-from ppmat.models.matinvent.memory.memory import LongTimeMem
-from ppmat.models.matinvent.memory.memory import ReplayBuffer
-from ppmat.models.matinvent.rl.data import is_valid_structure
-from ppmat.models.matinvent.rl.data import save_structures
-from ppmat.models.matinvent.rl.models import ModelSuite
+from ppmat.models.matinvent.memory import LongTimeMem
+from ppmat.models.matinvent.memory import ReplayBuffer
+from ppmat.models.matinvent.data import is_valid_structure
+from ppmat.models.matinvent.data import save_structures
+from ppmat.models.matinvent.models import ModelSuite
 from ppmat.utils.scatter import scatter
 
 

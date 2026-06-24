@@ -12,12 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 import sys
 
 import paddle
 import paddle.nn as nn
 from omegaconf import OmegaConf
+
+from ppmat.models.matinvent.rewards.reward import Reward
+from ppmat.models.matinvent.core import MatInvent
+from ppmat.models.matinvent.models import DiffCSPSuite
+from ppmat.models.matinvent.models import MatterGenSuite
+from ppmat.utils import logger as ppmat_logger
 
 
 class RLWrapperModel(nn.Layer):
@@ -103,15 +110,7 @@ class RLWrapperModel(nn.Layer):
 
     def forward(self, batch_data):
         config_path = self._find_config()
-        config = OmegaConf.load(config_path)
-        output_dir = config.get("Trainer", {}).get("output_dir", config.get("Global", {}).get("output_dir", "./output/matinvent"))
-        orig_argv = sys.argv
-        sys.argv = ["wrapper.py", "--config", config_path, "--model", self.MODEL_TYPE, "--output_dir", output_dir]
-        try:
-            from ppmat.models.matinvent.rl_train import main as rl_main
-            rl_main()
-        finally:
-            sys.argv = orig_argv
+        _run_rl_training(config_path, self.MODEL_TYPE)
         return {"loss_dict": {"loss": self._dummy_param * 0.0}}
 
 
@@ -147,3 +146,44 @@ class DiffCSPRLWrapper(RLWrapperModel):
         if "num_inference_steps" not in sample_params:
             sample_params["num_inference_steps"] = int(os.environ.get("MATINVENT_NUM_INFERENCE_STEPS", "1000"))
         return model.sample(data, **sample_params)
+
+
+def _run_rl_training(config_path: str, model_type: str):
+    config = OmegaConf.load(config_path)
+    output_dir = config.get("Trainer", {}).get("output_dir", config.get("Global", {}).get("output_dir", "./output/matinvent"))
+    os.makedirs(output_dir, exist_ok=True)
+    log_file = os.path.join(output_dir, "training.log")
+    ppmat_logger.init_logger(name="matinvent_rl", log_file=log_file, log_level=20)
+    logger = ppmat_logger._logger
+    logger.info(f"Config: {config_path}, output: {output_dir}")
+
+    suite_cls = MatterGenSuite if model_type == "mattergen" else DiffCSPSuite
+    model_suite = suite_cls(
+        model_name=model_type, sample_cfg=config.RL.sample_cfg,
+        finetune_cfg=config.RL.finetune_cfg, model_path=config.get("model_path"),
+        device=config.get("Global", {}).get("device"),
+    )
+    reward = Reward(root_dir=os.path.join(output_dir, "rewards"),
+                    prop_cfg=config.RL.reward_cfg.prop_cfg,
+                    reward_threshold=config.RL.reward_cfg.reward_threshold,
+                    reduce=config.RL.reward_cfg.reduce)
+
+    mat_invent = MatInvent(rl_epoch=config.RL.rl_epoch, model_suite=model_suite,
+                           reward=reward, sample_cfg={}, finetune_cfg={},
+                           topk_ratio=config.RL.topk_ratio, save_dir=output_dir,
+                           save_freq=config.RL.save_freq, device=str(paddle.get_device()),
+                           logger=logger,
+                           replay=config.RL.get("replay_cfg") is not None,
+                           replay_args=config.RL.get("replay_cfg", {}),
+                           div_filter=config.RL.div_filter_cfg.enabled,
+                           df_args=config.RL.div_filter_cfg)
+    mat_invent.run_rl()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True)
+    parser.add_argument("--model", type=str, default="mattergen", choices=["mattergen", "diffcsp"])
+    parser.add_argument("--output_dir", type=str, default=None)
+    args = parser.parse_args()
+    _run_rl_training(args.config, args.model)
