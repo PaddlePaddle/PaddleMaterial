@@ -45,7 +45,6 @@ class ReplayBuffer:
         self.buffer_size = capacity if capacity is not None else buffer_size
         self.sample_size = sample_size
         self.reward_cutoff = reward_cutoff
-        # Stores the top N highest reward crystal generated so far
         self.buffer = pd.DataFrame(
             columns=["data", "struc", "comp", "ele_comb", "reward"]
         )
@@ -63,18 +62,6 @@ class ReplayBuffer:
             comb = tuple(sorted(elements))
             ele_comb.append(comb)
 
-        # cs_list, pg_list, sg_list = [], [], []
-        # for struc in strucs:
-        #     analyzer = SpacegroupAnalyzer(struc)
-        #     # Get the crystal system
-        #     crystal_system = analyzer.get_crystal_system()
-        #     # Get the point group
-        #     point_group = analyzer.get_point_group_symbol()
-        #     # Get the space group symbol and number
-        #     space_group = analyzer.get_space_group_symbol()
-        #     cs_list.append(crystal_system)
-        #     pg_list.append(point_group)
-        #     sg_list.append(space_group)
 
         df_sam = pd.DataFrame.from_dict(
             {
@@ -92,7 +79,6 @@ class ReplayBuffer:
         unique_df = self.deduplicate(df_all)
         sorted_df = unique_df.sort_values("reward", ascending=False)
         self.buffer = sorted_df.head(self.buffer_size)
-        # reward cutoff
         self.buffer = self.buffer.loc[self.buffer["reward"] > self.reward_cutoff]
 
     def deduplicate(self, df: pd.DataFrame, method="composition") -> pd.DataFrame:

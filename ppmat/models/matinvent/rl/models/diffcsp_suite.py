@@ -30,8 +30,6 @@ from ppmat.models.matinvent.rl.datasets import create_rl_dataloader
 from ppmat.models.matinvent.rl.models.base import ModelSuite
 from ppmat.models.matinvent.rl.samplers import DiffCSPSampler as Sampler
 
-# DiffCSP mp-20 standard model configuration
-# (参照 structure_generation/configs/diffcsp/diffcsp_mp20.yaml)
 _DIFFCSP_DEFAULT_CFG = dict(
     decoder_cfg=dict(
         hidden_dim=512,
@@ -112,8 +110,6 @@ class DiffCSPSuite(ModelSuite):
 
         model = DiffCSP(**_DIFFCSP_DEFAULT_CFG)
 
-        # The checkpoint contains bare CSPNet weights; DiffCSP wraps it as
-        # self.decoder, so we prepend 'decoder.' to each key.
         raw_sd = paddle.load(str(ckpt_path))
         state_dict = {"decoder." + k: v for k, v in raw_sd.items()}
         model.set_state_dict(state_dict)

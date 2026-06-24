@@ -178,14 +178,12 @@ def predict(struc_list, model_dir=MODEL_PATH, emb_path=EMB_PATH, device=None):
     )
     pred_list = []
 
-    # Load ensemble of models (default 100 models)
     for i in range(1, 101):
         modelpath = os.path.join(model_dir, f"checkpoint_bag_{i}.pth.tar")
         if os.path.isfile(modelpath):
             model_checkpoint = paddle.load(path=str(modelpath))
             model_args = argparse.Namespace(**model_checkpoint["args"])
         else:
-            # Skip if model file doesn't exist
             continue
 
         model = Net(
@@ -251,7 +249,6 @@ class SynScore(Calculator):
         try:
             results = predict(struc_list)
         except FileNotFoundError as e:
-            # Return default scores if models not available
             import warnings
 
             warnings.warn(

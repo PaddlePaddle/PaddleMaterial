@@ -72,7 +72,6 @@ class ReinL:
 
         self.sampler = model_suite.get_sampler()
 
-        # long-term memory
         self.ltm = LongTimeMem()
 
         self.models_dir = os.path.join(save_dir, "models")
@@ -101,7 +100,6 @@ class ReinL:
         )
         self.cost += len(sample_struc)
 
-        # remove failed samples/jobs
         success_rewards = rewards[~failed_mask].astype(float)
         success_prop_dict = {k: v[~failed_mask] for k, v in prop_dict.items()}
         success_data, success_struc = [], []
@@ -115,7 +113,6 @@ class ReinL:
             f"Number of samples that successfully obtained rewards: "
             f"{len(success_struc)}"
         )
-        # 原始逻辑直接对空数组做 mean/std 会产生告警，这里在 MatInvent 侧做兼容保护。
         if len(success_rewards) > 0:
             logging.info(
                 f"reward mean={success_rewards.mean():.4f}"

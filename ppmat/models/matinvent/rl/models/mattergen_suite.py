@@ -31,7 +31,6 @@ from ppmat.models.matinvent.rl.models.base import ModelSuite
 from ppmat.models.matinvent.rl.models.mattergen_adapter import create_matinvent_adapter
 from ppmat.models.matinvent.rl.samplers import MatterGenSampler as Sampler
 
-# Standard MatterGen mp-20 model configuration
 _MATTERGEN_DEFAULT_CFG = dict(
     decoder_cfg={
         "gemnet_cfg": {
@@ -92,7 +91,6 @@ class MatterGenSuite(ModelSuite):
 
         ckpt_path = Path(self.model_path).expanduser()
         if not ckpt_path.is_absolute():
-            # resolve relative to current working dir
             ckpt_path = Path.cwd() / ckpt_path
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
@@ -101,8 +99,6 @@ class MatterGenSuite(ModelSuite):
         model.set_state_dict(paddle.load(str(ckpt_path)))
         model.eval()
 
-        # Wrap the model with RL adapter for compatibility
-        # This replaces the monkey patching approach
         return create_matinvent_adapter(model)
 
     def get_sampler(self):

@@ -3,13 +3,6 @@
 
 """
 
-
-自定义子类原因
-----------
-ppmat/models/mattergen/mattergen.py 中的 ``radius_graph_pbc``
-函数存在兼容性问题，但由于该文件是 ppmat 公共库文件，不应直接修改：
-
-
 """
 
 from __future__ import annotations
@@ -60,11 +53,9 @@ def _radius_graph_pbc_fixed(
                 args = (x,) + args[1:]
         return orig_paddle_any(*args, **kwargs)
 
-    # 构造 [batch_size, 3] 的 pbc tensor
     batch_size = int(num_atoms.shape[0])
     pbc_tensor = paddle.ones(shape=[batch_size, 3], dtype="bool").to(cart_coords.place)
 
-    # 临时修复 paddle.all/any 的 non-contiguous
     paddle.all = _patched_all
     paddle.any = _patched_any
     try:
@@ -159,8 +150,6 @@ class MatinventGemNetTDenoiser(GemNetTDenoiser):
     def __init__(self, gemnet_cfg: dict, gemnet_type: str = "GemNetT", **kwargs):
         super().__init__(gemnet_cfg=gemnet_cfg, gemnet_type=gemnet_type, **kwargs)
 
-        # 父类已按 gemnet_type 创建了 self.gemnet（使用原始有 bug 的类），
-        # 此处替换为修复版子类。权重通过外部 set_state_dict 加载，不受影响。
         if gemnet_type == "GemNetT":
             self.gemnet = MatinventGemNetT(**gemnet_cfg)
         elif gemnet_type == "GemNetTCtrl":
@@ -170,5 +159,4 @@ class MatinventGemNetTDenoiser(GemNetTDenoiser):
 class MatinventMatterGen(MatterGen):
     def __init__(self, decoder_cfg: dict, **kwargs):
         super().__init__(decoder_cfg=decoder_cfg, **kwargs)
-        # 替换父类创建的 GemNetTDenoiser 为修复版，保留所有其他初始化成果
         self.model = MatinventGemNetTDenoiser(**decoder_cfg)

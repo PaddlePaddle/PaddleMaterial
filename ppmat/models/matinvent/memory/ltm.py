@@ -35,14 +35,8 @@ class LongTimeMem:
 
     def __init__(
         self,
-        # df_tol: int = 10,
-        # df_buff: int = 20,
     ) -> None:
-        # self.df_tol = df_tol
-        # self.df_buff = df_buff
-        # assert self.df_tol < self.df_buff
 
-        # Stores all generated crystals and rewards
         self.memory = pd.DataFrame(
             columns=["struc", "comp", "ele_comb", "reward", "RL_step"]
         )
@@ -57,18 +51,6 @@ class LongTimeMem:
             comb = tuple(sorted(elements))
             ele_comb.append(comb)
 
-        # cs_list, pg_list, sg_list = [], [], []
-        # for struc in strucs:
-        #     analyzer = SpacegroupAnalyzer(struc)
-        #     # Get the crystal system
-        #     crystal_system = analyzer.get_crystal_system()
-        #     # Get the point group
-        #     point_group = analyzer.get_point_group_symbol()
-        #     # Get the space group symbol and number
-        #     space_group = analyzer.get_space_group_symbol()
-        #     cs_list.append(crystal_system)
-        #     pg_list.append(point_group)
-        #     sg_list.append(space_group)
 
         df_sample = pd.DataFrame.from_dict(
             {
@@ -94,8 +76,6 @@ class LongTimeMem:
         method: str = "composition",
         **kwargs,
     ) -> Tuple[np.ndarray, List[int], int, int]:
-        # ref: Augmented Hill-Climb, https://doi.org/10.1186/s13321-022-00646-z
-        # tol = tolerance, buff = buffer, occ = occurrences
         assert tol < buff
         comps = [s.composition.reduced_formula for s in strucs]
         ele_comb = []
@@ -135,7 +115,6 @@ class LongTimeMem:
         budget: int = 3000,
         num_candidate: int = 100,
     ) -> Tuple[float, float]:
-        # Burden metric
         _df = self.memory.sort_values("reward", ascending=False)
         unique_df = _df.drop_duplicates(subset=["comp"])
         candidates = (unique_df["reward"] > thred).sum()
@@ -145,7 +124,6 @@ class LongTimeMem:
         else:
             burden = None
 
-        # Diversity ratio
         num_uni_comp = len(self.unique_comps)
         if calc_cost <= budget:
             div_ratio = num_uni_comp / calc_cost

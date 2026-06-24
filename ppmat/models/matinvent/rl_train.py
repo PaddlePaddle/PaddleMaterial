@@ -108,26 +108,21 @@ def main():
 
     cfg = OmegaConf.load(args.config)
 
-    # Override output directory if specified
     if args.output_dir is not None:
         cfg.Global.output_dir = args.output_dir
 
-    # Create output directory
     os.makedirs(cfg.Global.output_dir, exist_ok=True)
 
-    # Setup logging
     logger = setup_logging(cfg.Global.output_dir)
     logger.info(f"Configuration loaded from {args.config}")
     logger.info(f"Output directory: {cfg.Global.output_dir}")
 
-    # Build components
     logger.info("Building model suite...")
     model_suite = build_model_suite(cfg, args.model, args.device)
 
     logger.info("Building reward function...")
     reward = build_reward(cfg, cfg.Global.output_dir)
 
-    # Create MatInvent instance
     logger.info("Initializing MatInvent pipeline...")
     mat_invent = MatInvent(
         rl_epoch=cfg.RL.rl_epoch,
@@ -146,7 +141,6 @@ def main():
         df_args=cfg.RL.div_filter_cfg,
     )
 
-    # Run reinforcement learning
     logger.info("Starting reinforcement learning training...")
     mat_invent.run_rl()
 

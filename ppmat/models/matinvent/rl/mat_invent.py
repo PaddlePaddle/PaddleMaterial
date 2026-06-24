@@ -76,7 +76,6 @@ class MatInvent(ReinL):
         assert topk_ratio > 0.0 and topk_ratio <= 1.0
         self.topk_ratio = topk_ratio
 
-        # diversity filter
         self.div_filter = div_filter
         self.df_args = df_args
 
@@ -89,7 +88,6 @@ class MatInvent(ReinL):
 
         for param in self.agent.parameters():
             param.trainable = True
-        # Freeze the parameter of prior (pretrained) model
         for param in self.prior.parameters():
             param.stop_gradient = True
 
@@ -103,12 +101,10 @@ class MatInvent(ReinL):
         valid_data = []
         valid_struc = []
         for attempt in range(max_retry):
-            # Generate samples using the sampler
             sample_data, sample_struc = self.sampler.generate(
                 model=self.agent,
             )
 
-            # Filter invalid samples (basic validity check)
             valid_data = []
             valid_struc = []
             for data, struc in zip(sample_data, sample_struc):
@@ -133,7 +129,6 @@ class MatInvent(ReinL):
             filename=f"step_{self.step:0>4d}_valid.extxyz",
         )
 
-        # Filter bad samples by selected metrics (if configured)
         if self.sample_cfg.get("filter"):
             filter_fn = self.sample_cfg.filter
             valid_data, valid_struc, metrics = filter_fn(valid_data, valid_struc, None)
@@ -141,7 +136,6 @@ class MatInvent(ReinL):
         else:
             metrics = {}
 
-        # max sample size to score/reward
         if self.sample_cfg.get("max_num"):
             max_num = self.sample_cfg.max_num
             if len(valid_struc) > max_num:
@@ -182,33 +176,23 @@ class MatInvent(ReinL):
                 batch_rewards = batch["structure_array"]["reward"]
                 adv = batch_rewards
 
-                # batch size for this mini-batch (equivalent to batch.num_graphs in PyG)
                 n_graphs = int(batch["structure_array"]["num_atoms"].shape[0])
 
                 loss, loss_diff, loss_kl = 0.0, 0.0, 0.0
 
                 for t in range(cfg.timesteps):
-                    #   noised_input = self.agent.add_noise(batch, t)
-                    #   agent_pred <- agent.calc_sample_loss(noised_input)
-                    #   prior_pred <- prior.calc_sample_loss(noised_input)
                     noised_input = self._add_noise_to_model(self.agent, batch, t)
                     sample_loss, agent_pred = self._calc_sample_loss_from_model(
                         self.agent, noised_input
                     )
 
-                    # Prior uses the SAME noised_input (not re-sampled),
-                    # so KL is computed at the same noise level.
                     with paddle.no_grad():
                         _, prior_pred = self._calc_sample_loss_from_model(
                             self.prior, noised_input
                         )
 
-                    # Diffusion loss weighted by reward
                     _loss_diff = adv * sample_loss
 
-                    # KL regularization with adaptive weight:
-                    #   High reward -> small KL weight (allowed to deviate from prior)
-                    #   Low reward  -> large KL weight (stay close to prior)
                     kl_term = self._calc_kl_reg_from_models(
                         agent_pred, prior_pred, batch
                     )
@@ -216,33 +200,27 @@ class MatInvent(ReinL):
 
                     _loss = (_loss_diff + _loss_kl * cfg.sigma).mean() / accum_steps
 
-                    # Backward pass
                     _loss.backward()
                     if (t + 1) % accum_steps == 0:
                         optimizer.step()
                         optimizer.clear_grad()
 
-                    # Track losses
                     loss += _loss.item() * accum_steps
                     loss_diff += _loss_diff.sum().item()
                     loss_kl += _loss_kl.sum().item()
 
-                # Average losses over timesteps
                 loss_diff = loss_diff / cfg.timesteps
                 loss_kl = loss_kl / cfg.timesteps
                 loss = loss / cfg.timesteps
 
-                # Handle any remaining gradients not yet applied
                 if (t + 1) % accum_steps != 0:
                     optimizer.step()
                     optimizer.clear_grad()
 
-                # Accumulate weighted by batch size (original: loss * batch.num_graphs)
                 loss_all += loss * n_graphs
                 loss_diff_all += loss_diff
                 loss_kl_all += loss_kl
 
-            # Log epoch losses
             loss_dict = {
                 "loss": loss_all / len(data_list),
                 "loss_diff": loss_diff_all / len(data_list),
@@ -259,7 +237,6 @@ class MatInvent(ReinL):
         logging.info("SAMPLE:")
         sample_list, sample_struc, xyz_path, sample_metrics = self.sample_step()
 
-        # sample scoring, remove failed samples, ranking and get top k samples
         logging.info("SCORE:")
         sample_list, sample_struc, rewards, prop_dict = self.reward_step(
             sample_list,
@@ -288,7 +265,6 @@ class MatInvent(ReinL):
             )
         log_dict.update(sample_metrics)
 
-        # long-term memory
         if len(rewards) > 0:
             self.ltm.extend(sample_struc, rewards, self.step)
         else:
@@ -313,7 +289,6 @@ class MatInvent(ReinL):
             }
         )
         if self.logger is not None:
-            # Support both experiment trackers (log(dict, step=...)) and stdlib logger.
             try:
                 self.logger.log(log_dict, step=self.step)
             except TypeError:
@@ -335,7 +310,6 @@ class MatInvent(ReinL):
             logging.info(f"Total time taken: {total_time:.2f} min.\n\n")
             return
 
-        # diversity filter
         if self.div_filter:
             rewards, penalty_idx, tol_n, buff_n = self.ltm.div_filter(
                 sample_struc, rewards, **self.df_args
@@ -343,33 +317,26 @@ class MatInvent(ReinL):
             penalty_strucs = [sample_struc[p] for p in penalty_idx]
             logging.info(f"Diversity filter: tol_n={tol_n}, buff_n={buff_n}")
 
-        # topk data points
         sort_idx = np.argsort(rewards)[::-1]
         topk_idx = sort_idx[: int(self.finetune_cfg.batch_size * self.topk_ratio)]
         strucs_topk = [sample_struc[_i] for _i in topk_idx]
         reward_topk = rewards[topk_idx]
 
-        # experience replay
-        # ppmat 里对应的是 pymatgen Structure（RLDataset 期望 Structure，
-        # 不是 dict），因此一律使用 strucs_topk（Structure 列表），
-        # replay buffer 的 "data" 列也存 Structure
         if self.replay is not None:
             if self.div_filter and len(penalty_strucs) > 0:
                 self.replay.memory_purge(penalty_strucs)
             data_replay, reward_replay = self.replay.sample()  # Structure list
             ft_data = strucs_topk + data_replay
             ft_reward = np.concatenate((reward_topk, reward_replay))
-            # 存 strucs_topk 而非 sample_topk，使 replay.sample() 返回 Structure 列表
             self.replay.extend(strucs_topk, strucs_topk, reward_topk)
             logging.info(f"replay buffer size={len(self.replay)}")
             logging.info(
                 f"buffer reward mean=" f"{self.replay.buffer['reward'].values.mean()}"
             )
         else:
-            ft_data = strucs_topk  # Structure 列表，RLDataset 可正确处理
+            ft_data = strucs_topk
             ft_reward = reward_topk
 
-        # finetuning
         logging.info("FINETUNE:")
         baseline = self.ltm.get_baseline(self.step)
         baseline = min(baseline, ft_reward.min())
@@ -388,11 +355,9 @@ class MatInvent(ReinL):
         for step in range(self.rl_epoch):
             self.step = step
             self.rl_step()
-            # Save the agent weights every few iterations
             if (step + 1) % self.save_freq == 0:
                 ckpt_dir = os.path.join(self.models_dir, f"loop_{step:0>4d}")
                 self.model_suite.save_model(self.agent, ckpt_dir)
-        # If the entire training finishes, clean up
         ckpt_dir = os.path.join(self.models_dir, "final")
         self.model_suite.save_model(self.agent, ckpt_dir)
 

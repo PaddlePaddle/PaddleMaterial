@@ -55,10 +55,8 @@ def is_valid_structure(
             return False
         if struc.volume <= min_volume:
             return False
-        # max lattice parameter check
         if max(struc.lattice.abc) > max_lattice_param:
             return False
-        # minimum interatomic distance check
         dmat = struc.distance_matrix.copy()
         np.fill_diagonal(dmat, np.inf)
         if dmat.min() < min_interatomic_dist:
@@ -86,7 +84,6 @@ def save_structures(
     os.makedirs(save_dir, exist_ok=True)
     out_path = os.path.join(save_dir, filename)
 
-    # Convert pymatgen structures to ASE atoms and write
     from ase.io import write
     from pymatgen.io.ase import AseAtomsAdaptor
 
@@ -99,6 +96,4 @@ def save_structures(
 
     ppmat_logger.info(f"Saved {len(structures)} structures to {out_path}")
     return out_path
-
-
 

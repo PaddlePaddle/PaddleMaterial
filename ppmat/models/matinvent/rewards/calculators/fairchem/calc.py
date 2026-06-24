@@ -49,8 +49,6 @@ def fairchem_predict_stub(xyz_path, out_path, task, num_workers=1):
     Returns:
         Predicted property values
     """
-    # This is a stub - implement actual FairChem prediction
-    # For now, return NaN to indicate prediction not performed
     return np.array([np.nan])
 
 

@@ -35,7 +35,6 @@ from smact import Element as SmactElement
 from ppmat.models.matinvent.rewards.base import Calculator
 from ppmat.models.matinvent.rewards.calculators.pymatgen import SUBSTRATE_PATH
 
-# 参考移植: matinvent/rewards/calculators/pymatgen/calc.py
 SUB_MILLERS = {
     "Si": [(1, 0, 0)],
     "GaAs": [(1, 0, 0)],
@@ -129,7 +128,6 @@ def calc_log_abundance_crust(struc_list: List[Structure]) -> np.ndarray:
     return log_abundance_arr
 
 
-# 参考移植 matinvent/rewards/calculators/pymatgen/calc.py
 def calc_mcia(
     struc_list: List[Structure],
     substrate: Structure,

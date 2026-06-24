@@ -16,7 +16,6 @@
 DFT property calculator.
 
 
-
 Runs DFT calculations (e.g., VASP, Quantum ESPRESSO) to compute
 electronic properties like band gap, formation energy, etc.
 
@@ -53,8 +52,6 @@ def dft_run_stub(task, work_dir, cif_path, config_path):
     Returns:
         Calculated property value (or NaN if not implemented)
     """
-    # This is a stub - implement actual DFT job submission
-    # For now, return NaN to indicate calculation not performed
     return np.nan
 
 
@@ -111,7 +108,6 @@ class DFTCalc(Calculator):
         cif_dir = os.path.join(self.root_dir, label)
         os.makedirs(cif_dir, exist_ok=True)
 
-        # Write CIF files
         results = []
         for i, struc in enumerate(struc_list):
             cif_writer = CifWriter(struc)
@@ -122,7 +118,6 @@ class DFTCalc(Calculator):
             work_dir = os.path.join(self.root_dir, label, f"{i:02d}")
             os.makedirs(work_dir, exist_ok=True)
 
-            # Run DFT calculation (stub implementation)
             try:
                 result = dft_run_stub(self.task, work_dir, cif_path, self.config_path)
             except Exception as e:
@@ -142,12 +137,9 @@ class DFTCalc(Calculator):
         return results
 
 
-# Example configuration file (dft_config.yaml)
 """
-# DFT Configuration Example
 machine: remote  # or 'local' for local calculations
 
-# Remote job configuration
 remote:
   host: cluster.example.com
   username: user
@@ -155,7 +147,6 @@ remote:
   work_dir: /scratch/dft/calculations
   queue_system: slurm  # or pbs, cobalt, etc.
 
-# DFT software configuration
 dft:
   software: vasp  # or quantum_espresso, abinit, etc.
   encut: 520
@@ -163,7 +154,6 @@ dft:
   kpoints: [4, 4, 4]
   potcar_path: /path/to/potcar
 
-# Calculation-specific settings
 band_gap:
   nbands: 100
   icharg: 11
