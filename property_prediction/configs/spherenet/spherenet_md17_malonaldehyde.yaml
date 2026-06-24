@@ -1,14 +1,31 @@
 Global:
   label_names:
     - energy
-  do_train: True
-  do_eval: True
-  do_test: True
+  do_train: true
+  do_eval: true
+  do_test: true
 
+Trainer:
+  max_epochs: 500
+  seed: 42
+  output_dir: ./output/spherenet_malonaldehyde
+  save_freq: 50
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  use_amp: false
+  eval_with_no_grad: true
+  gradient_accumulation_steps: 1
+  best_metric_indicator: eval_metric
+  name_for_best_metric: energy
+  greater_is_better: false
+  compute_metric_during_train: false
+  metric_strategy_during_eval: step
+  pretrained_model_path:
 Model:
   __class_name__: SphereNetPP
   __init_params__:
-    energy_and_force: True
+    energy_and_force: true
     cutoff: 5.0
     num_layers: 4
     hidden_channels: 128
@@ -27,50 +44,10 @@ Model:
     output_init: zeros
     property_name: energy
 
-Dataset:
-  train:
-    dataset:
-      __class_name__: MD17Dataset
-      __init_params__:
-        path: ./data/md17
-        name: malonaldehyde
-        split: train
-        force_key: force
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        batch_size: 128
-        shuffle: True
-        drop_last: True
-  val:
-    dataset:
-      __class_name__: MD17Dataset
-      __init_params__:
-        path: ./data/md17
-        name: malonaldehyde
-        split: val
-        force_key: force
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        batch_size: 128
-        shuffle: False
-        drop_last: False
-  test:
-    dataset:
-      __class_name__: MD17Dataset
-      __init_params__:
-        path: ./data/md17
-        name: malonaldehyde
-        split: test
-        force_key: force
-    sampler:
-      __class_name__: BatchSampler
-      __init_params__:
-        batch_size: 128
-        shuffle: False
-        drop_last: False
-
+Metric:
+  energy:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
 Optimizer:
   __class_name__: Adam
   __init_params__:
@@ -81,27 +58,54 @@ Optimizer:
       __init_params__:
         learning_rate: 0.0005
         eta_min: 0.00001
-        by_epoch: True
+        by_epoch: true
 
-Metric:
-  energy:
-    __class_name__: paddle.nn.L1Loss
-    __init_params__: {}
-
-Trainer:
-  max_epochs: 500
-  seed: 42
-  output_dir: ./output/spherenet_malonaldehyde
-  save_freq: 50
-  log_freq: 10
-  start_eval_epoch: 1
-  eval_freq: 1
-  use_amp: False
-  eval_with_no_grad: True
-  gradient_accumulation_steps: 1
-  best_metric_indicator: eval_metric
-  name_for_best_metric: energy
-  greater_is_better: False
-  compute_metric_during_train: False
-  metric_strategy_during_eval: step
-  pretrained_model_path: null
+Dataset:
+  train:
+    dataset:
+      __class_name__: MD17Dataset
+      __init_params__:
+        path: ./data/md17
+        name: malonaldehyde
+        split: train
+        force_key: force
+      num_workers: 4
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 128
+        shuffle: true
+        drop_last: true
+  val:
+    dataset:
+      __class_name__: MD17Dataset
+      __init_params__:
+        path: ./data/md17
+        name: malonaldehyde
+        split: val
+        force_key: force
+      num_workers: 4
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 128
+        shuffle: false
+        drop_last: false
+  test:
+    dataset:
+      __class_name__: MD17Dataset
+      __init_params__:
+        path: ./data/md17
+        name: malonaldehyde
+        split: test
+        force_key: force
+      num_workers: 4
+      use_shared_memory: false
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 128
+        shuffle: false
+        drop_last: false
