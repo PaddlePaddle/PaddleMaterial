@@ -27,7 +27,6 @@ Note: RL compatibility for MatterGen is now provided through the
 MatterGenRLAdapter class instead of monkey patching.
 """
 
-from ppmat.models.matinvent.common import load_config
 from ppmat.models.matinvent.memory import LongTimeMem
 from ppmat.models.matinvent.memory import ReplayBuffer
 from ppmat.models.matinvent.rewards import Calculator

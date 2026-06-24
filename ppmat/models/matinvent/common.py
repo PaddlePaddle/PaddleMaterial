@@ -11,17 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import os
-
-from omegaconf import OmegaConf
-
-from ppmat.utils import logger as ppmat_logger
-
-
-def load_config(config_path: str) -> OmegaConf:
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    config = OmegaConf.load(config_path)
-    ppmat_logger.info(f"Configuration loaded from {config_path}")
-    return config

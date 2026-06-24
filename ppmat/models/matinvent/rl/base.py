@@ -23,6 +23,8 @@ import os
 from typing import Dict
 from typing import List
 
+import paddle
+
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
 from pymatgen.core.structure import Structure
@@ -30,7 +32,6 @@ from pymatgen.core.structure import Structure
 from ppmat.models.matinvent.memory.ltm import LongTimeMem
 from ppmat.models.matinvent.memory.replay_buffer import ReplayBuffer
 from ppmat.models.matinvent.rewards.reward import Reward
-from ppmat.models.matinvent.rl.utils import get_device
 
 
 class ReinL:
@@ -57,7 +58,10 @@ class ReinL:
         self.save_dir = save_dir
         self.save_freq = save_freq
         self.logger = logger
-        self.device = get_device(device)
+        if device is None:
+            device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
+        paddle.set_device(device)
+        self.device = device
         self.cfg = OmegaConf.create(kwargs)
         self.step = 0
         self.cost = 0

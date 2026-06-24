@@ -21,12 +21,12 @@ This code is adapted from:
 import argparse
 import os
 
-from ppmat.models.matinvent.common import load_config
+from omegaconf import OmegaConf
+
 from ppmat.models.matinvent.rewards.reward import Reward
 from ppmat.models.matinvent.rl.mat_invent import MatInvent
 from ppmat.models.matinvent.rl.models.diffcsp_suite import DiffCSPSuite
 from ppmat.models.matinvent.rl.models.mattergen_suite import MatterGenSuite
-from ppmat.models.matinvent.rl.utils import setup_rl_logger
 from ppmat.utils import logger as ppmat_logger
 
 
@@ -65,7 +65,7 @@ def parse_args():
 
 def setup_logging(output_dir: str):
     log_file = os.path.join(output_dir, "training.log")
-    setup_rl_logger(log_file=log_file)
+    ppmat_logger.init_logger(name="matinvent_rl", log_file=log_file, log_level=20)
     return ppmat_logger._logger
 
 
@@ -106,8 +106,7 @@ def main():
     """Main training function."""
     args = parse_args()
 
-    # Load configuration
-    cfg = load_config(args.config)
+    cfg = OmegaConf.load(args.config)
 
     # Override output directory if specified
     if args.output_dir is not None:

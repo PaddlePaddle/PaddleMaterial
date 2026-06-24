@@ -35,7 +35,6 @@ from ppmat.models.matinvent.rl.base import ReinL
 from ppmat.models.matinvent.rl.models.base import ModelSuite
 from ppmat.models.matinvent.rl.training_utils import is_valid_structure
 from ppmat.models.matinvent.rl.training_utils import save_structures
-from ppmat.models.matinvent.rl.utils import create_optimizer
 from ppmat.utils.scatter import scatter
 
 
@@ -172,7 +171,7 @@ class MatInvent(ReinL):
             batch_size=cfg.batch_size,
         )
 
-        optimizer = create_optimizer(model=self.agent, lr=cfg.lr)
+        optimizer = paddle.optimizer.Adam(learning_rate=cfg.lr, parameters=self.agent.parameters())
         accum_steps = cfg.accum_steps
 
         for epoch in range(cfg.epochs):

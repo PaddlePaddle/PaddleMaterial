@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import paddle
 from typing import Literal
 
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
-
-from ppmat.models.matinvent.rl.utils import get_device
 
 AVA_MODEL_NAME = Literal[
     "diffcsp",
@@ -50,7 +49,10 @@ class ModelSuite:
         self.finetune_cfg = finetune_cfg
         self.model_path = model_path
         self.config_overrides = config_overrides
-        self.device = get_device(device)
+        if device is None:
+            device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
+        paddle.set_device(device)
+        self.device = device
         self.cfg = OmegaConf.create(kwargs)
 
     def load_model(self):
