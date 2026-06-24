@@ -1,5 +1,16 @@
-#!/usr/bin/env python
-# Copyright (c) 2025 PaddlePaddle Materials Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 import sys
@@ -51,7 +62,8 @@ class RLWrapperModel(nn.Layer):
         sa = data.get("structure_array") if isinstance(data, dict) else None
         if isinstance(sa, dict):
             if "pbc" in sa:
-                sa = dict(sa); sa.pop("pbc"); data = dict(data); data["structure_array"] = sa
+                sa = dict(sa); sa.pop("pbc")
+                data = dict(data); data["structure_array"] = sa
             if "num_atoms" in sa and hasattr(sa["num_atoms"], "shape") and int(sa["num_atoms"].shape[0]) == 1:
                 sa = dict(sa); sa["num_atoms"] = paddle.concat([sa["num_atoms"], sa["num_atoms"]], axis=0)
                 data = dict(data); data["structure_array"] = sa
@@ -79,25 +91,59 @@ class RLWrapperModel(nn.Layer):
 
     @classmethod
     def _find_config(cls):
-        config_path = os.environ.get("CONFIG_PATH")
-        if not config_path:
+        cfg = os.environ.get("CONFIG_PATH")
+        if not cfg:
             for c in cls.CONFIG_CANDIDATES:
                 if os.path.exists(c):
-                    config_path = c
+                    cfg = c
                     break
-        if not config_path:
+        if not cfg:
             raise ValueError("Set CONFIG_PATH")
-        return config_path
+        return cfg
 
     def forward(self, batch_data):
         config_path = self._find_config()
         config = OmegaConf.load(config_path)
         output_dir = config.get("Trainer", {}).get("output_dir", config.get("Global", {}).get("output_dir", "./output/matinvent"))
         orig_argv = sys.argv
-        sys.argv = ["rl_wrapper.py", "--config", config_path, "--model", self.MODEL_TYPE, "--output_dir", output_dir]
+        sys.argv = ["wrapper.py", "--config", config_path, "--model", self.MODEL_TYPE, "--output_dir", output_dir]
         try:
             from ppmat.models.matinvent.rl_train import main as rl_main
             rl_main()
         finally:
             sys.argv = orig_argv
         return {"loss_dict": {"loss": self._dummy_param * 0.0}}
+
+
+class DiffCSPRLWrapper(RLWrapperModel):
+    SAMPLE_CONFIG = "structure_generation/configs/diffcsp/diffcsp_mp20.yaml"
+    CONFIG_CANDIDATES = [
+        "structure_generation/configs/matinvent/matinvent_diffcsp.yaml",
+        "configs/matinvent/matinvent_diffcsp.yaml",
+    ]
+    MODEL_TYPE = "diffcsp"
+
+    def _ensure_sample_model(self):
+        if self._sample_model is not None:
+            return self._sample_model
+        cfg_path = os.environ.get("MATINVENT_SAMPLE_MODEL_CONFIG")
+        if not cfg_path:
+            for c in self.CONFIG_CANDIDATES:
+                if os.path.exists(c):
+                    cfg_path = c
+                    break
+        if not cfg_path or not os.path.exists(cfg_path):
+            raise FileNotFoundError("DiffCSP config not found. Set MATINVENT_SAMPLE_MODEL_CONFIG.")
+        config = OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
+        model_cfg = config.get("Model")
+        if model_cfg is None:
+            raise ValueError(f"Model section not found: {cfg_path}")
+        from ppmat.models import build_model
+        self._sample_model = build_model(model_cfg)
+        return self._sample_model
+
+    def sample(self, data, **sample_params):
+        model = self._ensure_sample_model()
+        if "num_inference_steps" not in sample_params:
+            sample_params["num_inference_steps"] = int(os.environ.get("MATINVENT_NUM_INFERENCE_STEPS", "1000"))
+        return model.sample(data, **sample_params)

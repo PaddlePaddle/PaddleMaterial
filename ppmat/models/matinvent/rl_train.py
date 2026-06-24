@@ -24,9 +24,9 @@ import os
 from omegaconf import OmegaConf
 
 from ppmat.models.matinvent.rewards.reward import Reward
-from ppmat.models.matinvent.rl.mat_invent import MatInvent
-from ppmat.models.matinvent.rl.models.diffcsp_suite import DiffCSPSuite
-from ppmat.models.matinvent.rl.models.mattergen_suite import MatterGenSuite
+from ppmat.models.matinvent.rl.core import MatInvent
+from ppmat.models.matinvent.rl.models import DiffCSPSuite
+from ppmat.models.matinvent.rl.models import MatterGenSuite
 from ppmat.utils import logger as ppmat_logger
 
 
