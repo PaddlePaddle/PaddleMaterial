@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Wyckoff and Element Transformer: autoregressive sampling of Wyckoff positions and elements.
 
@@ -16,11 +30,11 @@ from ppmat.models.sgequidiff.constants import (
     max_atoms_per_dataset,
 )
 from ppmat.models.sgequidiff.lattice_sampler import SpaceGroupEncoder
-from ppmat.models.sgequidiff.submodules import FourierLinear, Swish
+from ppmat.models.sgequidiff.non_equivariant_drift_modules import FourierLinear, Swish
 
 
 class CustomMultiheadAttention(nn.Layer):
-    """自定义 MHA，匹配权重文件中的 _qkv_weight/_qkv_bias 格式。"""
+    """Custom MHA matching _qkv_weight/_qkv_bias format from PT weights."""
     def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True,
                  kdim=None, vdim=None):
         super().__init__()
@@ -110,7 +124,7 @@ class CustomMultiheadAttention(nn.Layer):
         return output, None
 
 class SpaceGroupAndLatticeEncoder(nn.Layer):
-    """编码空间群索引和晶格参数。"""
+    """Encode space group index and lattice parameters."""
     def __init__(self, hidden_dim: int, dataset_name: str):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -196,10 +210,7 @@ class WyckoffElementTransformerConfig:
     dropout_rate: float = 0.0
 
 class WyckoffElementTransformer(nn.Layer):
-    """
-
-    完全匹配原始PT代码结构和权重格式。
-    """
+    """Matches original PT code structure and weight format exactly."""
     def __init__(self, config: WyckoffElementTransformerConfig):
         super().__init__()
         self.config = config
@@ -604,17 +615,3 @@ class WyckoffElementTransformer(nn.Layer):
             wyckoffs_log_prob,
             termination_log_prob,
         )
-
-    def log_prob(
-        self,
-        element_indices,
-        wyckoff_indices,
-        n_asu_atoms_per_xtal,
-        lattice_lengths,
-        lattice_angles,
-        space_group_indices,
-    ):
-        """
-        Compute log probability of given Wyckoff/element assignments.
-        """
-        raise NotImplementedError("log_prob not needed for generation")

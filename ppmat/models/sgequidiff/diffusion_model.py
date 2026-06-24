@@ -1,19 +1,28 @@
-"""主扩散模型：EquivariantDiffusionModel、NoiseScheduler。"""
-import dataclasses
-import math
-import os
-from typing import Optional
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
-import numpy as np
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""EquivariantDiffusionModel and NoiseScheduler."""
+import dataclasses
+from typing import Any, Dict, Optional
+
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from tqdm import tqdm
 
 import ppmat.models.sgequidiff.global_vars as global_vars
-from ppmat.models.sgequidiff.constants import MAX_WYCKOFF_SITES
-from ppmat.models.sgequidiff.crystal_utils import uniformly_sample_point_in_asu_wyckoff_site
-from ppmat.models.sgequidiff.diffusion_utils import (
+from ppmat.datasets.asu_crystal import uniformly_sample_point_in_asu_wyckoff_site
+from ppmat.models.sgequidiff.data_utils import (
     get_wyckoff_shape_hull_equations,
     wrap_frac_coords_into_asu,
     d_log_p_asu_wrapped_normal,
@@ -28,12 +37,12 @@ from ppmat.models.sgequidiff.non_equivariant_drift_modules import (
     CSPNet,
     CSPNetConfig,
 )
-from ppmat.models.sgequidiff.scatter_utils import safe_scatter as paddle_scatter
+from ppmat.utils.scatter import scatter as paddle_scatter
 
 
 @dataclasses.dataclass
 class EquivariantDiffusionModelConfig:
-    """扩散模型超参数配置。"""
+    """Diffusion model hyperparameter config."""
     num_wn_lattice_translations: int = 5
     noise_scheduler_num_monte_carlo_samples: int = 10_000
     num_timesteps: int = 1000
@@ -46,24 +55,67 @@ class EquivariantDiffusionModelConfig:
 
     gnn_config: Optional[GNNConfig] = None
     cspnet_config: Optional[CSPNetConfig] = None
+    noise_scheduler_cfg: Optional[dict] = None
 
 class EquivariantDiffusionModel(nn.Layer):
-    """空间群等变扩散模型，在非对称单元中建模晶体坐标。"""
+    """Space-group equivariant diffusion model modeling crystal coords in ASU."""
 
-    def __init__(self, config: EquivariantDiffusionModelConfig):
+    def __init__(
+        self,
+        config: Optional[EquivariantDiffusionModelConfig] = None,
+        num_wn_lattice_translations: int = 5,
+        noise_scheduler_num_monte_carlo_samples: int = 10_000,
+        num_timesteps: int = 1000,
+        sigma_min: float = 0.002,
+        sigma_max: float = 0.5,
+        time_emb_dim: int = 256,
+        model_type: str = "mlp",
+        num_plane_wave_freqs: int = 64,
+        subsample_group_operations: bool = False,
+        gnn_config: Any = None,
+        cspnet_config: Any = None,
+        noise_scheduler_cfg: Optional[dict] = None,
+    ):
+        if config is None:
+            if isinstance(gnn_config, dict):
+                gnn_config = GNNConfig(**gnn_config)
+            if isinstance(cspnet_config, dict):
+                cspnet_config = CSPNetConfig(**cspnet_config)
+            config = EquivariantDiffusionModelConfig(
+                num_wn_lattice_translations=num_wn_lattice_translations,
+                noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
+                num_timesteps=num_timesteps,
+                sigma_min=sigma_min,
+                sigma_max=sigma_max,
+                time_emb_dim=time_emb_dim,
+                model_type=model_type,
+                num_plane_wave_freqs=num_plane_wave_freqs,
+                subsample_group_operations=subsample_group_operations,
+                gnn_config=gnn_config,
+                cspnet_config=cspnet_config,
+                noise_scheduler_cfg=noise_scheduler_cfg,
+            )
         self.validate_config(config)
         super().__init__()
         self.config = config
         self.num_wn_lattice_translations = config.num_wn_lattice_translations
 
-        self.noise_scheduler = NoiseScheduler(
-            num_timesteps=config.num_timesteps,
-            sigma_min=config.sigma_min,
-            sigma_max=config.sigma_max,
-            num_lattice_translations=config.num_wn_lattice_translations,
-            num_monte_carlo_samples=config.noise_scheduler_num_monte_carlo_samples,
-        )
+        if config.noise_scheduler_cfg:
+            from ppmat.schedulers import build_scheduler
+            self.noise_scheduler = build_scheduler(config.noise_scheduler_cfg)
+        else:
+            from ppmat.schedulers.scheduling_asu_ve_sde import ASUVESDEScheduler
+            self.noise_scheduler = ASUVESDEScheduler(
+                num_timesteps=config.num_timesteps,
+                sigma_min=config.sigma_min,
+                sigma_max=config.sigma_max,
+                num_lattice_translations=config.num_wn_lattice_translations,
+                num_monte_carlo_samples=config.noise_scheduler_num_monte_carlo_samples,
+            )
         self.time_embedder = FourierTimeEmbeddings(dim=config.time_emb_dim)
+        from ppmat.models.sgequidiff.global_vars import embedding_tools, set_global_embedding_tools
+        if embedding_tools is None:
+            set_global_embedding_tools(element_embedding_json_path="cgcnn_atom_init.json")
         self.non_equivariant_drift_model = self.get_non_equivariant_drift_module(
             config, self.time_embedder
         )
@@ -80,7 +132,7 @@ class EquivariantDiffusionModel(nn.Layer):
 
     @property
     def wyckoff_shape_decomposition_dict(self) -> dict:
-        """懒加载 wyckoff_shape_decomposition.pkl。"""
+        """Lazy-load wyckoff_shape_decomposition.pkl."""
         if self._wyckoff_shape_decomposition_dict is None:
             import pickle
             from ppmat.models.sgequidiff.global_vars import SHAPE_DECOMP_DICT_PATH, _ensure_wyckoff_shape_decomp
@@ -101,7 +153,7 @@ class EquivariantDiffusionModel(nn.Layer):
         lattice_lengths: paddle.Tensor,
         lattice_angles: paddle.Tensor,
     ) -> paddle.Tensor:
-        """计算训练损失（score matching）。"""
+        """Compute training loss (score matching)."""
         sampled_timesteps = self.noise_scheduler.uniform_sample_timestep(
             batch_size=space_group_indices.shape[0]
         )
@@ -204,116 +256,52 @@ class EquivariantDiffusionModel(nn.Layer):
         snr: float = 0.4,
         max_step_size: float = 1e6,
     ) -> paddle.Tensor:
-        """Variance-exploding Predictor-Corrector SDE 采样。"""
+        """Variance-exploding Predictor-Corrector SDE sampling."""
         num_asu_atoms: int = wyckoff_indices.shape[0]
         num_crystals: int = space_group_indices.shape[0]
         time_start: int = self.noise_scheduler.num_timesteps
 
         space_group_indices_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
-        map_atom_to_xtal = paddle.arange(num_crystals).repeat_interleave(n_atoms_per_xtal, axis=0)
 
-        (
-            x_T,
-            wyckoff_shape_indices,
-        ) = uniformly_sample_point_in_asu_wyckoff_site(
-            space_group_numbers=[
-                str(1 + int(sg_idx)) for sg_idx in space_group_indices_per_atom.tolist()
-            ],
-            wyckoff_letters=[
-                chr(97 + int(idx)) if int(idx) <= 25 else chr(39 + int(idx))
-                for idx in wyckoff_indices.tolist()
-            ],
+        x_T, wyckoff_shape_indices = uniformly_sample_point_in_asu_wyckoff_site(
+            space_group_numbers=[str(1 + int(sg_idx)) for sg_idx in space_group_indices_per_atom.tolist()],
+            wyckoff_letters=[chr(97 + int(idx)) if int(idx) <= 25 else chr(39 + int(idx)) for idx in wyckoff_indices.tolist()],
             dictionary_of_wyckoffs_in_asu=global_vars.asu_wyckoff_dict,
             dictionary_of_wyckoff_shape_decompositions=self.wyckoff_shape_decomposition_dict,
-            n_samples_per_wyckoff=1,
+            hull_equations_3d=global_vars.asu_hull_equations, n_samples_per_wyckoff=1,
             return_sampled_wyckoff_shape_indices=True,
         )
         x_T = x_T.squeeze(1)
         wyckoff_shape_indices = wyckoff_shape_indices.squeeze(1)
 
-        wyckoff_dims = global_vars.wyckoff_dimension_tensor[
-            space_group_indices_per_atom, wyckoff_indices
-        ]
-        noise_projection_matrices = global_vars.noise_projection_matrices[
-            space_group_indices_per_atom,
-            wyckoff_indices,
-            wyckoff_shape_indices,
-        ]
+        wyckoff_dims = global_vars.wyckoff_dimension_tensor[space_group_indices_per_atom, wyckoff_indices]
+        proj_matrices = global_vars.noise_projection_matrices[space_group_indices_per_atom, wyckoff_indices, wyckoff_shape_indices]
+
+        def _predict_and_project(x, sigma_norm):
+            te = self.time_embedder(paddle.to_tensor([0], dtype=paddle.float32)).expand([num_asu_atoms, -1])
+            score = sigma_norm.unsqueeze(1) * self.predict_equivariant_vectors(
+                te, x, element_indices, wyckoff_indices, space_group_indices, n_atoms_per_xtal,
+                lattice_matrices=lattice_matrices, lattice_lengths=lattice_lengths, lattice_angles=lattice_angles,
+            )
+            return paddle.bmm(score.unsqueeze(1), proj_matrices).reshape([-1, 3])
+
+        def _wyckoff_noise():
+            return get_wyckoff_projected_gaussian_noise(
+                space_group_indices, wyckoff_indices, wyckoff_shape_indices, n_atoms_per_xtal, 1.0,
+            )
 
         x_t_plus_1 = x_T
-        for t in tqdm(range(time_start - 1, 0, -1)):
-            time_embeddings = self.time_embedder(
-                paddle.to_tensor([t], dtype=paddle.float32)
-            ).expand([num_asu_atoms, -1])
+        for t in range(time_start - 1, 0, -1):
+            sn_t1 = self.noise_scheduler.sigma_norms[space_group_indices_per_atom, wyckoff_indices, t + 1]
+            sn_t = self.noise_scheduler.sigma_norms[space_group_indices_per_atom, wyckoff_indices, t]
 
-            sigma_norm_t_plus_1 = self.noise_scheduler.sigma_norms[
-                space_group_indices_per_atom, wyckoff_indices, t + 1
-            ]
-            sigma_norm_t = self.noise_scheduler.sigma_norms[
-                space_group_indices_per_atom, wyckoff_indices, t
-            ]
+            score_pred = _predict_and_project(x_t_plus_1, sn_t1)
+            x_t = self.noise_scheduler.step_pred(x_t_plus_1, score_pred, t, _wyckoff_noise())
 
-            predicted_score = sigma_norm_t_plus_1.unsqueeze(1) * self.predict_equivariant_vectors(
-                time_embeddings,
-                x_t_plus_1,
-                element_indices,
-                wyckoff_indices,
-                space_group_indices,
-                n_atoms_per_xtal,
-                lattice_matrices=lattice_matrices,
-                lattice_lengths=lattice_lengths,
-                lattice_angles=lattice_angles,
-            )
-            predicted_score = paddle.bmm(
-                predicted_score.unsqueeze(1), noise_projection_matrices
-            ).reshape([-1, 3])
+            score_corr = _predict_and_project(x_t, sn_t)
+            x_t = self.noise_scheduler.step_correct(x_t, score_corr, _wyckoff_noise(), snr, max_step_size)
 
-            sigma_sq_diff = (
-                self.noise_scheduler.sigmas[t + 1] ** 2
-                - self.noise_scheduler.sigmas[t] ** 2
-            )
-            noise = get_wyckoff_projected_gaussian_noise(
-                space_group_indices, wyckoff_indices, wyckoff_shape_indices,
-                n_atoms_per_xtal, 1.0,
-            )
-            x_t = x_t_plus_1 + sigma_sq_diff * predicted_score
-            x_t = x_t + paddle.sqrt(sigma_sq_diff) * noise
-
-            predicted_score = sigma_norm_t.unsqueeze(1) * self.predict_equivariant_vectors(
-                time_embeddings,
-                x_t,
-                element_indices,
-                wyckoff_indices,
-                space_group_indices,
-                n_atoms_per_xtal,
-                lattice_matrices=lattice_matrices,
-                lattice_lengths=lattice_lengths,
-                lattice_angles=lattice_angles,
-            )
-            predicted_score = paddle.bmm(
-                predicted_score.unsqueeze(1), noise_projection_matrices
-            ).reshape([-1, 3])
-
-            noise = get_wyckoff_projected_gaussian_noise(
-                space_group_indices, wyckoff_indices, wyckoff_shape_indices,
-                n_atoms_per_xtal, 1.0,
-            )
-            noise_norm = ((noise ** 2).sum(axis=-1)).sqrt().mean()
-            grad_norm = ((predicted_score ** 2).sum(axis=-1)).sqrt().mean()
-            step_size = 2 * (snr * noise_norm / (grad_norm + 1e-12)) ** 2
-
-            step_size = paddle.where(noise == 0.0, paddle.zeros_like(noise), step_size * paddle.ones_like(noise))
-            step_size = paddle.nan_to_num(step_size, nan=0.0, posinf=max_step_size, neginf=-max_step_size)
-
-            x_t = x_t + step_size * predicted_score + paddle.sqrt(2 * step_size) * noise
-
-            x_t = self.project_point_onto_wyckoff_shape(
-                x_t,
-                space_group_indices_per_atom,
-                wyckoff_indices,
-                wyckoff_shape_indices,
-                wyckoff_dims,
-            )
+            x_t = self.project_point_onto_wyckoff_shape(x_t, space_group_indices_per_atom, wyckoff_indices, wyckoff_shape_indices, wyckoff_dims)
             x_t_plus_1 = x_t
 
         x_final = x_t_plus_1 % 1.0
@@ -327,152 +315,61 @@ class EquivariantDiffusionModel(nn.Layer):
         )
         return x_final.unsqueeze(0)
 
-    def forward(
-        self,
-        t: paddle.Tensor,
-        states: tuple,
-        element_indices: paddle.Tensor,
-        wyckoff_indices: paddle.Tensor,
-        space_group_indices: paddle.Tensor,
-        n_atoms_per_xtal: paddle.Tensor,
-        lattice_matrices: paddle.Tensor,
-        lattice_lengths: paddle.Tensor,
-        lattice_angles: paddle.Tensor,
-        noise_projection_matrices: paddle.Tensor,
-        divergence_type: str = "hutchinson",
-    ) -> tuple:
-        """ODE 函数 (velocity, divergence)，用于 RK4 积分。"""
-        frac_coords = states[0]
-        n_asu_atoms = frac_coords.shape[0]
-        t_val = float(t.item())
+    def forward(self, batch_data: Dict) -> Dict:
+        """Training entry: unpack batch, compute loss, return BaseTrainer-compatible dict."""
+        from ppmat.models.sgequidiff.data_utils import lattice_params_to_matrix_paddle
 
-        sg_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
-        sigma_norm_t = self.noise_scheduler.get_interpolated_sigma_norm_t(
-            t, sg_per_atom, wyckoff_indices
-        ).unsqueeze(1)
+        space_group_indices = batch_data["space_group_indices"]
+        lattice_lengths = batch_data["lattice_lengths"]
+        lattice_angles = batch_data["lattice_angles"]
+        lattice_matrices = batch_data.get(
+            "lattice_matrices",
+            lattice_params_to_matrix_paddle(lattice_lengths, lattice_angles),
+        )
+        padded_element_indices = batch_data["element_indices"]
+        padded_wyckoff_indices = batch_data["wyckoff_indices"]
+        padded_wyckoff_shape_indices = batch_data["wyckoff_shape_indices"]
+        padded_frac_coords = batch_data["frac_coords"]
+        atoms_mask = batch_data["atoms_mask"]
 
-        frac_coords_stop = frac_coords.detach()
-        frac_coords_stop.stop_gradient = False
+        flat_mask = atoms_mask.reshape([-1])
+        selected_indices = paddle.nonzero(flat_mask).reshape([-1])
 
-        time_embeddings = self.time_embedder(
-            t.reshape([1])
-        ).detach().expand([n_asu_atoms, -1])
-
-        d_sigma_sq_dt = self.noise_scheduler.d_sigma_sq_dt(t_val)
-
-        dx_dt = (
-            0.5 * d_sigma_sq_dt * sigma_norm_t
-            * self.predict_equivariant_vectors(
-                time_embeddings,
-                frac_coords_stop,
-                element_indices,
-                wyckoff_indices,
-                space_group_indices,
-                n_atoms_per_xtal,
-                lattice_matrices=lattice_matrices,
-                lattice_lengths=lattice_lengths,
-                lattice_angles=lattice_angles,
-                differentiate_graph_construction=True,
-            )
+        batch_size = padded_element_indices.shape[0]
+        max_atoms = padded_element_indices.shape[1]
+        selected_xtal_indices = paddle.floor_divide(selected_indices, max_atoms)
+        n_atoms_per_xtal = paddle.zeros([batch_size], dtype="int64")
+        n_atoms_per_xtal = paddle.scatter_nd_add(
+            n_atoms_per_xtal,
+            selected_xtal_indices.reshape([-1, 1]),
+            paddle.ones_like(selected_xtal_indices, dtype="int64"),
         )
 
-        dx_dt = paddle.bmm(dx_dt.unsqueeze(1), noise_projection_matrices).squeeze(1)
+        element_indices = paddle.gather(
+            padded_element_indices.reshape([-1]), selected_indices
+        )
+        wyckoff_indices = paddle.gather(
+            padded_wyckoff_indices.reshape([-1]), selected_indices
+        )
+        wyckoff_shape_indices = paddle.gather(
+            padded_wyckoff_shape_indices.reshape([-1]), selected_indices
+        )
+        asu_frac_coords = paddle.gather(
+            padded_frac_coords.reshape([-1, 3]), selected_indices, axis=0
+        )
 
-        if divergence_type == "full":
-            divergence = paddle.zeros([n_asu_atoms], dtype=paddle.float32)
-            for d in range(3):
-                grad_d = paddle.grad(
-                    outputs=[dx_dt[:, d].sum()],
-                    inputs=[frac_coords_stop],
-                    create_graph=False,
-                    retain_graph=(d < 2),
-                )[0]
-                if grad_d is not None:
-                    divergence += grad_d[:, d]
-        else:
-            z = paddle.randn_like(frac_coords_stop)
-            grad = paddle.grad(
-                outputs=[(dx_dt * z.detach()).sum()],
-                inputs=[frac_coords_stop],
-                create_graph=False,
-                retain_graph=False,
-            )[0]
-            divergence = (grad * z.detach()).sum(axis=-1) if grad is not None else paddle.zeros([n_asu_atoms])
-
-        dx_dt = dx_dt.detach()
-        divergence = divergence.detach()
-        return dx_dt, divergence
-
-    def get_log_likelihood(
-        self,
-        frac_coords: paddle.Tensor,
-        element_indices: paddle.Tensor,
-        wyckoff_indices: paddle.Tensor,
-        space_group_indices: paddle.Tensor,
-        n_atoms_per_xtal: paddle.Tensor,
-        lattice_matrices: paddle.Tensor,
-        lattice_lengths: paddle.Tensor,
-        lattice_angles: paddle.Tensor,
-        divergence_type: str = "hutchinson",
-        num_ode_solver_steps: int = 500,
-    ) -> paddle.Tensor:
-        """通过概率流 ODE 计算对数似然（RK4 数值积分）。"""
-        sg_per_asu_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
-
-        with paddle.no_grad():
-            frac_coords, wyckoff_shape_indices = wrap_frac_coords_into_asu(
-                frac_coords,
-                wyckoff_indices,
-                space_group_indices,
-                n_atoms_per_xtal,
-                self.padded_hull_equations[sg_per_asu_atom, wyckoff_indices],
-                self.padded_hull_equations_mask[sg_per_asu_atom, wyckoff_indices],
-            )
-
-        noise_projection_matrices = global_vars.noise_projection_matrices[
-            sg_per_asu_atom, wyckoff_indices, wyckoff_shape_indices
-        ]
-
-        T = float(self.noise_scheduler.num_timesteps)
-        t0 = 0.0
-        dt = (T - t0) / num_ode_solver_steps
-
-        x = frac_coords.clone()
-        logp = paddle.zeros([frac_coords.shape[0]], dtype=paddle.float32)
-
-        for step in range(num_ode_solver_steps):
-            t_val = t0 + step * dt
-            t = paddle.to_tensor([t_val], dtype=paddle.float32)
-
-            def _f(x_in, t_in):
-                return self.forward(
-                    t_in, (x_in, None),
-                    element_indices, wyckoff_indices, space_group_indices, n_atoms_per_xtal,
-                    lattice_matrices, lattice_lengths, lattice_angles,
-                    noise_projection_matrices, divergence_type,
-                )
-
-            k1_x, k1_l = _f(x, t)
-            k2_x, k2_l = _f(
-                x + 0.5 * dt * k1_x,
-                t + paddle.to_tensor([0.5 * dt], dtype=paddle.float32),
-            )
-            k3_x, k3_l = _f(
-                x + 0.5 * dt * k2_x,
-                t + paddle.to_tensor([0.5 * dt], dtype=paddle.float32),
-            )
-            k4_x, k4_l = _f(
-                x + dt * k3_x,
-                t + paddle.to_tensor([dt], dtype=paddle.float32),
-            )
-
-            x = x + (dt / 6.0) * (k1_x + 2.0 * k2_x + 2.0 * k3_x + k4_x)
-            logp = logp + (dt / 6.0) * (k1_l + 2.0 * k2_l + 2.0 * k3_l + k4_l)
-            x = x.detach()
-            logp = logp.detach()
-
-        logp_T = self.uniform_prior_log_prob(wyckoff_indices, space_group_indices, n_atoms_per_xtal)
-        return logp + logp_T
+        loss = self.compute_loss(
+            asu_frac_coords=asu_frac_coords,
+            element_indices=element_indices,
+            wyckoff_indices=wyckoff_indices,
+            space_group_indices=space_group_indices,
+            n_atoms_per_xtal=n_atoms_per_xtal,
+            wyckoff_shape_indices=wyckoff_shape_indices,
+            lattice_matrices=lattice_matrices,
+            lattice_lengths=lattice_lengths,
+            lattice_angles=lattice_angles,
+        )
+        return {"loss_dict": {"loss": loss}}
 
     def predict_equivariant_vectors(
         self,
@@ -487,7 +384,7 @@ class EquivariantDiffusionModel(nn.Layer):
         lattice_angles: Optional[paddle.Tensor] = None,
         differentiate_graph_construction: bool = False,
     ) -> paddle.Tensor:
-        """等变向量场：mean(A^-1 @ f(Ax + t))。"""
+        """Equivariant vector field: mean(A^-1 @ f(Ax + t))."""
         frac_coords = frac_coords % 1.0
 
         (
@@ -553,7 +450,7 @@ class EquivariantDiffusionModel(nn.Layer):
         space_group_indices: paddle.Tensor,
         n_atoms_per_xtal: paddle.Tensor,
     ) -> paddle.Tensor:
-        """均匀先验的对数概率。"""
+        """Uniform prior log-probability."""
         sg_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
         wyckoff_volumes = global_vars.wyckoff_shape_volumes[
             sg_per_atom, wyckoff_indices
@@ -578,7 +475,7 @@ class EquivariantDiffusionModel(nn.Layer):
         config: EquivariantDiffusionModelConfig,
         time_embedder: FourierTimeEmbeddings,
     ) -> nn.Layer:
-        """根据配置创建非等变漂移模块。"""
+        """Create non-equivariant drift module from config."""
         if config.model_type == "mlp":
             return TorusMLP(time_embedder, config.num_plane_wave_freqs)
         elif config.model_type == "gnn":
@@ -596,7 +493,7 @@ class EquivariantDiffusionModel(nn.Layer):
         wyckoff_shape_indices: paddle.Tensor,
         wyckoff_dims: paddle.Tensor,
     ) -> paddle.Tensor:
-        """将点投影到 Wyckoff 子空间（1D->线, 2D->平面）。"""
+        """Project points to Wyckoff subspace (1D->line, 2D->plane)."""
         def project_to_lines(pts, p0s, dirs):
             dirs = dirs / (dirs.norm(axis=-1, keepdim=True) + 1e-12)
             v = pts - p0s
@@ -627,9 +524,7 @@ class EquivariantDiffusionModel(nn.Layer):
                     wyckoff_shape_indices[mask],
                 ],
             )
-            mask_idx = paddle.where(mask)[0]
-            for i, idx in enumerate(mask_idx.tolist()):
-                points[idx] = pts_1d[i]
+            points = paddle.scatter(points, paddle.where(mask)[0], pts_1d, overwrite=True)
 
         if wyckoff_dim_is_2.any():
             mask = wyckoff_dim_is_2
@@ -646,208 +541,6 @@ class EquivariantDiffusionModel(nn.Layer):
                     wyckoff_shape_indices[mask],
                 ],
             )
-            mask_idx = paddle.where(mask)[0]
-            for i, idx in enumerate(mask_idx.tolist()):
-                points[idx] = pts_2d[i]
+            points = paddle.scatter(points, paddle.where(mask)[0], pts_2d, overwrite=True)
 
         return points
-
-class NoiseScheduler(nn.Layer):
-    """指数噪声调度器。"""
-
-    def __init__(
-        self,
-        num_timesteps: int,
-        sigma_min: float = 0.01,
-        sigma_max: float = 0.5,
-        sigma_norm_type: str = "asu_wrapped",
-        num_lattice_translations: int = 5,
-        num_monte_carlo_samples: int = 10_000,
-    ):
-        super().__init__()
-        self.num_timesteps = num_timesteps
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-        self.num_lattice_translations = num_lattice_translations
-
-        sigmas = paddle.to_tensor(
-            np.exp(np.linspace(np.log(sigma_min), np.log(sigma_max), num_timesteps)),
-            dtype=paddle.float32,
-        )
-
-        if sigma_norm_type == "unwrapped":
-            _sigma_norms = self._sigma_norm_unwrapped(sigmas)
-        elif sigma_norm_type == "asu_wrapped":
-            _sigma_norms = self._sigma_norm_asu_wrapped(sigmas, num_monte_carlo_samples)
-        else:
-            raise AttributeError(f"Unknown sigma_norm_type: {sigma_norm_type}")
-
-        self.register_buffer(
-            "sigmas",
-            paddle.concat([paddle.zeros([1]), sigmas], axis=0),
-        )
-        self.register_buffer(
-            "sigma_norms",
-            paddle.concat(
-                [paddle.ones([230, MAX_WYCKOFF_SITES, 1]), _sigma_norms],
-                axis=-1,
-            ),
-        )
-
-    def uniform_sample_timestep(self, batch_size: int) -> paddle.Tensor:
-        """在 [1, num_timesteps] 均匀采样整数时间步。"""
-        return paddle.randint(
-            low=1,
-            high=self.num_timesteps + 1,
-            shape=[batch_size],
-            dtype=paddle.int64,
-        )
-
-    def d_sigma_sq_dt(self, t: float) -> float:
-        """d(sigma^2)/dt，用于 ODE 采样。"""
-        t = max(t, 1e-5)
-        T = float(self.num_timesteps)
-        sigma_ratio = self.sigma_max / self.sigma_min
-        return 2 * (self.sigma_min / (T - 1)) * math.log(sigma_ratio) * (sigma_ratio ** ((t - 1) / (T - 1)))
-
-    @paddle.no_grad()
-    def _sigma_norm_unwrapped(self, sigmas: paddle.Tensor) -> paddle.Tensor:
-        """返回 1/sigma。"""
-        sigma_norms = 1.0 / sigmas
-        return sigma_norms[None, None, :].expand([230, MAX_WYCKOFF_SITES, -1])
-
-    @paddle.no_grad()
-    def _sigma_norm_asu_wrapped(
-        self,
-        sigmas: paddle.Tensor,
-        num_monte_carlo_samples: int = 10_000,
-    ) -> paddle.Tensor:
-        """用 Monte Carlo 估计 ASU 包裹正态分布的期望分数 L2 范数。"""
-        from ppmat.models.sgequidiff.global_vars import DATA_DIRECTORY, _ensure_wyckoff_shape_decomp
-        from ppmat.models.sgequidiff.crystal_utils import uniformly_sample_point_in_asu_wyckoff_site
-
-        num_timesteps = sigmas.shape[0]
-        num_lattice_translations = self.num_lattice_translations
-
-        cache_filename = os.path.join(
-            str(DATA_DIRECTORY),
-            f"expected_score_norms_minSigma{float(sigmas[0]):0.3f}"
-            f"_maxSigma{float(sigmas[-1]):0.3f}"
-            f"_T{num_timesteps}_{num_monte_carlo_samples}MCsamples"
-            f"_{num_lattice_translations}LatticeTranslations.pdparams",
-        )
-        print(f"Checking cache: {cache_filename}")
-        print(f"Cache exists: {os.path.exists(cache_filename)}")
-        if os.path.exists(cache_filename):
-            print(f"Loading sigma norms from: {cache_filename}")
-            sigma_norms = paddle.load(cache_filename)
-            print(f"Successfully loaded sigma_norms with shape: {sigma_norms.shape}")
-            return sigma_norms
-        else:
-            print(f"Cache not found, computing sigma_norms...")
-
-        _ensure_wyckoff_shape_decomp()
-        import pickle
-        with open(global_vars.SHAPE_DECOMP_DICT_PATH, "rb") as f:
-            wyckoff_shape_decomp_dict = pickle.load(f)
-
-        asu_wyckoff_dict = global_vars.asu_wyckoff_dict
-        sigma_norms = paddle.zeros([230, MAX_WYCKOFF_SITES, num_timesteps], dtype=paddle.float32)
-
-        for sg_num in tqdm(range(230, 0, -1)):
-            sg_dict = asu_wyckoff_dict[str(sg_num)]
-            wyckoff_letters = sg_dict["ordered_wyckoff_letters"]
-
-            (
-                x0s,
-                wsi,
-            ) = uniformly_sample_point_in_asu_wyckoff_site(
-                space_group_numbers=[str(sg_num)] * len(wyckoff_letters),
-                wyckoff_letters=wyckoff_letters,
-                dictionary_of_wyckoffs_in_asu=asu_wyckoff_dict,
-                dictionary_of_wyckoff_shape_decompositions=wyckoff_shape_decomp_dict,
-                n_samples_per_wyckoff=num_monte_carlo_samples,
-                return_sampled_wyckoff_shape_indices=True,
-            )
-
-            space_group_idx = paddle.to_tensor([sg_num - 1], dtype=paddle.int64)
-
-            for i, letter in enumerate(wyckoff_letters):
-                _wyckoff_idx = paddle.to_tensor([i], dtype=paddle.int64)
-                _wyckoff_idx_expanded = _wyckoff_idx.expand([num_monte_carlo_samples])
-
-                (
-                    _,
-                    _,
-                    _,
-                    map_conv_to_asu,
-                    conv_wp_idxs,
-                    _,
-                    orbited_x,
-                    unique_indices,
-                ) = get_space_group_ops_and_conventional_atoms(
-                    x0s[i],
-                    paddle.zeros_like(_wyckoff_idx_expanded),
-                    _wyckoff_idx_expanded,
-                    space_group_idx,
-                    n_atoms_per_xtal=paddle.to_tensor(
-                        [num_monte_carlo_samples], dtype=paddle.int64
-                    ),
-                )
-                map_unique_conv_to_asu = map_conv_to_asu[unique_indices]
-
-                _chunks = min(200, num_timesteps)
-                for sigma_idxs in paddle.chunk(
-                    paddle.arange(num_timesteps), chunks=_chunks
-                ):
-                    batch_sigmas = sigmas[sigma_idxs]
-
-                    norms = []
-                    for t_idx, sigma in enumerate(batch_sigmas.tolist()):
-                        noise = paddle.randn([num_monte_carlo_samples, 3]) * sigma
-                        xts = x0s[i] + noise
-
-                        scores = d_log_p_asu_wrapped_normal(
-                            xts,
-                            orbited_x,
-                            map_unique_conv_to_asu,
-                            num_lattice_translations,
-                            sigma,
-                        )
-                        norm_t = ((scores ** 2).sum(axis=-1)).sqrt().mean()
-                        norms.append(float(norm_t.item()))
-
-                    sigma_norms[sg_num - 1, i, sigma_idxs] = paddle.to_tensor(
-                        norms, dtype=paddle.float32
-                    )
-
-        paddle.save(sigma_norms, cache_filename)
-        print(f"Saved sigma norms to: {cache_filename}")
-        return sigma_norms
-
-    @paddle.no_grad()
-    def get_interpolated_sigma_norm_t(
-        self,
-        t: paddle.Tensor,
-        space_group_indices: paddle.Tensor,
-        wyckoff_indices: paddle.Tensor,
-    ) -> paddle.Tensor:
-        """在实数时间 t 处插值 sigma_norm。"""
-        t_val = float(t.item())
-        assert 0.0 <= t_val <= self.num_timesteps
-
-        t_below = int(math.floor(t_val))
-        t_above = int(math.ceil(t_val))
-        if t_below == t_above:
-            if t_below == 0:
-                t_below, t_above = 0, 1
-            elif t_below == self.num_timesteps:
-                t_above = self.num_timesteps
-                t_below = self.num_timesteps - 1
-            else:
-                t_above = t_below + 1
-
-        p = (t_val - t_below) / max(t_above - t_below, 1)
-        sn_below = self.sigma_norms[space_group_indices, wyckoff_indices, t_below]
-        sn_above = self.sigma_norms[space_group_indices, wyckoff_indices, t_above]
-        return (1 - p) * sn_below + p * sn_above

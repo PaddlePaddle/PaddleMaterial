@@ -1,13 +1,28 @@
-"""Wyckoff 形状分解字典构建器：使用 scipy 替代原始的 meshpy。"""
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Wyckoff shape decomposition dict builder using scipy instead of meshpy."""
 import json
 import os
 import pickle
+from ppmat.utils import logger
 
 import numpy as np
 from scipy.spatial import ConvexHull
 
 def _to_array(region) -> np.ndarray:
-    """将顶点列表转换为 numpy 数组，支持分数字符串如 "1/2"。"""
+    """Convert vertex list to numpy array, supporting fraction strings like "1/2"."""
     if isinstance(region, np.ndarray):
         return region.astype(np.float64)
     result = []
@@ -16,7 +31,7 @@ def _to_array(region) -> np.ndarray:
             coords = []
             for c in pt:
                 if isinstance(c, str):
-                    # 支持分数字符串如 "1/2"
+                    # support fraction strings like "1/2"
                     coords.append(float(eval(c)))
                 else:
                     coords.append(float(c))
@@ -25,17 +40,9 @@ def _to_array(region) -> np.ndarray:
             result.append([float(pt)])
     return np.array(result, dtype=np.float64)
 
-def _to_affine_transform(simplicial_complex: np.ndarray):
-    """从单纯复形顶点提取仿射变换参数。"""
-    assert simplicial_complex.shape[0] > 1
-    offset = simplicial_complex[0]
-    basis_maps = []
-    for vec in simplicial_complex[1:]:
-        basis_maps.append(vec - offset)
-    return offset, np.stack(basis_maps)
 
 def _fan_triangulate_convex_polygon_3d(vertices_3d: np.ndarray):
-    """对三维空间中的凸多边形做扇形三角剖分（从质心出发）。"""
+    """Fan triangulation of convex polygon in 3D (from centroid)."""
     n = len(vertices_3d)
     if n < 3:
         return np.zeros((0, 3, 3), dtype=np.float64), np.zeros(0, dtype=np.float64)
@@ -48,36 +55,34 @@ def _fan_triangulate_convex_polygon_3d(vertices_3d: np.ndarray):
         v1 = vertices_3d[i]
         v2 = vertices_3d[(i + 1) % n]
         tri = np.stack([v0, v1, v2], axis=0)  # (3, 3)
-        # 三角形面积 = 0.5 * |cross(v1-v0, v2-v0)|
+        # triangle area = 0.5 * |cross(v1-v0, v2-v0)|
         area = 0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0))
         triangles.append(tri)
         areas.append(area)
     return np.array(triangles, dtype=np.float64), np.array(areas, dtype=np.float64)
 
 def _compute_3d_convex_hull_volume(vertices: np.ndarray) -> float:
-    """计算三维凸多面体的体积。"""
+    """Compute volume of a 3D convex polytope."""
     if len(vertices) < 4:
         return 0.0
     try:
         hull = ConvexHull(vertices)
         return float(hull.volume)
     except Exception:
-        # 退化情况（所有点共面等）
+        # degenerate case (all points coplanar, etc.)
         return 0.0
 
 def build_wyckoff_shape_decomposition_dict(
     output_path: str,
     asu_dict_path: str,
 ) -> None:
-    """
-    构建 Wyckoff 形状分解字典并持久化到 pickle 文件。
-    """
+    """Build Wyckoff shape decomposition dict and persist to pickle."""
     if os.path.exists(output_path):
         return
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    print(f"[wyckoff_shape_decomp_builder] 开始构建 {output_path} ...")
+    logger.info(f"[wyckoff_shape_decomp_builder] building {output_path} ...")
 
     with open(asu_dict_path, "r") as f:
         asu_dict = json.load(f)
@@ -131,7 +136,7 @@ def build_wyckoff_shape_decomposition_dict(
                 wyckoff_shapes_info["volumes"].append(vol)
 
             else:
-                raise ValueError(f"Wyckoff 位维度必须在 [0, 1, 2, 3] 内，得到: {site_dim}")
+                raise ValueError(f"Wyckoff site dimensionality must be in [0, 1, 2, 3], got: {site_dim}")
 
             sg_shape_info[wyckoff_letter] = wyckoff_shapes_info
 
@@ -140,4 +145,4 @@ def build_wyckoff_shape_decomposition_dict(
     with open(output_path, "wb") as f:
         pickle.dump(shape_decomposition_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    print(f"[wyckoff_shape_decomp_builder] 构建完成 -> {output_path}")
+    logger.info(f"[wyckoff_shape_decomp_builder] done -> {output_path}")

@@ -1,17 +1,37 @@
-"""空间群全局预计算变量模块。"""
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Space group global precomputed variables and EmbeddingTools."""
 import json
 import os
+from ppmat.utils import logger
 from fractions import Fraction
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
+import paddle.nn.functional as F
 from pymatgen.symmetry.groups import SpaceGroup as _PymatgenSpaceGroup
 from scipy.spatial import ConvexHull
 
-from ppmat.models.sgequidiff.constants import MAX_WYCKOFF_SITES
-from ppmat.models.sgequidiff.spacegroup_data import spgroup_data
+from ppmat.models.sgequidiff.constants import (
+    MAX_WYCKOFF_SITES,
+    NUM_ELEMENTS,
+    NUM_SPACE_GROUPS,
+)
+from ppmat.models.sgequidiff.constants import spgroup_data
 
 _THIS_FILE = Path(__file__).resolve()
 
@@ -23,12 +43,12 @@ if _ENV_DATA_DIR_STR:
     if _ENV_DATA_DIR.exists():
         DATA_DIRECTORY = _ENV_DATA_DIR
     else:
-        print(f"Warning: SGEQUI_DATA_DIR '{_ENV_DATA_DIR}' does not exist, trying fallback paths")
+        logger.info(f"Warning: SGEQUI_DATA_DIR '{_ENV_DATA_DIR}' does not exist, trying fallback paths")
 else:
     _CANDIDATE_DIRS = [
         _MODULE_DIR / "resources",
     ]
-    
+
     _TARGET_FILE = "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
     DATA_DIRECTORY = None
 
@@ -38,7 +58,7 @@ else:
             break
 
     if DATA_DIRECTORY is None:
-        _candidate_paths = "\n".join([f"  • {d}" for d in _CANDIDATE_DIRS])
+        _candidate_paths = "\n".join([f"  \u2022 {d}" for d in _CANDIDATE_DIRS])
         raise FileNotFoundError(
             f"Cannot find SGEQUI data directory.\n"
             f"\nTried paths:\n{_candidate_paths}\n"
@@ -62,7 +82,7 @@ ASU_DICT_PATH: str = (_resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in
 SHAPE_DECOMP_DICT_PATH: Path = _resolve_data_dir() / "wyckoff_shape_decomposition.pkl"
 
 def _ensure_wyckoff_shape_decomp() -> None:
-    """确保 wyckoff_shape_decomposition.pkl 存在。"""
+    """Ensure wyckoff_shape_decomposition.pkl exists."""
     if SHAPE_DECOMP_DICT_PATH.exists():
         return
     from ppmat.models.sgequidiff.wyckoff_shape_decomp_builder import (
@@ -78,7 +98,7 @@ def string_to_fraction(string: str) -> Fraction:
 def load_dictionary_of_wyckoff_sites_in_asus(
     json_filepath: str = ASU_DICT_PATH,
 ) -> dict:
-    """加载非对称单元内 Wyckoff 位置字典。"""
+    """Load Wyckoff site dictionary within ASU."""
     try:
         with open(json_filepath) as file:
             wyckoffs_dict = json.load(file)
@@ -153,19 +173,17 @@ for space_group_number in range(1, 231):
         rotation = paddle.to_tensor(
             symmetry_rep.rotation_matrix, dtype=paddle.float32
         )
-        tensor_wyckoff_rotations.append(rotation.T)  # (3, 3)
+        tensor_wyckoff_rotations.append(rotation.T)
         tensor_wyckoff_inv_rotations.append(paddle.linalg.inv(rotation).T)
         tensor_wyckoff_translations.append(
             paddle.to_tensor(
                 symmetry_rep.translation_vector, dtype=paddle.float32
             ).unsqueeze(0)
-        )  # (1, 3)
+        )
 
     tensor_wyckoff_rotations = paddle.stack(tensor_wyckoff_rotations, axis=0)
-    # (multiplicity, 3, 3)
     tensor_wyckoff_inv_rotations = paddle.stack(tensor_wyckoff_inv_rotations, axis=0)
     tensor_wyckoff_translations = paddle.stack(tensor_wyckoff_translations, axis=0)
-    # (multiplicity, 1, 3)
 
     n_ops = tensor_wyckoff_rotations.shape[0]
     padded_general_wyckoff_matrices[space_group_number - 1, :n_ops] = (
@@ -193,47 +211,17 @@ for space_group_number in range(1, 231):
         padded_general_wyckoff_ops_mask[space_group_number - 1][0].item() == True
     )
 
+_eye3 = paddle.to_tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32)
+_P_identity = _eye3.clone()
+_invP_identity = _eye3.clone()
+
 conventional_to_primitive_transforms: dict = {
-    "cP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
-    "tP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
-    "hP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
-    "oP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
-    "mP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
+    "cP": {"P": _P_identity, "invP": _invP_identity},
+    "tP": {"P": _P_identity, "invP": _invP_identity},
+    "hP": {"P": _P_identity, "invP": _invP_identity},
+    "oP": {"P": _P_identity, "invP": _invP_identity},
+    "mP": {"P": _P_identity, "invP": _invP_identity},
+    "aP": {"P": _P_identity, "invP": _invP_identity},
     "cF": {
         "P": paddle.to_tensor(
             [[-0.5, -0.5, 0.0], [-0.5, 0.0, -0.5], [0.0, -0.5, -0.5]], dtype=paddle.float32
@@ -307,14 +295,6 @@ conventional_to_primitive_transforms: dict = {
             [[0.0, -1.0, 0.0], [0.0, -1.0, -2.0], [1.0, 0.0, 0.0]], dtype=paddle.float32
         ),
     },
-    "aP": {
-        "P": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-        "invP": paddle.to_tensor(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32
-        ),
-    },
 }
 
 conventional_to_primitive_P_matrices = []
@@ -329,10 +309,10 @@ for space_group_number in range(1, 231):
     )
 conventional_to_primitive_P_matrices = paddle.stack(
     conventional_to_primitive_P_matrices, axis=0
-)  # (230, 3, 3)
+)
 conventional_to_primitive_invP_matrices = paddle.stack(
     conventional_to_primitive_invP_matrices, axis=0
-)  # (230, 3, 3)
+)
 
 wyckoff_dimension_tensor = -1 * paddle.ones([230, 27], dtype=paddle.int64)
 for space_group_number in range(1, 231):
@@ -344,14 +324,14 @@ for space_group_number in range(1, 231):
         wyckoff_dimension_tensor[space_group_number - 1, wyckoff_index] = wyckoff_dim
 
 def _project_onto_1d_subspace(line: paddle.Tensor) -> paddle.Tensor:
-    """投影到 1D 子空间，返回 (3,3) 投影矩阵。"""
+    """Project to 1D subspace, return (3,3) projection matrix."""
     projection_matrix = (line.T @ line) / (line ** 2).sum()
     return projection_matrix
 
 def _project_onto_2d_subspace(
     facet_vertices: paddle.Tensor, return_plane_normal: bool = False
 ) -> Union[paddle.Tensor, Tuple[paddle.Tensor, paddle.Tensor]]:
-    """投影到 2D 子空间，返回 (3,3) 投影矩阵。"""
+    """Project to 2D subspace, return (3,3) projection matrix."""
     ab = facet_vertices[0] - facet_vertices[1]
     bc = facet_vertices[1] - facet_vertices[2]
     plane_normal = paddle.linalg.cross(ab, bc)
@@ -435,7 +415,7 @@ for sg_num in range(1, 231):
 
 max_simplicial_hull_facets = 16
 
-# 初始化使 inside test 永远为 True 的 padding
+# initialize padding so inside test is always True
 asu_hull_equations = -1.0 * paddle.nn.functional.one_hot(
     paddle.to_tensor(3), num_classes=4
 ).unsqueeze(0).unsqueeze(0).expand([230, max_simplicial_hull_facets, 4]).cast(paddle.float32)
@@ -450,7 +430,7 @@ for sg in range(1, 231):
     asu_vertices: np.ndarray = general_wyckoff_dict["vertices"]
 
     hull = ConvexHull(asu_vertices.astype("float64"))
-    equations = hull.equations  # (n_facet, ndim+1)
+    equations = hull.equations
     n_simplicial_facets = equations.shape[0]
 
     asu_hull_equations[sg - 1, :n_simplicial_facets] = paddle.to_tensor(
@@ -458,54 +438,149 @@ for sg in range(1, 231):
     )
     asu_hull_equations_mask[sg - 1, :n_simplicial_facets] = True
 
-asu_hull_equations_numpy = asu_hull_equations.numpy()
-
 max_vertices_per_wyckoff_shape = 10
 
-wyckoff_shape_vertices = paddle.zeros(
-    [230, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, max_vertices_per_wyckoff_shape, 3],
-    dtype=paddle.float32,
-)
-mask_wyckoff_shape_vertices = paddle.zeros(
-    [230, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, max_vertices_per_wyckoff_shape],
-    dtype=paddle.bool,
-)
-n_vertices_per_wyckoff_shape = paddle.zeros(
-    [230, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff], dtype=paddle.int64
-)
-n_shapes_per_wyckoff = paddle.zeros([230, MAX_WYCKOFF_SITES], dtype=paddle.int64)
 
-for sg in range(1, 231):
-    sg_dict = asu_wyckoff_dict[str(sg)]
-    for wp_idx, wyckoff_letter in zip(
-        range(MAX_WYCKOFF_SITES), sg_dict["ordered_wyckoff_letters"]
+class EmbeddingTools:
+    """Element/space-group/Wyckoff embedding tools. Singleton, accessed via embedding_tools."""
+
+    @paddle.no_grad()
+    def __init__(
+        self,
+        space_group_embedding_json_path: Optional[str] = None,
+        element_embedding_json_path: Optional[str] = None,
+        wyckoff_embedding_json_path: Optional[str] = None,
+        chemistry_embedding_type: str = "identity",
+        device: str = "cpu",
     ):
-        wyck_dict = sg_dict[wyckoff_letter]
-        wyck_dof = int(wyck_dict["dim"])
-        if wyck_dof not in [1, 2]:
-            n_vertices = wyck_dict["vertices_tensor"].shape[0]
-            n_vertices_per_wyckoff_shape[sg - 1, wp_idx, 0] = n_vertices
-            n_shapes_per_wyckoff[sg - 1, wp_idx] = 1
-            wyckoff_shape_vertices[sg - 1, wp_idx, 0, :wyck_dict["vertices"].shape[0], :] = (
-                wyck_dict["vertices_tensor"]
+        self.space_group_embedding_dict = None
+        self.element_embedding_dict = None
+        self.wyckoff_embedding_dict = None
+        self.chemistry_embedding_type = chemistry_embedding_type
+        self.device = device
+
+        data_directory = DATA_DIRECTORY
+
+        if space_group_embedding_json_path is not None:
+            fp = Path(data_directory / space_group_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.space_group_embedding_dict = json.load(file)
+            self.space_group_embedding_length = len(
+                self.space_group_embedding_dict["1"]
             )
-            mask_wyckoff_shape_vertices[sg - 1, wp_idx, 0, :n_vertices] = True
+            self.space_group_embedding_tensor = paddle.to_tensor(
+                [
+                    self.space_group_embedding_dict[str(sg_num)]
+                    for sg_num in range(1, 231)
+                ],
+                dtype=paddle.float32,
+            )
         else:
-            n_shapes = len(wyck_dict["vertices"])
-            n_shapes_per_wyckoff[sg - 1, wp_idx] = n_shapes
-            assert 0 <= n_shapes <= max_shapes_per_wyckoff
-            if wyck_dof == 1:
-                n_vertices = 2
-                n_vertices_per_wyckoff_shape[sg - 1, wp_idx, :n_shapes] = n_vertices
-                wyckoff_shape_vertices[sg - 1, wp_idx, :n_shapes, :n_vertices, :] = (
-                    wyck_dict["vertices_tensor"]
-                )
-                mask_wyckoff_shape_vertices[sg - 1, wp_idx, :n_shapes, :n_vertices] = True
-            elif wyck_dof == 2:
-                for shape_idx in range(n_shapes):
-                    n_vertices = len(wyck_dict["vertices"][shape_idx])
-                    n_vertices_per_wyckoff_shape[sg - 1, wp_idx, shape_idx] = n_vertices
-                    wyckoff_shape_vertices[sg - 1, wp_idx, shape_idx, :n_vertices, :] = (
-                        wyck_dict["vertices_tensors"][shape_idx]
+            self.space_group_embedding_length = NUM_SPACE_GROUPS
+
+        if element_embedding_json_path is not None:
+            fp = Path(data_directory / element_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.element_embedding_dict = json.load(file)
+            self.element_embedding_length = len(self.element_embedding_dict["0"])
+            self.element_embedding_tensor = paddle.to_tensor(
+                [
+                    self.element_embedding_dict[str(atomic_number)]
+                    for atomic_number in range(NUM_ELEMENTS + 1)
+                ],
+                dtype=paddle.float32,
+            )
+        else:
+            self.element_embedding_length = NUM_ELEMENTS
+
+        if wyckoff_embedding_json_path is not None:
+            fp = Path(data_directory / wyckoff_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.wyckoff_embedding_dict = json.load(file)
+            self.wyckoff_embedding_length = len(
+                self.wyckoff_embedding_dict["1"]["a"]
+            )
+
+            wyckoff_emb_list = []
+            n_wyckoffs_list = []
+            for sg_num in range(1, 231):
+                wyckoff_dict_of_sg = self.wyckoff_embedding_dict[str(sg_num)]
+                letters = list(wyckoff_dict_of_sg.keys())
+
+                wyckoff_ascii = [ord(l) for l in letters]
+                wyckoff_idxs = [
+                    ai - 97 if ai >= 97 else ai - 65 + 26 for ai in wyckoff_ascii
+                ]
+                sorted_letters = [
+                    l
+                    for l, _ in sorted(
+                        zip(letters, wyckoff_idxs), key=lambda pair: pair[1]
                     )
-                    mask_wyckoff_shape_vertices[sg - 1, wp_idx, shape_idx, :n_vertices] = True
+                ]
+
+                emb_array = paddle.to_tensor(
+                    [wyckoff_dict_of_sg[l] for l in sorted_letters],
+                    dtype=paddle.float32,
+                )
+                padding = paddle.zeros(
+                    [MAX_WYCKOFF_SITES - len(letters), self.wyckoff_embedding_length]
+                )
+                wyckoff_emb_list.append(paddle.concat([emb_array, padding], axis=0))
+                n_wyckoffs_list.append(len(letters))
+
+            self.wyckoff_embedding_tensor = paddle.stack(wyckoff_emb_list, axis=0)
+            self.n_wyckoffs_per_space_group = paddle.to_tensor(
+                n_wyckoffs_list, dtype=paddle.int64
+            )
+        else:
+            self.wyckoff_embedding_length = MAX_WYCKOFF_SITES
+
+    def get_space_group_embedding(self, space_group_index: paddle.Tensor) -> paddle.Tensor:
+        """Get space group embedding."""
+        assert space_group_index.dtype == paddle.int64
+        if self.space_group_embedding_dict is None:
+            return F.one_hot(space_group_index, NUM_SPACE_GROUPS).cast(paddle.float32)
+        else:
+            return self.space_group_embedding_tensor[space_group_index]
+
+    @paddle.no_grad()
+    def get_element_embedding(self, atomic_number: paddle.Tensor) -> paddle.Tensor:
+        """Get element embedding."""
+        assert atomic_number.dtype == paddle.int64
+        if self.element_embedding_dict is None:
+            return F.one_hot(
+                atomic_number - 1, NUM_ELEMENTS
+            ).cast(paddle.float32)
+        else:
+            return self.element_embedding_tensor[atomic_number]
+
+    @paddle.no_grad()
+    def get_wyckoff_embedding(
+        self,
+        wyckoff_index: paddle.Tensor,
+        space_group_index: paddle.Tensor,
+    ) -> paddle.Tensor:
+        """Get Wyckoff embedding by index and space group."""
+        if self.wyckoff_embedding_dict is None:
+            return F.one_hot(wyckoff_index, MAX_WYCKOFF_SITES).cast(paddle.float32)
+        else:
+            valid_mask = self.n_wyckoffs_per_space_group[space_group_index] > wyckoff_index
+            assert valid_mask.all().item(), "Invalid space group-Wyckoff index pairs"
+            return self.wyckoff_embedding_tensor[space_group_index, wyckoff_index, :]
+
+def set_global_embedding_tools(
+    space_group_embedding_json_path: Optional[str] = None,
+    element_embedding_json_path: Optional[str] = None,
+    wyckoff_embedding_json_path: Optional[str] = None,
+    chemistry_embedding_type: str = "identity",
+    device: str = "cpu",
+) -> None:
+    """Initialize and set global embedding_tools."""
+    global embedding_tools
+    embedding_tools = EmbeddingTools(
+        space_group_embedding_json_path=space_group_embedding_json_path,
+        element_embedding_json_path=element_embedding_json_path,
+        wyckoff_embedding_json_path=wyckoff_embedding_json_path,
+        chemistry_embedding_type=chemistry_embedding_type,
+        device=device,
+    )

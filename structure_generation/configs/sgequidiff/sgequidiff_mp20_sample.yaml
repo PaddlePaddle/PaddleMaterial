@@ -4,7 +4,7 @@ Global:
   do_test: False
 
 Model:
-  __class_name__: "__import__('ppmat.models.sgequidiff.sampler_wrapper', fromlist=['SGEQUIDiffSampler']).SGEQUIDiffSampler"
+  __class_name__: SGEQUIDiffSampler
   __init_params__:
     dataset_name: mp_20
     diffusion_snr: 0.4

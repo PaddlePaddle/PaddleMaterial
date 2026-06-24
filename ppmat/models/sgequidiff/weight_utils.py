@@ -1,7 +1,16 @@
-# Copyright (C) 2026 Suzhou National Laboratory and Baidu PaddlePaddle team
-# This code was jointly developed by Suzhou National Laboratory and Baidu PaddlePaddle team.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """SGEquiDiff weight download and loading utilities."""
 
@@ -15,6 +24,7 @@ import paddle
 import requests
 
 from ppmat.models.sgequidiff.constants import PRETRAINED_WEIGHT_URLS
+from ppmat.utils import logger
 
 SGEQUIDIFF_WEIGHTS_HOME = osp.join(
     osp.expanduser("~/.paddlemat/weights"), "sgequidiff"
@@ -31,14 +41,13 @@ def download_weight_file(url: str, dataset_name: str, sub_module: str) -> str:
     local_path = osp.join(cache_dir, fname)
 
     if osp.exists(local_path):
-        print(f"[Weight Cache] Already exists: {local_path}")
+        logger.info(f"Cached: {local_path}")
         return local_path
 
     retry_cnt = 0
     while retry_cnt < DOWNLOAD_RETRY_LIMIT:
         try:
-            print(f"[Weight Download] Downloading {dataset_name}/{sub_module} ...")
-            print(f"  From: {url}")
+            logger.info(f"Downloading {dataset_name}/{sub_module} from {url}")
             resp = requests.get(url, stream=True, timeout=300)
             resp.raise_for_status()
 
@@ -48,11 +57,7 @@ def download_weight_file(url: str, dataset_name: str, sub_module: str) -> str:
                 for chunk in resp.iter_content(chunk_size=8192):
                     f.write(chunk)
                     downloaded += len(chunk)
-                    if total_size > 0:
-                        pct = downloaded / total_size * 100
-                        print(f"\r  Progress: {pct:.1f}% ({downloaded}/{total_size} bytes)", end="")
-            print()
-            print(f"[Weight Download] Done: {local_path}")
+            logger.info(f"Done: {local_path}")
             return local_path
         except requests.RequestException as e:
             retry_cnt += 1
@@ -60,11 +65,12 @@ def download_weight_file(url: str, dataset_name: str, sub_module: str) -> str:
                 raise RuntimeError(
                     f"Download failed (retried {DOWNLOAD_RETRY_LIMIT} times): {url}\nError: {e}"
                 )
-            print(f"[Weight Download] Retry {retry_cnt}/{DOWNLOAD_RETRY_LIMIT} ...")
+            logger.warning(f"Retry {retry_cnt}/{DOWNLOAD_RETRY_LIMIT} ...")
 
     raise RuntimeError(f"Download failed: {url}")
 
 
+# 4 sub-modules (diffusion/lattice/space_group/wyckoff), not single-file like framework load_pretrain
 def download_all_weights(
     dataset_name: str = "mp_20",
 ) -> Dict[str, str]:
@@ -100,19 +106,16 @@ def load_pretrained_weights(
             if osp.exists(candidate):
                 local_paths[sub_module_key] = candidate
         if len(local_paths) == 0:
-            # Try to match file name patterns directly
             for f in os.listdir(weight_dir):
                 if f.endswith(".pdparams") and dataset_name in f:
                     for key in ["diffusion", "lattice", "space_group", "wyckoff"]:
                         if key in f:
                             local_paths[key] = osp.join(weight_dir, f)
     else:
-        # Auto-download from remote
         local_paths = download_all_weights(dataset_name)
 
     if verbose:
-        print(f"[Weight Load] Dataset: {dataset_name}")
-        print(f"[Weight Load] Found {len(local_paths)} weight files")
+        logger.info(f"Dataset: {dataset_name}, found {len(local_paths)} weight files")
 
     submodule_attr_map = {
         "diffusion": "atom_coord_diffusion_model",
@@ -122,8 +125,6 @@ def load_pretrained_weights(
     }
 
     loaded_count = 0
-    # SGEQUITrainingWrapper contains CrystalSampler's diffusion_model
-    # CrystalSampler directly owns all sub-modules
     search_roots = [model]
     if hasattr(model, "diffusion_model"):
         search_roots.append(model.diffusion_model)
@@ -132,10 +133,9 @@ def load_pretrained_weights(
         attr_name = submodule_attr_map.get(sub_module_key)
         if attr_name is None:
             if verbose:
-                print(f"  [Skip] Unknown sub-module: {sub_module_key}")
+                logger.warning(f"Unknown sub-module: {sub_module_key}")
             continue
 
-        # Look up sub-module in multiple search roots
         submodule = None
         for root in search_roots:
             submodule = getattr(root, attr_name, None)
@@ -144,7 +144,7 @@ def load_pretrained_weights(
 
         if submodule is None:
             if verbose:
-                print(f"  [Skip] Attribute {attr_name} not found in model")
+                logger.warning(f"Attribute {attr_name} not found in model")
             continue
 
         try:
@@ -153,12 +153,12 @@ def load_pretrained_weights(
             loaded_count += 1
             if verbose:
                 n_params = len(state_dict)
-                print(f"  [OK] {sub_module_key:12s} -> {attr_name:30s} ({n_params} params)")
+                logger.info(f"Loaded {sub_module_key:12s} -> {attr_name:30s} ({n_params} params)")
         except Exception as e:
             if verbose:
-                print(f"  [FAIL] {sub_module_key}: {e}")
+                logger.warning(f"Failed {sub_module_key}: {e}")
 
     if verbose:
-        print(f"[Weight Load] Successfully loaded {loaded_count}/{len(local_paths)} weight files")
+        logger.info(f"Successfully loaded {loaded_count}/{len(local_paths)} weight files")
 
     return loaded_count

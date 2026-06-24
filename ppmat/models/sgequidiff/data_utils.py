@@ -1,14 +1,32 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
-晶体数据处理工具函数：坐标转换、图构建、空间群约束晶格参数。
+Crystal data utilities: coordinate conversion, graph construction, space-group lattice params,
+diffusion helpers: hull test, ASU wrapping, score computation.
 """
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 
 import numpy as np
 import paddle
+from scipy.spatial import ConvexHull
 
 import ppmat.models.sgequidiff.global_vars as global_vars
-from ppmat.models.sgequidiff.constants import OFFSET_LIST
-from ppmat.models.sgequidiff.scatter_utils import safe_scatter as scatter
+from ppmat.models.sgequidiff.constants import OFFSET_LIST, MAX_WYCKOFF_SITES
+from ppmat.utils.scatter import scatter
+from ppmat.utils.crystal import lattice_params_to_matrix_paddle
+from ppmat.utils.crystal import frac_to_cart_coords as _crystal_frac_to_cart
 
 
 def _scatter_min_with_argmin_gpu_safe(
@@ -17,7 +35,7 @@ def _scatter_min_with_argmin_gpu_safe(
     dim_size: Optional[int] = None,
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """
-    scatter_min + argmin 的 GPU 安全实现。
+    GPU-safe scatter_min + argmin.
     """
     if dim_size is None:
         dim_size = int(index.max().item()) + 1
@@ -43,25 +61,13 @@ def _scatter_min_with_argmin_gpu_safe(
     argmin = paddle.scatter(argmin, group_ids, argmin_orig_idx)
     return min_vals, argmin
 
-def _segment_coo_sum_gpu_safe(
-    src: paddle.Tensor,
-    index: paddle.Tensor,
-    dim_size: Optional[int] = None,
-) -> paddle.Tensor:
-    """
-    使用 scatter(reduce='sum') 替代 segment_coo。GPU 安全。
-    """
-    if dim_size is None:
-        dim_size = int(index.max().item()) + 1
-    return scatter(src=src, index=index, dim_size=dim_size, reduce="sum")
-
 def _scatter_min_indices_gpu_safe(
     ov_row: paddle.Tensor,
     ov_col: paddle.Tensor,
     n_total: int,
 ) -> paddle.Tensor:
     """
-    返回每个 ov_row 对应的最小 ov_col。GPU 安全。未出现的行返回自身索引。
+    Return smallest ov_col per ov_row. GPU-safe. Missing rows return self-index.
     """
     if ov_row.shape[0] == 0:
         return paddle.arange(n_total, dtype=paddle.int64)
@@ -89,79 +95,10 @@ def scatter_min_with_argmin(
     dim_size: Optional[int] = None,
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """
-    scatter_min + argmin。GPU 安全的纯 Paddle 实现。
+    scatter_min + argmin. GPU-safe pure Paddle impl.
     """
     return _scatter_min_with_argmin_gpu_safe(src, index, dim_size)
 
-
-def lattice_params_to_matrix_paddle(
-    lattice_lengths: paddle.Tensor,
-    lattice_angles: paddle.Tensor,
-) -> paddle.Tensor:
-    """
-    将晶格参数 (a,b,c, alpha,beta,gamma) 转换为 (N,3,3) 晶格矩阵。
-    """
-    angles_r = paddle.deg2rad(lattice_angles)
-    coses = paddle.cos(angles_r)
-    sins = paddle.sin(angles_r)
-
-    val = (coses[:, 0] * coses[:, 1] - coses[:, 2]) / (sins[:, 0] * sins[:, 1])
-    val = paddle.clip(val, -1.0, 1.0)
-    gamma_star = paddle.acos(val)
-
-    zeros = paddle.zeros([lattice_lengths.shape[0]], dtype=lattice_lengths.dtype)
-    vector_a = paddle.stack(
-        [
-            lattice_lengths[:, 0] * sins[:, 1],
-            zeros,
-            lattice_lengths[:, 0] * coses[:, 1],
-        ],
-        axis=1,
-    )
-    vector_b = paddle.stack(
-        [
-            -lattice_lengths[:, 1] * sins[:, 0] * paddle.cos(gamma_star),
-            lattice_lengths[:, 1] * sins[:, 0] * paddle.sin(gamma_star),
-            lattice_lengths[:, 1] * coses[:, 0],
-        ],
-        axis=1,
-    )
-    vector_c = paddle.stack(
-        [zeros, zeros, lattice_lengths[:, 2]], axis=1,
-    )
-    return paddle.stack([vector_a, vector_b, vector_c], axis=1)
-
-def lattice_matrix_to_params(matrix: paddle.Tensor) -> Tuple[paddle.Tensor, paddle.Tensor]:
-    """
-    将 (N,3,3) 晶格矩阵转换为 (N,3) lengths 和 (N,3) angles。
-    """
-    lengths = paddle.sqrt(paddle.sum(matrix ** 2, axis=-1))
-
-    j = paddle.to_tensor([1, 2, 0], dtype=paddle.int64)
-    k = paddle.to_tensor([2, 0, 1], dtype=paddle.int64)
-    angles = paddle.clip(
-        (matrix[:, j, :] * matrix[:, k, :]).sum(axis=-1) / (lengths[:, j] * lengths[:, k]),
-        -1.0, 1.0,
-    )
-    angles = paddle.acos(angles) * 180.0 / paddle.to_tensor(float(np.pi))
-    return lengths, angles
-
-
-def _expand_lattice_to_nodes(
-    lattice_tensor: paddle.Tensor,
-    num_atoms_per_crystal: paddle.Tensor,
-    num_nodes: int,
-) -> paddle.Tensor:
-    """根据每晶体原子数展开晶格张量到每原子节点。"""
-    if num_nodes == 0:
-        return lattice_tensor[:0]
-
-    atom_counts = num_atoms_per_crystal.cast("int64").reshape([-1])
-    cumulative = paddle.cumsum(atom_counts, axis=0)
-    atom_ids = paddle.arange(num_nodes, dtype=cumulative.dtype).reshape([-1, 1])
-    crystal_ids = (atom_ids >= cumulative.reshape([1, -1])).cast("int64").sum(axis=1)
-    crystal_ids = paddle.clip(crystal_ids, min=0, max=lattice_tensor.shape[0] - 1)
-    return paddle.gather(lattice_tensor, crystal_ids, axis=0)
 
 def frac_to_cart_coords(
     frac_coords: paddle.Tensor,
@@ -170,51 +107,18 @@ def frac_to_cart_coords(
     lattice_angles: Optional[paddle.Tensor] = None,
     lattice_matrix: Optional[paddle.Tensor] = None,
 ) -> paddle.Tensor:
-    """
-    分数坐标 -> 笛卡尔坐标。
-    """
+    """Fractional -> Cartesian coordinates."""
     if lattice_matrix is None:
-        assert lattice_lengths is not None and lattice_angles is not None
         lattice_matrix = lattice_params_to_matrix_paddle(lattice_lengths, lattice_angles)
-    lattice_nodes = _expand_lattice_to_nodes(
-        lattice_matrix.cast(paddle.float32),
-        num_atoms_per_crystal,
-        frac_coords.shape[0],
-    )
-    cart_coords = paddle.einsum("bi,bij->bj", frac_coords, lattice_nodes)
-    return cart_coords
+    return _crystal_frac_to_cart(frac_coords, num_atoms_per_crystal, lattices=lattice_matrix)
 
-def cart_to_frac_coords(
-    cart_coords: paddle.Tensor,
-    num_atoms_per_crystal: paddle.Tensor,
-    lattice_lengths: Optional[paddle.Tensor] = None,
-    lattice_angles: Optional[paddle.Tensor] = None,
-    lattice_matrix: Optional[paddle.Tensor] = None,
-    mod_lattice_translations: bool = True,
-) -> paddle.Tensor:
-    """
-    笛卡尔坐标 -> 分数坐标。
-    """
-    if lattice_matrix is None:
-        assert lattice_lengths is not None and lattice_angles is not None
-        lattice_matrix = lattice_params_to_matrix_paddle(lattice_lengths, lattice_angles)
-    inv_lattice = paddle.linalg.pinv(lattice_matrix)
-    inv_lattice_nodes = _expand_lattice_to_nodes(
-        inv_lattice,
-        num_atoms_per_crystal,
-        cart_coords.shape[0],
-    )
-    frac_coords = paddle.einsum("bi,bij->bj", cart_coords, inv_lattice_nodes)
-    if mod_lattice_translations:
-        frac_coords = frac_coords % 1.0
-    return frac_coords
 
 def lattice_transform_and_log_prob_mask(
     spacegroup: int,
     device: str = "cpu",
 ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     """
-    返回用于空间群约束晶格参数的变换矩阵和掩码。
+    Return transform matrices and mask for space-group constrained lattice params.
     """
     if 1 <= spacegroup <= 2:
         length_matrix = paddle.eye(3)
@@ -258,46 +162,6 @@ def lattice_transform_and_log_prob_mask(
         raise AttributeError(f"Invalid space group: {spacegroup}")
     return length_matrix, angle_matrix, angle_vector, log_prob_mask
 
-def paddle_legal_lattice_parameters(
-    space_groups: paddle.Tensor,
-    lattice_parameters: paddle.Tensor,
-    lattice_log_probs: paddle.Tensor,
-) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-    """
-    对晶格参数施加空间群约束。
-    """
-    lattice_lengths, lattice_angles = paddle.chunk(lattice_parameters, 2, axis=1)
-
-    length_projection_matrices = []
-    angle_projection_matrices = []
-    angle_translation_vectors = []
-    log_prob_masks = []
-    for spacegroup in space_groups.numpy().tolist():
-        (
-            length_matrix,
-            angle_matrix,
-            angle_vector,
-            log_prob_mask,
-        ) = lattice_transform_and_log_prob_mask(int(spacegroup))
-        length_projection_matrices.append(length_matrix)
-        angle_projection_matrices.append(angle_matrix)
-        angle_translation_vectors.append(angle_vector)
-        log_prob_masks.append(log_prob_mask)
-
-    length_projection_matrices = paddle.stack(length_projection_matrices, axis=0)
-    angle_projection_matrices = paddle.stack(angle_projection_matrices, axis=0)
-    angle_translation_vectors = paddle.stack(angle_translation_vectors, axis=0)
-    log_prob_masks = paddle.stack(log_prob_masks, axis=0)
-
-    constrained_lengths = paddle.bmm(
-        lattice_lengths.unsqueeze(1), length_projection_matrices
-    ).squeeze(1)
-    constrained_angles = (
-        paddle.bmm(lattice_angles.unsqueeze(1), angle_projection_matrices).squeeze(1)
-        + angle_translation_vectors
-    )
-    lattice_masked_log_probs = log_prob_masks * lattice_log_probs
-    return constrained_lengths, constrained_angles, lattice_masked_log_probs
 
 def primitive_lattice_matrix_from_conventional_lattice_params(
     space_group_indices: paddle.Tensor,
@@ -306,7 +170,7 @@ def primitive_lattice_matrix_from_conventional_lattice_params(
     conventional_lattice_matrix: Optional[paddle.Tensor] = None,
 ) -> paddle.Tensor:
     """
-    从 conventional 晶格参数计算 primitive 晶格矩阵。
+    Compute primitive lattice matrix from conventional lattice params.
     """
     if conventional_lattice_matrix is None:
         conventional_lattice_matrix = lattice_params_to_matrix_paddle(
@@ -322,7 +186,7 @@ def construct_fully_connected_graphs_with_periodic_boundaries(
     break_minimum_edge_ties: bool = False,
 ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     """
-    构建周期边界条件下的全连接图（最小图像约定）。
+    Build fully-connected graph with PBC (minimum image convention).
     """
     batch_size = num_nodes_per_crystal.shape[0]
     atom_pos = cart_coords
@@ -365,21 +229,19 @@ def construct_fully_connected_graphs_with_periodic_boundaries(
 
     num_supercell_images = len(OFFSET_LIST)
     supercell_frac_offsets = paddle.to_tensor(OFFSET_LIST, dtype=paddle.float32)
-    # (27, 3)
     batch_supercell_frac_offsets = supercell_frac_offsets.unsqueeze(0).expand(
         [batch_size, num_supercell_images, 3]
     )
-    # (batch_size, 27, 3)
     pbc_frac_offsets_per_source_atom = paddle.repeat_interleave(
         batch_supercell_frac_offsets, n_edges_per_crystal_before_masking, axis=0
-    )  # (num_atom_pairs, 27, 3)
+    )
 
     pbc_cart_offsets_per_source_atom = paddle.bmm(
         pbc_frac_offsets_per_source_atom,
         paddle.repeat_interleave(
             lattice_matrix, n_edges_per_crystal_before_masking, axis=0
         ),
-    )  # (num_atom_pairs, 27, 3)
+    )
 
     destination_position = destination_position.unsqueeze(1).expand([-1, num_supercell_images, -1])
     source_position = (
@@ -447,7 +309,7 @@ def get_smallest_edge_per_primal_node_pair(
     break_minimum_edge_ties: bool,
 ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     """
-    保留每对节点之间的最小边（最小图像约定）。
+    Keep minimum edge per node pair (minimum image convention).
     """
     edges = paddle.stack([dst_idx, src_idx], axis=-1)
     unique_edges, map_edge_to_unique = paddle.unique(edges, axis=0, return_inverse=True)
@@ -493,7 +355,7 @@ def ocp_get_pbc_distances(
     return_offsets: bool = False,
     return_distance_vec: bool = False,
 ) -> dict:
-    """计算 PBC 下原子间距离。"""
+    """Compute interatomic distances under PBC."""
     neighbors = num_edges_per_crystal.cast(paddle.int64)
     lattice = paddle.repeat_interleave(lattice, neighbors, axis=0)
     offsets = (
@@ -527,7 +389,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     get_primitive_cell: bool = True,
 ) -> tuple:
     """
-    将非对称单元分数坐标批量展开到原始晶胞笛卡尔坐标。
+    Batch expand ASU fractional coords to primitive cell Cartesian coords.
     """
     batch_size = n_coords_per_asu.shape[0]
     num_asu_nodes_per_crystal = n_coords_per_asu
@@ -541,7 +403,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     padded_gc_mask = global_vars.padded_general_wyckoff_ops_mask[space_group_indices]
     general_wyckoff_multiplicity_per_crystal = padded_gc_mask.cast(paddle.int64).sum(axis=1)
 
-    # 展开操作到每个 ASU atom
+    # expand ops to each ASU atom
     n_total_asu = asu_frac_coords.shape[0]
 
     def _repeat_interleave_along_asu(tensor_B_X):
@@ -554,32 +416,25 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
         )
 
     padded_gc_mats = _repeat_interleave_along_asu(padded_gc_mats)
-    # (n_asu_atoms, 192, 3, 3)
     padded_gc_trans = _repeat_interleave_along_asu(padded_gc_trans)
-    # (n_asu_atoms, 192, 1, 3)
     padded_gc_mask = _repeat_interleave_along_asu(padded_gc_mask)
-    # (n_asu_atoms, 192)
 
     stacked_gc_mats = padded_gc_mats[padded_gc_mask].reshape([-1, 3, 3])
-    # (n_orbited_atoms, 3, 3)
     stacked_gc_trans = padded_gc_trans[
         padded_gc_mask.unsqueeze(-1).unsqueeze(-1).expand_as(padded_gc_trans)
     ].reshape([-1, 1, 3])
-    # (n_orbited_atoms, 1, 3)
 
-    # orbit ASU atoms 到 conventional cell
+    # orbit ASU atoms to conventional cell
     asu_multiplicity_per_asu_atom = general_wyckoff_multiplicity_per_crystal.repeat_interleave(
         num_asu_nodes_per_crystal, axis=0
     )
-    # (n_asu_atoms,)
     asu_frac_coords_repeated = asu_frac_coords.repeat_interleave(
         asu_multiplicity_per_asu_atom, axis=0
     ).unsqueeze(1)
-    # (n_orbited_atoms, 1, 3)
 
     conventional_frac_coords = (
         paddle.bmm(asu_frac_coords_repeated, stacked_gc_mats) + stacked_gc_trans
-    )  # (n_orbited_atoms, 1, 3)
+    )
     if map_frac_coords_to_0_1_unit_cell:
         conventional_frac_coords = conventional_frac_coords % 1.0
 
@@ -589,10 +444,9 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
             num_asu_nodes_per_crystal * general_wyckoff_multiplicity_per_crystal,
             axis=0,
         )
-        # (n_orbited_atoms, 3, 3)
         primitive_frac_coords = paddle.bmm(
             conventional_frac_coords, stacked_c2p
-        ).squeeze(1)  # (n_orbited_atoms, 3)
+        ).squeeze(1)
     else:
         primitive_frac_coords = conventional_frac_coords.reshape([-1, 3])
 
@@ -601,9 +455,9 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
 
     map_node_to_crystal = paddle.arange(batch_size).repeat_interleave(
         num_asu_nodes_per_crystal * general_wyckoff_multiplicity_per_crystal, axis=0
-    )  # (n_orbited_atoms,)
+    )
 
-    # 去重重叠原子
+    # de-duplicate overlapping atoms
     orbit_size_per_asu = asu_multiplicity_per_asu_atom
     orbit_size_sqr = (orbit_size_per_asu ** 2).cast(paddle.int64)
 
@@ -650,14 +504,15 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     if return_node_is_original:
         node_is_original = node_is_original[unique_non_overlapping_atom_indices]
 
-    num_prim_nodes_per_crystal = _segment_coo_sum_gpu_safe(
+    num_prim_nodes_per_crystal = scatter(
         src=paddle.ones([map_node_to_crystal.shape[0]], dtype=paddle.int64),
         index=map_node_to_crystal,
         dim_size=batch_size,
+        reduce="sum",
     )
     assert num_prim_nodes_per_crystal.shape[0] == batch_size
 
-    # 从 ASU 获取 Wyckoff 和元素索引
+    # get Wyckoff and element indices from ASU
     map_prim_to_asu = paddle.arange(asu_frac_coords.shape[0]).repeat_interleave(
         asu_multiplicity_per_asu_atom, axis=0
     )[unique_non_overlapping_atom_indices]
@@ -665,7 +520,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     primitive_element_indices = asu_element_indices[map_prim_to_asu]
     asu_frac_coords_of_prim_atoms = asu_frac_coords[map_prim_to_asu]
 
-    # 计算 primitive 晶格矩阵
+    # compute primitive lattice matrix
     primitive_lattice_matrix = primitive_lattice_matrix_from_conventional_lattice_params(
         space_group_indices=space_group_indices,
         conventional_lattice_matrix=conventional_lattice_matrix,
@@ -701,3 +556,430 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
             map_prim_to_asu,
             asu_frac_coords_of_prim_atoms,
         )
+
+
+def _scatter_argmax_gpu_safe(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim_size: int,
+) -> paddle.Tensor:
+    """
+    Return global indices of original elements that maximize src per group.
+    Pure Paddle implementation, GPU safe (equivalent to torch_scatter.scatter_max argmax version).
+    """
+    n = src.shape[0]
+    sort_key = index.cast(paddle.float64) * (float(n) + 1.0) - src.cast(paddle.float64)
+    sorted_order = paddle.argsort(sort_key)
+    sorted_index = index[sorted_order]
+
+    group_first = paddle.concat([
+        paddle.to_tensor([True], dtype=paddle.bool),
+        sorted_index[1:] != sorted_index[:-1],
+    ])
+    first_pos = paddle.nonzero(group_first).squeeze(1)
+    group_ids = sorted_index[first_pos]
+    argmax_orig_idx = sorted_order[first_pos]
+
+    result = paddle.zeros([dim_size], dtype=paddle.int64)
+    result = paddle.scatter(result, group_ids, argmax_orig_idx)
+    return result
+
+def atoms_are_in_hull(
+    supercell_frac_coords: paddle.Tensor,
+    hull_equations: paddle.Tensor,
+    epsilon: float = -1e-5,
+) -> paddle.Tensor:
+    """
+    Check if each point in supercell is inside Wyckoff shape hull.
+    """
+    n_atoms, n_images, _ = supercell_frac_coords.shape
+    n_shapes = hull_equations.shape[1]
+    n_bounds = hull_equations.shape[2]
+
+    coords_flat = supercell_frac_coords.reshape([-1, 3])
+    hulls_expanded = hull_equations.unsqueeze(1).expand(
+        [n_atoms, n_images, n_shapes, n_bounds, 4]
+    ).reshape([n_atoms * n_images, n_shapes, n_bounds, 4])
+
+    normals = hulls_expanded[..., :3]
+    offsets = hulls_expanded[..., 3]
+
+    # (n*img, 1, 1, 3) @ (n*img, n_shapes, n_bounds, 3) -> sum
+    dots = (
+        coords_flat[:, None, None, :] * normals
+    ).sum(axis=-1)
+
+    inside = (dots < -offsets - epsilon).all(axis=-1)
+    return inside.reshape([n_atoms, n_images, n_shapes])
+
+
+def get_wyckoff_shape_hull_equations() -> Tuple[paddle.Tensor, paddle.Tensor]:
+    """
+    Compute hull equations for each 0/1/2/3D Wyckoff shape (bounded shapes included).
+    """
+    asu_wyckoff_dict = global_vars.asu_wyckoff_dict
+    max_num_shape_bounds = max(2, 5, global_vars.max_simplicial_hull_facets)
+
+    padded_hull_equations = -1.0 * paddle.nn.functional.one_hot(
+        paddle.to_tensor(3), num_classes=4
+    ).unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(
+        [230, MAX_WYCKOFF_SITES, global_vars.max_shapes_per_wyckoff, max_num_shape_bounds, 4]
+    ).cast(paddle.float32).clone()
+
+    mask_padded_hull_equations = paddle.zeros(
+        [230, MAX_WYCKOFF_SITES, global_vars.max_shapes_per_wyckoff],
+        dtype=paddle.bool,
+    )
+
+    for sg_num in range(1, 231):
+        sg_dict = asu_wyckoff_dict[str(sg_num)]
+        for wp_idx, wp_letter in enumerate(sg_dict["ordered_wyckoff_letters"]):
+            wp_dict = sg_dict[wp_letter]
+            dim = int(wp_dict["dim"])
+
+            if dim == 0:
+                shape_idx = 0
+                mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
+                vertex = wp_dict["vertices"].astype("float64").reshape(-1)
+                eps = 1e-4
+                hull_equations = np.zeros((6, 4))
+                hull_equations[:3, :3] = np.eye(3)
+                hull_equations[3:, :3] = -np.eye(3)
+                hull_equations[:3, -1] = -(vertex + eps)
+                hull_equations[3:, -1] = -(-vertex + eps)
+                padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :6] = paddle.to_tensor(
+                    hull_equations, dtype=paddle.float32
+                )
+
+            elif dim == 1:
+                for shape_idx, line_segment in enumerate(wp_dict["vertices"].astype("float64")):
+                    mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
+                    eps = 1e-4
+                    line_dir = line_segment[1] - line_segment[0]
+                    line_dir /= np.linalg.norm(line_dir)
+                    normal1 = np.cross(line_dir, np.random.rand(3))[np.newaxis, :]
+                    normal1 /= np.linalg.norm(normal1)
+                    normal2 = np.cross(line_dir, normal1)
+                    normal2 /= np.linalg.norm(normal2)
+                    p1 = eps * normal1
+                    p2 = eps * normal2
+                    bounding_polytope = np.concatenate([
+                        line_segment + (p1 + p2),
+                        line_segment + (p1 - p2),
+                        line_segment + (-p1 + p2),
+                        line_segment + (-p1 - p2),
+                    ], axis=0)
+                    hull = ConvexHull(bounding_polytope)
+                    n_facets = hull.equations.shape[0]
+                    padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
+                        hull.equations, dtype=paddle.float32
+                    )
+
+            elif dim == 2:
+                for shape_idx, polygon_vertices in enumerate(wp_dict["vertices"]):
+                    mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
+                    polygon_vertices = polygon_vertices.astype("float64")
+                    ab = polygon_vertices[1] - polygon_vertices[0]
+                    ac = polygon_vertices[2] - polygon_vertices[0]
+                    normal = np.cross(ab, ac)
+                    normal /= np.linalg.norm(normal)
+                    bounding = np.concatenate([
+                        polygon_vertices + 1e-4 * normal,
+                        polygon_vertices - 1e-4 * normal,
+                    ], axis=0)
+                    hull = ConvexHull(bounding)
+                    n_facets = hull.equations.shape[0]
+                    padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
+                        hull.equations, dtype=paddle.float32
+                    )
+
+            elif dim == 3:
+                shape_idx = 0
+                mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
+                hull = ConvexHull(wp_dict["vertices"].astype("float64"))
+                n_facets = hull.equations.shape[0]
+                padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
+                    hull.equations, dtype=paddle.float32
+                )
+
+    return padded_hull_equations, mask_padded_hull_equations
+
+
+@paddle.no_grad()
+def wrap_frac_coords_into_asu(
+    frac_coords: paddle.Tensor,
+    wyckoff_indices: paddle.Tensor,
+    space_group_indices: paddle.Tensor,
+    num_atoms_per_asu: paddle.Tensor,
+    hull_equations: paddle.Tensor,
+    hull_equations_mask: paddle.Tensor,
+) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    """
+    Map noisy fractional coordinates back to canonical ASU via group operations.
+    """
+    n_asu_atoms = frac_coords.shape[0]
+    frac_coords = frac_coords % 1.0
+
+    (
+        conventional_cell_frac_coords,
+        _,
+        _,
+        _,
+        _,
+        map_conventional_to_asu_coord,
+        _,
+    ) = batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
+        asu_frac_coords=frac_coords,
+        asu_element_indices=paddle.zeros_like(wyckoff_indices),
+        asu_wyckoff_indices=wyckoff_indices,
+        n_coords_per_asu=num_atoms_per_asu,
+        conventional_lattice_matrix=paddle.zeros(
+            [space_group_indices.shape[0], 3, 3], dtype=paddle.float32
+        ),
+        space_group_indices=space_group_indices,
+        return_cartesian_coords=False,
+        get_primitive_cell=False,
+    )
+
+    # supercell expansion + inside/outside test
+    supercell_frac_translations = paddle.to_tensor(OFFSET_LIST, dtype=paddle.float32)
+    supercell_frac_coords = (
+        conventional_cell_frac_coords.unsqueeze(1) + supercell_frac_translations.unsqueeze(0)
+    )
+    hull_eq_expanded = hull_equations[map_conventional_to_asu_coord]
+    wyckoff_shape_exists = hull_equations_mask[map_conventional_to_asu_coord]
+
+    supercell_in_wyckoff = (
+        atoms_are_in_hull(supercell_frac_coords, hull_eq_expanded, epsilon=-1e-5)
+        & wyckoff_shape_exists.unsqueeze(1)
+    )
+
+    supercell_in_any_wyckoff = supercell_in_wyckoff.any(axis=-1)
+    conv_atom_has_image_in_asu = supercell_in_any_wyckoff.any(axis=-1)
+
+    indices_of_conv_atoms_in_asu = _scatter_argmax_gpu_safe(
+        src=conv_atom_has_image_in_asu.cast(paddle.float32),
+        index=map_conventional_to_asu_coord,
+        dim_size=n_asu_atoms,
+    )
+    assert indices_of_conv_atoms_in_asu.shape[0] == n_asu_atoms
+
+    # select representative conventional atom supercell coords for each ASU atom
+    supercell_frac_coords_in_asu = supercell_frac_coords[indices_of_conv_atoms_in_asu]
+    asu_atom_is_inside = supercell_in_wyckoff[indices_of_conv_atoms_in_asu]
+    supercell_in_any_in_asu = supercell_in_any_wyckoff[indices_of_conv_atoms_in_asu]
+
+    lattice_translation_into_asu_idx = paddle.argmax(
+        supercell_in_any_in_asu.cast(paddle.float32), axis=-1
+    )
+
+    atom_indices = paddle.arange(n_asu_atoms)
+    wrapped_asu_frac_coords = supercell_frac_coords_in_asu[
+        atom_indices, lattice_translation_into_asu_idx
+    ]
+    wrapped_asu_wyckoff_shape_indices = paddle.argmax(
+        asu_atom_is_inside[atom_indices, lattice_translation_into_asu_idx].cast(paddle.float32),
+        axis=-1,
+    )
+
+    return wrapped_asu_frac_coords, wrapped_asu_wyckoff_shape_indices
+
+@paddle.no_grad()
+def p_asu_wrapped_normal(
+    noisy_frac_coord: paddle.Tensor,
+    conventional_frac_coords: paddle.Tensor,
+    map_conventional_to_asu_frac_coords: paddle.Tensor,
+    n_lattice_translations: int = 5,
+    sigma: Union[float, paddle.Tensor] = 1.0,
+) -> paddle.Tensor:
+    """
+    Compute isotropic Gaussian sum over equivalent positions in ASU. Without prefactor 1/(2pi*sigma).
+    """
+    t = paddle.arange(-n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32)
+    translations = paddle.stack(
+        paddle.meshgrid(t, t, t, indexing="ij"), axis=-1
+    ).reshape([-1, 3])
+
+    noisy_x_minus_gt = (
+        noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(1)
+        - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
+    )
+
+    diff_sq = (noisy_x_minus_gt ** 2).sum(axis=-1)
+    gaussian = paddle.exp(-diff_sq / (2 * sigma ** 2))
+    p = gaussian.sum(axis=1)
+
+    # scatter: conventional -> ASU
+    p_asu = scatter(
+        src=p,
+        index=map_conventional_to_asu_frac_coords,
+        dim=0,
+        dim_size=noisy_frac_coord.shape[0],
+        reduce="sum",
+    )
+    return p_asu
+
+@paddle.no_grad()
+def d_log_p_asu_wrapped_normal(
+    noisy_frac_coord: paddle.Tensor,
+    conventional_frac_coords: paddle.Tensor,
+    map_conventional_to_asu_frac_coords: paddle.Tensor,
+    n_lattice_translations: int = 5,
+    sigma: Union[float, paddle.Tensor] = 1.0,
+) -> paddle.Tensor:
+    """
+    Compute gradient of log ASU-wrapped normal probability (i.e. ground truth score).
+    """
+    if isinstance(sigma, float):
+        sigma_conv = paddle.full([conventional_frac_coords.shape[0], 1], sigma)
+    else:
+        sigma_conv = sigma[map_conventional_to_asu_frac_coords].unsqueeze(1)
+
+    t = paddle.arange(-n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32)
+    translations = paddle.stack(
+        paddle.meshgrid(t, t, t, indexing="ij"), axis=-1
+    ).reshape([-1, 3])
+
+    noisy_x_minus_gt = (
+        noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(1)
+        - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
+    )
+
+    diff_sq = (noisy_x_minus_gt ** 2).sum(axis=-1, keepdim=True)
+    gaussian = paddle.exp(-diff_sq / (2 * sigma_conv.unsqueeze(-1) ** 2))
+    numerator = -(gaussian * noisy_x_minus_gt).sum(axis=1)
+
+    n_asu_atoms = noisy_frac_coord.shape[0]
+    numerator_asu = paddle.stack(
+        [
+            scatter(
+                src=numerator[:, d],
+                index=map_conventional_to_asu_frac_coords,
+                dim=0,
+                dim_size=n_asu_atoms,
+                reduce="sum",
+            )
+            for d in range(3)
+        ],
+        axis=1,
+    )
+
+    denominator = p_asu_wrapped_normal(
+        noisy_frac_coord,
+        conventional_frac_coords,
+        map_conventional_to_asu_frac_coords,
+        n_lattice_translations,
+        sigma_conv,
+    ) * (sigma if isinstance(sigma, float) else sigma ** 2)
+    return numerator_asu / denominator.unsqueeze(-1)
+
+def get_space_group_ops_and_conventional_atoms(
+    frac_coords: paddle.Tensor,
+    element_indices: paddle.Tensor,
+    wyckoff_indices: paddle.Tensor,
+    space_group_indices: paddle.Tensor,
+    n_atoms_per_xtal: paddle.Tensor,
+) -> tuple:
+    """
+    Get space group operations (mod lattice translation) and de-duplicated conventional cell atoms.
+    """
+    batch_size = n_atoms_per_xtal.shape[0]
+
+    padded_gc_mats = global_vars.padded_general_wyckoff_matrices[space_group_indices]
+    padded_gc_inv_mats = global_vars.padded_inverse_general_wyckoff_matrices[space_group_indices]
+    padded_gc_trans = global_vars.padded_general_wyckoff_translations[space_group_indices]
+    padded_gc_mask = global_vars.padded_general_wyckoff_ops_mask[space_group_indices]
+
+    general_wyckoff_multiplicity = padded_gc_mask.cast(paddle.int64).sum(axis=1)
+
+    padded_gc_mats = paddle.repeat_interleave(padded_gc_mats, n_atoms_per_xtal, axis=0)
+    padded_gc_inv_mats = paddle.repeat_interleave(padded_gc_inv_mats, n_atoms_per_xtal, axis=0)
+    padded_gc_trans = paddle.repeat_interleave(padded_gc_trans, n_atoms_per_xtal, axis=0)
+    padded_gc_mask = paddle.repeat_interleave(
+        padded_gc_mask.cast(paddle.int32), n_atoms_per_xtal, axis=0
+    ).cast(paddle.bool)
+
+    stacked_mats = padded_gc_mats[padded_gc_mask].reshape([-1, 3, 3])
+    stacked_inv_mats = padded_gc_inv_mats[padded_gc_mask].reshape([-1, 3, 3])
+    stacked_trans = padded_gc_trans[
+        padded_gc_mask.unsqueeze(-1).unsqueeze(-1).expand_as(padded_gc_trans)
+    ].reshape([-1, 1, 3])
+
+    mult_per_asu_atom = general_wyckoff_multiplicity.repeat_interleave(n_atoms_per_xtal, axis=0)
+
+    frac_coords_repeated = frac_coords.repeat_interleave(
+        mult_per_asu_atom, axis=0
+    ).unsqueeze(1)
+
+    conventional_frac_coords_with_dupes = (
+        paddle.bmm(frac_coords_repeated, stacked_mats) + stacked_trans
+    ) % 1.0
+    conventional_frac_coords = conventional_frac_coords_with_dupes.reshape([-1, 3])
+
+    # de-duplicate
+    orbit_size_per_asu = mult_per_asu_atom
+    orbit_size_sqr = (orbit_size_per_asu ** 2).cast(paddle.int64)
+    first_idx = paddle.cumsum(orbit_size_per_asu, axis=0) - orbit_size_per_asu
+    first_idx_expand = paddle.repeat_interleave(first_idx, orbit_size_sqr)
+    orbit_size_expand = paddle.repeat_interleave(orbit_size_per_asu, orbit_size_sqr)
+
+    n_pairs = int(orbit_size_sqr.sum().item())
+    offset = (paddle.cumsum(orbit_size_sqr, axis=0) - orbit_size_sqr).repeat_interleave(orbit_size_sqr)
+    pair_ids = paddle.arange(n_pairs) - offset
+    row_ids = paddle.floor_divide(pair_ids, orbit_size_expand) + first_idx_expand
+    col_ids = pair_ids % orbit_size_expand + first_idx_expand
+
+    row_coords = conventional_frac_coords[row_ids]
+    col_coords = conventional_frac_coords[col_ids]
+    overlapping = paddle.all(
+        paddle.abs((row_coords - col_coords + 0.5) % 1.0 - 0.5) < 1e-6, axis=1
+    )
+
+    ov_col = col_ids[overlapping]
+    ov_row = row_ids[overlapping]
+    min_col_per_row = _scatter_min_indices_gpu_safe(ov_row, ov_col, conventional_frac_coords.shape[0])
+
+    unique_non_overlapping_atom_indices, inverse_indices = paddle.unique(
+        min_col_per_row, return_inverse=True
+    )
+
+    conventional_frac_coords = conventional_frac_coords[unique_non_overlapping_atom_indices]
+
+    map_conv_to_asu_with_dupes = paddle.arange(frac_coords.shape[0]).repeat_interleave(
+        orbit_size_per_asu, axis=0
+    )
+    map_conventional_to_asu_atom = map_conv_to_asu_with_dupes[unique_non_overlapping_atom_indices]
+    conventional_wyckoff_indices = wyckoff_indices[map_conventional_to_asu_atom]
+    conventional_element_indices = element_indices[map_conventional_to_asu_atom]
+
+    return (
+        stacked_inv_mats,          # A_ops: (n_general_wyckoff_ops, 3, 3)
+        stacked_trans,             # t_ops: (n_general_wyckoff_ops, 1, 3)
+        inverse_indices,           # (n_general_wyckoff_ops,)
+        map_conv_to_asu_with_dupes,  # (n_general_wyckoff_ops,)
+        conventional_wyckoff_indices,
+        conventional_element_indices,
+        conventional_frac_coords,
+        unique_non_overlapping_atom_indices,
+    )
+
+def get_wyckoff_projected_gaussian_noise(
+    space_group_indices: paddle.Tensor,
+    wyckoff_indices: paddle.Tensor,
+    wyckoff_shape_indices: paddle.Tensor,
+    n_atoms_per_xtal: paddle.Tensor,
+    sigma: Union[float, paddle.Tensor],
+) -> paddle.Tensor:
+    """
+    Generate Gaussian noise projected onto Wyckoff subspace.
+    """
+    n_asu_atoms = wyckoff_indices.shape[0]
+    unprojected_noise = sigma * paddle.randn([n_asu_atoms, 3])
+    sg_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
+    projection_matrices = global_vars.noise_projection_matrices[
+        sg_per_atom, wyckoff_indices, wyckoff_shape_indices
+    ]
+    projected_noise = paddle.bmm(
+        unprojected_noise.unsqueeze(1), projection_matrices
+    ).reshape([-1, 3])
+    return projected_noise

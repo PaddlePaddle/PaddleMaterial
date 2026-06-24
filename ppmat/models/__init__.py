@@ -43,6 +43,9 @@ from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.sfin.sfin import SFIN
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
+from ppmat.models.sgequidiff.wrappers import SGEQUIDiffSampler
+from ppmat.datasets.asu_mp20_dataset import AsymmetricUnitDataset
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load

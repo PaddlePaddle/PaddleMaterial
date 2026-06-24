@@ -1,7 +1,21 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Lattice sampler: SpaceGroupEncoder, TelescopingDiscreteLatticeSampler。"""
 import dataclasses
 import math
-from typing import Optional, Callable
+from typing import Optional
 
 import paddle
 import paddle.nn as nn
@@ -10,35 +24,21 @@ from paddle.distribution import Categorical
 
 import ppmat.models.sgequidiff.global_vars as global_vars
 from ppmat.models.sgequidiff.data_utils import lattice_transform_and_log_prob_mask
-from ppmat.models.sgequidiff.submodules import FourierLinear, Swish
+from ppmat.models.sgequidiff.non_equivariant_drift_modules import FourierLinear, Swish
 
 
 class SpaceGroupEncoder(nn.Layer):
     def __init__(self, hidden_channels: int = 128, space_group_embedding_dim: int = 64):
         super().__init__()
-        self.hidden_channels = hidden_channels
-        self.space_group_embedding_dim = space_group_embedding_dim
-        self.space_group_encoder = nn.Sequential(
-            nn.Linear(
-                global_vars.embedding_tools.space_group_embedding_length,
-                hidden_channels,
-            ),
+        self.net = nn.Sequential(
+            nn.Linear(global_vars.embedding_tools.space_group_embedding_length, hidden_channels),
             Swish(),
             nn.Linear(hidden_channels, space_group_embedding_dim),
             Swish(),
         )
 
     def forward(self, space_group_indices):
-        """
-        Args:
-            space_group_indices: (batch_size,) int64
-        Returns:
-            (batch_size, space_group_embedding_dim)
-        """
-        space_group_embeddings = self.space_group_encoder(
-            global_vars.embedding_tools.get_space_group_embedding(space_group_indices)
-        )
-        return space_group_embeddings
+        return self.net(global_vars.embedding_tools.get_space_group_embedding(space_group_indices))
 
 @dataclasses.dataclass
 class LatticeSamplerConfig:
@@ -64,7 +64,7 @@ class LatticeSamplerConfig:
     lattice_param_dim: int = 112
     n_emb_layers: int = 4
 
-class BaseLatticeSampler(nn.Layer):
+class TelescopingDiscreteLatticeSampler(nn.Layer):
     def __init__(self, config: LatticeSamplerConfig):
         super().__init__()
         self.config = config
@@ -72,189 +72,19 @@ class BaseLatticeSampler(nn.Layer):
         self.MIN_LATTICE_LENGTH = config.min_lattice_length
         self.MAX_LATTICE_ANGLE = config.max_lattice_angle
         self.MIN_LATTICE_ANGLE = config.min_lattice_angle
+        self.length_transform = lambda x: x
+        self.inv_length_transform = lambda x: x
 
-        if self.config.lattice_lengths_transform == "identity":
-            self.length_transform: Callable = lambda x: x
-            self.inv_length_transform: Callable = lambda x: x
-        else:
-            raise AttributeError
-
-        bravais_length_transforms = []
-        bravais_angle_transforms = []
-        bravais_angle_offsets = []
-        bravais_log_prob_masks = []
-        for space_group_number in range(1, 231):
-            (
-                length_transform,
-                angle_transform,
-                angle_offset,
-                bravais_log_prob_mask,
-            ) = lattice_transform_and_log_prob_mask(space_group_number)
-            bravais_length_transforms.append(length_transform)
-            bravais_angle_transforms.append(angle_transform)
-            bravais_angle_offsets.append(angle_offset)
-            bravais_log_prob_masks.append(bravais_log_prob_mask)
-        bravais_length_transforms = paddle.stack(bravais_length_transforms, axis=0)
-        bravais_angle_transforms = paddle.stack(bravais_angle_transforms, axis=0)
-        bravais_angle_offsets = paddle.stack(bravais_angle_offsets, axis=0)
-        bravais_log_prob_masks = paddle.stack(bravais_log_prob_masks, axis=0)
+        bravais_data = [lattice_transform_and_log_prob_mask(sg) for sg in range(1, 231)]
+        bravais_length_transforms = paddle.stack([d[0] for d in bravais_data], axis=0)
+        bravais_angle_transforms = paddle.stack([d[1] for d in bravais_data], axis=0)
+        bravais_angle_offsets = paddle.stack([d[2] for d in bravais_data], axis=0)
+        bravais_log_prob_masks = paddle.stack([d[3] for d in bravais_data], axis=0)
         self.register_buffer("bravais_length_transforms", bravais_length_transforms)
         self.register_buffer("bravais_angle_transforms", bravais_angle_transforms)
         self.register_buffer("bravais_angle_offsets", bravais_angle_offsets)
         self.register_buffer("bravais_log_prob_masks", bravais_log_prob_masks)
 
-    def forward(self, *args, **kwargs):
-        pass
-
-    def log_prob(self, *args, **kwargs):
-        pass
-
-    @paddle.no_grad()
-    def _get_normed_lattice_parameters(
-        self,
-        lattice_lengths,
-        lattice_angles,
-        min_normed_param: float = -1.0,
-        max_normed_param: float = 1.0,
-        norm_gamma_separately: bool = True,
-    ):
-        normed_param_range = max_normed_param - min_normed_param
-        normed_lattice_lengths = (
-            normed_param_range
-            * (
-                (self.length_transform(lattice_lengths) - self.length_transform(self.MIN_LATTICE_LENGTH))
-                / (self.length_transform(self.MAX_LATTICE_LENGTH) - self.length_transform(self.MIN_LATTICE_LENGTH))
-            )
-            + min_normed_param
-        )
-
-        if norm_gamma_separately:
-            min_gamma_angle, max_gamma_angle = self.get_valid_gamma_angle_interval(
-                alpha_and_beta_angles=lattice_angles[:, :2]
-            )
-        else:
-            min_gamma_angle = self.MIN_LATTICE_ANGLE
-            max_gamma_angle = self.MAX_LATTICE_ANGLE
-
-        normed_lattice_angles = paddle.concat(
-            [
-                normed_param_range
-                * (
-                    (lattice_angles[:, :2] - self.MIN_LATTICE_ANGLE)
-                    / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
-                )
-                + min_normed_param,
-                normed_param_range
-                * (
-                    (lattice_angles[:, -1] - min_gamma_angle)
-                    / (max_gamma_angle - min_gamma_angle)
-                ).unsqueeze(-1)
-                + min_normed_param,
-            ],
-            axis=1,
-        )
-
-        normed_lattice_parameters = paddle.concat(
-            [normed_lattice_lengths, normed_lattice_angles], axis=1
-        )
-        return normed_lattice_parameters
-
-    def get_valid_gamma_angle_interval(self, alpha_and_beta_angles):
-
-        cos_alpha = paddle.cos(alpha_and_beta_angles[:, 0] * math.pi / 180.0)
-        cos_beta = paddle.cos(alpha_and_beta_angles[:, 1] * math.pi / 180.0)
-
-        cos_alpha_sq = cos_alpha ** 2
-        cos_beta_sq = cos_beta ** 2
-
-        term1 = cos_alpha * cos_beta
-        inner = 4 * cos_alpha_sq * cos_beta_sq - 4 * (cos_alpha_sq + cos_beta_sq - 1)
-        inner = paddle.clip(inner, min=0.0)
-        term2 = 0.5 * paddle.sqrt(inner)
-
-        gamma_min = (
-            paddle.acos(paddle.clip(term1 + term2, min=-1.0, max=1.0)) * 180.0 / math.pi
-        )
-        gamma_max = (
-            paddle.acos(paddle.clip(term1 - term2, min=-1.0, max=1.0)) * 180.0 / math.pi
-        )
-
-        return (
-            paddle.clip(gamma_min, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
-            paddle.clip(gamma_max, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
-        )
-
-    @paddle.no_grad()
-    def get_discretized_normed_lattice_params(
-        self, normed_lattice_parameters, raw_alpha_and_beta_angles
-    ):
-        """
-        Discretize the normed lattice parameters by snapping to the nearest bin.
-        """
-        batch_size = normed_lattice_parameters.shape[0]
-        _batch_idxs = paddle.arange(batch_size)
-        discretized_normed_lattice_parameters = paddle.zeros_like(normed_lattice_parameters)
-
-        for i in range(6):
-            min_bin_edge = self.min_bin_edge * paddle.ones([batch_size])
-            max_bin_edge = self.max_bin_edge * paddle.ones([batch_size])
-            x = normed_lattice_parameters[:, i]
-            for j in range(self.n_telescopes):
-                bin_edges = min_bin_edge.unsqueeze(-1) + (max_bin_edge - min_bin_edge).unsqueeze(-1) * self.grid_pts.unsqueeze(0)
-                bins = paddle.stack([bin_edges[:, :-1], bin_edges[:, 1:]], axis=-1)
-
-
-                normalized_x = (x - min_bin_edge) / (max_bin_edge - min_bin_edge)
-                bin_idxs = paddle.bucketize(normalized_x, self.grid_pts[1:])
-                bin_idxs = paddle.clip(bin_idxs, max=self.n_bins - 1)
-
-                chosen_bins = bins[_batch_idxs, bin_idxs]
-                min_bin_edge = chosen_bins[:, 0]
-                max_bin_edge = chosen_bins[:, 1]
-
-            discretized_normed_lattice_parameters[:, i] = paddle.mean(chosen_bins, axis=-1)
-
-
-        min_gamma, max_gamma = self.get_valid_gamma_angle_interval(raw_alpha_and_beta_angles)
-        min_normed_gamma = (self.max_bin_edge - self.min_bin_edge) * (
-            (min_gamma - self.MIN_LATTICE_ANGLE)
-            / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
-        ) + self.min_bin_edge
-        max_normed_gamma = (self.max_bin_edge - self.min_bin_edge) * (
-            (max_gamma - self.MIN_LATTICE_ANGLE)
-            / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
-        ) + self.min_bin_edge
-
-        gammas_lt_min = discretized_normed_lattice_parameters[:, -1] < min_normed_gamma
-        gammas_gt_max = discretized_normed_lattice_parameters[:, -1] > max_normed_gamma
-
-        if paddle.any(gammas_lt_min | gammas_gt_max):
-            bin_edges = (self.max_bin_edge - self.min_bin_edge) * paddle.linspace(
-                0, 1, self.n_telescopes * self.n_bins + 1
-            ) + self.min_bin_edge
-            bin_midpoints = paddle.mean(
-                paddle.stack([bin_edges[:-1], bin_edges[1:]], axis=-1), axis=-1
-            )
-
-            if paddle.any(gammas_lt_min):
-                valid_bin_indices = paddle.argmax(
-                    (bin_midpoints.unsqueeze(0) > min_normed_gamma[gammas_lt_min].unsqueeze(-1)).cast("int32"),
-                    axis=-1,
-                )
-                discretized_normed_lattice_parameters[:, -1][gammas_lt_min] = bin_midpoints[valid_bin_indices]
-
-            if paddle.any(gammas_gt_max):
-                valid_bin_indices = paddle.argmax(
-                    (bin_midpoints.unsqueeze(0) < max_normed_gamma[gammas_gt_max].unsqueeze(-1)).cast("int32"),
-                    axis=-1,
-                )
-                discretized_normed_lattice_parameters[:, -1][gammas_gt_max] = bin_midpoints[valid_bin_indices]
-
-        return discretized_normed_lattice_parameters
-
-class TelescopingDiscreteLatticeSampler(BaseLatticeSampler):
-    def __init__(self, config: LatticeSamplerConfig):
-        super().__init__(config)
         self.n_bins = self.config.n_bins
         self.n_telescopes = self.config.n_telescopes
         self.min_bin_edge = -4.0
@@ -354,6 +184,111 @@ class TelescopingDiscreteLatticeSampler(BaseLatticeSampler):
             "discretized_normed_bravais_angle_offsets",
             _discretized_normed_angle_offsets,
         )
+
+    @paddle.no_grad()
+    def _get_normed_lattice_parameters(
+        self,
+        lattice_lengths,
+        lattice_angles,
+        min_normed_param: float = -1.0,
+        max_normed_param: float = 1.0,
+        norm_gamma_separately: bool = True,
+    ):
+        normed_param_range = max_normed_param - min_normed_param
+        normed_lattice_lengths = (
+            normed_param_range
+            * (
+                (self.length_transform(lattice_lengths) - self.length_transform(self.MIN_LATTICE_LENGTH))
+                / (self.length_transform(self.MAX_LATTICE_LENGTH) - self.length_transform(self.MIN_LATTICE_LENGTH))
+            )
+            + min_normed_param
+        )
+
+        if norm_gamma_separately:
+            min_gamma_angle, max_gamma_angle = self.get_valid_gamma_angle_interval(
+                alpha_and_beta_angles=lattice_angles[:, :2]
+            )
+        else:
+            min_gamma_angle = self.MIN_LATTICE_ANGLE
+            max_gamma_angle = self.MAX_LATTICE_ANGLE
+
+        normed_lattice_angles = paddle.concat(
+            [
+                normed_param_range
+                * (
+                    (lattice_angles[:, :2] - self.MIN_LATTICE_ANGLE)
+                    / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
+                )
+                + min_normed_param,
+                normed_param_range
+                * (
+                    (lattice_angles[:, -1] - min_gamma_angle)
+                    / (max_gamma_angle - min_gamma_angle)
+                ).unsqueeze(-1)
+                + min_normed_param,
+            ],
+            axis=1,
+        )
+        return paddle.concat([normed_lattice_lengths, normed_lattice_angles], axis=1)
+
+    def get_valid_gamma_angle_interval(self, alpha_and_beta_angles):
+        cos_alpha = paddle.cos(alpha_and_beta_angles[:, 0] * math.pi / 180.0)
+        cos_beta = paddle.cos(alpha_and_beta_angles[:, 1] * math.pi / 180.0)
+        cos_alpha_sq = cos_alpha ** 2
+        cos_beta_sq = cos_beta ** 2
+        term1 = cos_alpha * cos_beta
+        inner = 4 * cos_alpha_sq * cos_beta_sq - 4 * (cos_alpha_sq + cos_beta_sq - 1)
+        inner = paddle.clip(inner, min=0.0)
+        term2 = 0.5 * paddle.sqrt(inner)
+        gamma_min = paddle.acos(paddle.clip(term1 + term2, min=-1.0, max=1.0)) * 180.0 / math.pi
+        gamma_max = paddle.acos(paddle.clip(term1 - term2, min=-1.0, max=1.0)) * 180.0 / math.pi
+        return (
+            paddle.clip(gamma_min, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
+            paddle.clip(gamma_max, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
+        )
+
+    @paddle.no_grad()
+    def get_discretized_normed_lattice_params(self, normed_lattice_parameters, raw_alpha_and_beta_angles):
+        batch_size = normed_lattice_parameters.shape[0]
+        _batch_idxs = paddle.arange(batch_size)
+        discretized_normed_lattice_parameters = paddle.zeros_like(normed_lattice_parameters)
+        for i in range(6):
+            min_bin_edge = self.min_bin_edge * paddle.ones([batch_size])
+            max_bin_edge = self.max_bin_edge * paddle.ones([batch_size])
+            x = normed_lattice_parameters[:, i]
+            for j in range(self.n_telescopes):
+                bin_edges = min_bin_edge.unsqueeze(-1) + (max_bin_edge - min_bin_edge).unsqueeze(-1) * self.grid_pts.unsqueeze(0)
+                bins = paddle.stack([bin_edges[:, :-1], bin_edges[:, 1:]], axis=-1)
+                normalized_x = (x - min_bin_edge) / (max_bin_edge - min_bin_edge)
+                bin_idxs = paddle.bucketize(normalized_x, self.grid_pts[1:])
+                bin_idxs = paddle.clip(bin_idxs, max=self.n_bins - 1)
+                chosen_bins = bins[_batch_idxs, bin_idxs]
+                min_bin_edge = chosen_bins[:, 0]
+                max_bin_edge = chosen_bins[:, 1]
+            discretized_normed_lattice_parameters[:, i] = paddle.mean(chosen_bins, axis=-1)
+
+        min_gamma, max_gamma = self.get_valid_gamma_angle_interval(raw_alpha_and_beta_angles)
+        min_normed_gamma = (self.max_bin_edge - self.min_bin_edge) * (
+            (min_gamma - self.MIN_LATTICE_ANGLE) / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
+        ) + self.min_bin_edge
+        max_normed_gamma = (self.max_bin_edge - self.min_bin_edge) * (
+            (max_gamma - self.MIN_LATTICE_ANGLE) / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
+        ) + self.min_bin_edge
+        gammas_lt_min = discretized_normed_lattice_parameters[:, -1] < min_normed_gamma
+        gammas_gt_max = discretized_normed_lattice_parameters[:, -1] > max_normed_gamma
+
+        if paddle.any(gammas_lt_min | gammas_gt_max):
+            bin_edges = (self.max_bin_edge - self.min_bin_edge) * paddle.linspace(0, 1, self.n_telescopes * self.n_bins + 1) + self.min_bin_edge
+            bin_midpoints = paddle.mean(paddle.stack([bin_edges[:-1], bin_edges[1:]], axis=-1), axis=-1)
+            if paddle.any(gammas_lt_min):
+                valid_bin_indices = paddle.argmax(
+                    (bin_midpoints.unsqueeze(0) > min_normed_gamma[gammas_lt_min].unsqueeze(-1)).cast("int32"), axis=-1)
+                discretized_normed_lattice_parameters[:, -1][gammas_lt_min] = bin_midpoints[valid_bin_indices]
+            if paddle.any(gammas_gt_max):
+                valid_bin_indices = paddle.argmax(
+                    (bin_midpoints.unsqueeze(0) < max_normed_gamma[gammas_gt_max].unsqueeze(-1)).cast("int32"), axis=-1)
+                discretized_normed_lattice_parameters[:, -1][gammas_gt_max] = bin_midpoints[valid_bin_indices]
+        return discretized_normed_lattice_parameters
 
     @paddle.no_grad()
     def forward(self, space_group_indices):

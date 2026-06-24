@@ -29,15 +29,19 @@ Trainer:
 
 
 Model:
-  __class_name__: "__import__('ppmat.models.sgequidiff.training_wrapper', fromlist=['SGEQUITrainingWrapper']).SGEQUITrainingWrapper"
+  __class_name__: EquivariantDiffusionModel
   __init_params__:
     num_wn_lattice_translations: 3
-    noise_scheduler_num_monte_carlo_samples: 2500
-    num_timesteps: ${Global.num_train_timesteps}
-    sigma_min: 0.002
-    sigma_max: 0.5
+    noise_scheduler_cfg:
+      __class_name__: ASUVESDEScheduler
+      __init_params__:
+        num_timesteps: ${Global.num_train_timesteps}
+        sigma_min: 0.002
+        sigma_max: 0.5
+        num_lattice_translations: 3
+        num_monte_carlo_samples: 2500
     time_emb_dim: 128
-    model_type: gnn          # [mlp, gnn, cspnet]
+    model_type: gnn
     num_plane_wave_freqs: 96
     subsample_group_operations: False
     gnn_config:
@@ -72,7 +76,7 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: "__import__('ppmat.models.sgequidiff.asu_mp20_dataset', fromlist=['AsymmetricUnitDataset']).AsymmetricUnitDataset"
+      __class_name__: AsymmetricUnitDataset
       __init_params__:
         name: mp_20
         split: train
@@ -87,7 +91,7 @@ Dataset:
         batch_size: 32
   val:
     dataset:
-      __class_name__: "__import__('ppmat.models.sgequidiff.asu_mp20_dataset', fromlist=['AsymmetricUnitDataset']).AsymmetricUnitDataset"
+      __class_name__: AsymmetricUnitDataset
       __init_params__:
         name: mp_20
         split: val
@@ -102,7 +106,7 @@ Dataset:
         batch_size: 64
   test:
     dataset:
-      __class_name__: "__import__('ppmat.models.sgequidiff.asu_mp20_dataset', fromlist=['AsymmetricUnitDataset']).AsymmetricUnitDataset"
+      __class_name__: AsymmetricUnitDataset
       __init_params__:
         name: mp_20
         split: test
@@ -115,6 +119,4 @@ Dataset:
         shuffle: False
         drop_last: False
         batch_size: 64
-# Loss:
-#   __class_name__: SGEQuiDiffLoss
-#   __init_params__: {}
+

@@ -1,7 +1,22 @@
-"""非等变漂移模块：GNN（基于 PBC 消息传递）和 CSPNet（来自 DiffCSP）。"""
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Non-equivariant drift modules: GNN (PBC message passing) and CSPNet (from DiffCSP)."""
 import dataclasses
 import math
 from typing import Optional, Tuple
+from contextlib import nullcontext
 
 import paddle
 import paddle.nn as nn
@@ -12,88 +27,53 @@ from ppmat.models.sgequidiff.data_utils import (
     frac_to_cart_coords,
     ocp_get_pbc_distances,
 )
-from ppmat.models.sgequidiff.submodules import (
-    VariancePreservingAggregation,
-    Swish,
-    GraphNorm,
-)
-from ppmat.models.sgequidiff.scatter_utils import safe_scatter as paddle_scatter
+from ppmat.utils.scatter import scatter as paddle_scatter
+from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings as FourierTimeEmbeddings
 
-
-class FourierTimeEmbeddings(nn.Layer):
-    """Fourier 时间嵌入。"""
-
-    def __init__(self, dim: int):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, time: paddle.Tensor) -> paddle.Tensor:
-        """(n,) -> (n, dim)"""
-        half_dim = self.dim // 2
-        embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = paddle.exp(
-            paddle.arange(half_dim, dtype=paddle.float32) * -embeddings
+def get_plane_wave_frequencies(
+    num_freqs: int,
+    max_freq: int = 512,
+    fourier_scale: float = 1.0,
+    isotropic_plane_waves: bool = False,
+) -> paddle.Tensor:
+    """Return (3, num_freqs) plane wave frequency tensor."""
+    if isotropic_plane_waves:
+        plane_wave_freqs = paddle.linspace(
+            1, num_freqs, num_freqs
+        ).unsqueeze(0).expand([3, num_freqs])
+    else:
+        freqs_1d_grid = paddle.linspace(-max_freq, max_freq, 1 + 2 * max_freq)
+        freqs_1d_grid = freqs_1d_grid[freqs_1d_grid != 0.0]
+        normal = paddle.distribution.Normal(
+            paddle.to_tensor([0.0]), paddle.to_tensor([fourier_scale])
         )
-        embeddings = time.unsqueeze(1) * embeddings.unsqueeze(0)
-        embeddings = paddle.concat([embeddings.sin(), embeddings.cos()], axis=-1)
-        return embeddings  # (n, dim)
+        probs = normal.log_prob(freqs_1d_grid).exp()
 
-class NonEquivariantDriftModule(nn.Layer):
-    """基类，包含平面波和 Fourier 特征提取工具。"""
-
-    def __init__(self):
-        super().__init__()
-
-    @staticmethod
-    def get_plane_wave_frequencies(
-        num_freqs: int,
-        max_freq: int = 512,
-        fourier_scale: float = 1.0,
-        isotropic_plane_waves: bool = False,
-    ) -> paddle.Tensor:
-        """返回 (3, num_freqs) 平面波频率张量。"""
-        if isotropic_plane_waves:
-            plane_wave_freqs = paddle.linspace(
-                1, num_freqs, num_freqs
-            ).unsqueeze(0).expand([3, num_freqs])
-        else:
-            freqs_1d_grid = paddle.linspace(-max_freq, max_freq, 1 + 2 * max_freq)
-            freqs_1d_grid = freqs_1d_grid[freqs_1d_grid != 0.0]
-            normal = paddle.distribution.Normal(
-                paddle.to_tensor([0.0]), paddle.to_tensor([fourier_scale])
+        plane_wave_freqs = paddle.empty([3, 0])
+        samples_per_iter = 2 * num_freqs
+        max_iters = 100
+        iteration = 0
+        while plane_wave_freqs.shape[-1] < num_freqs and iteration <= max_iters:
+            iteration += 1
+            kx = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            ky = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            kz = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            plane_wave_freqs = paddle.concat(
+                [plane_wave_freqs, paddle.stack([kx, ky, kz])], axis=-1
             )
-            probs = normal.log_prob(freqs_1d_grid).exp()
+            _, unique_idx = paddle.unique(plane_wave_freqs, axis=-1, return_index=True)
+            plane_wave_freqs = plane_wave_freqs[:, unique_idx]
+    return plane_wave_freqs[:, :num_freqs]
 
-            plane_wave_freqs = paddle.empty([3, 0])
-            samples_per_iter = 2 * num_freqs
-            max_iters = 100
-            iteration = 0
-            while plane_wave_freqs.shape[-1] < num_freqs and iteration <= max_iters:
-                iteration += 1
-                kx = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
-                ky = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
-                kz = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
-                plane_wave_freqs = paddle.concat(
-                    [plane_wave_freqs, paddle.stack([kx, ky, kz])], axis=-1
-                )
-                # unique argsort: keep unique columns
-                _, unique_idx = paddle.unique(plane_wave_freqs, axis=-1, return_index=True)
-                plane_wave_freqs = plane_wave_freqs[:, unique_idx]
-        return plane_wave_freqs[:, :num_freqs]
+def plane_wave_fourier_features(
+    x: paddle.Tensor, plane_wave_freqs: paddle.Tensor
+) -> paddle.Tensor:
+    """Plane wave Fourier features for 3D points."""
+    v = 2 * math.pi * x @ plane_wave_freqs
+    return paddle.concat([v.sin(), v.cos()], axis=-1)
 
-    @staticmethod
-    def plane_wave_fourier_features(
-        x: paddle.Tensor, plane_wave_freqs: paddle.Tensor
-    ) -> paddle.Tensor:
-        """(n, 3) x (3, num_freqs) -> (n, 2*num_freqs)"""
-        v = 2 * math.pi * x @ plane_wave_freqs
-        return paddle.concat([v.sin(), v.cos()], axis=-1)
-
-    def forward(self, *args, **kwargs):
-        raise NotImplementedError
-
-class TorusMLP(NonEquivariantDriftModule):
-    """基于 Fourier 特征的简单 MLP 漂移模型。"""
+class TorusMLP(nn.Layer):
+    """Simple MLP drift model based on Fourier features."""
 
     def __init__(
         self,
@@ -103,9 +83,8 @@ class TorusMLP(NonEquivariantDriftModule):
         super().__init__()
         self.time_embedder = time_embedder
         self.num_plane_wave_freqs = num_plane_wave_freqs
-        plane_wave_freqs = self.get_plane_wave_frequencies(num_freqs=num_plane_wave_freqs)
+        plane_wave_freqs = get_plane_wave_frequencies(num_freqs=num_plane_wave_freqs)
         self.register_buffer("plane_wave_freqs", plane_wave_freqs)
-        # (3, num_plane_wave_freqs)
         self.layers = nn.Sequential(
             nn.Linear(2 * self.num_plane_wave_freqs + time_embedder.dim, 128),
             nn.Silu(),
@@ -129,7 +108,7 @@ class TorusMLP(NonEquivariantDriftModule):
         return self.layers(
             paddle.concat(
                 [
-                    self.plane_wave_fourier_features(frac_coords, self.plane_wave_freqs),
+                    plane_wave_fourier_features(frac_coords, self.plane_wave_freqs),
                     time_embeddings,
                 ],
                 axis=-1,
@@ -137,7 +116,7 @@ class TorusMLP(NonEquivariantDriftModule):
         )
 
 class GaussianSmearing(nn.Layer):
-    """高斯距离扩展。"""
+    """Gaussian distance smearing."""
 
     def __init__(self, start: float = 0.0, stop: float = 5.0, num_gaussians: int = 50):
         super().__init__()
@@ -150,7 +129,7 @@ class GaussianSmearing(nn.Layer):
         return paddle.exp(self.coeff * dist ** 2)
 
 def custom_he_orthogonal_(weight: paddle.Tensor, gain: float = 1.0) -> paddle.Tensor:
-    """He 初始化 + 正交化。"""
+    """He initialization + orthogonalization."""
     with paddle.no_grad():
         fan_in = weight.shape[1]
         assert fan_in > 1
@@ -164,7 +143,7 @@ def custom_he_orthogonal_(weight: paddle.Tensor, gain: float = 1.0) -> paddle.Te
     return weight
 
 class NodeAndEdgeEmbedder(nn.Layer):
-    """节点和边的初始嵌入模块。"""
+    """Node and edge initial embedding module."""
 
     def __init__(
         self,
@@ -239,7 +218,7 @@ class NodeAndEdgeEmbedder(nn.Layer):
         return {"h": h, "e": e}
 
 class InteractionBlock(nn.Layer):
-    """自定义消息传递 GNN 层。"""
+    """Custom message passing GNN layer."""
 
     def __init__(
         self,
@@ -285,19 +264,17 @@ class InteractionBlock(nn.Layer):
         map_node_to_graph: Optional[paddle.Tensor] = None,
         num_graphs: Optional[int] = None,
     ) -> paddle.Tensor:
-        """消息传递 + 聚合。"""
-        src_ids = edge_index[0]  # source
-        dst_ids = edge_index[1]  # destination
+        """Message passing + aggregation."""
+        src_ids = edge_index[0]
+        dst_ids = edge_index[1]
 
-        # 拼接边特征
         e_full = paddle.concat([e, h[src_ids], h[dst_ids]], axis=1)
         e_full = self.act(self.lin_geom(e_full))
-        # (n_edges, hidden_channels)
 
-        # 消息: m_ij = h_j * e_ij（source * edge）
-        messages = h[src_ids] * e_full  # (n_edges, hidden_channels)
+        # message: m_ij = h_j * e_ij
+        messages = h[src_ids] * e_full
 
-        # 聚合
+        n_nodes = h.shape[0]
         n_nodes = h.shape[0]
         if self.use_vpa:
             h_agg = self.aggregator(messages, dst_ids, dim_size=n_nodes)
@@ -326,8 +303,8 @@ class GNNConfig:
     use_frac_coords_in_node_emb: bool = False
     dataset_name: str = "mp_20"
 
-class GNN(NonEquivariantDriftModule):
-    """GNN 非等变漂移模块。"""
+class GNN(nn.Layer):
+    """GNN non-equivariant drift module."""
 
     def __init__(self, config: GNNConfig, time_embedder: FourierTimeEmbeddings):
         super().__init__()
@@ -342,7 +319,7 @@ class GNN(NonEquivariantDriftModule):
         self.num_msg_pass_steps = config.num_msg_pass_steps
         self.cutoff = config.cutoff
 
-        plane_wave_freqs = self.get_plane_wave_frequencies(
+        plane_wave_freqs = get_plane_wave_frequencies(
             num_freqs=self.num_plane_wave_freqs
         )
         self.register_buffer("plane_wave_freqs", plane_wave_freqs)
@@ -390,24 +367,9 @@ class GNN(NonEquivariantDriftModule):
         time_embeddings: paddle.Tensor,
         differentiate_graph_construction: bool = False,
     ) -> paddle.Tensor:
-        """GNN 前向传播，返回 (n_atoms, 3)。"""
-        if not differentiate_graph_construction:
-            with paddle.no_grad():
-                (
-                    map_atom_to_xtal,
-                    edge_index,
-                    relative_fractional_positions,
-                    cartesian_distances,
-                    num_edges_per_crystal,
-                ) = self.construct_graphs(frac_coords, n_atoms_per_xtal, lattice_matrices)
-                fourier_relative_frac_pos = self.plane_wave_fourier_features(
-                    relative_fractional_positions, self.plane_wave_freqs
-                )
-                gaussian_smeared_cart_dists = self.gaussian_smearing(cartesian_distances)
-                normed_lattice_params = self.norm_lattice_params(
-                    lattice_lengths, lattice_angles
-                ).repeat_interleave(num_edges_per_crystal, axis=0)
-        else:
+        """GNN forward pass, returns (n_atoms, 3)."""
+        cm = paddle.no_grad() if not differentiate_graph_construction else nullcontext()
+        with cm:
             (
                 map_atom_to_xtal,
                 edge_index,
@@ -415,7 +377,7 @@ class GNN(NonEquivariantDriftModule):
                 cartesian_distances,
                 num_edges_per_crystal,
             ) = self.construct_graphs(frac_coords, n_atoms_per_xtal, lattice_matrices)
-            fourier_relative_frac_pos = self.plane_wave_fourier_features(
+            fourier_relative_frac_pos = plane_wave_fourier_features(
                 relative_fractional_positions, self.plane_wave_freqs
             )
             gaussian_smeared_cart_dists = self.gaussian_smearing(cartesian_distances)
@@ -424,7 +386,7 @@ class GNN(NonEquivariantDriftModule):
             ).repeat_interleave(num_edges_per_crystal, axis=0)
 
         if self.config.use_frac_coords_in_node_emb:
-            fourier_atom_frac_pos = self.plane_wave_fourier_features(
+            fourier_atom_frac_pos = plane_wave_fourier_features(
                 frac_coords, self.plane_wave_freqs
             )
         else:
@@ -463,7 +425,7 @@ class GNN(NonEquivariantDriftModule):
         n_atoms_per_xtal: paddle.Tensor,
         lattice_matrices: paddle.Tensor,
     ) -> tuple:
-        """构建 PBC 图结构。"""
+        """Construct PBC graph structure."""
         n_crystals = lattice_matrices.shape[0]
         n_nodes = frac_coords.shape[0]
         atom_counts = n_atoms_per_xtal.cast("int64").reshape([-1])
@@ -508,7 +470,7 @@ class GNN(NonEquivariantDriftModule):
     def norm_lattice_params(
         self, lattice_lengths: paddle.Tensor, lattice_angles: paddle.Tensor
     ) -> paddle.Tensor:
-        """将晶格参数规范化到 [-1, 1]。"""
+        """Normalize lattice parameters to [-1, 1]."""
         param_ranges = lattice_parameter_ranges[self.config.dataset_name]
         min_len = param_ranges["min_lattice_length"]
         max_len = param_ranges["max_lattice_length"]
@@ -519,24 +481,8 @@ class GNN(NonEquivariantDriftModule):
         normed_angles = 2.0 * (lattice_angles - min_ang) / (max_ang - min_ang) - 1.0
         return paddle.concat([normed_lengths, normed_angles], axis=-1)
 
-class SinusoidsEmbedding(nn.Layer):
-    """正弦嵌入。"""
-
-    def __init__(self, n_frequencies: int = 10, n_space: int = 3):
-        super().__init__()
-        self.n_frequencies = n_frequencies
-        self.n_space = n_space
-        self.frequencies = 2 * math.pi * paddle.arange(self.n_frequencies, dtype=paddle.float32)
-        self.dim = self.n_frequencies * 2 * self.n_space
-
-    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        emb = x.unsqueeze(-1) * self.frequencies.reshape([1, 1, -1])
-        emb = emb.reshape([-1, self.n_frequencies * self.n_space])
-        emb = paddle.concat([emb.sin(), emb.cos()], axis=-1)
-        return emb.detach()
-
 class CSPLayer(nn.Layer):
-    """CSPNet 消息传递层。"""
+    """CSPNet message passing layer."""
 
     def __init__(
         self,
@@ -635,7 +581,7 @@ class CSPNetConfig:
     dense: bool = False
 
 class CSPNet(nn.Layer):
-    """DiffCSP 架构的 CSPNet。"""
+    """CSPNet from DiffCSP architecture."""
 
     def __init__(self, config: CSPNetConfig, time_embedder: nn.Layer):
         super().__init__()
@@ -655,7 +601,19 @@ class CSPNet(nn.Layer):
         if act_fn_str == "silu":
             self.act_fn = nn.Silu()
         if dis_emb_str == "sin":
-            self.dis_emb = SinusoidsEmbedding(n_frequencies=num_freqs)
+            freqs = 2 * math.pi * paddle.arange(num_freqs, dtype=paddle.float32)
+
+            class _SinusoidEmbedding(paddle.nn.Layer):
+                def __init__(self, freq_tensor, nf):
+                    super().__init__()
+                    self.dim = nf * 2 * 3
+                    self._freq = freq_tensor
+
+                def forward(self, x):
+                    emb = (x.unsqueeze(-1) * self._freq).reshape([-1, num_freqs * 3])
+                    return paddle.concat([emb.sin(), emb.cos()], axis=-1).detach()
+
+            self.dis_emb = _SinusoidEmbedding(freqs, num_freqs)
         elif dis_emb_str == "none":
             self.dis_emb = None
 
@@ -679,14 +637,13 @@ class CSPNet(nn.Layer):
     def gen_edges(
         self, num_atoms: paddle.Tensor, frac_coords: paddle.Tensor
     ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-        """生成全连接边。"""
+        """Generate fully-connected edges."""
         lis = [
             paddle.ones([n, n], dtype=paddle.float32)
             for n in num_atoms.numpy().tolist()
         ]
         fc_graph = paddle.block_diag(lis)
         fc_edges = paddle.nonzero(fc_graph).T
-        # (2, n_edges)
         frac_diff = (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]]) % 1.0
         return fc_edges, frac_diff
 
@@ -702,7 +659,7 @@ class CSPNet(nn.Layer):
         *args,
         **kwargs,
     ) -> paddle.Tensor:
-        """CSPNet 前向传播。"""
+        """CSPNet forward pass."""
         n_crystals = n_atoms_per_xtal.shape[0]
         node2graph = paddle.arange(n_crystals).repeat_interleave(n_atoms_per_xtal, axis=0)
         atom_types = element_indices
@@ -716,7 +673,7 @@ class CSPNet(nn.Layer):
 
         h_list = [node_features]
         for i in range(self.num_layers):
-            # self.sublayers(name) 在 Paddle 中返回所有子层列表，不能按名称索引；改用 getattr
+            # self.sublayers(name) returns all sublayer list in Paddle, cannot index by name; use getattr
             node_features = getattr(self, f"csp_layer_{i}")(
                 node_features, frac_coords, lattices, edges, edge2graph, frac_diff=frac_diff
             )
@@ -731,3 +688,133 @@ class CSPNet(nn.Layer):
             node_features = paddle.concat(h_list, axis=-1)
 
         return self.coord_out(node_features)
+"""GNN submodules: Swish, GraphNorm, VPA, FourierLinear etc."""
+import math
+from typing import Optional
+
+import paddle
+import paddle.nn as nn
+from ppmat.utils.scatter import scatter as paddle_scatter_scatter
+
+
+class Swish(nn.Layer):
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        return nn.functional.silu(x) / 0.6
+
+class VariancePreservingAggregation(nn.Layer):
+    """Variance preserving aggregation: vpa(X) = sum(X) / sqrt(|X|)."""
+
+    def forward(
+        self,
+        src: paddle.Tensor,
+        index: paddle.Tensor,
+        dim_size: Optional[int] = None,
+    ) -> paddle.Tensor:
+        if dim_size is None:
+            dim_size = int(index.max().item()) + 1
+
+        sum_agg = paddle_scatter_scatter(
+            src, index, dim=0, dim_size=dim_size, reduce="sum"
+        )
+        counts = paddle_scatter_scatter(
+            paddle.ones([src.shape[0]], dtype=src.dtype),
+            index,
+            dim=0,
+            dim_size=dim_size,
+            reduce="sum",
+        )
+        return paddle.nan_to_num(sum_agg / paddle.sqrt(counts).unsqueeze(-1))
+
+class FourierLinear(nn.Layer):
+    """Fourier feature encoding for 3D points."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_fourier_frequencies: int,
+        scale: float,
+        output_dim: int,
+        num_layers: int = 1,
+        use_bias: bool = False,
+    ):
+        super().__init__()
+        assert num_layers >= 1
+        self.num_fourier_frequencies = num_fourier_frequencies
+        self.scale = scale
+        self.output_dim = output_dim
+        self.num_layers = num_layers
+
+        if self.scale > 0:
+            self.fourier_freqs = paddle.create_parameter(
+                shape=[input_dim, num_fourier_frequencies],
+                dtype="float32",
+                default_initializer=nn.initializer.Normal(std=scale),
+            )
+            self.fourier_freqs.stop_gradient = True
+            in_dim = input_dim + 2 * num_fourier_frequencies
+            self.layer = nn.Linear(in_dim, output_dim, bias_attr=use_bias)
+        else:
+            in_dim = input_dim
+            self.layer = nn.Linear(in_dim, output_dim, bias_attr=use_bias)
+        self.weight = self.layer.weight
+        if num_layers > 1:
+            self.layers = nn.LayerList(
+                [nn.Linear(output_dim, output_dim) for _ in range(num_layers - 1)]
+            )
+
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        if self.scale > 0:
+            with paddle.no_grad():
+                v = 2 * math.pi * x @ self.fourier_freqs
+                v = paddle.concat([x, v.sin(), v.cos()], axis=-1)
+        else:
+            v = x
+        v = self.layer(v)
+        if self.num_layers > 1:
+            for layer in self.layers:
+                v = nn.functional.silu(layer(v)) + v
+        return v
+
+class GraphNorm(nn.Layer):
+    """Graph normalization layer."""
+
+    def __init__(self, in_channels: int, eps: float = 1e-5):
+        super().__init__()
+        self.in_channels = in_channels
+        self.eps = eps
+        self.weight = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(1.0),
+        )
+        self.bias = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(0.0),
+        )
+        self.mean_scale = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(1.0),
+        )
+
+    def forward(
+        self,
+        x: paddle.Tensor,
+        map_node_to_graph: paddle.Tensor,
+        num_graphs: int,
+    ) -> paddle.Tensor:
+        sorted_order = paddle.argsort(map_node_to_graph)
+        sorted_map = map_node_to_graph[sorted_order]
+        sorted_x = x[sorted_order]
+
+        mean = paddle_scatter_scatter(
+            sorted_x, sorted_map, dim=0, dim_size=num_graphs, reduce="mean"
+        )
+
+        out = x - mean[map_node_to_graph] * self.mean_scale
+
+        sorted_out = out[sorted_order]
+        var = paddle_scatter_scatter(
+            sorted_out ** 2, sorted_map, dim=0, dim_size=num_graphs, reduce="mean"
+        )
+
+        std = (var + self.eps).sqrt()[map_node_to_graph].clip(min=1.0)
+        return self.weight * out / std + self.bias

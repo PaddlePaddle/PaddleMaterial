@@ -1,54 +1,21 @@
-# Copyright (C) 2026 Suzhou National Laboratory and Baidu PaddlePaddle team
-# This code was jointly developed by Suzhou National Laboratory and Baidu PaddlePaddle team.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-try:
-    from ppmat.models.sgequidiff.diffusion_model import (
-        EquivariantDiffusionModel,
-        EquivariantDiffusionModelConfig,
-        NoiseScheduler,
-    )
-    from ppmat.models.sgequidiff.training_wrapper import (
-        SGEQUITrainingWrapper,
-    )
-    from ppmat.models.sgequidiff.crystal_sampler import (
-        CrystalSampler,
-        CrystalSamplerConfig,
-        SpaceGroupSampler,
-    )
-except ImportError:
-    EquivariantDiffusionModel = None
-    EquivariantDiffusionModelConfig = None
-    NoiseScheduler = None
-    SGEQUITrainingWrapper = None
-    CrystalSampler = None
-    CrystalSamplerConfig = None
-    SpaceGroupSampler = None
+#     http://www.apache.org/licenses/LICENSE-2.0
 
-try:
-    from ppmat.models.sgequidiff.weight_utils import (
-        download_weight_file,
-        download_all_weights,
-        load_pretrained_weights,
-        PRETRAINED_WEIGHT_URLS,
-    )
-except ImportError:
-    download_weight_file = None
-    download_all_weights = None
-    load_pretrained_weights = None
-    PRETRAINED_WEIGHT_URLS = None
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
 
 __all__ = [
     "EquivariantDiffusionModel",
     "EquivariantDiffusionModelConfig",
-    "NoiseScheduler",
-    "SGEQUITrainingWrapper",
-    "CrystalSampler",
-    "CrystalSamplerConfig",
-    "SpaceGroupSampler",
-    "download_weight_file",
-    "download_all_weights",
-    "load_pretrained_weights",
-    "PRETRAINED_WEIGHT_URLS",
 ]

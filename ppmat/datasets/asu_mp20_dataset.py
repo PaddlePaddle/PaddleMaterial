@@ -1,7 +1,18 @@
-"""
-非对称单元（ASU） MP-20 数据集。
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
-"""
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Asymmetric Unit (ASU) MP-20 dataset."""
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -10,18 +21,16 @@ import paddle
 import pandas as pd
 from paddle.io import Dataset
 
-from ppmat.models.sgequidiff.crystal_classes import ASUCrystal, ImmutableASUCrystal
+from ppmat.datasets.asu_crystal import ASUCrystal, ImmutableASUCrystal
 
 
 def _get_data_directory() -> Path:
-    """
-    返回数据根目录：优先检查环境变量，否则 fallback 到项目 data/ 目录。
-    """
+    """Return data root directory: check env var first, fallback to project data/."""
     import os
     env = os.environ.get("SGEQUIDIFF_DATA_DIR", None)
     if env:
         return Path(env)
-    # 尝试找项目 data 目录
+    # try project data directory
     candidates = [
         Path(__file__).resolve().parents[3] / "data",
         Path("~").expanduser() / ".sgequidiff_data",
@@ -30,21 +39,11 @@ def _get_data_directory() -> Path:
         if c.exists():
             return c
     raise FileNotFoundError(
-        "找不到数据目录。请设置环境变量 SGEQUIDIFF_DATA_DIR 或确保 data/ 目录存在。"
+        "Cannot find data directory. Set SGEQUIDIFF_DATA_DIR or ensure data/ exists."
     )
 
 class AsymmetricUnitDataset(Dataset):
-    """
-    ASU 表示下的 Materials Project 数据集（MP-20 / MPTS-52）。
-
-    数据集在预处理脚本中将 CIF 格式晶体转换为 ASUCrystal 对象，
-    并以压缩 .npz 格式保存。
-
-    Args:
-        name: 数据集名称，["mp_20", "mp_20_assumeP1", "mpts_52"]
-        split: 数据集分割，["train", "val", "test"]
-        data_directory: 自定义数据目录（None 则自动检测）
-    """
+    """ASU-representation Materials Project dataset (MP-20 / MPTS-52)."""
 
     def __init__(
         self,
@@ -73,7 +72,7 @@ class AsymmetricUnitDataset(Dataset):
         properties_path = Path(data_directory) / name / f"{split}_properties.pkl"
 
         npz: dict = np.load(data_path)
-        properties_df = pd.read_pickle(properties_path)  # 预留，将来可以使用
+        properties_df = pd.read_pickle(properties_path)  # reserved for future use
 
         self.indices_arr: np.ndarray = npz["indices"]
         self.packed: np.ndarray = npz["packed"]
@@ -112,7 +111,7 @@ class AsymmetricUnitDataset(Dataset):
             _lattice_angles.append(crystal.conventional_lattice_angles)
             _n_atoms_per_asu.append(num_atoms)
 
-            # 按 wyckoff_index, element_index 字典序排序
+            # sort by wyckoff_index, element_index lexicographically
             sorting_indices = paddle.to_tensor(
                 sorted(
                     range(num_atoms),
@@ -149,12 +148,7 @@ class AsymmetricUnitDataset(Dataset):
         self,
         index: int,
     ) -> dict:
-        """
-        返回单个样本的标准 dict，兼容框架 DefaultCollator。
-
-        DefaultCollator 对 dict 递归处理，对 paddle.Tensor 执行 paddle.stack，
-        将 N 个 (max_atoms,) 堆叠为 (N, max_atoms)，即 training_wrapper 期望的格式。
-        """
+        """Return single sample dict compatible with DefaultCollator."""
         if not isinstance(index, int):
             raise TypeError(
                 f"Expected int index, got {type(index)}. "
@@ -165,7 +159,7 @@ class AsymmetricUnitDataset(Dataset):
 
     @paddle.no_grad()
     def _get_single_item(self, index: int) -> dict:
-        """返回单个样本的 dict，所有 tensor 不带 batch 维度。"""
+        """Return single sample dict, all tensors without batch dim."""
         return {
             "space_group_indices": self.space_group_indices[index],          # scalar
             "batch_chemistries": self.composition_spaces[index],             # (chem_dim,)
@@ -178,34 +172,3 @@ class AsymmetricUnitDataset(Dataset):
             "frac_coords": self.padded_frac_coords[index],                   # (max_atoms, 3)
             "atoms_mask": self.atoms_mask[index],                             # (max_atoms,)
         }
-
-    @paddle.no_grad()
-    def reindex(self, idxs: Optional[Union[List[int], paddle.Tensor]] = None):
-        """
-        重新排列数据集（随机打乱或按指定索引切片）。
-        """
-        num_crystals = len(self)
-        if idxs is None:
-            idxs = paddle.randperm(num_crystals)
-        elif isinstance(idxs, list):
-            idxs = paddle.to_tensor(idxs, dtype=paddle.int64)
-
-        num_new = int(idxs.shape[0])
-        self.data = [self.data[int(i)] for i in idxs.tolist()]
-        self.space_group_indices = self.space_group_indices[idxs].reshape([-1])
-        self.composition_spaces = self.composition_spaces[idxs].reshape([num_new, -1])
-        self.lattice_lengths = self.lattice_lengths[idxs].reshape([num_new, -1])
-        self.lattice_angles = self.lattice_angles[idxs].reshape([num_new, -1])
-        self.n_atoms_per_asu = self.n_atoms_per_asu[idxs].reshape([num_new])
-        self.padded_element_indices = self.padded_element_indices[idxs].reshape([num_new, self.max_atoms])
-        self.padded_wyckoff_indices = self.padded_wyckoff_indices[idxs].reshape([num_new, self.max_atoms])
-        self.padded_wyckoff_shape_indices = self.padded_wyckoff_shape_indices[idxs].reshape([num_new, self.max_atoms])
-        self.padded_frac_coords = self.padded_frac_coords[idxs].reshape([num_new, self.max_atoms, 3])
-        self.atoms_mask = self.atoms_mask[idxs].reshape([num_new, self.max_atoms])
-
-    @property
-    def empirical_space_group_probs(self) -> paddle.Tensor:
-        counts = paddle.zeros([230], dtype=paddle.int64)
-        for sg_idx in self.space_group_indices.tolist():
-            counts[int(sg_idx)] += 1
-        return counts.cast(paddle.float32) / len(self)
