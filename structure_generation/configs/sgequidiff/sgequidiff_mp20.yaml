@@ -1,0 +1,127 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+  num_train_timesteps: 1000
+
+Trainer:
+  max_epochs: 2000
+  seed: 42
+  output_dir: ./output/sgequidiff_mp20
+  save_freq: 100
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 10
+  pretrained_model_path: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: True
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'train_loss'
+  name_for_best_metric: "loss"
+  greater_is_better: False
+  compute_metric_during_train: False
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: True
+
+Model:
+  __class_name__: EquivariantDiffusionModel
+  __init_params__:
+    num_wn_lattice_translations: 3
+    noise_scheduler_cfg:
+      __class_name__: ASUVESDEScheduler
+      __init_params__:
+        num_timesteps: ${Global.num_train_timesteps}
+        sigma_min: 0.002
+        sigma_max: 0.5
+        num_lattice_translations: 3
+        num_monte_carlo_samples: 2500
+    time_emb_dim: 128
+    model_type: gnn
+    num_plane_wave_freqs: 96
+    subsample_group_operations: False
+    gnn_config:
+      num_plane_wave_freqs: 96
+      num_cartesian_distance_gaussians: 96
+      edge_hidden_dim: 128
+      atom_hidden_dim: 256
+      use_vpa: True
+      use_graph_norm: True
+      num_msg_pass_steps: 5
+      cutoff: 10.0
+      use_frac_coords_in_node_emb: True
+      dataset_name: mp_20
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+    weight_decay: 0.0
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 1.0e-3
+        indicator: train_loss
+        indicator_name: loss
+        factor: 0.6
+        patience: 30
+        min_lr: 1.0e-5
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: AsymmetricUnitDataset
+      __init_params__:
+        name: mp_20
+        split: train
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 32
+  val:
+    dataset:
+      __class_name__: AsymmetricUnitDataset
+      __init_params__:
+        name: mp_20
+        split: val
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
+  test:
+    dataset:
+      __class_name__: AsymmetricUnitDataset
+      __init_params__:
+        name: mp_20
+        split: test
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 64
+
+Sample:
+  build_structure_cfg:
+    format: array
+    primitive: False
+    niggli: False
+    canocial: True

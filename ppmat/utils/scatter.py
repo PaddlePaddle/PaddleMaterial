@@ -14,7 +14,7 @@
 
 # This code is adapted from https://github.com/rusty1s/pytorch_scatter/blob/master/torch_scatter/scatter.py
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import paddle
 
@@ -117,3 +117,55 @@ def scatter_sum(
     dim_size: Optional[int] = None,
 ):
     return _scatter_sum(src, index, dim, out, dim_size)
+
+
+def scatter_min_with_argmin(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim_size: Optional[int] = None,
+) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    if dim_size is None:
+        dim_size = int(index.max().item()) + 1
+
+    min_values = paddle.geometric.segment_min(src, index)
+
+    present = paddle.zeros([dim_size], dtype=paddle.bool)
+    if index.numel() > 0:
+        present = paddle.scatter(
+            present.cast(paddle.int32), paddle.unique(index),
+            paddle.ones([paddle.unique(index).shape[0]], dtype=paddle.int32),
+        ).cast(paddle.bool)
+    min_values = paddle.where(
+        present, min_values,
+        paddle.full([dim_size], float('inf'), dtype=src.dtype),
+    )
+
+    n = src.shape[0]
+    weights = paddle.arange(n, dtype=paddle.float32)
+    is_min = (src == min_values[index])
+    min_weights = paddle.where(is_min, weights, paddle.to_tensor(float('inf')))
+    argmin_weights = paddle.geometric.segment_min(min_weights, index)
+    argmin = paddle.where(
+        paddle.isinf(argmin_weights),
+        paddle.full([dim_size], dim_size, dtype=paddle.int64),
+        argmin_weights.cast(paddle.int64),
+    )
+    return min_values, argmin
+
+
+def scatter_min_indices(
+    ov_row: paddle.Tensor,
+    ov_col: paddle.Tensor,
+    n_total: int,
+) -> paddle.Tensor:
+    if ov_row.shape[0] == 0:
+        return paddle.arange(n_total, dtype=paddle.int64)
+    min_per_row = paddle.geometric.segment_min(
+        ov_col.cast(paddle.float32), ov_row
+    )
+    unique_rows = paddle.unique(ov_row)
+    result = paddle.arange(n_total, dtype=paddle.float32)
+    result = paddle.scatter(
+        result, unique_rows, min_per_row[unique_rows].cast(paddle.float32)
+    )
+    return result.cast(paddle.int64)

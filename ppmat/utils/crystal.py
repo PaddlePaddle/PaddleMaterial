@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+from typing import Tuple
 
 import numpy as np
 import paddle
@@ -426,3 +427,49 @@ def compute_lattice_polar_decomposition(lattice_matrix: paddle.Tensor) -> paddle
     P_prime = U @ P @ U.transpose(perm=dim2perm(U.ndim, 1, 2))
     symm_lattice_matrix = P_prime
     return symm_lattice_matrix
+
+
+def lattice_transform_and_log_prob_mask(
+    spacegroup: int,
+) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    if 1 <= spacegroup <= 2:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.eye(3)
+        angle_vector = paddle.zeros([3])
+        log_prob_mask = paddle.ones([6])
+    elif 3 <= spacegroup <= 15:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.to_tensor(
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]
+        )
+        angle_vector = paddle.to_tensor([90.0, 0.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 1.0, 0.0])
+    elif 16 <= spacegroup <= 74:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
+    elif 75 <= spacegroup <= 142:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+    elif 143 <= spacegroup <= 194:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 120.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+    elif 195 <= spacegroup <= 230:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    else:
+        raise AttributeError(f"Invalid space group: {spacegroup}")
+    return length_matrix, angle_matrix, angle_vector, log_prob_mask

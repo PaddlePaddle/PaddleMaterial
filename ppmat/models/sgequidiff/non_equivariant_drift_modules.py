@@ -1,0 +1,767 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Non-equivariant drift modules: GNN (PBC message passing) and CSPNet (from DiffCSP)."""
+import dataclasses
+import math
+from typing import Optional, Tuple
+from contextlib import nullcontext
+
+import paddle
+import paddle.nn as nn
+import ppmat.models.sgequidiff.global_vars as global_vars
+from ppmat.models.sgequidiff.constants import lattice_parameter_ranges, NUM_ELEMENTS
+from ppmat.utils.pbc_graph import (
+    construct_fully_connected_graphs_with_periodic_boundaries,
+    ocp_get_pbc_distances,
+)
+from ppmat.utils.crystal import frac_to_cart_coords
+from ppmat.utils.scatter import scatter as paddle_scatter
+from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings as FourierTimeEmbeddings
+
+
+def _get_diffcsp_classes():
+    from ppmat.models.diffcsp.diffcsp import CSPLayer, SinusoidsEmbedding
+    return CSPLayer, SinusoidsEmbedding
+
+def get_plane_wave_frequencies(
+    num_freqs: int,
+    max_freq: int = 512,
+    fourier_scale: float = 1.0,
+    isotropic_plane_waves: bool = False,
+) -> paddle.Tensor:
+    """Return (3, num_freqs) plane wave frequency tensor."""
+    if isotropic_plane_waves:
+        plane_wave_freqs = paddle.linspace(
+            1, num_freqs, num_freqs
+        ).unsqueeze(0).expand([3, num_freqs])
+    else:
+        freqs_1d_grid = paddle.linspace(-max_freq, max_freq, 1 + 2 * max_freq)
+        freqs_1d_grid = freqs_1d_grid[freqs_1d_grid != 0.0]
+        normal = paddle.distribution.Normal(
+            paddle.to_tensor([0.0]), paddle.to_tensor([fourier_scale])
+        )
+        probs = normal.log_prob(freqs_1d_grid).exp()
+
+        plane_wave_freqs = paddle.empty([3, 0])
+        samples_per_iter = 2 * num_freqs
+        max_iters = 100
+        iteration = 0
+        while plane_wave_freqs.shape[-1] < num_freqs and iteration <= max_iters:
+            iteration += 1
+            kx = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            ky = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            kz = freqs_1d_grid[paddle.multinomial(probs, num_samples=samples_per_iter, replacement=True)]
+            plane_wave_freqs = paddle.concat(
+                [plane_wave_freqs, paddle.stack([kx, ky, kz])], axis=-1
+            )
+            _, unique_idx = paddle.unique(plane_wave_freqs, axis=-1, return_index=True)
+            plane_wave_freqs = plane_wave_freqs[:, unique_idx]
+        if plane_wave_freqs.shape[-1] < num_freqs:
+            plane_wave_freqs = get_plane_wave_frequencies(
+                num_freqs, max_freq, fourier_scale, isotropic_plane_waves=True
+            )
+    return plane_wave_freqs[:, :num_freqs]
+
+def plane_wave_fourier_features(
+    x: paddle.Tensor, plane_wave_freqs: paddle.Tensor
+) -> paddle.Tensor:
+    """Plane wave Fourier features for 3D points."""
+    v = 2 * math.pi * x @ plane_wave_freqs
+    return paddle.concat([v.sin(), v.cos()], axis=-1)
+
+class TorusMLP(nn.Layer):
+    """Simple MLP drift model based on Fourier features."""
+
+    def __init__(
+        self,
+        time_embedder: FourierTimeEmbeddings,
+        num_plane_wave_freqs: int,
+    ):
+        super().__init__()
+        self.time_embedder = time_embedder
+        self.num_plane_wave_freqs = num_plane_wave_freqs
+        plane_wave_freqs = get_plane_wave_frequencies(num_freqs=num_plane_wave_freqs)
+        self.register_buffer("plane_wave_freqs", plane_wave_freqs)
+        self.layers = nn.Sequential(
+            nn.Linear(2 * self.num_plane_wave_freqs + time_embedder.dim, 128),
+            nn.Silu(),
+            nn.Linear(128, 128),
+            nn.Silu(),
+            nn.Linear(128, 128),
+            nn.Silu(),
+            nn.Linear(128, 128),
+            nn.Silu(),
+            nn.Linear(128, 3),
+        )
+
+    def forward(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        *args,
+        **kwargs,
+    ) -> paddle.Tensor:
+        return self.layers(
+            paddle.concat(
+                [
+                    plane_wave_fourier_features(frac_coords, self.plane_wave_freqs),
+                    time_embeddings,
+                ],
+                axis=-1,
+            )
+        )
+
+class GaussianSmearing(nn.Layer):
+    """Gaussian distance smearing."""
+
+    def __init__(self, start: float = 0.0, stop: float = 5.0, num_gaussians: int = 50):
+        super().__init__()
+        offset = paddle.linspace(start, stop, num_gaussians)
+        self.coeff = -0.5 / (offset[1] - offset[0]).item() ** 2
+        self.register_buffer("offset", offset)
+
+    def forward(self, dist: paddle.Tensor) -> paddle.Tensor:
+        dist = dist.reshape([-1, 1]) - self.offset.reshape([1, -1])
+        return paddle.exp(self.coeff * dist ** 2)
+
+def custom_he_orthogonal_(weight: paddle.Tensor, gain: float = 1.0) -> paddle.Tensor:
+    """He initialization + orthogonalization."""
+    with paddle.no_grad():
+        fan_in = weight.shape[1]
+        assert fan_in > 1
+
+        nn.initializer.Orthogonal()(weight)
+        eps = 1e-6
+        mean = weight.mean(axis=1, keepdim=True)
+        var = weight.std(axis=1, keepdim=True)
+        result = gain * math.sqrt(1 / fan_in) * ((weight - mean) / (var + eps).sqrt())
+        paddle.assign(result, weight)
+    return weight
+
+class NodeAndEdgeEmbedder(nn.Layer):
+    """Node and edge initial embedding module."""
+
+    def __init__(
+        self,
+        num_cartesian_distance_gaussians: int,
+        edge_hidden_dim: int,
+        atom_hidden_dim: int,
+        fourier_frac_edge_dim: int,
+        gaussian_cart_edge_dim: int,
+        time_emb_dim: int,
+        activation: nn.Layer,
+        use_frac_coords_in_node_emb: bool,
+    ):
+        super().__init__()
+        self.act = activation
+        self.use_frac_coords_in_node_emb = use_frac_coords_in_node_emb
+
+        if use_frac_coords_in_node_emb:
+            self.frac_pos_emb = nn.Linear(fourier_frac_edge_dim, atom_hidden_dim)
+            self.ele_emb = nn.Linear(
+                global_vars.embedding_tools.element_embedding_length, atom_hidden_dim
+            )
+            self.atom_emb1 = nn.Linear(2 * atom_hidden_dim, atom_hidden_dim)
+        else:
+            self.atom_emb1 = nn.Linear(
+                global_vars.embedding_tools.element_embedding_length, atom_hidden_dim
+            )
+        self.atom_emb2 = nn.Linear(atom_hidden_dim + time_emb_dim, atom_hidden_dim)
+
+        self.edge_emb1 = nn.Linear(
+            fourier_frac_edge_dim + gaussian_cart_edge_dim + 6, edge_hidden_dim, bias_attr=False
+        )
+        self.edge_emb2 = nn.Linear(edge_hidden_dim, edge_hidden_dim, bias_attr=False)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        custom_he_orthogonal_(self.atom_emb1.weight, gain=2.0)
+        paddle.assign(paddle.zeros_like(self.atom_emb1.bias), self.atom_emb1.bias)
+        custom_he_orthogonal_(self.atom_emb2.weight, gain=2.0)
+        paddle.assign(paddle.zeros_like(self.atom_emb2.bias), self.atom_emb2.bias)
+        custom_he_orthogonal_(self.edge_emb1.weight, gain=2.0)
+        custom_he_orthogonal_(self.edge_emb2.weight, gain=2.0)
+
+    def forward(
+        self,
+        element_indices: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        fourier_relative_frac_pos: paddle.Tensor,
+        gaussian_cart_dists: paddle.Tensor,
+        normed_lattice_params: paddle.Tensor,
+        fourier_atom_frac_pos: Optional[paddle.Tensor] = None,
+    ) -> dict:
+        e = self.edge_emb1(
+            paddle.concat([fourier_relative_frac_pos, gaussian_cart_dists, normed_lattice_params], axis=-1)
+        )
+        e = self.act(e)
+        e = self.act(self.edge_emb2(e))
+
+        if self.use_frac_coords_in_node_emb:
+            frac_pos_emb = self.act(self.frac_pos_emb(fourier_atom_frac_pos))
+            ele_emb_out = self.act(
+                self.ele_emb(
+                    global_vars.embedding_tools.get_element_embedding(1 + element_indices)
+                )
+            )
+            h = self.atom_emb1(paddle.concat([frac_pos_emb, ele_emb_out], axis=-1))
+        else:
+            h = self.atom_emb1(
+                global_vars.embedding_tools.get_element_embedding(1 + element_indices)
+            )
+        h = self.act(h)
+        h = self.act(self.atom_emb2(paddle.concat([h, time_embeddings], axis=-1)))
+        return {"h": h, "e": e}
+
+class InteractionBlock(nn.Layer):
+    """Custom message passing GNN layer."""
+
+    def __init__(
+        self,
+        hidden_channels: int,
+        edge_hidden_dim: int,
+        activation: nn.Layer,
+        graph_norm: bool = True,
+        use_vpa: bool = True,
+    ):
+        super().__init__()
+        self.act = activation
+        self.hidden_channels = hidden_channels
+        self.use_graph_norm = graph_norm
+        self.use_vpa = use_vpa
+
+        if use_vpa:
+            self.aggregator = VariancePreservingAggregation()
+        if graph_norm:
+            self.graph_norm = GraphNorm(hidden_channels)
+
+        self.lin_geom = nn.Linear(
+            edge_hidden_dim + 2 * hidden_channels, hidden_channels, bias_attr=False
+        )
+        self.lin_h = nn.Linear(hidden_channels, hidden_channels)
+        self.out_layer = nn.Linear(hidden_channels, hidden_channels)
+        self.skipinit_gain = self.create_parameter(
+            [], default_initializer=nn.initializer.Constant(0.0)
+        )
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        custom_he_orthogonal_(self.lin_geom.weight, gain=4.0)
+        custom_he_orthogonal_(self.out_layer.weight, gain=3.0)
+        paddle.assign(paddle.zeros_like(self.out_layer.bias), self.out_layer.bias)
+        custom_he_orthogonal_(self.lin_h.weight, gain=3.0)
+        paddle.assign(paddle.zeros_like(self.lin_h.bias), self.lin_h.bias)
+
+    def forward(
+        self,
+        h: paddle.Tensor,
+        edge_index: paddle.Tensor,
+        e: paddle.Tensor,
+        map_node_to_graph: Optional[paddle.Tensor] = None,
+        num_graphs: Optional[int] = None,
+    ) -> paddle.Tensor:
+        """Message passing + aggregation."""
+        src_ids = edge_index[0]
+        dst_ids = edge_index[1]
+
+        e_full = paddle.concat([e, h[src_ids], h[dst_ids]], axis=1)
+        e_full = self.act(self.lin_geom(e_full))
+
+        # message: m_ij = h_j * e_ij
+        messages = h[src_ids] * e_full
+
+        n_nodes = h.shape[0]
+        if self.use_vpa:
+            h_agg = self.aggregator(messages, dst_ids, dim_size=n_nodes)
+        else:
+            h_agg = paddle_scatter(messages, dst_ids, dim=0, dim_size=n_nodes, reduce="sum")
+
+        if self.use_graph_norm:
+            h_agg = self.graph_norm(h_agg, map_node_to_graph, num_graphs)
+            h_agg = self.act(h_agg)
+        h_agg = self.act(self.lin_h(h_agg))
+        h_agg = self.act(self.out_layer(h_agg))
+
+        return self.skipinit_gain * h_agg
+
+@dataclasses.dataclass
+class GNNConfig:
+    num_plane_wave_freqs: int = 64
+    num_cartesian_distance_gaussians: int = 64
+    edge_hidden_dim: int = 256
+    atom_hidden_dim: int = 256
+    use_vpa: bool = True
+    use_graph_norm: bool = True
+    num_msg_pass_steps: int = 5
+    cutoff: float = 7.0
+    use_frac_coords_in_node_emb: bool = False
+    dataset_name: str = "mp_20"
+
+class GNN(nn.Layer):
+    """GNN non-equivariant drift module."""
+
+    def __init__(self, config: GNNConfig, time_embedder: FourierTimeEmbeddings):
+        super().__init__()
+        self.config = config
+        self.time_embedder = time_embedder
+
+        plane_wave_freqs = get_plane_wave_frequencies(
+            num_freqs=config.num_plane_wave_freqs
+        )
+        self.register_buffer("plane_wave_freqs", plane_wave_freqs)
+
+        self.gaussian_smearing = GaussianSmearing(
+            0.0, config.cutoff, config.num_cartesian_distance_gaussians
+        )
+        self.activation = Swish()
+        self.embed_block = NodeAndEdgeEmbedder(
+            config.num_cartesian_distance_gaussians,
+            config.edge_hidden_dim,
+            config.atom_hidden_dim,
+            2 * config.num_plane_wave_freqs,
+            config.num_cartesian_distance_gaussians,
+            self.time_embedder.dim,
+            self.activation,
+            config.use_frac_coords_in_node_emb,
+        )
+        self.interaction_blocks = nn.LayerList(
+            [
+                InteractionBlock(
+                    hidden_channels=config.atom_hidden_dim,
+                    edge_hidden_dim=config.edge_hidden_dim,
+                    activation=self.activation,
+                    graph_norm=config.use_graph_norm,
+                    use_vpa=config.use_vpa,
+                )
+                for _ in range(config.num_msg_pass_steps)
+            ]
+        )
+        self.mlp_skip_co = nn.Linear(
+            (config.num_msg_pass_steps + 1) * config.atom_hidden_dim,
+            config.atom_hidden_dim,
+        )
+        self.mlp_out = nn.Linear(config.atom_hidden_dim, 3)
+
+    def forward(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_matrices: paddle.Tensor,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        differentiate_graph_construction: bool = False,
+    ) -> paddle.Tensor:
+        """GNN forward pass, returns (n_atoms, 3)."""
+        cm = paddle.no_grad() if not differentiate_graph_construction else nullcontext()
+        with cm:
+            (
+                map_atom_to_xtal,
+                edge_index,
+                relative_fractional_positions,
+                cartesian_distances,
+                num_edges_per_crystal,
+            ) = self.construct_graphs(frac_coords, n_atoms_per_xtal, lattice_matrices)
+            fourier_relative_frac_pos = plane_wave_fourier_features(
+                relative_fractional_positions, self.plane_wave_freqs
+            )
+            gaussian_smeared_cart_dists = self.gaussian_smearing(cartesian_distances)
+            normed_lattice_params = self.norm_lattice_params(
+                lattice_lengths, lattice_angles
+            ).repeat_interleave(num_edges_per_crystal, axis=0)
+
+        if self.config.use_frac_coords_in_node_emb:
+            fourier_atom_frac_pos = plane_wave_fourier_features(
+                frac_coords, self.plane_wave_freqs
+            )
+        else:
+            fourier_atom_frac_pos = None
+
+        embed_out = self.embed_block(
+            element_indices,
+            time_embeddings,
+            fourier_relative_frac_pos,
+            gaussian_smeared_cart_dists,
+            normed_lattice_params,
+            fourier_atom_frac_pos,
+        )
+        node_latents = embed_out["h"]
+        edge_latents = embed_out["e"]
+
+        skip_connection_elements = []
+        for interaction in self.interaction_blocks:
+            skip_connection_elements.append(node_latents)
+            node_latents = node_latents + interaction(
+                node_latents,
+                edge_index,
+                edge_latents,
+                map_atom_to_xtal,
+                lattice_matrices.shape[0],
+            )
+
+        skip_connection_elements.append(node_latents)
+        node_latents = self.mlp_skip_co(paddle.concat(skip_connection_elements, axis=1))
+        out_vectors = self.mlp_out(node_latents)
+        return out_vectors
+
+    @staticmethod
+    def construct_graphs(
+        frac_coords: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_matrices: paddle.Tensor,
+    ) -> tuple:
+        """Construct PBC graph structure."""
+        n_crystals = lattice_matrices.shape[0]
+        n_nodes = frac_coords.shape[0]
+        atom_counts = n_atoms_per_xtal.cast("int64").reshape([-1])
+        cumulative = paddle.cumsum(atom_counts, axis=0)
+        node_ids = paddle.arange(n_nodes, dtype=cumulative.dtype).reshape([-1, 1])
+        map_atom_to_xtal = (node_ids >= cumulative.reshape([1, -1])).cast("int64").sum(axis=1)
+        map_atom_to_xtal = paddle.clip(map_atom_to_xtal, min=0, max=n_crystals - 1)
+
+        cart_coords = frac_to_cart_coords(
+            frac_coords, n_atoms_per_xtal, lattices=lattice_matrices
+        )
+        (
+            destination_ids,
+            source_ids,
+            source_node_image_offsets,
+            num_edges_per_crystal,
+        ) = construct_fully_connected_graphs_with_periodic_boundaries(
+            cart_coords=cart_coords,
+            lattice_matrix=lattice_matrices,
+            num_nodes_per_crystal=n_atoms_per_xtal,
+        )
+        out = ocp_get_pbc_distances(
+            coords=cart_coords,
+            source_id=source_ids,
+            destination_id=destination_ids,
+            lattice=lattice_matrices,
+            pbc_frac_offsets_per_source_node=source_node_image_offsets,
+            num_edges_per_crystal=num_edges_per_crystal,
+        )
+        cartesian_distances = out["distances"]
+        edge_index = out["edge_index"]
+        relative_fractional_positions = frac_coords[source_ids] - frac_coords[destination_ids]
+        return (
+            map_atom_to_xtal,
+            edge_index,
+            relative_fractional_positions,
+            cartesian_distances,
+            num_edges_per_crystal,
+        )
+
+    @paddle.no_grad()
+    def norm_lattice_params(
+        self, lattice_lengths: paddle.Tensor, lattice_angles: paddle.Tensor
+    ) -> paddle.Tensor:
+        """Normalize lattice parameters to [-1, 1]."""
+        param_ranges = lattice_parameter_ranges[self.config.dataset_name]
+        min_len = param_ranges["min_lattice_length"]
+        max_len = param_ranges["max_lattice_length"]
+        min_ang = param_ranges["min_lattice_angle"]
+        max_ang = param_ranges["max_lattice_angle"]
+
+        normed_lengths = 2.0 * (lattice_lengths - min_len) / (max_len - min_len) - 1.0
+        normed_angles = 2.0 * (lattice_angles - min_ang) / (max_ang - min_ang) - 1.0
+        return paddle.concat([normed_lengths, normed_angles], axis=-1)
+
+class CSPLayer(paddle.nn.Layer):
+    """CSPLayer subclass adapted from DiffCSP for SGEquiDiff's 6-dim lattice (lengths+angles).
+
+    DiffCSP uses 9-dim lattice inner-product (lattice_ips), SGEquiDiff uses 6-dim
+    lattice_rep (lengths+angles). Override __init__ to rebuild edge_mlp expecting 6-dim,
+    override edge_model to use lattice_rep[edge2graph] instead of lattice_ips.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int = 128,
+        act_fn: nn.Layer = None,
+        dis_emb=None,
+        ln: bool = False,
+    ):
+        _DiffCSP_CSPLayer, _ = _get_diffcsp_classes()
+        super().__init__(
+            hidden_dim=hidden_dim,
+            prop_dim=0,
+            act_fn=act_fn if act_fn is not None else nn.Silu(),
+            dis_emb=dis_emb,
+            ln=ln,
+            ip=False,
+        )
+        # parent uses 9-dim lattice_ips for edge_mlp, override to 6-dim lattice
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(hidden_dim * 2 + 6 + self.dis_dim, hidden_dim),
+            self.act_fn,
+            nn.Linear(hidden_dim, hidden_dim),
+            self.act_fn,
+        )
+
+    def edge_model(
+        self,
+        node_features: paddle.Tensor,
+        frac_coords: paddle.Tensor,
+        lattice_rep: paddle.Tensor,
+        edge_index: paddle.Tensor,
+        edge2graph: paddle.Tensor,
+        frac_diff: Optional[paddle.Tensor] = None,
+    ) -> paddle.Tensor:
+        hi = node_features[edge_index[0]]
+        hj = node_features[edge_index[1]]
+        if frac_diff is None:
+            frac_diff = (frac_coords[edge_index[1]] - frac_coords[edge_index[0]]) % 1.0
+        if self.dis_emb is not None:
+            frac_diff = self.dis_emb(frac_diff)
+        lattice_rep_edges = lattice_rep[edge2graph]
+        edges_input = paddle.concat([hi, hj, lattice_rep_edges, frac_diff], axis=1)
+        return self.edge_mlp(edges_input)
+
+@dataclasses.dataclass
+class CSPNetConfig:
+    hidden_dim: int = 256
+    num_msg_pass_steps: int = 6
+    ln: bool = False
+    act_fn: str = "silu"
+    dis_emb: str = "sin"
+    num_freqs: int = 128
+    dense: bool = False
+
+class CSPNet(nn.Layer):
+    """CSPNet from DiffCSP architecture."""
+
+    def __init__(self, config: CSPNetConfig, time_embedder: nn.Layer):
+        super().__init__()
+        latent_dim = time_embedder.dim
+        num_layers = config.num_msg_pass_steps
+        max_atoms = NUM_ELEMENTS
+        hidden_dim = config.hidden_dim
+        num_freqs = config.num_freqs
+        act_fn_str = config.act_fn
+        dis_emb_str = config.dis_emb
+        dense = config.dense
+        ln = config.ln
+
+        self.node_embedding = nn.Embedding(max_atoms, hidden_dim)
+        self.atom_latent_emb = nn.Linear(hidden_dim + latent_dim, hidden_dim)
+
+        if act_fn_str == "silu":
+            self.act_fn = nn.Silu()
+        if dis_emb_str == "sin":
+            _, DiffCSPSinusoidsEmbedding = _get_diffcsp_classes()
+            self.dis_emb = DiffCSPSinusoidsEmbedding(
+                n_frequencies=num_freqs, n_space=3
+            )
+        elif dis_emb_str == "none":
+            self.dis_emb = None
+
+        for i in range(num_layers):
+            self.add_sublayer(
+                f"csp_layer_{i}",
+                CSPLayer(hidden_dim, self.act_fn, self.dis_emb, ln=ln),
+            )
+        self.num_layers = num_layers
+        self.dense = dense
+
+        hidden_dim_before_out = hidden_dim
+        if self.dense:
+            hidden_dim_before_out = hidden_dim_before_out * (num_layers + 1)
+
+        self.coord_out = nn.Linear(hidden_dim_before_out, 3, bias_attr=False)
+        self.ln = ln
+        if self.ln:
+            self.final_layer_norm = nn.LayerNorm(hidden_dim)
+
+    def gen_edges(
+        self, num_atoms: paddle.Tensor, frac_coords: paddle.Tensor
+    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+        """Generate fully-connected edges."""
+        lis = [
+            paddle.ones([n, n], dtype=paddle.float32)
+            for n in num_atoms.numpy().tolist()
+        ]
+        fc_graph = paddle.block_diag(lis)
+        fc_edges = paddle.nonzero(fc_graph).T
+        frac_diff = (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]]) % 1.0
+        return fc_edges, frac_diff
+
+    def forward(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_matrices: paddle.Tensor,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        *args,
+        **kwargs,
+    ) -> paddle.Tensor:
+        """CSPNet forward pass."""
+        n_crystals = n_atoms_per_xtal.shape[0]
+        node2graph = paddle.arange(n_crystals).repeat_interleave(n_atoms_per_xtal, axis=0)
+        atom_types = element_indices
+        lattices = paddle.concat([lattice_lengths, lattice_angles], axis=-1)
+
+        edges, frac_diff = self.gen_edges(n_atoms_per_xtal, frac_coords)
+        edge2graph = node2graph[edges[0]]
+        node_features = self.node_embedding(atom_types)
+        node_features = paddle.concat([node_features, time_embeddings], axis=-1)
+        node_features = self.atom_latent_emb(node_features)
+
+        h_list = [node_features]
+        for i in range(self.num_layers):
+            # self.sublayers(name) returns all sublayer list in Paddle, cannot index by name; use getattr
+            node_features = getattr(self, f"csp_layer_{i}")(
+                node_features, frac_coords, lattices, edges, edge2graph, frac_diff=frac_diff
+            )
+            if i != self.num_layers - 1:
+                h_list.append(node_features)
+
+        if self.ln:
+            node_features = self.final_layer_norm(node_features)
+        h_list.append(node_features)
+
+        if self.dense:
+            node_features = paddle.concat(h_list, axis=-1)
+
+        return self.coord_out(node_features)
+
+
+# === Shared submodules: Swish, VariancePreservingAggregation, FourierLinear, GraphNorm ===
+
+class Swish(nn.Layer):
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        return nn.functional.silu(x) / 0.6
+
+class VariancePreservingAggregation(nn.Layer):
+    """Variance preserving aggregation: vpa(X) = sum(X) / sqrt(|X|)."""
+
+    def forward(
+        self,
+        src: paddle.Tensor,
+        index: paddle.Tensor,
+        dim_size: Optional[int] = None,
+    ) -> paddle.Tensor:
+        if dim_size is None:
+            dim_size = int(index.max().item()) + 1
+
+        sum_agg = paddle_scatter(
+            src, index, dim=0, dim_size=dim_size, reduce="sum"
+        )
+        counts = paddle_scatter(
+            paddle.ones([src.shape[0]], dtype=src.dtype),
+            index,
+            dim=0,
+            dim_size=dim_size,
+            reduce="sum",
+        )
+        return paddle.nan_to_num(sum_agg / paddle.sqrt(counts).unsqueeze(-1))
+
+class FourierLinear(nn.Layer):
+    """Fourier feature encoding for 3D points."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_fourier_frequencies: int,
+        scale: float,
+        output_dim: int,
+        num_layers: int = 1,
+        use_bias: bool = False,
+    ):
+        super().__init__()
+        assert num_layers >= 1
+        self.num_fourier_frequencies = num_fourier_frequencies
+        self.scale = scale
+        self.output_dim = output_dim
+        self.num_layers = num_layers
+
+        if self.scale > 0:
+            self.fourier_freqs = paddle.create_parameter(
+                shape=[input_dim, num_fourier_frequencies],
+                dtype="float32",
+                default_initializer=nn.initializer.Normal(std=scale),
+            )
+            self.fourier_freqs.stop_gradient = True
+            in_dim = input_dim + 2 * num_fourier_frequencies
+            self.layer = nn.Linear(in_dim, output_dim, bias_attr=use_bias)
+        else:
+            in_dim = input_dim
+            self.layer = nn.Linear(in_dim, output_dim, bias_attr=use_bias)
+        self.weight = self.layer.weight
+        if num_layers > 1:
+            self.layers = nn.LayerList(
+                [nn.Linear(output_dim, output_dim) for _ in range(num_layers - 1)]
+            )
+
+    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
+        if self.scale > 0:
+            with paddle.no_grad():
+                v = 2 * math.pi * x @ self.fourier_freqs
+                v = paddle.concat([x, v.sin(), v.cos()], axis=-1)
+        else:
+            v = x
+        v = self.layer(v)
+        if self.num_layers > 1:
+            for layer in self.layers:
+                v = nn.functional.silu(layer(v)) + v
+        return v
+
+class GraphNorm(nn.Layer):
+    """Graph normalization layer."""
+
+    def __init__(self, in_channels: int, eps: float = 1e-5):
+        super().__init__()
+        self.in_channels = in_channels
+        self.eps = eps
+        self.weight = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(1.0),
+        )
+        self.bias = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(0.0),
+        )
+        self.mean_scale = self.create_parameter(
+            [in_channels],
+            default_initializer=nn.initializer.Constant(1.0),
+        )
+
+    def forward(
+        self,
+        x: paddle.Tensor,
+        map_node_to_graph: paddle.Tensor,
+        num_graphs: int,
+    ) -> paddle.Tensor:
+        sorted_order = paddle.argsort(map_node_to_graph)
+        sorted_map = map_node_to_graph[sorted_order]
+        sorted_x = x[sorted_order]
+
+        mean = paddle_scatter(
+            sorted_x, sorted_map, dim=0, dim_size=num_graphs, reduce="mean"
+        )
+
+        out = x - mean[map_node_to_graph] * self.mean_scale
+
+        sorted_out = out[sorted_order]
+        var = paddle_scatter(
+            sorted_out ** 2, sorted_map, dim=0, dim_size=num_graphs, reduce="mean"
+        )
+
+        std = (var + self.eps).sqrt()[map_node_to_graph].clip(min=1.0)
+        return self.weight * out / std + self.bias
