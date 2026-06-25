@@ -48,6 +48,7 @@ from ppmat.models.chemeleon2 import RLModule
 from ppmat.models.chemeleon2.ldm_module.dit import DiT
 from ppmat.models.chemeleon2.vae_module.encoder import TransformerEncoder
 from ppmat.models.chemeleon2.vae_module.decoder import TransformerDecoder
+from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -79,6 +80,7 @@ __all__ = [
     "DiT",
     "TransformerEncoder",
     "TransformerDecoder",
+    "SFIN",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
@@ -123,6 +125,10 @@ MODEL_REGISTRY = {
     "mattergen_ml2ddb": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb.zip",
     "mattergen_ml2ddb_chemical_system": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_chemical_system.zip",
     "mattergen_ml2ddb_space_group": "https://paddle-org.bj.bcebos.com/paddlematerial/workflow/ml2ddb/mattergen_ml2ddb_space_group.zip",
+    "sfin_haadf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_enhance.zip",
+    "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
+    "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
+    "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
 }
 
 

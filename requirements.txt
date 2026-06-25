@@ -15,6 +15,7 @@ p_tqdm==1.4.0
 packaging==25.0
 pandas==2.3.0
 pgl==2.2.6
+Pillow==11.1.0
 pyarrow==15.0.2
 pymatgen==2024.10.29
 pymatgen_analysis_defects==2025.1.18
