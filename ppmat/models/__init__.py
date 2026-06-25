@@ -29,7 +29,7 @@ from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConve
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
-from ppmat.models.common.graph_converter import SphereNetRadiusGraph
+from ppmat.models.common.graph_converter import RadiusGraph
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
@@ -74,7 +74,7 @@ __all__ = [
     "SFIN",
     "SphereNet",
     "SphereNetPP",
-    "SphereNetRadiusGraph",
+    "RadiusGraph",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

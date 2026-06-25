@@ -48,6 +48,9 @@ Metric:
   energy:
     __class_name__: paddle.nn.L1Loss
     __init_params__: {}
+  force:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
 Optimizer:
   __class_name__: Adam
   __init_params__:

@@ -21,7 +21,7 @@ from ppmat.models.common.initializer import glorot_orthogonal_
 from ppmat.models.common.spherical_fourier_bessel import AngleEmbedding
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
 from ppmat.models.common.spherical_fourier_bessel import TorsionEmbedding
-from ppmat.models.common.graph_converter import SphereNetRadiusGraph
+from ppmat.models.common.graph_converter import RadiusGraph
 from ppmat.utils.scatter import scatter_sum
 from ppmat.utils.xyz_utils import xyz_to_dat
 
@@ -62,9 +62,9 @@ class ResidualLayer(paddle.nn.Layer):
 
     def reset_parameters(self):
         glorot_orthogonal_(self.lin1.weight, scale=1.0)
-        self.lin1.bias.data.fill_(0)
+        self.lin1.bias.set_value(paddle.zeros_like(self.lin1.bias))
         glorot_orthogonal_(self.lin2.weight, scale=1.0)
-        self.lin2.bias.data.fill_(0)
+        self.lin2.bias.set_value(paddle.zeros_like(self.lin2.bias))
 
     def forward(self, x):
         return x + self.act(self.lin2(self.act(self.lin1(x))))
@@ -108,9 +108,9 @@ class EdgeInitializer(paddle.nn.Layer):
                 max=3.0**0.5,
             )
         glorot_orthogonal_(self.lin_rbf_0.weight, scale=1.0)
-        self.lin_rbf_0.bias.data.fill_(0)
+        self.lin_rbf_0.bias.set_value(paddle.zeros_like(self.lin_rbf_0.bias))
         glorot_orthogonal_(self.lin.weight, scale=1.0)
-        self.lin.bias.data.fill_(0)
+        self.lin.bias.set_value(paddle.zeros_like(self.lin.bias))
         glorot_orthogonal_(self.lin_rbf_1.weight, scale=1.0)
 
     def forward(self, x, node_feature, emb_in, i, j):
@@ -181,9 +181,9 @@ class EdgeUpdate(paddle.nn.Layer):
         glorot_orthogonal_(self.lin_t2.weight, scale=1.0)
 
         glorot_orthogonal_(self.lin_kj.weight, scale=1.0)
-        self.lin_kj.bias.data.fill_(0)
+        self.lin_kj.bias.set_value(paddle.zeros_like(self.lin_kj.bias))
         glorot_orthogonal_(self.lin_ji.weight, scale=1.0)
-        self.lin_ji.bias.data.fill_(0)
+        self.lin_ji.bias.set_value(paddle.zeros_like(self.lin_ji.bias))
 
         glorot_orthogonal_(self.lin_down.weight, scale=1.0)
         glorot_orthogonal_(self.lin_up.weight, scale=1.0)
@@ -191,7 +191,7 @@ class EdgeUpdate(paddle.nn.Layer):
         for res_layer in self.layers_before_skip:
             res_layer.reset_parameters()
         glorot_orthogonal_(self.lin.weight, scale=1.0)
-        self.lin.bias.data.fill_(0)
+        self.lin.bias.set_value(paddle.zeros_like(self.lin.bias))
         for res_layer in self.layers_after_skip:
             res_layer.reset_parameters()
 
@@ -256,9 +256,9 @@ class NodeUpdate(paddle.nn.Layer):
         glorot_orthogonal_(self.lin_up.weight, scale=1.0)
         for lin in self.lins:
             glorot_orthogonal_(lin.weight, scale=1.0)
-            lin.bias.data.fill_(0)
+            lin.bias.set_value(paddle.zeros_like(lin.bias))
         if self.output_init == "zeros":
-            self.lin.weight.data.fill_(0)
+            self.lin.weight.set_value(paddle.zeros_like(self.lin.weight))
         if self.output_init == "GlorotOrthogonal":
             glorot_orthogonal_(self.lin.weight, scale=1.0)
 
@@ -340,7 +340,7 @@ class SphereNet(paddle.nn.Layer):
         self.cutoff = cutoff
         self.energy_and_force = energy_and_force
         self.use_extra_node_feature = use_extra_node_feature
-        self.radius_graph = SphereNetRadiusGraph(cutoff=cutoff)
+        self.radius_graph = RadiusGraph(cutoff=cutoff)
 
         if use_extra_node_feature:
             self.extra_emb = Linear(extra_node_feature_dim, hidden_channels)
@@ -404,7 +404,7 @@ class SphereNet(paddle.nn.Layer):
     def reset_parameters(self):
         if self.use_extra_node_feature:
             glorot_orthogonal_(self.extra_emb.weight, scale=1.0)
-            self.extra_emb.bias.data.fill_(0)
+            self.extra_emb.bias.set_value(paddle.zeros_like(self.extra_emb.bias))
         self.init_e.reset_parameters()
         self.init_v.reset_parameters()
         self.emb_layer.reset_parameters()
@@ -558,9 +558,21 @@ class SphereNetPP(paddle.nn.Layer):
         batch = data["batch"]
 
         if self.energy_and_force:
-            pos = pos.detach().requires_grad_()
+            pos = pos.detach()
+            pos.stop_gradient = False
 
         pred = self.spherenet(z, pos, batch)
+
+        # Compute forces if needed (used in both loss and prediction paths)
+        forces_pred = None
+        if self.energy_and_force:
+            # F = -dE/d(pos); try create_graph=True first (Paddle nightly),
+            # fall back to False if atan2 lacks 2nd-order grad.
+            try:
+                grad = paddle.grad(pred.sum(), pos, create_graph=True)
+            except RuntimeError:
+                grad = paddle.grad(pred.sum(), pos, create_graph=False)
+            forces_pred = -grad[0]
 
         loss_dict = {}
         if return_loss:
@@ -568,8 +580,7 @@ class SphereNetPP(paddle.nn.Layer):
             loss = paddle.nn.functional.l1_loss(pred, label)
             loss_dict["loss"] = loss
 
-            if self.energy_and_force:
-                forces_pred = -paddle.grad(pred.sum(), pos, create_graph=False)[0]
+            if self.energy_and_force and forces_pred is not None:
                 forces_target = data["force"]
                 force_loss = paddle.nn.functional.l1_loss(forces_pred, forces_target)
                 loss_dict["loss"] = loss + force_loss
@@ -578,7 +589,7 @@ class SphereNetPP(paddle.nn.Layer):
         if return_prediction:
             pred_out = self._unnormalize(pred)
             prediction[self.property_name] = pred_out
-            if self.energy_and_force:
+            if self.energy_and_force and forces_pred is not None:
                 prediction["force"] = forces_pred.detach()
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}

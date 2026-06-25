@@ -572,13 +572,13 @@ class MolecularGraphConverter:
             )
 
 
-class SphereNetRadiusGraph:
-    """Build radius graph from raw 3D coordinates for spherical message passing.
+class RadiusGraph:
+    """Build radius graph from raw 3D coordinates.
 
     Unlike other graph converters in this module which operate on material
     structures during dataset preprocessing, this converter works on raw
-    tensors during the model forward pass, as SphereNet processes molecular
-    coordinates dynamically.
+    tensors during the model forward pass, processing molecular coordinates
+    dynamically on a per-molecule basis to avoid O(N²) memory.
 
     Args:
         cutoff: Neighbor cutoff distance in Ångström.
@@ -596,70 +596,55 @@ class SphereNetRadiusGraph:
             loop: Whether to include self-loops.
 
         Returns:
-            edge_index: Tensor [2, num_edges] — (src, dst).
+            edge_index: Tensor [2, num_edges] — (source, target) indices.
         """
-        return _radius_graph_impl(pos, self.cutoff, batch, loop)
+        return self._build(pos, self.cutoff, batch, loop)
 
+    @staticmethod
+    def _build(pos, r, batch, loop=False):
+        """Build radius graph edges for a batch of molecules.
 
-def _radius_graph_impl(pos, r, batch, loop=False, max_num_neighbors=32):
-    """Build a radius graph from 3D positions (internal implementation).
+        Processes each molecule independently to avoid O(N²) memory on the
+        full concatenated batch. For each molecule, builds a local
+        N_mol × N_mol distance matrix, then remaps edge indices to global
+        positions.
+        """
+        pos = paddle.cast(pos, paddle.get_default_dtype())
 
-    Processes each molecule separately to avoid O(N²) memory on the full
-    concatenated batch. For each molecule, builds a local N_mol × N_mol
-    distance matrix (N_mol < 30 for QM9/MD17 atoms), then remaps edge
-    indices to global positions.
+        if pos.shape[0] == 0:
+            return paddle.zeros([2, 0], dtype=paddle.int64)
 
-    Args:
-        pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
-        r: Cutoff radius.
-        batch: Tensor of shape [num_nodes] — batch assignment (int64).
-        loop: Whether to include self-loops. Defaults to False.
-        max_num_neighbors: Maximum number of neighbors per node (not enforced
-            in this simple implementation — use a grid-based method for large
-            systems).
+        unique_batches = paddle.unique(batch)
+        all_edges = []
 
-    Returns:
-        edge_index: Tensor of shape [2, num_edges] — (source, target) indices.
-    """
-    pos = paddle.cast(pos, paddle.get_default_dtype())
-    num_nodes = pos.shape[0]
+        for b in unique_batches:
+            mol_mask = batch == b
+            global_ids = paddle.nonzero(mol_mask, as_tuple=False).squeeze(-1)
+            mol_n = global_ids.shape[0]
+            mol_pos = pos[global_ids]
 
-    if num_nodes == 0:
-        return paddle.zeros([2, 0], dtype=paddle.int64)
+            # N_mol x N_mol squared distance matrix
+            pos_sq = paddle.sum(mol_pos * mol_pos, axis=-1)
+            pos_sq_expand = pos_sq.unsqueeze(0).expand([mol_n, -1])
+            pos_dot = paddle.mm(mol_pos, mol_pos.transpose([1, 0]))
+            dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
 
-    # Process each molecule independently to avoid O(N²) on the full batch
-    unique_batches = paddle.unique(batch)
-    all_edges = []
+            mask = dist_sq <= r * r
+            if not loop:
+                diag_mask = paddle.eye(mol_n, dtype=paddle.get_default_dtype()).cast(
+                    paddle.bool
+                )
+                mask = mask & ~diag_mask
 
-    for b in unique_batches:
-        mol_mask = batch == b
-        global_ids = paddle.nonzero(mol_mask, as_tuple=False).squeeze(-1)
-        mol_n = global_ids.shape[0]
-        mol_pos = pos[global_ids]
+            local_edges = paddle.nonzero(mask, as_tuple=False)
+            if local_edges.shape[0] > 0:
+                flat_global = paddle.gather(global_ids, local_edges.reshape([-1]))
+                all_edges.append(flat_global.reshape([-1, 2]).transpose([1, 0]))
 
-        # N_mol x N_mol squared distance matrix
-        pos_sq = paddle.sum(mol_pos * mol_pos, axis=-1)
-        pos_sq_expand = pos_sq.unsqueeze(0).expand([mol_n, -1])
-        pos_dot = paddle.mm(mol_pos, mol_pos.transpose([1, 0]))
-        dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
+        if len(all_edges) == 0:
+            return paddle.zeros([2, 0], dtype=paddle.int64)
 
-        mask = dist_sq <= r * r
-        if not loop:
-            diag_mask = paddle.eye(mol_n, dtype=paddle.get_default_dtype()).cast(
-                paddle.bool
-            )
-            mask = mask & ~diag_mask
-
-        local_edges = paddle.nonzero(mask, as_tuple=False)
-        if local_edges.shape[0] > 0:
-            # Remap local → global indices via flat gather + reshape
-            flat_global = paddle.gather(global_ids, local_edges.reshape([-1]))
-            all_edges.append(flat_global.reshape([-1, 2]).transpose([1, 0]))
-
-    if len(all_edges) == 0:
-        return paddle.zeros([2, 0], dtype=paddle.int64)
-
-    return paddle.concat(all_edges, axis=1)
+        return paddle.concat(all_edges, axis=1)
 
 
 def subgraph(

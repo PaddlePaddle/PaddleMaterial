@@ -420,22 +420,29 @@ class QM9Dataset(Dataset):
         )
 
         total = len(self._offsets)
-        # QM9 split sizes (matching DIG's PygQM93D conventions)
-        train_size = 110831
+
+        # QM9 split sizes matching DIG/TFDS DimeNet conventions:
+        # seed=42 shuffle, then 110000/10000/rest
+        rng = np.random.default_rng(42)
+        indices = rng.permutation(total)
+        train_size = 110000
         val_size = 10000
-        test_size = total - train_size - val_size  # 10000
+        test_size = total - train_size - val_size
 
         if self.split == "train":
-            start, end = 0, train_size
+            selected = indices[:train_size]
         elif self.split == "val":
-            start, end = train_size, train_size + val_size
+            selected = indices[train_size : train_size + val_size]
         elif self.split == "test":
-            start, end = train_size + val_size, train_size + val_size + test_size
+            selected = indices[train_size + val_size :]
         else:
-            start, end = 0, total
+            selected = indices
 
-        self._offsets = self._offsets[start:end]
-        self._raw_properties = {name: arr[start:end] for name, arr in raw_props.items()}
+        selected = np.sort(selected)
+        self._offsets = [self._offsets[i] for i in selected]
+        self._raw_properties = {
+            name: arr[selected] for name, arr in raw_props.items()
+        }
         self.num_samples = len(self._offsets)
         logger.info(
             f"QM9Dataset (raw_tensor) ready: {self.num_samples} samples, "
@@ -460,9 +467,28 @@ class QM9Dataset(Dataset):
 
     @staticmethod
     def _parse_all_properties(merged_path, offsets, property_names):
-        """Extract target property values from each molecule's second line."""
+        """Extract target property values from each molecule's second line.
+
+        Args:
+            merged_path: Path to merged QM9 .xyz file.
+            offsets: Byte offsets for each molecule.
+            property_names: List of QM9 property names (must be in _QM9_PROP_NAMES).
+
+        Returns:
+            Dict mapping property name to float32 array of shape [num_molecules].
+
+        Raises:
+            ValueError: If any property name is not in _QM9_PROP_NAMES.
+        """
+        for name in property_names:
+            if name not in _QM9_PROP_NAMES:
+                raise ValueError(
+                    f"Unknown QM9 property '{name}'. "
+                    f"Available: {_QM9_PROP_NAMES}"
+                )
+        name_to_idx = {name: k + 2 for k, name in enumerate(_QM9_PROP_NAMES)}
         props = {
-            name: np.empty(len(offsets), dtype=np.float32) for name in property_names
+            name: np.zeros(len(offsets), dtype=np.float32) for name in property_names
         }
         with open(merged_path, "r") as f:
             for i, offset in enumerate(offsets):
@@ -476,10 +502,9 @@ class QM9Dataset(Dataset):
                         raw_vals.append(float(p))
                     except ValueError:
                         raw_vals.append(0.0)
-                for k, name in enumerate(_QM9_PROP_NAMES):
-                    if name in property_names:
-                        idx = k + 2
-                        props[name][i] = raw_vals[idx] if idx < len(raw_vals) else 0.0
+                for name in property_names:
+                    idx = name_to_idx[name]
+                    props[name][i] = raw_vals[idx] if idx < len(raw_vals) else 0.0
         return props
 
     def _read_one_molecule(self, idx: int):
@@ -926,12 +951,14 @@ class QM9Dataset(Dataset):
         # raw_tensor mode: return atomic tensors without ASE/pymatgen
         if self.mode == "raw_tensor":
             z, pos = self._read_one_molecule(idx)
-            pname = self.property_names[0]
-            return {
-                "z": z,
-                "pos": pos,
-                pname: np.array([self._raw_properties[pname][idx]], dtype=np.float32),
-            }
+            data = {"z": z, "pos": pos}
+            for pname in self.property_names:
+                data[pname] = np.array(
+                    [self._raw_properties[pname][idx]], dtype=np.float32
+                )
+            if self.transforms is not None:
+                data = self.transforms(data)
+            return data
 
         data = {}
         # 1. loading the info

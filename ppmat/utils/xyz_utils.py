@@ -73,6 +73,8 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
 
     # Get indices of valid triplets
     idx_kj, idx_ji = paddle.nonzero(valid_triplet, as_tuple=True)
+    idx_kj = idx_kj.flatten()
+    idx_ji = idx_ji.flatten()
 
     # For the angle computation we need both edges:
     # v_kj = pos[k] - pos[j] for edge k_j
@@ -81,10 +83,14 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     vec_ji = vec[idx_ji]  # vectors along j->i edges
 
     # Compute angle using arctan2 for numerical stability
-    # angle = atan2(||cross(v_kj, v_ji)||, dot(v_kj, v_ji))
+    # Compute the bond angle k-j-i at atom j.
+    # Vectors pointing FROM j: v_jk = pos[k] - pos[j] = -vec_kj,
+    #                          v_ji = pos[i] - pos[j] =  vec_ji.
+    # angle = atan2(||cross(v_jk, v_ji)||, dot(v_jk, v_ji))
+    #       = atan2(||cross(vec_kj, vec_ji)||, -dot(vec_kj, vec_ji))
     angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
     angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
-    angle_cos = paddle.sum(vec_kj * vec_ji, axis=-1)
+    angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
     angle = paddle.atan2(angle_sin, angle_cos)
 
     torsion = paddle.zeros_like(angle)
@@ -114,6 +120,8 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         valid_quad = valid_quad & not_k
 
         idx_lk, idx_triplet = paddle.nonzero(valid_quad, as_tuple=True)
+        idx_lk = idx_lk.flatten()
+        idx_triplet = idx_triplet.flatten()
 
         # Now compute torsion: for quadruple (l, k, j, i)
         # v1 = pos[l] - pos[k]  (edge l_k)
