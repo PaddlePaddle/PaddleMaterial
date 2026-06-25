@@ -125,7 +125,8 @@ def _run_rl_training(config_path: str, model_type: str):
 
     model_suite = ModelSuite(
         model_name=model_type, sample_cfg=config.RL.sample_cfg,
-        finetune_cfg=config.RL.finetune_cfg, model_path=config.get("model_path"),
+        finetune_cfg=config.RL.finetune_cfg,
+        pretrained_model_path=config.get("pretrained_model_path"),
         device=config.get("Global", {}).get("device"),
     )
     reward = Reward(root_dir=os.path.join(output_dir, "rewards"),

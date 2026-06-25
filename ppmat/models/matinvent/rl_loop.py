@@ -21,7 +21,7 @@ from typing import Tuple
 
 import numpy as np
 import paddle
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from pymatgen.core.structure import Structure
 
 from ppmat.models.matinvent.rewards.reward import Reward
@@ -68,6 +68,22 @@ class MatInvent:
             param.trainable = True
         for param in self.prior.parameters():
             param.stop_gradient = True
+
+    def reward_step(self, sample_data, sample_struc, xyz_path, label="tmp"):
+        rewards, prop_dict, failed_mask = self.reward.scoring((sample_struc, xyz_path), label)
+        self.cost += len(sample_struc)
+        success = ~failed_mask
+        sr, sp = rewards[success].astype(float), {k: v[success] for k, v in prop_dict.items()}
+        sd, ss = [sample_data[i] for i in range(len(failed_mask)) if success[i]], \
+                 [sample_struc[i] for i in range(len(failed_mask)) if success[i]]
+        logging.info(f"Evaluation costs to date: {self.cost}")
+        logging.info(f"Number of samples that successfully obtained rewards: {len(ss)}")
+        if len(sr) > 0:
+            logging.info(f"reward mean={sr.mean():.4f} std={sr.std():.4f}")
+            logging.info(" | ".join(f"{k} mean={v.mean():.4f} std={v.std():.4f}" for k, v in sp.items()))
+        else:
+            logging.info("reward mean=nan std=nan")
+        return sd, ss, sr, sp
 
     def sample_step(self) -> Tuple[List, List[Structure], str, Dict]:
         max_retry = int(self.sample_cfg.get("max_retry", 3))

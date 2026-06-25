@@ -83,32 +83,31 @@ class MatterGenAdapter:
 
 class ModelSuite:
     def __init__(self, model_name, sample_cfg, finetune_cfg,
-                 model_path=None, device=None):
+                 pretrained_model_path=None, device=None):
         self.model_name = model_name
         self.sample_cfg = sample_cfg
         self.finetune_cfg = finetune_cfg
-        self.model_path = model_path
+        self.pretrained_model_path = pretrained_model_path
         if device is None:
             device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
         paddle.set_device(device)
 
     def load_model(self):
-        if self.model_path is None:
-            raise ValueError(f"model_path must be specified for {self.model_name}")
-        ckpt = Path(self.model_path).expanduser()
-        if not ckpt.is_absolute():
-            ckpt = Path.cwd() / ckpt
-        if not ckpt.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
+        if self.pretrained_model_path is None:
+            raise ValueError(f"pretrained_model_path must be specified for {self.model_name}")
+        _path = self.pretrained_model_path
+        if _path.startswith("http"):
+            from ppmat.utils.download import get_weights_path_from_url
+            _path = get_weights_path_from_url(_path)
         if self.model_name == "diffcsp":
             from ppmat.models.diffcsp.diffcsp import DiffCSP
             model = DiffCSP(**_DIFFCSP_DEFAULT)
             model.set_state_dict(
-                {"decoder." + k: v for k, v in paddle.load(str(ckpt)).items()})
+                {"decoder." + k: v for k, v in paddle.load(_path).items()})
         else:
             from ppmat.models.matinvent.mattergen_compat import MatinventMatterGen
             model = MatinventMatterGen(**_MATTERGEN_DEFAULT)
-            model.set_state_dict(paddle.load(str(ckpt)))
+            model.set_state_dict(paddle.load(_path))
             model = MatterGenAdapter(model)
         model.eval()
         return model
