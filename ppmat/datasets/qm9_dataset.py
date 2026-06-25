@@ -35,6 +35,7 @@ from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
+from ppmat.utils.download import get_datasets_path_from_url
 from ppmat.utils import logger
 from ppmat.utils.io import read_json
 from ppmat.utils.misc import is_equal
@@ -707,21 +708,67 @@ class QM9Dataset(Dataset):
 
     
     def _ensure_raw_data(self) -> str:
-        """
-        downloading self.url -> self.raw_xyz_path
-        """
+        """Download QM9 via unified utility and return path to merged .xyz."""
         # 1. if the final file exists , return.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
-            
-        # 2. prepare the path to download
+
+        # 2. Use unified download utility (distributed-safe, md5-verified)
+        logger.info(f"Downloading QM9 from {self.url} ...")
+        extract_dir = get_datasets_path_from_url(self.url, self.md5)
+
+        # 3. Find the .xyz file in the extract directory
+        # Case A: single dsgdb9nsd.xyz exists
+        candidate = osp.join(extract_dir, "dsgdb9nsd.xyz")
+        if osp.exists(candidate):
+            return candidate
+
+        # Case B: if it's under a subdirectory named after the molecule
+        candidate = osp.join(extract_dir, "qm9", "dsgdb9nsd.xyz")
+        if osp.exists(candidate):
+            return candidate
+
+        # Case C: merge individual .xyz files
+        xyz_files = [f for f in os.listdir(extract_dir) if f.endswith(".xyz")]
+        if len(xyz_files) > 0:
+            logger.info(
+                f"Found {len(xyz_files)} xyz files, "
+                f"merging into {self.raw_xyz_path} ..."
+            )
+            with open(self.raw_xyz_path, "w") as fout:
+                for fname in tqdm(
+                    sorted(xyz_files), desc="Merging XYZ files"
+                ):
+                    full_path = osp.join(extract_dir, fname)
+                    try:
+                        with open(full_path, "r") as fin:
+                            lines = fin.readlines()
+                        if not lines:
+                            continue
+                        natoms = int(lines[0].strip())
+                        fout.write(f"{natoms}\n")
+                        prop_line = lines[1].replace("*^", "e").replace("\t", " ")
+                        fout.write(prop_line)
+                        for i in range(2, 2 + natoms):
+                            coord_line = lines[i].replace("*^", "e").replace("\t", " ")
+                            fout.write(coord_line)
+                    except Exception as e:
+                        logger.warning(f"Error processing {fname}: {e}")
+                        continue
+            if osp.exists(self.raw_xyz_path):
+                return self.raw_xyz_path
+
+        # Case D: fallback to old manual download
+        return self._ensure_raw_data_fallback(extract_dir)
+
+    def _ensure_raw_data_fallback(self, extract_dir):
+        """Fallback: manual download + extract if unified util fails."""
         tar_filename = "qm9_raw.tar.bz2"
         tar_path = osp.join(self.raw_dir, tar_filename)
-        
-        # 3. downloading logic
+
         if not osp.exists(tar_path):
             if dist.get_rank() == 0:
-                logger.info(f"Downloading QM9 from {self.url}...")
+                logger.info(f"Fallback: downloading QM9 from {self.url}...")
                 import urllib.request
                 try:
                     urllib.request.urlretrieve(self.url, tar_path)
@@ -729,63 +776,46 @@ class QM9Dataset(Dataset):
                     raise RuntimeError(f"Download failed: {e}")
             if dist.is_initialized():
                 dist.barrier()
-        
-        # 4. extacting logic
+
         if dist.get_rank() == 0:
-            logger.info("Extracting QM9...")
+            logger.info("Fallback: extracting QM9...")
             import tarfile
             try:
                 with tarfile.open(tar_path, "r:bz2") as tar:
                     tar.extractall(path=self.raw_dir)
             except Exception as e:
                 raise RuntimeError(f"Extraction failed: {e}")
-                
         if dist.is_initialized():
             dist.barrier()
 
-        # 5. final check
-        # Case A：single file exists.
         if osp.exists(self.raw_xyz_path):
             return self.raw_xyz_path
 
-        
-        # Case B：merge these .xyz files into a big file.
         xyz_files = [f for f in os.listdir(self.raw_dir) if f.endswith(".xyz") and f != "dsgdb9nsd.xyz"]
         if len(xyz_files) > 0:
-            logger.info(f"Found {len(xyz_files)} xyz files, merging into dsgdb9nsd.xyz...")
-            merged_path = self.raw_xyz_path
-            
-            if osp.exists(merged_path):
-                os.remove(merged_path)
-
-            with open(merged_path, "w") as fout: # use "w" model to rewrite
-                for fname in tqdm(sorted(xyz_files), desc="Merging XYZ files"):
+            logger.info(f"Found {len(xyz_files)} xyz files, merging...")
+            with open(self.raw_xyz_path, "w") as fout:
+                for fname in tqdm(sorted(xyz_files), desc="Merging"):
                     full_path = osp.join(self.raw_dir, fname)
                     try:
                         with open(full_path, "r") as fin:
                             lines = fin.readlines()
-
-                        if not lines: continue
+                        if not lines:
+                            continue
                         natoms = int(lines[0].strip())
-                        
-                        # 1. Number of atoms written
                         fout.write(f"{natoms}\n")
-                        # 2. Write attribute line 
-                        prop_line = lines[1].replace('*^', 'e').replace('\t', ' ')
+                        prop_line = lines[1].replace("*^", "e").replace("\t", " ")
                         fout.write(prop_line)
-                        # 3. Write coordinate lines (only take natoms lines)
                         for i in range(2, 2 + natoms):
-                            coord_line = lines[i].replace('*^', 'e').replace('\t', ' ')
+                            coord_line = lines[i].replace("*^", "e").replace("\t", " ")
                             fout.write(coord_line)
-                        
                     except Exception as e:
                         logger.warning(f"Error processing {fname}: {e}")
-                        continue
-            return merged_path
-        # Case C: None
+            if osp.exists(self.raw_xyz_path):
+                return self.raw_xyz_path
+
         raise RuntimeError(
-            f"Decompression is complete, but I couldn't find dsgdb9nsd.xyz or any .xyz files under {self.raw_dir}!"
-            "Please check what files are actually included in the downloaded compressed package."
+            f"Decompression complete but no .xyz found under {self.raw_dir}!"
         )
 
     def _count_files(self, directory: str) -> int:

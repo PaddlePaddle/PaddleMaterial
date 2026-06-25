@@ -27,14 +27,14 @@ Supported molecules (8 total):
 +----------------+----------+--------+-------+----------+-------+
 | Molecule       | #samples | #atoms | #tasks| #targets | Split |
 +================+==========+========+=======+==========+=======+
-| Aspirin        | 211,762  | 21     | 2     | E + F    | 1k/500/1k|
-| Benzene (old)  | 627,983  | 12     | 2     | E + F    | 1k/500/1k|
-| Ethanol        | 555,092  | 9      | 2     | E + F    | 1k/500/1k|
-| Malonaldehyde  | 993,237  | 9      | 2     | E + F    | 1k/500/1k|
-| Naphthalene    | 326,250  | 10     | 2     | E + F    | 1k/500/1k|
-| Salicylic      | 320,231  | 16     | 2     | E + F    | 1k/500/1k|
-| Toluene        | 442,790  | 15     | 2     | E + F    | 1k/500/1k|
-| Uracil         | 133,770  | 12     | 2     | E + F    | 1k/500/1k|
+| Aspirin        | 211,762  | 21     | 2     | E + F    | 1k/1k/R |
+| Benzene (old)  | 627,983  | 12     | 2     | E + F    | 1k/1k/R |
+| Ethanol        | 555,092  | 9      | 2     | E + F    | 1k/1k/R |
+| Malonaldehyde  | 993,237  | 9      | 2     | E + F    | 1k/1k/R |
+| Naphthalene    | 326,250  | 10     | 2     | E + F    | 1k/1k/R |
+| Salicylic      | 320,231  | 16     | 2     | E + F    | 1k/1k/R |
+| Toluene        | 442,790  | 15     | 2     | E + F    | 1k/1k/R |
+| Uracil         | 133,770  | 12     | 2     | E + F    | 1k/1k/R |
 +----------------+----------+--------+-------+----------+-------+
 """
 
@@ -63,16 +63,17 @@ _MOLECULE_URLS = {
     "uracil": "http://quantum-machine.org/gdml/data/npz/uracil_dft.npz",
 }
 
-# Default train/val/test split sizes (same as DIG SphereNet defaults)
+# Default train/val split sizes (matching DIG SphereNet defaults).
+# Train=1000, Val=1000; Test = remaining samples.
 _DEFAULT_SPLITS = {
-    "aspirin": (1000, 500, 1000),
-    "benzene_old": (1000, 500, 1000),
-    "ethanol": (1000, 500, 1000),
-    "malonaldehyde": (1000, 500, 1000),
-    "naphthalene": (1000, 500, 1000),
-    "salicylic": (1000, 500, 1000),
-    "toluene": (1000, 500, 1000),
-    "uracil": (1000, 500, 1000),
+    "aspirin": (1000, 1000),
+    "benzene_old": (1000, 1000),
+    "ethanol": (1000, 1000),
+    "malonaldehyde": (1000, 1000),
+    "naphthalene": (1000, 1000),
+    "salicylic": (1000, 1000),
+    "toluene": (1000, 1000),
+    "uracil": (1000, 1000),
 }
 
 # Mapping from molecule names to bundle npz filenames
@@ -161,17 +162,16 @@ class MD17Dataset(Dataset):
         rng = np.random.RandomState(42)
         rng.shuffle(indices)
 
-        # Apply split
+        # Apply split (DIG convention: train=1000, val=1000, test=rest)
         ts = train_size or _DEFAULT_SPLITS[name][0]
         vs = val_size or _DEFAULT_SPLITS[name][1]
-        tes = test_size or _DEFAULT_SPLITS[name][2]
 
         if split == "train":
             self._indices = indices[:ts]
         elif split == "val":
             self._indices = indices[ts : ts + vs]
         elif split == "test":
-            self._indices = indices[ts + vs : ts + vs + tes]
+            self._indices = indices[ts + vs :]
         else:
             self._indices = indices
 

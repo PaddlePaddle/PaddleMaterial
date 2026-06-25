@@ -501,6 +501,7 @@ class SphereNetPP(paddle.nn.Layer):
         data_mean=0.0,
         data_std=1.0,
         property_name="mu",
+        force_key="force",
     ):
         super().__init__()
 
@@ -508,6 +509,7 @@ class SphereNetPP(paddle.nn.Layer):
 
         self.energy_and_force = energy_and_force
         self.property_name = property_name
+        self.force_key = force_key
         self.register_buffer(
             "data_mean", paddle.to_tensor(data_mean, dtype=paddle.get_default_dtype())
         )
@@ -581,7 +583,7 @@ class SphereNetPP(paddle.nn.Layer):
             loss_dict["loss"] = loss
 
             if self.energy_and_force and forces_pred is not None:
-                forces_target = data["force"]
+                forces_target = data[self.force_key]
                 force_loss = paddle.nn.functional.l1_loss(forces_pred, forces_target)
                 loss_dict["loss"] = loss + force_loss
 
@@ -590,6 +592,6 @@ class SphereNetPP(paddle.nn.Layer):
             pred_out = self._unnormalize(pred)
             prediction[self.property_name] = pred_out
             if self.energy_and_force and forces_pred is not None:
-                prediction["force"] = forces_pred.detach()
+                prediction[self.force_key] = forces_pred.detach()
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}
