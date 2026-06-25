@@ -50,12 +50,6 @@ class DefaultCollator(object):
         sample = batch[0]
         if sample is None:
             return None
-        elif isinstance(sample, Mapping) and all(
-            isinstance(v, np.ndarray) for v in sample.values()
-        ) and any(
-            val.ndim >= 2 or val.shape[0] > 1 for val in sample.values()
-        ):
-            return self._collate_node_batch(batch)
         elif isinstance(sample, ConcatNumpyWarper):
             batch = np.concatenate(batch, axis=0)
             return batch
@@ -93,16 +87,19 @@ class DefaultCollator(object):
             f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
         )
 
-    @staticmethod
-    def _collate_node_batch(batch):
-        """Collate variable-length node arrays from a dict of ndarrays.
+class SphereNetCollator:
+    """Collator for SphereNet batch processing of variable-length molecule tensors.
 
-        Arrays with variable first dimension are concatenated along axis 0;
-        a ``batch`` index tensor maps each row back to its originating sample.
-        Scalar arrays (ndim < 2, shape[0] <= 1) are stacked.
-        """
+    Handles dicts where some values are node-level arrays (variable per molecule)
+    and others are scalar properties. Node arrays are concatenated along axis 0
+    with a ``batch`` index tensor; scalar arrays are stacked.
+    """
+
+    def __call__(self, batch):
         sample = batch[0]
-        node_keys = [k for k, v in sample.items() if v.ndim >= 2 or v.shape[0] > 1]
+        node_keys = [
+            k for k, v in sample.items() if isinstance(v, np.ndarray) and (v.ndim >= 2 or v.shape[0] > 1)
+        ]
         target_keys = [k for k in sample.keys() if k not in node_keys]
         node_tensors = {
             k: paddle.to_tensor(np.concatenate([b[k] for b in batch]))

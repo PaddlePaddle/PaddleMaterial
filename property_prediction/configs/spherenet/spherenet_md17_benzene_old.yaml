@@ -72,6 +72,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
+      collate_fn: SphereNetCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -89,6 +90,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
+      collate_fn: SphereNetCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -106,6 +108,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
+      collate_fn: SphereNetCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
