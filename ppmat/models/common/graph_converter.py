@@ -604,13 +604,10 @@ class SphereNetRadiusGraph:
 def _radius_graph_impl(pos, r, batch, loop=False, max_num_neighbors=32):
     """Build a radius graph from 3D positions (internal implementation).
 
-    Computes all pairwise distances within the same molecule (determined by
-    the batch assignment) and returns edges where the distance is within the
-    cutoff radius.
-
-    This is a pure-Paddle implementation (no external cluster library needed)
-    using the full N x N distance matrix. For large systems, a grid-based
-    approach may be more efficient.
+    Processes each molecule separately to avoid O(N²) memory on the full
+    concatenated batch. For each molecule, builds a local N_mol × N_mol
+    distance matrix (N_mol < 30 for QM9/MD17 atoms), then remaps edge
+    indices to global positions.
 
     Args:
         pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
@@ -627,32 +624,41 @@ def _radius_graph_impl(pos, r, batch, loop=False, max_num_neighbors=32):
     pos = paddle.cast(pos, paddle.get_default_dtype())
     num_nodes = pos.shape[0]
 
-    # Pairwise squared distances using: ||a-b||^2 = ||a||^2 + ||b||^2 - 2*a·b
-    pos_sq = paddle.sum(pos * pos, axis=-1)  # [N]
-    pos_sq_expand = pos_sq.unsqueeze(0).expand([num_nodes, -1])  # [N, N]
-    pos_dot = paddle.mm(pos, pos.transpose([1, 0]))  # [N, N]
-    dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
+    if num_nodes == 0:
+        return paddle.zeros([2, 0], dtype=paddle.int64)
 
-    # Mask: within cutoff
-    mask = dist_sq <= r * r
+    # Process each molecule independently to avoid O(N²) on the full batch
+    unique_batches = paddle.unique(batch)
+    all_edges = []
 
-    # Mask: same molecule (batch)
-    batch_x = batch.unsqueeze(0).expand([num_nodes, -1])  # [N, N]
-    batch_y = batch.unsqueeze(-1).expand([-1, num_nodes])  # [N, N]
-    same_batch = batch_x == batch_y
-    mask = mask & same_batch
+    for b in unique_batches:
+        mol_mask = batch == b
+        global_ids = paddle.nonzero(mol_mask, as_tuple=False).squeeze(-1)
+        mol_n = global_ids.shape[0]
+        mol_pos = pos[global_ids]
 
-    if not loop:
-        # Mask out self-loops (float eye cast to bool for GPU compat)
-        diag_mask = paddle.eye(num_nodes, dtype=paddle.get_default_dtype()).cast(
-            paddle.bool
-        )
-        mask = mask & ~diag_mask
+        # N_mol x N_mol squared distance matrix
+        pos_sq = paddle.sum(mol_pos * mol_pos, axis=-1)
+        pos_sq_expand = pos_sq.unsqueeze(0).expand([mol_n, -1])
+        pos_dot = paddle.mm(mol_pos, mol_pos.transpose([1, 0]))
+        dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
 
-    # Get edge indices
-    edge_index = paddle.nonzero(mask, as_tuple=False).transpose([1, 0])
+        mask = dist_sq <= r * r
+        if not loop:
+            diag_mask = paddle.eye(mol_n, dtype=paddle.get_default_dtype()).cast(
+                paddle.bool
+            )
+            mask = mask & ~diag_mask
 
-    return edge_index
+        local_edges = paddle.nonzero(mask, as_tuple=False)
+        if local_edges.shape[0] > 0:
+            global_edges = paddle.gather(global_ids, local_edges)
+            all_edges.append(global_edges.transpose([1, 0]))
+
+    if len(all_edges) == 0:
+        return paddle.zeros([2, 0], dtype=paddle.int64)
+
+    return paddle.concat(all_edges, axis=1)
 
 
 def subgraph(

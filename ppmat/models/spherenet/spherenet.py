@@ -430,12 +430,20 @@ class SphereNet(paddle.nn.Layer):
         else:
             extra_node_feature = None
 
-        with paddle.no_grad():
+        if self.energy_and_force:
+            # Need gradient flow for force computation via autograd
             edge_index = self.radius_graph(pos, batch=batch)
             num_nodes = z.shape[0]
             dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
                 pos, edge_index, num_nodes, use_torsion=True
             )
+        else:
+            with paddle.no_grad():
+                edge_index = self.radius_graph(pos, batch=batch)
+                num_nodes = z.shape[0]
+                dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
+                    pos, edge_index, num_nodes, use_torsion=True
+                )
 
         emb_out = self.emb_layer(dist, angle, torsion, idx_kj)
 
@@ -498,6 +506,7 @@ class SphereNetPP(paddle.nn.Layer):
 
         act_fn = swish if act == "swish" else swish
 
+        self.energy_and_force = energy_and_force
         self.property_name = property_name
         self.register_buffer(
             "data_mean", paddle.to_tensor(data_mean, dtype=paddle.get_default_dtype())
@@ -548,6 +557,9 @@ class SphereNetPP(paddle.nn.Layer):
         pos = data["pos"]
         batch = data["batch"]
 
+        if self.energy_and_force:
+            pos = pos.detach().requires_grad_()
+
         pred = self.spherenet(z, pos, batch)
 
         loss_dict = {}
@@ -556,9 +568,17 @@ class SphereNetPP(paddle.nn.Layer):
             loss = paddle.nn.functional.l1_loss(pred, label)
             loss_dict["loss"] = loss
 
+            if self.energy_and_force:
+                forces_pred = -paddle.grad(pred.sum(), pos, create_graph=True)[0]
+                forces_target = data["force"]
+                force_loss = paddle.nn.functional.l1_loss(forces_pred, forces_target)
+                loss_dict["loss"] = loss + force_loss
+
         prediction = {}
         if return_prediction:
             pred_out = self._unnormalize(pred)
             prediction[self.property_name] = pred_out
+            if self.energy_and_force:
+                prediction["force"] = forces_pred.detach()
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}
