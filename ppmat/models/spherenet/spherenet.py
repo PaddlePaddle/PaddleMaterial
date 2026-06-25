@@ -569,7 +569,7 @@ class SphereNetPP(paddle.nn.Layer):
             loss_dict["loss"] = loss
 
             if self.energy_and_force:
-                forces_pred = -paddle.grad(pred.sum(), pos, create_graph=True)[0]
+                forces_pred = -paddle.grad(pred.sum(), pos, create_graph=False)[0]
                 forces_target = data["force"]
                 force_loss = paddle.nn.functional.l1_loss(forces_pred, forces_target)
                 loss_dict["loss"] = loss + force_loss

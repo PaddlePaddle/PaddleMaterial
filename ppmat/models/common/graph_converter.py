@@ -652,8 +652,9 @@ def _radius_graph_impl(pos, r, batch, loop=False, max_num_neighbors=32):
 
         local_edges = paddle.nonzero(mask, as_tuple=False)
         if local_edges.shape[0] > 0:
-            global_edges = paddle.gather(global_ids, local_edges)
-            all_edges.append(global_edges.transpose([1, 0]))
+            # Remap local → global indices via flat gather + reshape
+            flat_global = paddle.gather(global_ids, local_edges.reshape([-1]))
+            all_edges.append(flat_global.reshape([-1, 2]).transpose([1, 0]))
 
     if len(all_edges) == 0:
         return paddle.zeros([2, 0], dtype=paddle.int64)

@@ -75,6 +75,18 @@ _DEFAULT_SPLITS = {
     "uracil": (1000, 500, 1000),
 }
 
+# Mapping from molecule names to bundle npz filenames
+_BUNDLE_NPZ_MAP = {
+    "aspirin": "md17_aspirin.npz",
+    "benzene_old": "md17_benzene2017.npz",
+    "ethanol": "md17_ethanol.npz",
+    "malonaldehyde": "md17_malonaldehyde.npz",
+    "naphthalene": "md17_naphthalene.npz",
+    "salicylic": "md17_salicylic.npz",
+    "toluene": "md17_toluene.npz",
+    "uracil": "md17_uracil.npz",
+}
+
 
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
@@ -102,7 +114,7 @@ class MD17Dataset(Dataset):
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
-    md5 = "5d5d97a14ccef9e938e500f5f4601a59"
+    md5 = "634cc25cc8a3fb0d99bd14245eb8dabd"
     name = "md17"
 
     def __init__(
@@ -192,9 +204,12 @@ class MD17Dataset(Dataset):
         # Try bcebos bundle download (distributed-safe via get_datasets_path_from_url)
         try:
             extract_dir = get_datasets_path_from_url(self.url, self.md5)
-            bundle_npz_path = osp.join(extract_dir, f"{self.mol_name}_dft.npz")
-            if osp.exists(bundle_npz_path):
-                return bundle_npz_path
+            # Bundle extracts to md17/ subdirectory; try both paths
+            bundle_rel = _BUNDLE_NPZ_MAP[self.mol_name]
+            for sub in ["", "md17/"]:
+                bundle_npz_path = osp.join(extract_dir, sub, bundle_rel)
+                if osp.exists(bundle_npz_path):
+                    return bundle_npz_path
         except Exception as e:
             logger.warning(
                 f"bcebos download failed for MD17/{self.mol_name}: {e}. "
