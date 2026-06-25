@@ -58,8 +58,11 @@ Optimizer:
     lr: 0.0001
 
 Model:
-  __class_name__: "__import__('ppmat.models.matinvent.diffcsp_rl_wrapper', fromlist=['DiffCSPRLWrapper']).DiffCSPRLWrapper"
-  __init_params__: {}
+  __class_name__: MatinventRL
+  __init_params__:
+    model_type: diffcsp
+    num_inference_steps: 1000
+    patch_gemnet: false
 
 # RL configuration
 RL:
@@ -71,7 +74,7 @@ RL:
     batch_size: 1
     num_batches: 1
     num_samples: 16
-    # DiffCSP 标准推理步数为 1000；此处用较小值以加快 RL 采样
+    # DiffCSP default inference steps is 1000; use smaller value for faster RL sampling
     num_inference_steps: 100
   finetune_cfg:
     batch_size: 4
@@ -89,7 +92,7 @@ RL:
         minv: 0.0
         maxv: 10.0
         calculator:
-          __class_name__: "__import__('ppmat.models.matinvent.rewards.calculators.pymatgen.calc', fromlist=['PyMatGen']).PyMatGen"
+          __class_name__: PyMatGen
           root_dir: ./output/matinvent/rewards
           task: density
   replay_cfg:

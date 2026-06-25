@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-DFT property calculators.
+from ppmat.models.matinvent.rewards.calculators.dft.calc import DFTCalc
 
-
-Requires DFT software (VASP, Quantum ESPRESSO, etc.) and configuration.
-"""
-
-import os
-
-DFT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "dft_config.yaml")
-
-from ppmat.models.matinvent.rewards.calculators.dft.calc import DFTCalc  # noqa: E402
-
-__all__ = ["DFTCalc", "DFT_CONFIG_PATH"]
+__all__ = ["DFTCalc"]

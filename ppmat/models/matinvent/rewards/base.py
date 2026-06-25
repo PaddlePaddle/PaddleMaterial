@@ -12,27 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Base calculator class for reward system.
-
-This code is adapted from:
-"""
-
 import os
 
 
 class Calculator:
-    """Base class for property calculators."""
-
-    def __init__(
-        self,
-        root_dir: str,
-        task: str,
-    ) -> None:
+    def __init__(self, root_dir: str, task: str):
         self.root_dir = root_dir
         self.task = task
-        if not os.path.exists(self.root_dir):
-            os.makedirs(self.root_dir)
+        os.makedirs(root_dir, exist_ok=True)
 
     def calc(self):
         raise NotImplementedError

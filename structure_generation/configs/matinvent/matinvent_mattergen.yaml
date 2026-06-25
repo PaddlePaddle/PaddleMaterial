@@ -59,8 +59,11 @@ Optimizer:
     lr: 0.0001
 
 Model:
-  __class_name__: "__import__('ppmat.models.matinvent.rl_wrapper', fromlist=['RLWrapperModel']).RLWrapperModel"
-  __init_params__: {}
+  __class_name__: MatinventRL
+  __init_params__:
+    model_type: mattergen
+    num_inference_steps: 50
+    patch_gemnet: true
 
 # RL configuration
 RL:
@@ -89,7 +92,7 @@ RL:
         minv: 0.0
         maxv: 10.0
         calculator:
-          __class_name__: "__import__('ppmat.models.matinvent.rewards.calculators.pymatgen.calc', fromlist=['PyMatGen']).PyMatGen"
+          __class_name__: PyMatGen
           root_dir: ./output/matinvent/rewards
           task: density
   replay_cfg:

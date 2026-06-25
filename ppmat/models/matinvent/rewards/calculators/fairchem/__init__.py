@@ -12,18 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-FairChem property calculators.
+from ppmat.models.matinvent.rewards.calculators.fairchem.calc import FairChem
 
-
-Uses FairChem machine learning models to compute materials properties.
-"""
-
-import os
-
-ELASTIC_PATH = os.path.join(os.path.dirname(__file__), "elastic.py")
-PHONON_PATH = os.path.join(os.path.dirname(__file__), "phonon.py")
-
-from ppmat.models.matinvent.rewards.calculators.fairchem.calc import FairChem  # noqa
-
-__all__ = ["FairChem", "ELASTIC_PATH", "PHONON_PATH"]
+__all__ = ["FairChem"]

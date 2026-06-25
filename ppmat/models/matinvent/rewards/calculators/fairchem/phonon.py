@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import gc
 import multiprocessing as mp
 import os
@@ -5,13 +19,13 @@ import sys
 
 os.environ["QUACC_RESULTS_DIR"] = "/tmp"
 
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-from ase.io import read  # noqa: E402
-from ase.optimize import FIRE  # noqa: E402
-from pymatgen.io.ase import AseAtomsAdaptor  # noqa: E402
-from quacc.recipes.mlp.core import relax_job  # noqa: E402
-from quacc.recipes.mlp.phonons import phonon_flow  # noqa: E402
+import numpy as np
+import torch
+from ase.io import read
+from ase.optimize import FIRE
+from pymatgen.io.ase import AseAtomsAdaptor
+from quacc.recipes.mlp.core import relax_job
+from quacc.recipes.mlp.phonons import phonon_flow
 
 
 def clean_gpu_cache():

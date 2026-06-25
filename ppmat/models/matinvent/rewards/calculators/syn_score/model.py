@@ -12,52 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Neural network model for synthesizability score prediction.
-
-
-"""
-
 import paddle.nn as nn
 
 
 class Net(nn.Layer):
-    """Neural network model for synthesizability prediction.
-
-    Uses crystal graph neural network features to predict whether
-    a crystal structure is synthesizable.
-    """
-
     def __init__(self, atom_fea_len=90, h_fea_len=180, n_h=1):
-        """Initialize the network.
-
-        Args:
-            atom_fea_len: Length of atom feature vector (default 90 for CGNF)
-            h_fea_len: Hidden layer dimension
-            n_h: Number of hidden layers
-        """
         super(Net, self).__init__()
         self.cgnf_to_fc = nn.Linear(atom_fea_len, h_fea_len)
         self.cgnf_to_fc_softplus = nn.Softplus()
         self.final_fea = 0
         if n_h > 1:
             self.fcs = nn.LayerList(
-                [nn.Linear(h_fea_len, h_fea_len) for _ in range(n_h - 1)]
-            )
+                [nn.Linear(h_fea_len, h_fea_len) for _ in range(n_h - 1)])
             self.softpluses = nn.LayerList([nn.Softplus() for _ in range(n_h - 1)])
         self.fc_out = nn.Linear(h_fea_len, 2)
         self.logsoftmax = nn.LogSoftmax(axis=1)
         self.dropout = nn.Dropout()
 
     def forward(self, struc_fea):
-        """Forward pass.
-
-        Args:
-            struc_fea: Structure features (batch_size, atom_fea_len)
-
-        Returns:
-            Log softmax output (batch_size, 2) for binary classification
-        """
         comp_fea = self.cgnf_to_fc(struc_fea)
         comp_fea = self.cgnf_to_fc_softplus(comp_fea)
         comp_fea = self.dropout(comp_fea)

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,246 +12,83 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-PyMatGen property calculators.
-
-Calculates various crystallographic and materials properties using pymatgen.
-"""
-
 import os
-from typing import List
-from typing import Tuple
-
 import numpy as np
-from numpy.typing import ArrayLike
-from pymatgen.analysis.cost import CostAnalyzer
-from pymatgen.analysis.cost import CostDBElements
+from pymatgen.analysis.cost import CostAnalyzer, CostDBElements
 from pymatgen.analysis.hhi import HHIModel
 from pymatgen.analysis.interfaces.substrate_analyzer import SubstrateAnalyzer
 from pymatgen.core.structure import Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from smact import Element as SmactElement
-
 from ppmat.models.matinvent.rewards.base import Calculator
 from ppmat.models.matinvent.rewards.calculators.pymatgen import SUBSTRATE_PATH
 
-SUB_MILLERS = {
-    "Si": [(1, 0, 0)],
-    "GaAs": [(1, 0, 0)],
-    "InP": [(1, 0, 0)],
-}
+SUB_MILLERS = {"Si": [(1, 0, 0)], "GaAs": [(1, 0, 0)], "InP": [(1, 0, 0)]}
 
 
-def abundance_crust(struc: Structure) -> float:
-    """
-    Given a pymatgen.Structure return the weighted average
-    of the crustal abundance (in ppm)
-    based on the mass fraction of each element in the structure.
-    """
-    comp = struc.composition
-    weighted_abundance = 0.0
-    for el, weight_frac in comp.to_weight_dict.items():
-        try:
-            crust_abundance = SmactElement(el).crustal_abundance
-            assert isinstance(crust_abundance, float)
-        except Exception:
-            return np.nan
-        weighted_abundance += weight_frac * crust_abundance
-    if weighted_abundance <= 0.0:
-        weighted_abundance = np.nan
-    return weighted_abundance
+def _abundance(s):
+    try:
+        wa = sum(wf * SmactElement(el).crustal_abundance
+                 for el, wf in s.composition.to_weight_dict.items())
+        return np.nan if wa <= 0.0 else wa
+    except Exception:
+        return np.nan
 
 
-def calc_density(struc_list: List[Structure]) -> np.ndarray:
-    """
-    Given a list of pymatgen.Structure and return their density (unit: g/cm^3).
-    """
-    density = np.array([struc.density for struc in struc_list])
-    return density
+def _hhi(x):
+    m = HHIModel()
+    return np.array([m.get_hhi_reserve(s.composition) or np.nan for s in x], dtype=float)
 
 
-def calc_hhi(struc_list: List[Structure]) -> np.ndarray:
-    """
-    Given a list of pymatgen.Structure and return their
-    Herfindahl-Hirschman Index (HHI) score based on geological reserves,
-    for evaluating their supply and demand risk.
-    """
-    calc = HHIModel()
-    hhi_list = []
-    for s in struc_list:
-        _hhi = calc.get_hhi_reserve(s.composition)
-        if _hhi is not None:
-            hhi_list.append(_hhi)
-        else:
-            hhi_list.append(np.nan)
-    hhi_arr = np.array(hhi_list, dtype=float)
-    return hhi_arr
-
-
-def calc_price(struc_list: List[Structure]) -> np.ndarray:
-    """
-    Given a list of pymatgen.Structure return their weighted
-    average of prices (unit: USD/kg)
-    based on the mass fraction and price of each element in a structure.
-    """
+def _price(x):
     ca = CostAnalyzer(CostDBElements())
-    price_list = []
-    for struc in struc_list:
+    out = []
+    for s in x:
         try:
-            price = ca.get_cost_per_kg(struc.composition)
-            assert isinstance(price, float)
-            price_list.append(price)
+            out.append(ca.get_cost_per_kg(s.composition))
         except Exception:
-            price_list.append(np.nan)
-    price_arr = np.array(price_list, dtype=float)
-    return price_arr
+            out.append(np.nan)
+    return np.array(out, dtype=float)
 
 
-def calc_abundance_crust(struc_list: List[Structure]) -> np.ndarray:
-    """
-    Given a list of pymatgen.Structure return the weighted
-    average of the crustal abundance (unit: ppm)
-    based on the mass fraction of each element in the structure.
-    """
-    abundance_list = [abundance_crust(s) for s in struc_list]
-    abundance_arr = np.array(abundance_list, dtype=float)
-    return abundance_arr
-
-
-def calc_log_abundance_crust(struc_list: List[Structure]) -> np.ndarray:
-    """
-    Given a list of pymatgen.Structure return their log10 crustal abundance (unit: ppm)
-    based on the mass fraction of each element in the structure.
-    """
-    abundance_arr = calc_abundance_crust(struc_list)
-    log_abundance_arr = np.log10(abundance_arr)
-    return log_abundance_arr
-
-
-def calc_mcia(
-    struc_list: List[Structure],
-    substrate: Structure,
-    substrate_millers: ArrayLike = None,
-) -> np.ndarray:
-    """Calculate the minimal co-incident area
-    (MCIA, unit: Angstrom^2) between film and substrate
-    https://docs.materialsproject.org/methodology/materials-methodology/suggested-substrates
-    https://pubs.acs.org/doi/10.1021/acsami.6b01630
-    https://www.sciencedirect.com/topics/engineering/silicon-single-crystal
-    https://link.springer.com/chapter/10.1007/978-3-030-80135-9_1
-    O'Mara, William C. (1990). Handbook of Semiconductor
-    Silicon Technology. William Andrew Inc. pp. 349-352.
-
-    Args:
-        struc_list (List[Structure]): list of film structures
-        substrate (Structure): substrate structure
-        substrate_millers (ArrayLike): substrate facets to consider in search as
-            defined by miller indices
-
-    Returns:
-        np.ndarray[float]: computed MCIA
-    """
+def _mcia(x, sub, millers=None):
     sa = SubstrateAnalyzer(film_max_miller=1, substrate_max_miller=1)
-    substrate = SpacegroupAnalyzer(
-        substrate, symprec=0.1
-    ).get_conventional_standard_structure()
-
-    sub_comp = substrate.composition.reduced_formula
-    if substrate_millers is None and sub_comp in SUB_MILLERS:
-        substrate_millers = SUB_MILLERS[sub_comp]
-
-    mcia_list = []
-    for struc in struc_list:
+    sub = SpacegroupAnalyzer(sub, symprec=0.1).get_conventional_standard_structure()
+    rc = sub.composition.reduced_formula
+    if millers is None and rc in SUB_MILLERS:
+        millers = SUB_MILLERS[rc]
+    out = []
+    for s in x:
         try:
-            film = SpacegroupAnalyzer(
-                struc, symprec=0.1
-            ).get_conventional_standard_structure()
-            matches = sa.calculate(
-                film=film,
-                substrate=substrate,
-                substrate_millers=substrate_millers,
-                lowest=True,
-            )
-            mcia = min([m.match_area for m in matches])
-            assert isinstance(mcia, float)
-            mcia_list.append(mcia)
+            film = SpacegroupAnalyzer(s, symprec=0.1).get_conventional_standard_structure()
+            out.append(min(m.match_area for m in sa.calculate(film=film, substrate=sub,
+                        substrate_millers=millers, lowest=True)))
         except Exception:
-            mcia_list.append(np.nan)
-
-    mcia_arr = np.array(mcia_list, dtype=float)
-    return mcia_arr
+            out.append(np.nan)
+    return np.array(out, dtype=float)
 
 
 class PyMatGen(Calculator):
-    """PyMatGen property calculator.
-
-    Supports calculating:
-    - density: Crystal density (g/cm^3)
-    - hhi: Herfindahl-Hirschman Index (supply risk)
-    - price: Element price (USD/kg)
-    - abundance: Crustal abundance (ppm)
-    - log_abundance: Log10 crustal abundance
-    - mcia: Minimal co-incident area (Å^2)
-    - num_atoms: Number of atoms in structure
-    - num_elements: Number of unique elements
-    - volume: Unit cell volume (Å^3)
-    """
-
-    def __init__(
-        self, root_dir: str, task: str = "density", substrate: str = "Si"
-    ) -> None:
-        """Initialize PyMatGen calculator.
-
-        Args:
-            root_dir: Directory for output files
-            task: Property to calculate (density, hhi, price, abundance, log_abundance,
-                  mcia, num_atoms, num_elements, volume)
-            substrate: Substrate material (for MCIA calculation)
-        """
+    def __init__(self, root_dir, task="density", substrate="Si"):
         super().__init__(root_dir, task)
-        self.substrate = Structure.from_file(
-            os.path.join(SUBSTRATE_PATH, f"{substrate}.cif")
-        )
+        self.substrate = Structure.from_file(os.path.join(SUBSTRATE_PATH, f"{substrate}.cif"))
+        self._tasks = {
+            "density": lambda x: np.array([s.density for s in x]),
+            "hhi": _hhi,
+            "price": _price,
+            "abundance": lambda x: np.array([_abundance(s) for s in x]),
+            "log_abundance": lambda x: np.log10(np.array([_abundance(s) for s in x])),
+            "mcia": lambda x: _mcia(x, self.substrate),
+            "num_atoms": lambda x: np.array([len(s) for s in x], dtype=float),
+            "num_elements": lambda x: np.array([len(s.composition.elements) for s in x], dtype=float),
+            "volume": lambda x: np.array([s.volume for s in x], dtype=float),
+        }
 
-    def calc(
-        self, samples: Tuple[List[Structure], str], label: str = "tmp"
-    ) -> np.ndarray:
-        """Calculate properties for a list of structures.
-
-        Args:
-            samples: Tuple of (structure_list, path)
-            label: Label for output file
-
-        Returns:
-            Array of calculated property values
-        """
+    def calc(self, samples, label="tmp"):
         struc_list = samples[0]
-        out_path = os.path.join(self.root_dir, f"{label}.txt")
-        out_path = os.path.abspath(out_path)
-
-        if self.task == "density":
-            results = calc_density(struc_list)
-        elif self.task == "hhi":
-            results = calc_hhi(struc_list)
-        elif self.task == "price":
-            results = calc_price(struc_list)
-        elif self.task == "abundance":
-            results = calc_abundance_crust(struc_list)
-        elif self.task == "log_abundance":
-            results = calc_log_abundance_crust(struc_list)
-        elif self.task == "mcia":
-            results = calc_mcia(struc_list, self.substrate)
-        elif self.task == "num_atoms":
-            results = np.array([len(struc) for struc in struc_list], dtype=float)
-        elif self.task == "num_elements":
-            results = np.array(
-                [len(struc.composition.elements) for struc in struc_list],
-                dtype=float,
-            )
-        elif self.task == "volume":
-            results = np.array([struc.volume for struc in struc_list], dtype=float)
-        else:
-            raise ValueError(f"{self.task} is unknown task for PyMatGen calculator!")
-
-        np.savetxt(out_path, results, fmt="%.8f")
+        fn = self._tasks.get(self.task)
+        if fn is None:
+            raise ValueError(f"Unknown task: {self.task}")
+        results = fn(struc_list)
+        np.savetxt(os.path.abspath(os.path.join(self.root_dir, f"{label}.txt")), results, fmt="%.8f")
         return results

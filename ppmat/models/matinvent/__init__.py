@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.models.matinvent.core import MatInvent
+from ppmat.models.matinvent.rl_loop import MatInvent
+from ppmat.models.matinvent.rl_finetune import MatinventRL
 
-__all__ = ["MatInvent"]
+__all__ = ["MatInvent", "MatinventRL"]

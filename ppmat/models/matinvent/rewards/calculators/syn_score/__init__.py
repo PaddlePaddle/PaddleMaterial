@@ -12,22 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Synthesizability score calculator.
-
-
-Uses a pre-trained neural network model to predict crystal synthesizability scores.
-Requires model weights and element embeddings to be present in the calculator directory.
-"""
-
 import os
 
-EMB_PATH = os.path.join(os.path.dirname(__file__), "element_emb.json")
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_pt")
-EMB_PATH = os.path.abspath(EMB_PATH)
-MODEL_PATH = os.path.abspath(MODEL_PATH)
+EMB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "element_emb.json"))
+MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "model_pt"))
 
-from ppmat.models.matinvent.rewards.calculators.syn_score.calc import SynScore  # noqa
-from ppmat.models.matinvent.rewards.calculators.syn_score.model import Net  # noqa
+from ppmat.models.matinvent.rewards.calculators.syn_score.calc import SynScore
+from ppmat.models.matinvent.rewards.calculators.syn_score.model import Net
 
 __all__ = ["SynScore", "Net"]

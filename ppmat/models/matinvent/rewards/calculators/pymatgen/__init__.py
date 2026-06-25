@@ -12,16 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-PyMatGen property calculators.
-
-"""
-
 import os
 
-SUBSTRATE_PATH = os.path.join(os.path.dirname(__file__), "substrates")
-SUBSTRATE_PATH = os.path.abspath(SUBSTRATE_PATH)
+SUBSTRATE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "substrates"))
 
-from ppmat.models.matinvent.rewards.calculators.pymatgen.calc import PyMatGen  # noqa
+from ppmat.models.matinvent.rewards.calculators.pymatgen.calc import PyMatGen
 
 __all__ = ["PyMatGen", "SUBSTRATE_PATH"]

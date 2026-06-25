@@ -22,33 +22,28 @@ from typing import Tuple
 import numpy as np
 import paddle
 from omegaconf import DictConfig
-from omegaconf import OmegaConf
 from pymatgen.core.structure import Structure
 
 from ppmat.models.matinvent.rewards.reward import Reward
 from ppmat.models.matinvent.memory import LongTimeMem
 from ppmat.models.matinvent.memory import ReplayBuffer
-from ppmat.models.matinvent.data import is_valid_structure
-from ppmat.models.matinvent.data import save_structures
-from ppmat.models.matinvent.models import ModelSuite
+from ppmat.models.matinvent.dataset import is_valid_structure
+from ppmat.models.matinvent.dataset import save_structures
 from ppmat.utils.scatter import scatter
 
 
-class ReinL:
+class MatInvent:
     def __init__(self, rl_epoch: int, model_suite, reward: Reward, sample_cfg: DictConfig,
-                 finetune_cfg: DictConfig, save_dir: str, save_freq: int, device: str = None,
-                 logger=None, replay: bool = False, replay_args: Dict = None, **kwargs):
+                 finetune_cfg: DictConfig, topk_ratio: float, save_dir: str,
+                 save_freq: int = 50, device: str = None, logger=None,
+                 replay: bool = False, replay_args: Dict = None,
+                 div_filter: bool = False, df_args: Dict = None):
         self.rl_epoch = rl_epoch
         self.model_suite = model_suite
         self.reward = reward
         self.save_dir = save_dir
         self.save_freq = save_freq
         self.logger = logger
-        if device is None:
-            device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
-        paddle.set_device(device)
-        self.device = device
-        self.cfg = OmegaConf.create(kwargs)
         self.step = 0
         self.cost = 0
         self.sample_cfg = OmegaConf.merge(model_suite.sample_cfg, sample_cfg)
@@ -60,49 +55,6 @@ class ReinL:
         os.makedirs(self.models_dir, exist_ok=True)
         os.makedirs(self.sample_dir, exist_ok=True)
         self.replay = ReplayBuffer(**replay_args) if replay else None
-
-    def reward_step(self, sample_data: list, sample_struc: List[Structure],
-                    xyz_path: str, label: str = "tmp"):
-        rewards, prop_dict, failed_mask = self.reward.scoring((sample_struc, xyz_path), label)
-        self.cost += len(sample_struc)
-        success_rewards = rewards[~failed_mask].astype(float)
-        success_prop_dict = {k: v[~failed_mask] for k, v in prop_dict.items()}
-        success_data, success_struc = [], []
-        for i, failed in enumerate(failed_mask):
-            if not failed:
-                success_data.append(sample_data[i])
-                success_struc.append(sample_struc[i])
-        logging.info(f"Evaluation costs to date: {self.cost}")
-        logging.info(f"Number of samples that successfully obtained rewards: {len(success_struc)}")
-        if len(success_rewards) > 0:
-            logging.info(f"reward mean={success_rewards.mean():.4f} std={success_rewards.std():.4f}")
-            logging.info(" | ".join(f"{k} mean={v.mean():.4f} std={v.std():.4f}" for k, v in success_prop_dict.items()))
-        else:
-            logging.info("reward mean=nan std=nan")
-        return success_data, success_struc, success_rewards, success_prop_dict
-
-    def load_model(self):
-        raise NotImplementedError
-    def sample_step(self):
-        raise NotImplementedError
-    def ft_step(self, data_list):
-        raise NotImplementedError
-    def rl_step(self):
-        raise NotImplementedError
-    def run_rl(self):
-        raise NotImplementedError
-
-
-class MatInvent(ReinL):
-    def __init__(self, rl_epoch: int, model_suite, reward: Reward, sample_cfg: DictConfig,
-                 finetune_cfg: DictConfig, topk_ratio: float, save_dir: str,
-                 save_freq: int = 50, device: str = None, logger=None,
-                 replay: bool = False, replay_args: Dict = None,
-                 div_filter: bool = False, df_args: Dict = None, **kwargs):
-        super().__init__(rl_epoch=rl_epoch, model_suite=model_suite, reward=reward,
-                         sample_cfg=sample_cfg, finetune_cfg=finetune_cfg,
-                         save_dir=save_dir, save_freq=save_freq, device=device,
-                         logger=logger, replay=replay, replay_args=replay_args, **kwargs)
         assert topk_ratio > 0.0 and topk_ratio <= 1.0
         self.topk_ratio = topk_ratio
         self.div_filter = div_filter
@@ -340,7 +292,7 @@ class MatInvent(ReinL):
                 x=clean_frac_coords, noisy_x=sn["frac_coords"],
                 reduce="sum", batch=clean_batch["structure_array"])
             loss_atom_type, _, _ = model.atom_scheduler.compute_loss(
-                score_model_output=sn["atom_types"], t=t, batch_idx=batch_idx,
+                score_model_output=o["atom_types"], t=t, batch_idx=batch_idx,
                 batch_size=num_atoms.shape[0], x=noisy_batch["atom_type_zero_based"],
                 noisy_x=noisy_batch["input_atom_type_zero_based"], reduce="sum",
                 d3pm_hybrid_lambda=getattr(model, "d3pm_hybrid_lambda", None))
@@ -348,7 +300,7 @@ class MatInvent(ReinL):
             lw = getattr(model, "lattice_loss_weight", 1.0)
             aw = getattr(model, "atom_loss_weight", 1.0)
             total_loss = cw * loss_coord + lw * loss_lattice + aw * loss_atom_type
-            prediction_dict = {"pos": eps_pos, "cell": lattice_update, "atomic_numbers": sn["atom_types"]}
+            prediction_dict = {"pos": eps_pos, "cell": lattice_update, "atomic_numbers": o["atom_types"]}
         else:
             loss_lattice = (lattice_update - rand_l).square().mean(axis=[1, 2])
             loss_coord = paddle.pow(eps_pos - clean_frac_coords, 2).mean(axis=1)

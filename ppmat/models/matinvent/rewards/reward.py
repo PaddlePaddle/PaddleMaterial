@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Reward class for reinforcement learning.
-
-This code is adapted from:
-"""
-
 import os
 from typing import List
 from typing import Tuple
@@ -25,124 +19,68 @@ from typing import Tuple
 import numpy as np
 from pymatgen.core.structure import Structure
 
+from ppmat.models.matinvent.rewards.calculators.pymatgen import PyMatGen
 
-def linear_scaling(values, minv=0.0, maxv=6.0):
-    """Linear scaling of values to [0, 1] range."""
+CALCULATOR_REGISTRY = {"PyMatGen": PyMatGen}
+
+
+def _linear_scale(values, minv=0.0, maxv=6.0):
     ss = (values - minv) / (maxv - minv)
     ss[ss > 1.0] = 1.0
     ss[ss < 0.0] = 0.0
     return ss
 
 
-def average_props(prop_dict):
-    """Average multiple properties."""
-    prop_num = len(prop_dict)
-    prop_list = list(prop_dict.values())
-    prop_sum = prop_list[0]
-    for _prop in prop_list[1:]:
-        prop_sum += _prop
-    prop_mean = prop_sum / prop_num
-
-    return prop_mean
-
-
-def min_props(prop_dict):
-    """Take minimum of multiple properties."""
-    prop_list = list(prop_dict.values())
-    prop_arr = np.array(prop_list)
-    prop_min = prop_arr.min(axis=0)
-    return prop_min
-
-
 class Reward:
-    """Reward class for multi-property optimization."""
-
-    def __init__(
-        self,
-        root_dir: str,
-        prop_cfg: List,
-        reward_threshold: float,
-        reduce: str = "mean",
-        **kwargs,
-    ) -> None:
-        assert reduce in ["mean", "min", "weight"]
+    def __init__(self, root_dir: str, prop_cfg: List, reward_threshold: float,
+                 reduce: str = "mean"):
+        assert reduce in ("mean", "min", "weight")
         self.root_dir = root_dir
         self.prop_cfg = prop_cfg
         self.threshold = reward_threshold
         self.reduce = reduce
-        self._calculator_cache = {}
-        if not os.path.exists(self.root_dir):
-            os.makedirs(self.root_dir)
+        self._cache = {}
+        os.makedirs(root_dir, exist_ok=True)
 
     def calc_props(self, samples: Tuple[List[Structure], str], label: str = "tmp"):
-        """Calculate properties for samples."""
-        prop_dict, prop_list = {}, []
-        for idx, _cfg in enumerate(self.prop_cfg):
-            calculator = self._calculator_cache.get(idx, _cfg.calculator)
-            if not hasattr(calculator, "calc"):
-                cls_expr = calculator.get("__class_name__")
-                if cls_expr is None:
-                    raise ValueError("calculator config must contain '__class_name__'")
-                init_kwargs = {
-                    k: v for k, v in calculator.items() if k != "__class_name__"
-                }
-                calculator = eval(cls_expr)(**init_kwargs)
-                self._calculator_cache[idx] = calculator
-
-            _prop1 = calculator.calc(samples, label)
-            prop_list.append(_prop1)
-            _prop2 = np.nan_to_num(_prop1, nan=0.0)
-            prop_dict[_cfg.name] = _prop2.astype(float)
-
-        prop_list = np.array(prop_list)
-        none_ids = np.isnan(prop_list).any(axis=0)
-
-        return prop_dict, none_ids
+        values = {}
+        for idx, cfg in enumerate(self.prop_cfg):
+            calc = self._cache.get(idx)
+            if calc is None:
+                cls_name = cfg.calculator.get("__class_name__")
+                if cls_name not in CALCULATOR_REGISTRY:
+                    raise ValueError(
+                        f"Unknown calculator: {cls_name}, available: {list(CALCULATOR_REGISTRY)}")
+                calc = CALCULATOR_REGISTRY[cls_name](**{
+                    k: v for k, v in cfg.calculator.items() if k != "__class_name__"})
+                self._cache[idx] = calc
+            raw = calc.calc(samples, label)
+            values[cfg.name] = np.nan_to_num(raw, nan=0.0).astype(float)
+        failed = np.isnan(np.array(list(values.values()))).any(axis=0)
+        return values, failed
 
     def scoring(self, samples: Tuple[List[Structure], str], label: str = "tmp"):
-        """Calculate rewards for samples."""
-
         prop_dict, failed_mask = self.calc_props(samples, label)
-
-        scaled_prop_dict = {}
-        for _cfg in self.prop_cfg:
-            if _cfg.target == "ascending":
-                _sprop = linear_scaling(
-                    values=prop_dict[_cfg.name],
-                    minv=_cfg.minv,
-                    maxv=_cfg.maxv,
-                )
-            elif _cfg.target == "descending":
-                _sprop = linear_scaling(
-                    values=-prop_dict[_cfg.name],
-                    minv=-_cfg.maxv,
-                    maxv=-_cfg.minv,
-                )
-            elif isinstance(_cfg.target, float):
-                diff = np.abs(prop_dict[_cfg.name] - _cfg.target)
-                _sprop = linear_scaling(
-                    values=-diff,
-                    minv=-_cfg.maxv,
-                    maxv=-_cfg.minv,
-                )
+        scaled = {}
+        for cfg in self.prop_cfg:
+            v = prop_dict[cfg.name]
+            if cfg.target == "ascending":
+                sv = _linear_scale(v, cfg.minv, cfg.maxv)
+            elif cfg.target == "descending":
+                sv = _linear_scale(-v, -cfg.maxv, -cfg.minv)
+            elif isinstance(cfg.target, float):
+                sv = _linear_scale(-np.abs(v - cfg.target), -cfg.maxv, -cfg.minv)
             else:
                 raise TypeError(
-                    "prop cfg.target must be a float" " or descending or ascending"
-                )
-
-            scaled_prop_dict[_cfg.name] = _sprop
-
+                    "prop cfg.target must be a float, 'ascending', or 'descending'")
+            scaled[cfg.name] = sv
         if self.reduce == "mean":
-            rewards = average_props(scaled_prop_dict)
+            rewards = np.mean(list(scaled.values()), axis=0)
         elif self.reduce == "min":
-            rewards = min_props(scaled_prop_dict)
+            rewards = np.min(list(scaled.values()), axis=0)
         elif self.reduce == "weight":
-            for _cfg in self.prop_cfg:
-                w = _cfg.weight
-                scaled_prop_dict[_cfg.name] = scaled_prop_dict[_cfg.name] * w
-            sprop_list = list(scaled_prop_dict.values())
-            sprop_arr = np.array(sprop_list)
-            rewards = sprop_arr.sum(axis=0)
-
+            for cfg in self.prop_cfg:
+                scaled[cfg.name] *= cfg.weight
+            rewards = np.sum(list(scaled.values()), axis=0)
         rewards[failed_mask] = 0.0
         return rewards, prop_dict, failed_mask
