@@ -70,8 +70,18 @@ class MatinventRL(nn.Layer):
             model_cfg = cfg.get("Model")
             if model_cfg is None:
                 raise ValueError(f"Model section not found in config")
-            from ppmat.models import build_model
-            model = build_model(model_cfg)
+            if model_cfg.get("__class_name__") == "MatinventRL":
+                from ppmat.models.matinvent.suites import _DIFFCSP_DEFAULT, _MATTERGEN_DEFAULT, MatterGenAdapter
+                if self.model_type == "diffcsp":
+                    from ppmat.models.diffcsp.diffcsp import DiffCSP
+                    model = DiffCSP(**_DIFFCSP_DEFAULT)
+                else:
+                    from ppmat.models.matinvent.mattergen_compat import MatinventMatterGen
+                    model = MatinventMatterGen(**_MATTERGEN_DEFAULT)
+                    model = MatterGenAdapter(model)
+            else:
+                from ppmat.models import build_model
+                model = build_model(model_cfg)
             if self.patch_gemnet:
                 from ppmat.models.mattergen.mattergen import MatterGen, GemNetT, GemNetTCtrl
                 if isinstance(model, MatterGen):
