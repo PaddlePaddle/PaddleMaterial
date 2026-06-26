@@ -13,13 +13,6 @@
 # limitations under the License.
 """QM9 (GDB-9) molecular quantum-chemical dataset.
 
-Follows the MP2018Dataset pattern:
-  - Class-level ``url`` / ``md5`` / ``name``
-  - Inline download via ``get_datasets_path_from_url``
-  - ``build_graph_cfg``-driven graph pre-computation with pickle caching
-  - Rank‑0 builds, ``dist.barrier()`` sync
-  - ``__getitem__`` returns dict with raw tensors (z, pos, edge_index, targets)
-
 **Key Properties:**
     mu, alpha, homo, lumo, gap, r2, zpve, U0, U, H, G, Cv
 """
@@ -95,10 +88,9 @@ def _parse_qm9_xyz(lines):
 class QM9Dataset(Dataset):
     """QM9 (GDB-9) dataset for quantum-chemical property prediction.
 
-    Follows the MP2018Dataset convention:
-      - Single merged ``.xyz`` file downloaded via ``get_datasets_path_from_url``
-      - Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided
-      - Pickle cache for graphs (rank‑0 build, barrier sync)
+    Single merged ``.xyz`` file downloaded via ``get_datasets_path_from_url``.
+    Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided,
+    with pickle cache (rank‑0 build, barrier sync).
 
     Args:
         path: Root directory for storing raw and cached data.

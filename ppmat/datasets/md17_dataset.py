@@ -13,13 +13,6 @@
 # limitations under the License.
 """MD17 molecular dynamics dataset for energy and force prediction.
 
-Follows the MP2018Dataset pattern:
-  - Class-level ``url`` / ``md5`` / ``name``
-  - Inline download via ``get_datasets_path_from_url``
-  - ``build_graph_cfg``-driven graph pre-computation with pickle caching
-  - Rank‑0 builds, ``dist.barrier()`` sync
-  - ``__getitem__`` returns dict with raw tensors (z, pos, edge_index, energy, force)
-
 **STATS:**
 +----------------+----------+--------+-------+----------+-------+
 | Molecule       | #samples | #atoms | #tasks| #targets | Split |
@@ -86,10 +79,9 @@ _BUNDLE_NPZ_MAP = {
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
 
-    Follows the MP2018Dataset convention:
-      - Single `.npz` file downloaded via bcebos bundle or individual URL
-      - Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided
-      - Pickle cache for graphs (rank‑0 build, barrier sync)
+    Single `.npz` file downloaded via bcebos bundle or individual URL.
+    Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided,
+    with pickle cache (rank‑0 build, barrier sync).
 
     Args:
         path: Root directory for storing raw and cached data.
