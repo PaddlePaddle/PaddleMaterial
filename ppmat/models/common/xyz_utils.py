@@ -85,7 +85,7 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         # Use a mask: i == target_node for each unique target
         unique_targets, inv_idx = paddle.unique(target_nodes, return_inverse=True)
         for t_idx in range(unique_targets.shape[0]):
-            t = unique_targets[t_idx:t_idx + 1]
+            t = unique_targets[t_idx]  # scalar
             # Which edges in k-segment target this node?
             k_mask = target_nodes == t
             k_in_seg = paddle.nonzero(k_mask, as_tuple=False).flatten()
@@ -157,7 +157,7 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         for s, e in zip(t_starts.numpy(), t_ends.numpy()):
             s_idx = int(s)
             e_idx = int(e)
-            k_node = k_triplet_sorted[s_idx:s_idx + 1]  # current k node
+            k_node = k_triplet_sorted[s_idx]  # scalar
 
             # Find edges where source = k_node (these are potential l->k edges)
             lk_edges = paddle.nonzero(i == k_node, as_tuple=False).flatten()
