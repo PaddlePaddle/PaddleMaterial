@@ -75,7 +75,6 @@ __all__ = [
     "SFIN",
     "SphereNet",
     "SphereNetPP",
-    "RadiusGraph",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value

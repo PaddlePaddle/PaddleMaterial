@@ -14,7 +14,7 @@ to the same pairwise distances or angles. By incorporating torsion angles
 state-of-the-art results on the QM9 and MD17 benchmarks.
 
 <p align="center">
-  <img src="figures/spherenet_architecture.svg" alt="SphereNet Architecture" width="80%"/>
+  <img src="../../docs/SphereNet.png" alt="SphereNet Architecture" width="80%"/>
   <br/>
   <em>Figure 1: SphereNet architecture.</em>
 </p>
