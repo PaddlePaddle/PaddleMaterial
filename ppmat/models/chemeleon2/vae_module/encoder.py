@@ -1,19 +1,21 @@
-import math
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import paddle
 import paddle.nn as nn
-from ..common.batch_utils import to_dense_batch
-
-
-def get_index_embedding(indices, emb_dim, max_len=2048):
-    K = paddle.arange(emb_dim // 2)
-    pos_embedding_sin = paddle.sin(
-        indices.unsqueeze(-1) * math.pi / (max_len ** (2 * K / emb_dim))
-    )
-    pos_embedding_cos = paddle.cos(
-        indices.unsqueeze(-1) * math.pi / (max_len ** (2 * K / emb_dim))
-    )
-    pos_embedding = paddle.concat([pos_embedding_sin, pos_embedding_cos], axis=-1)
-    return pos_embedding
+from ..common import to_dense_batch
+from ..common import get_index_embedding
 
 
 class TransformerEncoder(nn.Layer):
@@ -92,22 +94,12 @@ class TransformerEncoder(nn.Layer):
 
         x_dense, token_mask = to_dense_batch(x, batch_idx)
 
-        # Check if there is any padding (mask not all True)
         has_padding = not token_mask.cast('bool').all()
-
         if has_padding:
-            # Create 4D attention mask [batch_size, num_heads, seq_len, seq_len]
-            # Use additive mask (float with -inf for masked positions)
             batch_size, seq_len, _ = x_dense.shape
-            num_heads = 8  # Must match nhead in TransformerEncoderLayer
-            attn_mask = paddle.zeros([batch_size, num_heads, seq_len, seq_len], dtype='float32')
-            for b in range(batch_size):
-                for h in range(num_heads):
-                    for j in range(seq_len):
-                        if not token_mask[b, j]:  # padding position
-                            attn_mask[b, h, :, j] = -1e9
+            attn_mask = paddle.zeros([batch_size, 1, 1, seq_len], dtype='float32')
+            attn_mask = attn_mask - 1e9 * (~token_mask).unsqueeze(1).unsqueeze(2).astype('float32')
         else:
-            # No padding, use None to avoid triggering different code path
             attn_mask = None
 
         x_out = self.transformer(x_dense, src_mask=attn_mask)

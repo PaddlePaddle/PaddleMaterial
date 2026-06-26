@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import math
 import paddle
 import paddle.nn as nn
@@ -39,16 +53,7 @@ class TimestepEmbedder(nn.Layer):
         return t_emb
 
 
-def get_pos_embedding(indices, emb_dim, max_len=2048):
-    K = paddle.arange(emb_dim // 2)
-    pos_embedding_sin = paddle.sin(
-        indices.unsqueeze(-1) * math.pi / (max_len ** (2 * K / emb_dim))
-    )
-    pos_embedding_cos = paddle.cos(
-        indices.unsqueeze(-1) * math.pi / (max_len ** (2 * K / emb_dim))
-    )
-    pos_embedding = paddle.concat([pos_embedding_sin, pos_embedding_cos], axis=-1)
-    return pos_embedding
+from ..common import get_index_embedding as get_pos_embedding
 
 
 class Mlp(nn.Layer):

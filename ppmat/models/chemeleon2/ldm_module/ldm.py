@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from collections import defaultdict
 from functools import partial
 
@@ -5,11 +19,10 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.chemeleon2.common.lora import (
-    apply_lora_to_linear,
-    print_trainable_parameters,
-    merge_lora_weights,
-)
+from ppmat.models.chemeleon2.common import apply_lora_to_linear
+from ppmat.models.chemeleon2.common import print_trainable_parameters
+from ppmat.models.chemeleon2.common import merge_lora_weights
+from ppmat.models.chemeleon2.common import to_dense_batch
 from ppmat.models.chemeleon2.ldm_module.diffusion import create_diffusion
 from ppmat.models.chemeleon2.vae_module.vae import VAEModule
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
@@ -99,19 +112,7 @@ class LDMModule(nn.Layer):
             self.condition_module = condition_module
 
     def _to_dense_batch(self, x, batch_idx):
-        batch_size = int(batch_idx.max().item()) + 1
-        max_num_nodes = paddle.bincount(batch_idx.astype('int32')).max().item()
-        
-        dense_x = paddle.zeros([batch_size, max_num_nodes, x.shape[-1]], dtype=x.dtype)
-        mask = paddle.zeros([batch_size, max_num_nodes], dtype='bool')
-        
-        for i in range(batch_size):
-            node_mask = batch_idx == i
-            num_nodes = node_mask.sum().item()
-            dense_x[i, :num_nodes] = x[node_mask]
-            mask[i, :num_nodes] = True
-        
-        return dense_x, mask
+        return to_dense_batch(x, batch_idx)
     
     def _apply_augmentation(self, batch):
         if self.augmentation is None:
