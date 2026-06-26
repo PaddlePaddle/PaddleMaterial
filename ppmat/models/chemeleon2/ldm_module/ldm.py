@@ -26,6 +26,7 @@ from ppmat.models.chemeleon2.common import to_dense_batch
 from ppmat.models.chemeleon2.ldm_module.diffusion import create_diffusion
 from ppmat.models.chemeleon2.vae_module.vae import VAEModule
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
+from ppmat.models.chemeleon2.common.schema import CrystalBatch
 
 
 class LDMModule(nn.Layer):
@@ -80,7 +81,15 @@ class LDMModule(nn.Layer):
                 param.stop_gradient = True
             self.vae.eval()
         elif vae_ckpt_path is not None:
-            self.vae = VAEModule.load_checkpoint(vae_ckpt_path)[0]
+            if not hasattr(self, 'vae') or self.vae is None:
+                raise ValueError(
+                    "vae_ckpt_path requires a built VAE model. "
+                    "Pass a VAE config dict via the `vae` parameter."
+                )
+            vae_state = paddle.load(vae_ckpt_path)
+            if 'model_state_dict' in vae_state:
+                vae_state = vae_state['model_state_dict']
+            self.vae.set_state_dict(vae_state)
             for param in self.vae.parameters():
                 param.stop_gradient = True
             self.vae.eval()
@@ -135,8 +144,6 @@ class LDMModule(nn.Layer):
     def _convert_sample_batch(self, batch):
         """Convert dict -> CrystalBatch for LDM sampling.
         Generates random fallbacks for missing lattice/frac_coords."""
-        from ppmat.models.chemeleon2.common.schema import CrystalBatch
-
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
@@ -363,8 +370,6 @@ class LDMModule(nn.Layer):
         Returns:
             dict: Results containing 'result' key with generated CrystalBatch
         """
-        from ppmat.models.chemeleon2.common.schema import CrystalBatch
-
         num_samples = data.get('num_samples', 1) if isinstance(data, dict) else 1
         batch_size = data.get('batch_size', num_samples) if isinstance(data, dict) else num_samples
 

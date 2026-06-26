@@ -23,6 +23,7 @@ from ppmat.models.chemeleon2.common.utils import get_pbc_distances, lattice_vect
 from ppmat.models.chemeleon2.common.utils import to_dense_batch
 from ppmat.models.chemeleon2.common.utils import apply_augmentation, apply_noise
 from ppmat.models.chemeleon2.common.utils import get_index_embedding
+from ppmat.models.chemeleon2.common.utils import make_attn_mask
 from ppmat.models.chemeleon2.common.schema import CrystalBatch
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "to_dense_batch",
     "apply_augmentation", "apply_noise",
     "get_index_embedding",
+    "make_attn_mask",
     "LoRALayer", "LoRALinear",
     "apply_lora_to_linear", "get_lora_parameters",
     "merge_lora_weights", "print_trainable_parameters",

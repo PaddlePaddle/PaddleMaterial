@@ -16,6 +16,7 @@ import paddle
 import paddle.nn as nn
 from ..common import to_dense_batch
 from ..common import get_index_embedding
+from ..common import make_attn_mask
 
 
 class TransformerEncoder(nn.Layer):
@@ -88,14 +89,7 @@ class TransformerEncoder(nn.Layer):
 
         x_dense, token_mask = to_dense_batch(x, batch_idx)
 
-        has_padding = not token_mask.cast('bool').all()
-        if has_padding:
-            batch_size, seq_len, _ = x_dense.shape
-            attn_mask = paddle.zeros([batch_size, 1, 1, seq_len], dtype='float32')
-            attn_mask = attn_mask - 1e9 * (~token_mask).unsqueeze(1).unsqueeze(2).astype('float32')
-        else:
-            attn_mask = None
-
+        attn_mask = make_attn_mask(token_mask)
         x_out = self.transformer(x_dense, src_mask=attn_mask)
 
         x = x_out[token_mask]

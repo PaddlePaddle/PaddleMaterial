@@ -22,7 +22,6 @@ class ConditionType(Enum):
     CHEMICAL_SYSTEM = "chemical_system"
     VALUE = "float"
     CATEGORICAL = "categorical"
-    TEXT = "text"
 
 
 class ConditionModule(nn.Layer):
@@ -66,10 +65,6 @@ class ConditionModule(nn.Layer):
                 )
                 self.encoders[cond_name] = CategoricalEncoder(
                     in_dim=kwargs["num_classes"],
-                    hidden_dim=hidden_dim,
-                )
-            elif cond_type == ConditionType.TEXT.value:
-                self.encoders[cond_name] = TextEncoder(
                     hidden_dim=hidden_dim,
                 )
             else:
@@ -253,9 +248,4 @@ class ChemicalSystemEncoder(BaseEncoder):
         return v.unsqueeze(0)
 
 
-class TextEncoder(BaseEncoder):
-    def __init__(self, hidden_dim):
-        raise NotImplementedError(
-            "TextEncoder requires a text embedding model. "
-            "Override this class and provide real text embeddings."
-        )
+

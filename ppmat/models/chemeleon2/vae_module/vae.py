@@ -18,6 +18,8 @@ import paddle.nn.functional as F
 
 from ppmat.models.chemeleon2.common import apply_augmentation, apply_noise
 from ppmat.models.chemeleon2.common import DiagonalGaussianDistribution
+from ppmat.models.chemeleon2.common.schema import CrystalBatch
+from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
 class VAEModule(nn.Layer):
@@ -76,9 +78,6 @@ class VAEModule(nn.Layer):
         return decoder_out
     
     def reconstruct(self, decoder_out, batch):
-        from ppmat.models.chemeleon2.common.schema import CrystalBatch
-        from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-
         batch_rec = CrystalBatch()
 
         if decoder_out["atom_types"].ndim == 2:
@@ -118,9 +117,6 @@ class VAEModule(nn.Layer):
     def _convert_train_batch(self, batch):
         """Convert dict -> CrystalBatch for VAE training.
         Computes lengths_scaled, angles_radians, cart_coords from structure_array."""
-        from ppmat.models.chemeleon2.common.schema import CrystalBatch
-        from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]

@@ -6,9 +6,9 @@
 
 ### 训练配置
 
-1. train_vae.yaml - VAE模块的训练
-2. train_ldm.yaml - LDM模块的训练
-3. sample.yaml - 采样生成配置文件
+1. chemeleon2_mp20_vae.yaml - VAE模块的训练
+2. chemeleon2_mp20_ldm.yaml - LDM模块的训练
+3. chemeleon2_mp20_sample.yaml - 采样生成配置文件
 
 
 
@@ -18,7 +18,7 @@
 
 ```bash
 python structure_generation/train.py \
-    --config structure_generation/configs/chemeleon2/train_vae.yaml
+    --config structure_generation/configs/chemeleon2/chemeleon2_mp20_vae.yaml
 ```
 
 
@@ -26,13 +26,13 @@ python structure_generation/train.py \
 
 ```bash
 python structure_generation/train.py \
-    --config structure_generation/configs/chemeleon2/train_ldm.yaml
+    --config structure_generation/configs/chemeleon2/chemeleon2_mp20_ldm.yaml
 ```
 
 ## 验证VAE权重
 ```bash
 python structure_generation/train.py \
-    -c structure_generation/configs/chemeleon2/train_vae.yaml \
+    -c structure_generation/configs/chemeleon2/chemeleon2_mp20_vae.yaml \
     Global.do_eval=False \
     Global.do_train=False \
     Global.do_test=True \
@@ -42,7 +42,7 @@ python structure_generation/train.py \
 ## 验证LDM权重
 ```bash
 python structure_generation/train.py \
-    -c structure_generation/configs/chemeleon2/train_ldm.yaml \
+    -c structure_generation/configs/chemeleon2/chemeleon2_mp20_ldm.yaml \
     Global.do_eval=False \
     Global.do_train=False \
     Global.do_test=True \
@@ -54,7 +54,7 @@ python structure_generation/train.py \
 
 ```bash
 python structure_generation/train.py \
-    -c structure_generation/configs/chemeleon2/train_vae.yaml \
+    -c structure_generation/configs/chemeleon2/chemeleon2_mp20_vae.yaml \
     Global.do_eval=True \
     Global.do_train=False \
     Global.do_test=False \
@@ -64,7 +64,7 @@ python structure_generation/train.py \
 ### 验证LDM权重
 ```bash
 python structure_generation/train.py \
-    -c structure_generation/configs/chemeleon2/train_ldm.yaml \
+    -c structure_generation/configs/chemeleon2/chemeleon2_mp20_ldm.yaml \
     Global.do_eval=True \
     Global.do_train=False \
     Global.do_test=False \
@@ -78,7 +78,7 @@ python structure_generation/train.py \
 ```bash
 # vae的模型地址在 yaml里约定
 python structure_generation/sample.py \
-    --config structure_generation/configs/chemeleon2/sample.yaml \
+    --config structure_generation/configs/chemeleon2/chemeleon2_mp20_sample.yaml \
     --checkpoint_path test-for-weight/converted_weights/ldm_paddle.pdparams
 ```
 

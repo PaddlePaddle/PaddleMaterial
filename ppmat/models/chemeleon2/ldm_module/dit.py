@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import paddle
 import paddle.nn as nn
+
+from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 
 
 def modulate(x, shift, scale):
@@ -24,68 +25,25 @@ def modulate(x, shift, scale):
 class TimestepEmbedder(nn.Layer):
     def __init__(self, hidden_dim, frequency_embedding_dim=256):
         super().__init__()
+        self.sin_embed = SinusoidalTimeEmbeddings(frequency_embedding_dim)
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_dim, hidden_dim, bias_attr=True),
             nn.Silu(),
             nn.Linear(hidden_dim, hidden_dim, bias_attr=True),
         )
-        self.frequency_embedding_dim = frequency_embedding_dim
-
-    @staticmethod
-    def timestep_embedding(t, dim, max_period=10000):
-        half = dim // 2
-        freqs = paddle.exp(
-            -math.log(max_period)
-            * paddle.arange(start=0, end=half, dtype='float32')
-            / half
-        )
-        args = t.unsqueeze(-1).astype('float32') * freqs
-        embedding = paddle.concat([paddle.cos(args), paddle.sin(args)], axis=-1)
-        if dim % 2:
-            embedding = paddle.concat(
-                [embedding, paddle.zeros_like(embedding[:, :1])], axis=-1
-            )
-        return embedding
 
     def forward(self, t):
-        t_freq = self.timestep_embedding(t, self.frequency_embedding_dim)
-        t_emb = self.mlp(t_freq)
-        return t_emb
+        return self.mlp(self.sin_embed(t))
 
 
 from ..common import get_index_embedding as get_pos_embedding
 
 
-class Mlp(nn.Layer):
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=None,
-        norm_layer=None,
-        bias=True,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-
-        self.fc1 = nn.Linear(in_features, hidden_features, bias_attr=bias)
-        self.act = act_layer() if act_layer else nn.GELU()
-        self.drop1 = nn.Dropout(drop)
-        self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
-        self.fc2 = nn.Linear(hidden_features, out_features, bias_attr=bias)
-        self.drop2 = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop1(x)
-        x = self.norm(x)
-        x = self.fc2(x)
-        x = self.drop2(x)
-        return x
+Mlp = lambda in_features, hidden_features, act_layer=None, **kw: nn.Sequential(
+    nn.Linear(in_features, hidden_features),
+    (act_layer() if act_layer else nn.GELU()),
+    nn.Linear(hidden_features, in_features),
+)
 
 
 class FinalLayer(nn.Layer):
