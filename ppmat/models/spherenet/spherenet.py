@@ -575,11 +575,15 @@ class SphereNetPP(paddle.nn.Layer):
         if self.energy_and_force:
             # F = -dE/d(pos); try create_graph=True first (Paddle nightly),
             # fall back to False if atan2 lacks 2nd-order grad.
+            # allow_unused handles eval with paddle.no_grad() context.
             try:
-                grad = paddle.grad(pred.sum(), pos, create_graph=True)
+                grad = paddle.grad(pred.sum(), pos, create_graph=True, allow_unused=True)
             except RuntimeError:
-                grad = paddle.grad(pred.sum(), pos, create_graph=False)
-            forces_pred = -grad[0]
+                grad = paddle.grad(pred.sum(), pos, create_graph=False, allow_unused=True)
+            if grad is None or grad[0] is None:
+                forces_pred = None
+            else:
+                forces_pred = -grad[0]
 
         loss_dict = {}
         if return_loss:
