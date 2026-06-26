@@ -2,7 +2,7 @@ Model:
   __class_name__: LDMModule
   __init_params__:
     normalize_latent: true
-    vae_ckpt_path: test-for-weight/converted_weights/vae_paddle.pdparams
+    vae_ckpt_path: null
     denoiser:
       __class_name__: DiT
       __init_params__:

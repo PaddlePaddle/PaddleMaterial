@@ -126,6 +126,8 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
+    "chemeleon2_vae": "http://localhost/models/chemeleon2_vae.zip",
+    "chemeleon2_ldm": "http://localhost/models/chemeleon2_ldm.zip",
 }
 
 

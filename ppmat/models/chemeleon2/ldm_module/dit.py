@@ -39,12 +39,15 @@ class TimestepEmbedder(nn.Layer):
 from ..common import get_index_embedding as get_pos_embedding
 
 
-def _mlp(in_features, hidden_features, act_layer=None):
-    return nn.Sequential(
-        nn.Linear(in_features, hidden_features),
-        (act_layer() if act_layer else nn.GELU()),
-        nn.Linear(hidden_features, in_features),
-    )
+class _MLP(nn.Layer):
+    def __init__(self, in_features, hidden_features, act_layer=None):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer() if act_layer else nn.GELU()
+        self.fc2 = nn.Linear(hidden_features, in_features)
+
+    def forward(self, x):
+        return self.fc2(self.act(self.fc1(x)))
 
 
 class FinalLayer(nn.Layer):
@@ -72,7 +75,7 @@ class DiTBlock(nn.Layer):
         self.norm2 = nn.LayerNorm(hidden_dim, epsilon=1e-6, weight_attr=False, bias_attr=False)
         mlp_hidden_dim = int(hidden_dim * mlp_ratio)
 
-        self.mlp = _mlp(
+        self.mlp = _MLP(
             in_features=hidden_dim,
             hidden_features=mlp_hidden_dim,
             act_layer=lambda: nn.GELU(approximate=True),

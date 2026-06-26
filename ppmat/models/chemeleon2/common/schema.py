@@ -108,7 +108,10 @@ def _build_structure_array(batch, structure_array):
     batch_size = num_atoms.shape[0]
     total_atoms = num_atoms.sum().item()
 
-    batch.atom_types = structure_array["atom_types"]
+    if "atom_types" in structure_array:
+        batch.atom_types = structure_array["atom_types"]
+    else:
+        batch.atom_types = paddle.zeros([total_atoms], dtype='int64')
     batch.num_atoms = num_atoms
     batch.batch = paddle.repeat_interleave(
         paddle.arange(batch_size), repeats=num_atoms
