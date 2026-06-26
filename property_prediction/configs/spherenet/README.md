@@ -16,7 +16,7 @@ state-of-the-art results on the QM9 and MD17 benchmarks.
 <p align="center">
   <img src="figures/spherenet_architecture.svg" alt="SphereNet Architecture" width="80%"/>
   <br/>
-  <em>Figure 1: SphereNet architecture (from the original paper).</em>
+  <em>Figure 1: SphereNet architecture.</em>
 </p>
 
 ## Datasets
