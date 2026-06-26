@@ -7,7 +7,7 @@ Global:
 
 Trainer:
   # Max epochs to train
-  max_epochs: 500
+  max_epochs: 100
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
