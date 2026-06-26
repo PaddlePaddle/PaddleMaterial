@@ -124,8 +124,6 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
-    # SphereNet: imported and available for build_model(); pretrained weights
-    # will be added once training is complete and weights are released.
 }
 
 
