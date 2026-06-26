@@ -85,14 +85,12 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         # Use a mask: i == target_node for each unique target
         unique_targets, inv_idx = paddle.unique(target_nodes, return_inverse=True)
         for t_idx in range(unique_targets.shape[0]):
-            t = unique_targets[t_idx]  # scalar
+            t = int(unique_targets[t_idx])  # Python int
             # Which edges in k-segment target this node?
-            k_mask = target_nodes == t
-            k_in_seg = paddle.nonzero(k_mask, as_tuple=False).flatten()
+            k_in_seg = paddle.where(target_nodes == t)[0].flatten()
 
             # Which edges in full edge list have source = t?
-            src_mask = i == t
-            ji_edges = paddle.nonzero(src_mask, as_tuple=False).flatten()
+            ji_edges = paddle.where(i == t)[0].flatten()
 
             if k_in_seg.shape[0] == 0 or ji_edges.shape[0] == 0:
                 continue
@@ -157,10 +155,10 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         for s, e in zip(t_starts.numpy(), t_ends.numpy()):
             s_idx = int(s)
             e_idx = int(e)
-            k_node = k_triplet_sorted[s_idx]  # scalar
+            k_node = int(k_triplet_sorted[s_idx])  # Python int
 
-            # Find edges where source = k_node (these are potential l->k edges)
-            lk_edges = paddle.nonzero(i == k_node, as_tuple=False).flatten()
+            # Find edges where source = k_node
+            lk_edges = paddle.where(i == k_node)[0].flatten()
             if lk_edges.shape[0] == 0:
                 continue
 
