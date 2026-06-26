@@ -24,6 +24,16 @@ from ppmat.models.diffcsp.diffcsp import CSPNet
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
 
+class MiADCSPNet(CSPNet):
+    """CSPNet with block-diagonal edge generation for GPU compatibility."""
+
+    def gen_edges(self, num_atoms, frac_coords):
+        lis = [paddle.ones([int(n), int(n)], dtype="int64") for n in num_atoms]
+        fc_graph = paddle.block_diag(lis)
+        fc_edges = paddle.nonzero(fc_graph).t()
+        return fc_edges, (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]]) % 1.0
+
+
 def _to_numpy(x):
     if hasattr(x, "numpy"):
         return x.numpy()
@@ -81,19 +91,7 @@ class MiAD(nn.Layer):
             "prop_dim", "pred_scalar", "num_classes",
         }
         cspnet_kwargs = {k: v for k, v in model_cfg.items() if k in _cspnet_keys}
-        self.decoder = CSPNet(**cspnet_kwargs)
-        # Remove unused prop_mlp (parent creates it; checkpoint lacks these weights)
-        for i in range(self.decoder.num_layers):
-            layer = getattr(self.decoder, f"csp_layer_{i}", None)
-            if layer and hasattr(layer, "prop_mlp"):
-                del layer.prop_mlp
-        # Replace gen_edges with block_diag (parent meshgrid causes GPU crash on certain batch sizes)
-        def _gen_edges(num_atoms, frac_coords):
-            lis = [paddle.ones([int(n), int(n)], dtype="int64") for n in num_atoms]
-            fc_graph = paddle.block_diag(lis)
-            fc_edges = paddle.nonzero(fc_graph).t()
-            return fc_edges, (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]])
-        self.decoder.gen_edges = _gen_edges
+        self.decoder = MiADCSPNet(use_prop_mlp=False, **cspnet_kwargs)
         if isinstance(diffusion_cfg, dict):
             diffusion_cfg = _dict_to_sns(diffusion_cfg)
         self.diffusion = CrystalGen(diffusion_cfg, logger=None)
@@ -101,12 +99,26 @@ class MiAD(nn.Layer):
     def set_state_dict(self, state_dict, use_structured_name=True):
         if not any(k.startswith("decoder.") for k in state_dict.keys()):
             state_dict = {f"decoder.{k}": v for k, v in state_dict.items()}
-        processed = {}
+        expected_shapes = {
+            k: v.shape for k, v in self.state_dict().items()
+        }
         for k, v in state_dict.items():
-            if k.endswith(".weight") and len(v.shape) == 2:
-                v = v.T
-            processed[k] = v
-        return super().set_state_dict(processed, use_structured_name)
+            expected = expected_shapes.get(k)
+            if expected is not None and v.shape != expected and v.T.shape == expected:
+                state_dict[k] = v.T
+        param_state = {}
+        for name, param in self.named_parameters():
+            if name in state_dict:
+                v = state_dict[name]
+                if hasattr(v, "numpy"):
+                    v = v.numpy()
+                elif not isinstance(v, np.ndarray):
+                    v = np.asarray(v)
+                if v.shape == param.shape:
+                    param_state[name] = v.astype(param.numpy().dtype)
+        for name in param_state:
+            self.get_parameter(name).set_value(param_state[name])
+        return [], []
 
     def forward(self, batch, **kwargs):
         mode = "train" if self.training else "val"
@@ -142,6 +154,7 @@ class MiAD(nn.Layer):
                 batch_idx = paddle.to_tensor(batch_idx_np.astype("int64"))
                 atom_types = paddle.zeros([int(num_atoms_np.sum())], dtype="int64")
                 batch_data = {
+                    **batch_data,
                     "num_atoms": num_atoms,
                     "batch_idx": batch_idx,
                     "atom_types": atom_types,
@@ -157,14 +170,15 @@ class MiAD(nn.Layer):
         def progress_printer(t):
             return None
 
-        batch = self.diffusion.sampling_procedure(
-            model=self.decoder,
-            batch=batch_data,
-            progress_printer=progress_printer,
-        )
-
-        if original_steps is not None:
-            self.diffusion.num_steps = original_steps
+        try:
+            batch = self.diffusion.sampling_procedure(
+                model=self.decoder,
+                batch=batch_data,
+                progress_printer=progress_printer,
+            )
+        finally:
+            if original_steps is not None:
+                self.diffusion.num_steps = original_steps
 
         # Extract results
         x0_pred = batch["x0_prediction"]
@@ -190,9 +204,9 @@ class MiAD(nn.Layer):
             lat_i = lattices[i]
             fc_i = frac_coords[start_idx : start_idx + n]
             at_i = atom_types[start_idx : start_idx + n]
-            lat_np = lat_i.numpy() if hasattr(lat_i, "numpy") else np.asarray(lat_i)
-            fc_np = fc_i.numpy() if hasattr(fc_i, "numpy") else np.asarray(fc_i)
-            at_np = at_i.numpy() if hasattr(at_i, "numpy") else np.asarray(at_i)
+            lat_np = _to_numpy(lat_i)
+            fc_np = _to_numpy(fc_i)
+            at_np = _to_numpy(at_i)
             start_idx += n
             # Filter out mirage atoms (atom_types == 0) produced by Mirage
             # Infusion, mirroring lib/data/crystal_data_storage.py save_batch.

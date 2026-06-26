@@ -12,19 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
-
 import numpy as np
 import paddle
 from paddle_scatter import scatter_mean
 
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.miad.type_diffusion import D3PM
-from ppmat.models.miad.type_diffusion import DDPM_onehot
+from ppmat.models.miad.type_diffusion import DDPMOnehot
 from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
 from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeSchedulerWrapped
 from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
+
+_DEFAULT_GAMMA = {
+    "csp_perov5": 5e-7, "gen_perov5": 5e-7,
+    "csp_mp20": 1e-5, "gen_mp20": 1e-5,
+    "csp_alex_mp20": 1e-5, "gen_alex_mp20": 1e-5,
+    "csp_mpts52": 1e-5, "gen_mpts52": 1e-5,
+    "csp_carbon24": 5e-7, "gen_carbon24": 1e-5,
+}
 
 
 def parse_num_atoms_to_per_crystal(num_atoms_data):
@@ -85,13 +91,6 @@ class CrystalGen:
                 sigma_min=0.005, sigma_max=0.5,
                 sampling_eps=1e-3,
             )
-            _DEFAULT_GAMMA = {
-                "csp_perov5": 5e-7, "gen_perov5": 5e-7,
-                "csp_mp20": 1e-5, "gen_mp20": 1e-5,
-                "csp_alex_mp20": 1e-5, "gen_alex_mp20": 1e-5,
-                "csp_mpts52": 1e-5, "gen_mpts52": 1e-5,
-                "csp_carbon24": 5e-7, "gen_carbon24": 1e-5,
-            }
             self.step_lr = getattr(self.config.frac_diffusion, "step_lr", None)
             if self.step_lr is None:
                 self.step_lr = _DEFAULT_GAMMA.get(diffusion_config.task, 1e-5)
@@ -102,7 +101,7 @@ class CrystalGen:
         # Type diffusion
         if self.gen_type:
             switch_type = {
-                "ddpm_onehot": DDPM_onehot,
+                "ddpm_onehot": DDPMOnehot,
                 "d3pm": D3PM,
             }
             self.type_diffusion = switch_type[self.config.type_diffusion.method](
@@ -253,14 +252,17 @@ class CrystalGen:
                 paddle.to_tensor([self.gamma_alpha], dtype="float32"),
                 paddle.to_tensor([self.gamma_theta], dtype="float32"),
             )
-            la[:, :3] = 2 + gamma.sample([bs, 3]).reshape([bs, 3])
-            ang = 60 + 60 * paddle.rand([4 * bs, 3])
-            check = (
-                (ang[:, 0] + ang[:, 1] - ang[:, 2] > self.angle_difference_bound)
-                * (ang[:, 2] + ang[:, 0] - ang[:, 1] > self.angle_difference_bound)
-                * (ang[:, 1] + ang[:, 2] - ang[:, 0] > self.angle_difference_bound)
-            )
-            la[:, 3:] = ang[check][:bs]
+            la[:, :3] = 2 + gamma.sample([bs, 3])
+            collected = []
+            while len(collected) < bs:
+                ang = 60 + 60 * paddle.rand([bs, 3])
+                check = (
+                    (ang[:, 0] + ang[:, 1] - ang[:, 2] > self.angle_difference_bound)
+                    * (ang[:, 2] + ang[:, 0] - ang[:, 1] > self.angle_difference_bound)
+                    * (ang[:, 1] + ang[:, 2] - ang[:, 0] > self.angle_difference_bound)
+                )
+                collected.append(ang[check])
+            la[:, 3:] = paddle.concat(collected)[:bs]
             return self._lenang2lat_fn(la)
         raise ValueError(f"Unknown lat_method: {self.lat_method}")
 

@@ -20,7 +20,7 @@ import paddle.nn.functional as F
 from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
 
 
-class DDPM_onehot:
+class DDPMOnehot:
     """DDPM for atom types with one-hot encoding."""
 
     def __init__(self, diffusion_config):
@@ -155,7 +155,7 @@ class D3PM:
         pred_xt_1_probs = self._reverse_step_distribution(onehot_x0_pred, onehot_xt, t)
         onehot_x0 = self.to_domain(batch["x0"][2])
         orig_xt_1_probs = self._reverse_step_distribution(onehot_x0, onehot_xt, t)
-        eps = 1e-4
+        eps = 1e-8
         kl_loss = (
             (orig_xt_1_probs * (paddle.log(orig_xt_1_probs + eps) - paddle.log(pred_xt_1_probs + eps)))
             .reshape([onehot_xt.shape[0], -1]).sum(axis=-1)
