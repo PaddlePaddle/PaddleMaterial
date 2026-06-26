@@ -45,9 +45,6 @@ from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.chemeleon2 import VAEModule
 from ppmat.models.chemeleon2 import LDMModule
 from ppmat.models.chemeleon2.rl_module.rl import RLModule
-from ppmat.models.chemeleon2.ldm_module.dit import DiT
-from ppmat.models.chemeleon2.vae_module.encoder import TransformerEncoder
-from ppmat.models.chemeleon2.vae_module.decoder import TransformerDecoder
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
