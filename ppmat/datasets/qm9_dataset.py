@@ -108,7 +108,7 @@ class QM9Dataset(Dataset):
 
     name = "qm9"
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/dsgdb9nsd.xyz.tar.bz2"
-    md5 = "AD1EBD51EE7F5B3A6E32E974E5D54012"
+    md5 = "ad1ebd51ee7f5b3a6e32e974e5d54012"
 
     # DIG/TFDS split: seed=42 shuffle → 110000 / 10000 / rest
     _TRAIN_SIZE = 110000
