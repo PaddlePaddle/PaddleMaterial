@@ -193,59 +193,39 @@ class CategoricalEncoder(BaseEncoder):
         )
 
 
-class CompositionEncoder(BaseEncoder):
-    def __init__(self, in_dim, hidden_dim):
+class _ElementEncoder(BaseEncoder):
+    def __init__(self, in_dim, hidden_dim, fill_fn):
         self._in_dim = in_dim
-        
+        self._fill = fill_fn
         def preprocess(batch):
-            vals = [self._composition_to_embeds(comp_str) for comp_str in batch]
+            vals = [self._to_embeds(s) for s in batch]
             return paddle.concat(vals, axis=0)
+        super().__init__(in_dim=in_dim, hidden_dim=hidden_dim, preprocess=preprocess)
 
-        super().__init__(
-            in_dim=in_dim,
-            hidden_dim=hidden_dim,
-            preprocess=preprocess,
-        )
-
-    def _composition_to_embeds(self, comp_str):
-        try:
-            from pymatgen.core import Composition, Element
-        except ImportError:
-            raise ImportError("Pymatgen is required for CompositionEncoder. Install it with: pip install pymatgen")
-        
+    def _to_embeds(self, s):
+        from pymatgen.core import Element
         v = paddle.zeros([self._in_dim])
-        comp = Composition(comp_str).reduced_composition
-        for el, amt in comp.get_el_amt_dict().items():
-            v[Element(el).Z] = float(amt)
-        v = v / v.sum() if v.sum() > 0 else v
+        self._fill(v, s, Element)
         return v.unsqueeze(0)
 
 
-class ChemicalSystemEncoder(BaseEncoder):
+class CompositionEncoder(_ElementEncoder):
     def __init__(self, in_dim, hidden_dim):
-        self._in_dim = in_dim
-        
-        def preprocess(batch):
-            vals = [self._chemical_system_to_embeds(cs) for cs in batch]
-            return paddle.concat(vals, axis=0)
+        def fill(v, comp_str, Element):
+            from pymatgen.core import Composition
+            comp = Composition(comp_str).reduced_composition
+            for el, amt in comp.get_el_amt_dict().items():
+                v[Element(el).Z] = float(amt)
+            v = v / v.sum() if v.sum() > 0 else v
+        super().__init__(in_dim, hidden_dim, fill)
 
-        super().__init__(
-            in_dim=in_dim,
-            hidden_dim=hidden_dim,
-            preprocess=preprocess,
-        )
 
-    def _chemical_system_to_embeds(self, cs):
-        try:
-            from pymatgen.core import Element
-        except ImportError:
-            raise ImportError("Pymatgen is required for ChemicalSystemEncoder. Install it with: pip install pymatgen")
-        
-        v = paddle.zeros([self._in_dim])
-        elements = cs.split("-")
-        for el in elements:
-            v[Element(el).Z] = 1.0
-        return v.unsqueeze(0)
+class ChemicalSystemEncoder(_ElementEncoder):
+    def __init__(self, in_dim, hidden_dim):
+        def fill(v, cs, Element):
+            for el in cs.split("-"):
+                v[Element(el).Z] = 1.0
+        super().__init__(in_dim, hidden_dim, fill)
 
 
 

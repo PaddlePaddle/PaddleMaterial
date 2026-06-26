@@ -69,7 +69,7 @@ class RLModule(nn.Layer):
 
     @paddle.no_grad()
     def rollout(self, batch):
-        result = self.ldm.sample(batch, **self.sampling_configs, collect_trajectory=True)
+        result = self.ldm.sample(batch, **{**self.sampling_configs, 'collect_trajectory': True})
         if isinstance(result, dict):
             trajectory = result.get('trajectory', {})
         else:

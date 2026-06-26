@@ -15,10 +15,11 @@
 import paddle
 import paddle.nn as nn
 
-from ppmat.models.chemeleon2.common import scatter_mean
+from ..common import scatter_mean
 from ..common import to_dense_batch
 from ..common import get_index_embedding
 from ..common import make_attn_mask
+from ..common import set_gelu_approx
 
 
 class TransformerDecoder(nn.Layer):
@@ -59,8 +60,7 @@ class TransformerDecoder(nn.Layer):
         )
         
         if activation == "gelu":
-            for layer in self.transformer.layers:
-                layer.activation = nn.GELU(approximate='tanh')
+            set_gelu_approx(self.transformer)
 
         if atom_type_predict:
             self.atom_types_head = nn.Linear(d_model, max_num_elements, bias_attr=True)

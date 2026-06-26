@@ -84,15 +84,12 @@ class CrystalBatch(Data):
                 types_int = [item for sublist in types_int for item in sublist]
             symbols = [Element.from_Z(int(z)).symbol for z in types_int]
             lat_np = sd['lattices'].cpu().numpy().squeeze()
-            lat = Lattice(lat_np)
-            if frac_coords and 'frac_coords' in sd:
-                coords = sd['frac_coords'].cpu().numpy()
-                s = Structure(Lattice.from_parameters(*lat.parameters), symbols, coords, coords_are_cartesian=False)
-            elif 'cart_coords' in sd:
-                coords = sd['cart_coords'].cpu().numpy()
-                s = Structure(Lattice.from_parameters(*lat.parameters), symbols, coords, coords_are_cartesian=True)
-            else:
+            coords = sd.get('frac_coords' if frac_coords else 'cart_coords')
+            if coords is None and frac_coords and 'cart_coords' in sd:
+                coords = sd['cart_coords']
+            if coords is None:
                 raise ValueError("frac_coords or cart_coords required")
+            s = Structure(Lattice(lat_np), symbols, coords.cpu().numpy(), coords_are_cartesian=not frac_coords)
             structure_list.append(s)
         return structure_list
 

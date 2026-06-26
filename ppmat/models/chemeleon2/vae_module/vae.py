@@ -89,12 +89,7 @@ class VAEModule(nn.Layer):
 
         # Decoder outputs lengths_scaled, need to scale back by num_atoms^(1/3)
         lengths_scaled = decoder_out["lengths"]
-        if isinstance(batch.num_atoms, paddle.Tensor):
-            num_atoms = batch.num_atoms.unsqueeze(-1) if batch.num_atoms.ndim == 1 else batch.num_atoms
-        elif isinstance(batch.num_atoms, list):
-            num_atoms = paddle.to_tensor(batch.num_atoms, dtype='float32').unsqueeze(-1)
-        else:
-            num_atoms = paddle.to_tensor([batch.num_atoms], dtype='float32').unsqueeze(-1)
+        num_atoms = batch.num_atoms.unsqueeze(-1) if batch.num_atoms.ndim == 1 else batch.num_atoms
 
         lengths = lengths_scaled * num_atoms ** (1 / 3)
         batch_rec.lengths = lengths
@@ -115,8 +110,6 @@ class VAEModule(nn.Layer):
         return batch_rec
 
     def _convert_train_batch(self, batch):
-        """Convert dict -> CrystalBatch for VAE training.
-        Computes lengths_scaled, angles_radians, cart_coords from structure_array."""
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
@@ -167,26 +160,9 @@ class VAEModule(nn.Layer):
         return crystal_batch
 
     def forward(self, batch):
-        """Forward pass for training compatibility.
-
-        This method converts the standard dictionary format to CrystalBatch format
-        and then calls calculate_loss. This provides compatibility with the
-        standard training framework.
-
-        Args:
-            batch: Input batch data (dict with 'structure_array' key)
-
-        Returns:
-            dict: Contains 'loss_dict' with training losses (tensors for backward pass)
-        """
-        # Convert dict format to CrystalBatch format
         crystal_batch = self._convert_train_batch(batch)
         loss_dict = self.calculate_loss(crystal_batch, training=True)
-
-        # The framework needs loss_dict with tensor values for backward pass
-        # Add 'loss' key for framework compatibility
         loss_dict["loss"] = loss_dict.get("total_loss", paddle.to_tensor([0.0]))
-
         return {"loss_dict": loss_dict}
 
     def calculate_loss(self, batch, training=True):

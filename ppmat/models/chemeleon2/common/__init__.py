@@ -16,23 +16,24 @@ from ppmat.models.chemeleon2.common.distributions import DiagonalGaussianDistrib
 from ppmat.models.chemeleon2.common.lora import LoRALayer, LoRALinear
 from ppmat.models.chemeleon2.common.lora import apply_lora_to_linear, get_lora_parameters
 from ppmat.models.chemeleon2.common.lora import merge_lora_weights, print_trainable_parameters
-from ppmat.models.chemeleon2.common.utils import scatter_mean, scatter_sum, scatter_std
-from ppmat.models.chemeleon2.common.utils import lattice_params_to_matrix, matrix_to_lattice_params
+from ppmat.models.chemeleon2.common.utils import scatter_mean, scatter_sum
+from ppmat.models.chemeleon2.common.utils import lattice_params_to_matrix
 from ppmat.models.chemeleon2.common.utils import frac_to_cart_coords, cart_to_frac_coords
-from ppmat.models.chemeleon2.common.utils import get_pbc_distances, lattice_vector_to_volume
+from ppmat.models.chemeleon2.common.utils import get_pbc_distances
 from ppmat.models.chemeleon2.common.utils import to_dense_batch
 from ppmat.models.chemeleon2.common.utils import apply_augmentation, apply_noise
 from ppmat.models.chemeleon2.common.utils import get_index_embedding
 from ppmat.models.chemeleon2.common.utils import make_attn_mask
+from ppmat.models.chemeleon2.common.utils import set_gelu_approx
 from ppmat.models.chemeleon2.common.schema import CrystalBatch
 
 __all__ = [
     "DiagonalGaussianDistribution",
     "CrystalBatch",
-    "scatter_mean", "scatter_sum", "scatter_std",
-    "lattice_params_to_matrix", "matrix_to_lattice_params",
+    "scatter_mean", "scatter_sum",
+    "lattice_params_to_matrix",
     "frac_to_cart_coords", "cart_to_frac_coords",
-    "get_pbc_distances", "lattice_vector_to_volume",
+    "get_pbc_distances",
     "to_dense_batch",
     "apply_augmentation", "apply_noise",
     "get_index_embedding",

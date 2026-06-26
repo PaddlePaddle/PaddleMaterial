@@ -24,7 +24,6 @@ from ppmat.models.chemeleon2.common import print_trainable_parameters
 from ppmat.models.chemeleon2.common import merge_lora_weights
 from ppmat.models.chemeleon2.common import to_dense_batch
 from ppmat.models.chemeleon2.ldm_module.diffusion import create_diffusion
-from ppmat.models.chemeleon2.vae_module.vae import VAEModule
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 from ppmat.models.chemeleon2.common.schema import CrystalBatch
 
@@ -55,8 +54,12 @@ class LDMModule(nn.Layer):
 
         if isinstance(condition_module, dict):
             self.condition_module = build_model(condition_module)
-        else:
+            self.use_cfg = True
+        elif condition_module is not None:
             self.condition_module = condition_module
+            self.use_cfg = True
+        else:
+            self.use_cfg = False
 
         if isinstance(vae, dict):
             vae = build_model(vae)
@@ -77,10 +80,8 @@ class LDMModule(nn.Layer):
 
         if vae is not None:
             self.vae = vae
-            for param in self.vae.parameters():
-                param.stop_gradient = True
-            self.vae.eval()
-        elif vae_ckpt_path is not None:
+
+        if vae_ckpt_path is not None:
             if not hasattr(self, 'vae') or self.vae is None:
                 raise ValueError(
                     "vae_ckpt_path requires a built VAE model. "
@@ -90,6 +91,8 @@ class LDMModule(nn.Layer):
             if 'model_state_dict' in vae_state:
                 vae_state = vae_state['model_state_dict']
             self.vae.set_state_dict(vae_state)
+
+        if hasattr(self, 'vae'):
             for param in self.vae.parameters():
                 param.stop_gradient = True
             self.vae.eval()
@@ -114,36 +117,13 @@ class LDMModule(nn.Layer):
                 target_modules=target_modules
             )
             print_trainable_parameters(self.denoiser)
-            
-        self.use_cfg = False
-        if condition_module is not None:
-            self.use_cfg = True
-            self.condition_module = condition_module
 
     def forward(self, batch):
-        """Forward pass for training compatibility.
-
-        This method converts the standard dictionary format to CrystalBatch format
-        and then calls calculate_loss. This provides compatibility with the
-        standard training framework.
-
-        Args:
-            batch: Input batch data (dict with 'structure_array' key)
-
-        Returns:
-            dict: Contains 'loss_dict' with training losses (tensors for backward pass)
-        """
-        # Convert dict format to CrystalBatch format
         crystal_batch = self._convert_sample_batch(batch)
         loss_dict = self.calculate_loss(crystal_batch, training=True)
-
-        # The framework needs loss_dict with tensor values for backward pass
-        # Don't detach or convert to scalars - keep tensors as-is
         return {"loss_dict": loss_dict}
 
     def _convert_sample_batch(self, batch):
-        """Convert dict -> CrystalBatch for LDM sampling.
-        Generates random fallbacks for missing lattice/frac_coords."""
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
@@ -259,9 +239,7 @@ class LDMModule(nn.Layer):
         if not hasattr(self, 'vae') or self.vae is None:
             raise ValueError("VAE must be loaded before sampling. Set vae_ckpt_path in __init__.")
 
-        if isinstance(batch.num_nodes, list):
-            num_nodes = sum(batch.num_nodes)
-        elif isinstance(batch.num_nodes, (int, np.integer)):
+        if isinstance(batch.num_nodes, (int, np.integer)):
             num_nodes = int(batch.num_nodes)
         else:
             num_nodes = int(batch.num_nodes.item())
@@ -357,67 +335,20 @@ class LDMModule(nn.Layer):
         }
 
     def predict(self, data, sampling_steps=50, sampler="ddim"):
-        """Predict method for compatibility with property prediction framework.
-
-        This method provides a unified interface for structure generation,
-        making Chemeleon2 compatible with the predict.py framework.
-
-        Args:
-            data: Input data dict with optional 'num_samples' key
-            sampling_steps: Number of diffusion sampling steps (default: 50)
-            sampler: Sampling method - 'ddim' or 'ddpm' (default: 'ddim')
-
-        Returns:
-            dict: Results containing 'result' key with generated CrystalBatch
-        """
+        from ppmat.models.chemeleon2.common.schema import create_empty_batch
         num_samples = data.get('num_samples', 1) if isinstance(data, dict) else 1
         batch_size = data.get('batch_size', num_samples) if isinstance(data, dict) else num_samples
-
         if 'num_atoms' in data:
             num_atoms_list = [data['num_atoms']] * num_samples
         else:
-            num_atom_distribution = {
-                1: 0.0021742334905660377, 2: 0.021079009433962265,
-                3: 0.019826061320754717, 4: 0.15271226415094338,
-                5: 0.047132959905660375, 6: 0.08464770047169812,
-                7: 0.021079009433962265, 8: 0.07808814858490566,
-                9: 0.03434551886792453, 10: 0.0972877358490566,
-                11: 0.013303360849056603, 12: 0.09669811320754718,
-                13: 0.02155807783018868, 14: 0.06522700471698113,
-                15: 0.014372051886792452, 16: 0.06703272405660378,
-                17: 0.00972877358490566, 18: 0.053176591981132074,
-                19: 0.010576356132075472, 20: 0.08995430424528301,
-            }
-            probs = np.array(list(num_atom_distribution.values()))
-            probs = probs / probs.sum()
-            num_atoms_list = np.random.choice(
-                list(num_atom_distribution.keys()),
-                p=probs,
-                size=num_samples,
-            ).tolist()
+            num_atoms_list = [20] * num_samples
 
         all_results = []
         for i in range(0, num_samples, batch_size):
-            current_batch_size = min(batch_size, num_samples - i)
-            current_num_atoms = num_atoms_list[i:i+current_batch_size]
-
-            batch = CrystalBatch()
-            total_atoms = sum(current_num_atoms)
-            batch.atom_types = paddle.randint(1, 95, [total_atoms])
-            batch.frac_coords = paddle.rand([total_atoms, 3])
-            batch.lengths = paddle.rand([current_batch_size, 3]) * 10 + 5
-            batch.angles = paddle.rand([current_batch_size, 3]) * 60 + 60
-            batch.num_atoms = paddle.to_tensor(current_num_atoms, dtype='int64')
-            batch.batch = paddle.repeat_interleave(
-                paddle.arange(current_batch_size),
-                paddle.to_tensor(current_num_atoms),
-            )
-            batch.token_idx = paddle.concat([paddle.arange(n) for n in current_num_atoms])
-            batch.num_nodes = total_atoms
-            batch.num_graphs = current_batch_size
-
+            cb = min(batch_size, num_samples - i)
+            cur = num_atoms_list[i:i+cb]
+            batch = create_empty_batch(cur)
             with paddle.no_grad():
                 result = self.sample(batch, sampler=sampler, sampling_steps=sampling_steps, progress=False)
             all_results.append(result)
-
         return {'result': all_results}
