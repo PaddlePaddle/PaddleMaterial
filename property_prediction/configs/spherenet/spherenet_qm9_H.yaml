@@ -85,6 +85,10 @@ Dataset:
         property_names: [H]
         mode: raw_tensor
         split: train
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
     loader:
       num_workers: 4
       use_shared_memory: false
@@ -103,6 +107,10 @@ Dataset:
         property_names: [H]
         mode: raw_tensor
         split: val
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
     loader:
       num_workers: 4
       use_shared_memory: false
@@ -121,6 +129,10 @@ Dataset:
         property_names: [H]
         mode: raw_tensor
         split: test
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
     loader:
       num_workers: 4
       use_shared_memory: false

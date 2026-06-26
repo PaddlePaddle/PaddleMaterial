@@ -71,6 +71,10 @@ Dataset:
         path: ./data/md17
         name: ethanol
         split: train
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
         force_key: force
     loader:
       num_workers: 4
@@ -89,6 +93,10 @@ Dataset:
         path: ./data/md17
         name: ethanol
         split: val
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
         force_key: force
     loader:
       num_workers: 4
@@ -107,6 +115,10 @@ Dataset:
         path: ./data/md17
         name: ethanol
         split: test
+        build_graph_cfg:
+          __class_name__: RadiusGraph
+          __init_params__:
+            cutoff: 5.0
         force_key: force
     loader:
       num_workers: 4

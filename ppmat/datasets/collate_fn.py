@@ -93,26 +93,60 @@ class SphereNetCollator:
     Handles dicts where some values are node-level arrays (variable per molecule)
     and others are scalar properties. Node arrays are concatenated along axis 0
     with a ``batch`` index tensor; scalar arrays are stacked.
+
+    Special handling for ``edge_index`` (shape ``[2, E]`` per sample): edge
+    indices are offset by the cumulative number of nodes and concatenated
+    along axis 1.
     """
 
     def __call__(self, batch):
         sample = batch[0]
+        # node_keys: per-atom arrays, but NOT edge_index
         node_keys = [
-            k for k, v in sample.items() if isinstance(v, np.ndarray) and (v.ndim >= 2 or v.shape[0] > 1)
+            k for k, v in sample.items()
+            if isinstance(v, np.ndarray) and k != "edge_index"
+            and (v.ndim >= 2 or v.shape[0] > 1)
         ]
-        target_keys = [k for k in sample.keys() if k not in node_keys]
+        target_keys = [
+            k for k in sample.keys()
+            if k not in node_keys and k != "edge_index"
+        ]
+        has_edge_index = "edge_index" in sample
+
         node_tensors = {
             k: paddle.to_tensor(np.concatenate([b[k] for b in batch]))
             for k in node_keys
         }
         num_nodes_list = [b[node_keys[0]].shape[0] for b in batch]
         batch_idx = paddle.concat(
-            [paddle.full([n], i, dtype=paddle.int64) for i, n in enumerate(num_nodes_list)]
+            [
+                paddle.full([n], i, dtype=paddle.int64)
+                for i, n in enumerate(num_nodes_list)
+            ]
         )
         target_tensors = {
-            k: paddle.to_tensor(np.stack([b[k] for b in batch])) for k in target_keys
+            k: paddle.to_tensor(np.stack([b[k] for b in batch]))
+            for k in target_keys
         }
-        return {**node_tensors, "batch": batch_idx, **target_tensors}
+
+        result = {**node_tensors, "batch": batch_idx, **target_tensors}
+
+        if has_edge_index:
+            # Offset edge indices by cumulative node counts
+            offsets = np.cumsum([0] + num_nodes_list[:-1])
+            edge_list = []
+            for i, b in enumerate(batch):
+                ei = b["edge_index"]
+                if isinstance(ei, np.ndarray):
+                    pass
+                elif isinstance(ei, paddle.Tensor):
+                    ei = ei.numpy()
+                edge_list.append(ei + offsets[i])
+            result["edge_index"] = paddle.to_tensor(
+                np.concatenate(edge_list, axis=1), dtype=paddle.int64
+            )
+
+        return result
 
 
 class DensityCollator:

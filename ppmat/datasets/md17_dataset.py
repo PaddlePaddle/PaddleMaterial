@@ -48,6 +48,7 @@ import numpy as np
 import paddle
 from paddle.io import Dataset
 
+from ppmat.models import build_graph_converter
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
 
@@ -127,6 +128,7 @@ class MD17Dataset(Dataset):
         val_size=None,
         test_size=None,
         force_key="force",
+        build_graph_cfg: Optional[Dict] = None,
         transforms: Optional[Callable] = None,
         **kwargs,
     ):
@@ -144,8 +146,54 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
         self.root = path
 
-        # Download raw data — prefer bcebos bundle, fall back to single-file URL
-        raw_path = self._ensure_raw_data()
+        # --- Inline download (MP20 pattern) ---
+        raw_dir = osp.join(self.root, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
+
+        individual_path = osp.join(raw_dir, f"{self.mol_name}_dft.npz")
+        if osp.exists(individual_path):
+            raw_path = individual_path
+        else:
+            # Try bcebos bundle first
+            try:
+                extract_dir = get_datasets_path_from_url(self.url, self.md5)
+                bundle_rel = _BUNDLE_NPZ_MAP[self.mol_name]
+                bundle_found = None
+                for sub in ["", "md17/"]:
+                    candidate = osp.join(extract_dir, sub, bundle_rel)
+                    if osp.exists(candidate):
+                        bundle_found = candidate
+                        break
+                if bundle_found is not None:
+                    raw_path = bundle_found
+                else:
+                    raw_path = None
+            except Exception as e:
+                logger.warning(
+                    f"bcebos download failed for MD17/{self.mol_name}: {e}. "
+                    "Falling back to individual URL."
+                )
+                raw_path = None
+
+            if raw_path is None:
+                # Fallback to individual molecule URL
+                import urllib.request
+                url = _MOLECULE_URLS[self.mol_name]
+                logger.info(f"Downloading MD17/{self.mol_name} from {url} ...")
+                try:
+                    urllib.request.urlretrieve(url, individual_path)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to download MD17/{self.mol_name} from {url}: {e}. "
+                        "The bcebos mirror may also be unavailable."
+                    )
+                raw_path = individual_path
+
+        # Instantiate graph converter if configured
+        if build_graph_cfg is not None:
+            self.graph_converter = build_graph_converter(build_graph_cfg)
+        else:
+            self.graph_converter = None
 
         # Load npz data
         data = np.load(raw_path)
@@ -186,50 +234,6 @@ class MD17Dataset(Dataset):
             f"(split={split})"
         )
 
-    def _ensure_raw_data(self):
-        """Download raw npz file to local cache if not already present.
-
-        Tries the bcebos bundle (all 8 molecules in a single tar.gz) first.
-        Falls back to the individual molecule URL when the bcebos download
-        is unavailable or the extracted npz is missing.
-        """
-        raw_dir = osp.join(self.root, "raw")
-        os.makedirs(raw_dir, exist_ok=True)
-
-        # Check if raw npz already exists from a previous download
-        individual_path = osp.join(raw_dir, f"{self.mol_name}_dft.npz")
-        if osp.exists(individual_path):
-            return individual_path
-
-        # Try bcebos bundle download (distributed-safe via get_datasets_path_from_url)
-        try:
-            extract_dir = get_datasets_path_from_url(self.url, self.md5)
-            # Bundle extracts to md17/ subdirectory; try both paths
-            bundle_rel = _BUNDLE_NPZ_MAP[self.mol_name]
-            for sub in ["", "md17/"]:
-                bundle_npz_path = osp.join(extract_dir, sub, bundle_rel)
-                if osp.exists(bundle_npz_path):
-                    return bundle_npz_path
-        except Exception as e:
-            logger.warning(
-                f"bcebos download failed for MD17/{self.mol_name}: {e}. "
-                "Falling back to individual URL."
-            )
-
-        # Fallback to individual molecule URL
-        import urllib.request
-
-        url = _MOLECULE_URLS[self.mol_name]
-        logger.info(f"Downloading MD17/{self.mol_name} from {url} ...")
-        try:
-            urllib.request.urlretrieve(url, individual_path)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to download MD17/{self.mol_name} from {url}: {e}. "
-                "The bcebos mirror may also be unavailable."
-            )
-        return individual_path
-
     def __getitem__(self, idx):
         real_idx = self._indices[idx]
         sample = {
@@ -238,6 +242,11 @@ class MD17Dataset(Dataset):
             "energy": np.array([float(self._energy[real_idx])], dtype=np.float32),
             self.force_key: self._forces[real_idx].numpy(),
         }
+        if self.graph_converter is not None:
+            pos_t = paddle.to_tensor(sample["pos"])
+            batch_t = paddle.zeros([sample["z"].shape[0]], dtype=paddle.int64)
+            ei = self.graph_converter(pos_t, batch_t)
+            sample["edge_index"] = ei.numpy()
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample

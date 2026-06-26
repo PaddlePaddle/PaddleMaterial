@@ -575,10 +575,10 @@ class MolecularGraphConverter:
 class RadiusGraph:
     """Build radius graph from raw 3D coordinates.
 
-    Unlike other graph converters in this module which operate on material
-    structures during dataset preprocessing, this converter works on raw
-    tensors during the model forward pass, processing molecular coordinates
-    dynamically on a per-molecule basis to avoid O(N²) memory.
+    Thin wrapper around :func:`ppmat.models.common.radius_graph.radius_graph`
+    for compatibility with the config-driven ``build_graph_converter``
+    pipeline.  The actual computation is delegated to the standalone function
+    so that datasets can pre-build edges without instantiating a converter.
 
     Args:
         cutoff: Neighbor cutoff distance in Ångström.
@@ -588,63 +588,9 @@ class RadiusGraph:
         self.cutoff = cutoff
 
     def __call__(self, pos, batch, loop=False):
-        """Compute edge indices within cutoff radius.
+        from ppmat.models.common.radius_graph import radius_graph as _func
 
-        Args:
-            pos: Tensor [num_nodes, 3] — coordinates.
-            batch: Tensor [num_nodes] — batch assignment.
-            loop: Whether to include self-loops.
-
-        Returns:
-            edge_index: Tensor [2, num_edges] — (source, target) indices.
-        """
-        return self._build(pos, self.cutoff, batch, loop)
-
-    @staticmethod
-    def _build(pos, r, batch, loop=False):
-        """Build radius graph edges for a batch of molecules.
-
-        Processes each molecule independently to avoid O(N²) memory on the
-        full concatenated batch. For each molecule, builds a local
-        N_mol × N_mol distance matrix, then remaps edge indices to global
-        positions.
-        """
-        pos = paddle.cast(pos, paddle.get_default_dtype())
-
-        if pos.shape[0] == 0:
-            return paddle.zeros([2, 0], dtype=paddle.int64)
-
-        unique_batches = paddle.unique(batch)
-        all_edges = []
-
-        for b in unique_batches:
-            mol_mask = batch == b
-            global_ids = paddle.nonzero(mol_mask, as_tuple=False).squeeze(-1)
-            mol_n = global_ids.shape[0]
-            mol_pos = pos[global_ids]
-
-            # N_mol x N_mol squared distance matrix
-            pos_sq = paddle.sum(mol_pos * mol_pos, axis=-1)
-            pos_sq_expand = pos_sq.unsqueeze(0).expand([mol_n, -1])
-            pos_dot = paddle.mm(mol_pos, mol_pos.transpose([1, 0]))
-            dist_sq = pos_sq_expand + pos_sq_expand.transpose([1, 0]) - 2.0 * pos_dot
-
-            mask = dist_sq <= r * r
-            if not loop:
-                diag_mask = paddle.eye(mol_n, dtype=paddle.get_default_dtype()).cast(
-                    paddle.bool
-                )
-                mask = mask & ~diag_mask
-
-            local_edges = paddle.nonzero(mask, as_tuple=False)
-            if local_edges.shape[0] > 0:
-                flat_global = paddle.gather(global_ids, local_edges.reshape([-1]))
-                all_edges.append(flat_global.reshape([-1, 2]).transpose([1, 0]))
-
-        if len(all_edges) == 0:
-            return paddle.zeros([2, 0], dtype=paddle.int64)
-
-        return paddle.concat(all_edges, axis=1)
+        return _func(pos, batch, self.cutoff, loop=loop)
 
 
 def subgraph(

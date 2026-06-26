@@ -21,7 +21,6 @@ from ppmat.models.common.initializer import glorot_orthogonal_
 from ppmat.models.common.spherical_fourier_bessel import AngleEmbedding
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
 from ppmat.models.common.spherical_fourier_bessel import TorsionEmbedding
-from ppmat.models.common.graph_converter import RadiusGraph
 from ppmat.utils.scatter import scatter_sum
 from ppmat.utils.xyz_utils import xyz_to_dat
 
@@ -340,7 +339,6 @@ class SphereNet(paddle.nn.Layer):
         self.cutoff = cutoff
         self.energy_and_force = energy_and_force
         self.use_extra_node_feature = use_extra_node_feature
-        self.radius_graph = RadiusGraph(cutoff=cutoff)
 
         if use_extra_node_feature:
             self.extra_emb = Linear(extra_node_feature_dim, hidden_channels)
@@ -413,7 +411,7 @@ class SphereNet(paddle.nn.Layer):
         for update_v in self.update_vs:
             update_v.reset_parameters()
 
-    def forward(self, z, pos, batch, node_feature=None):
+    def forward(self, z, pos, batch, node_feature=None, edge_index=None):
         """Pure tensor forward.
 
         Args:
@@ -421,6 +419,10 @@ class SphereNet(paddle.nn.Layer):
             pos: [num_nodes, 3] 3D positions
             batch: [num_nodes] batch assignment
             node_feature: optional [num_nodes, extra_dim] extra features
+            edge_index: optional [2, num_edges] pre-computed edge indices.
+                When provided, the radius graph is not built internally
+                (recommended for production use).  When ``None``, the graph
+                is built on-the-fly via :func:`radius_graph`.
 
         Returns:
             u: [num_graphs, out_channels] predicted properties
@@ -430,20 +432,22 @@ class SphereNet(paddle.nn.Layer):
         else:
             extra_node_feature = None
 
-        if self.energy_and_force:
-            # Need gradient flow for force computation via autograd
-            edge_index = self.radius_graph(pos, batch=batch)
-            num_nodes = z.shape[0]
-            dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
-                pos, edge_index, num_nodes, use_torsion=True
-            )
+        if edge_index is None:
+            from ppmat.models.common.radius_graph import radius_graph as _build_edges
+
+            if self.energy_and_force:
+                edge_index = _build_edges(pos, batch, self.cutoff)
+            else:
+                with paddle.no_grad():
+                    edge_index = _build_edges(pos, batch, self.cutoff)
         else:
-            with paddle.no_grad():
-                edge_index = self.radius_graph(pos, batch=batch)
-                num_nodes = z.shape[0]
-                dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
-                    pos, edge_index, num_nodes, use_torsion=True
-                )
+            # edge_index was pre-built by dataset preprocessing
+            pass
+
+        num_nodes = z.shape[0]
+        dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
+            pos, edge_index, num_nodes, use_torsion=True
+        )
 
         emb_out = self.emb_layer(dist, angle, torsion, idx_kj)
 
@@ -558,12 +562,13 @@ class SphereNetPP(paddle.nn.Layer):
         z = data["z"]
         pos = data["pos"]
         batch = data["batch"]
+        edge_index = data.get("edge_index", None)
 
         if self.energy_and_force:
             pos = pos.detach()
             pos.stop_gradient = False
 
-        pred = self.spherenet(z, pos, batch)
+        pred = self.spherenet(z, pos, batch, edge_index=edge_index)
 
         # Compute forces if needed (used in both loss and prediction paths)
         forces_pred = None

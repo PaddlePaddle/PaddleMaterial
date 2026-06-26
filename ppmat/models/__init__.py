@@ -30,6 +30,7 @@ from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
 from ppmat.models.common.graph_converter import RadiusGraph
+from ppmat.models.common.radius_graph import radius_graph
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
@@ -123,6 +124,8 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
+    # SphereNet: imported and available for build_model(); pretrained weights
+    # will be added once training is complete and weights are released.
 }
 
 

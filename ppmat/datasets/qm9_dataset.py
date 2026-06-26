@@ -28,6 +28,7 @@ from typing import Union
 from typing import List
 
 import numpy as np
+import paddle
 import paddle.distributed as dist
 from paddle.io import Dataset
 
@@ -334,6 +335,10 @@ class QM9Dataset(Dataset):
         # ====== 2) Mode-specific initialization ======
         if mode == "raw_tensor":
             self._init_raw_tensor_mode()
+            if self.build_graph_cfg is not None:
+                self.graph_converter = build_graph_converter(self.build_graph_cfg)
+            else:
+                self.graph_converter = None
             return  # skip packed-mode logic below
 
         # 2) Check or build Structures and Properties cache
@@ -982,6 +987,12 @@ class QM9Dataset(Dataset):
         if self.mode == "raw_tensor":
             z, pos = self._read_one_molecule(idx)
             data = {"z": z, "pos": pos}
+            if self.graph_converter is not None:
+                batch_single = np.zeros(z.shape[0], dtype=np.int64)
+                ei = self.graph_converter(
+                    paddle.to_tensor(pos), paddle.to_tensor(batch_single)
+                )
+                data["edge_index"] = ei.numpy()
             for pname in self.property_names:
                 data[pname] = np.array(
                     [self._raw_properties[pname][idx]], dtype=np.float32
