@@ -1,6 +1,6 @@
 # SphereNet
 
-[Spherical Message Passing for 3D Molecular Graphs](https://openreview.net/forum?id=givsRXsOt9r) (ICLR 2021)
+[Spherical Message Passing for 3D Molecular Graphs](https://arxiv.org/abs/2102.05013) (ICLR 2021)
 
 ## Abstract
 
