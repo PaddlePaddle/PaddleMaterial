@@ -13,15 +13,12 @@
 # limitations under the License.
 """MD17 molecular dynamics dataset for energy and force prediction.
 
-Each molecule trajectory is stored as a single .npz file containing:
-    - E: energies (N,)
-    - F: forces  (N, num_atoms, 3)
-    - R: positions (N, num_atoms, 3)
-    - z: atomic numbers (num_atoms,)
-
-Supported molecules (8 total):
-    aspirin, benzene_old, ethanol, malonaldehyde,
-    naphthalene, salicylic, toluene, uracil
+Follows the MP2018Dataset pattern:
+  - Class-level ``url`` / ``md5`` / ``name``
+  - Inline download via ``get_datasets_path_from_url``
+  - ``build_graph_cfg``-driven graph pre-computation with pickle caching
+  - Rank‑0 builds, ``dist.barrier()`` sync
+  - ``__getitem__`` returns dict with raw tensors (z, pos, edge_index, energy, force)
 
 **STATS:**
 +----------------+----------+--------+-------+----------+-------+
@@ -40,19 +37,27 @@ Supported molecules (8 total):
 
 import os
 import os.path as osp
+import pickle
 from typing import Callable
 from typing import Dict
 from typing import Optional
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 from paddle.io import Dataset
 
 from ppmat.models import build_graph_converter
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
 
-# Fallback individual molecule URLs (used when bcebos is unavailable)
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
+
+
 _MOLECULE_URLS = {
     "aspirin": "http://quantum-machine.org/gdml/data/npz/aspirin_dft.npz",
     "benzene_old": "http://quantum-machine.org/gdml/data/npz/benzene_old_dft.npz",
@@ -64,20 +69,8 @@ _MOLECULE_URLS = {
     "uracil": "http://quantum-machine.org/gdml/data/npz/uracil_dft.npz",
 }
 
-# Default train/val split sizes (matching DIG SphereNet defaults).
-# Train=1000, Val=1000; Test = remaining samples.
-_DEFAULT_SPLITS = {
-    "aspirin": (1000, 1000),
-    "benzene_old": (1000, 1000),
-    "ethanol": (1000, 1000),
-    "malonaldehyde": (1000, 1000),
-    "naphthalene": (1000, 1000),
-    "salicylic": (1000, 1000),
-    "toluene": (1000, 1000),
-    "uracil": (1000, 1000),
-}
+_DEFAULT_SPLITS = {name: (1000, 1000) for name in _MOLECULE_URLS}
 
-# Mapping from molecule names to bundle npz filenames
 _BUNDLE_NPZ_MAP = {
     "aspirin": "md17_aspirin.npz",
     "benzene_old": "md17_benzene2017.npz",
@@ -93,26 +86,21 @@ _BUNDLE_NPZ_MAP = {
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
 
-    Each sample contains atomic numbers, 3D positions, total energy,
-    and atomic forces from DFT-based molecular dynamics trajectories.
-
-    Downloads from the bcebos mirror by default, with fallback to
-    individual molecule URLs from quantum-machine.org.
+    Follows the MP2018Dataset convention:
+      - Single `.npz` file downloaded via bcebos bundle or individual URL
+      - Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided
+      - Pickle cache for graphs (rank‑0 build, barrier sync)
 
     Args:
-        path: Root directory for storing raw and processed data.
-        name: Molecule name. Supported: aspirin, benzene_old, ethanol,
-            malonaldehyde, naphthalene, salicylic, toluene, uracil.
-        split: One of ``None`` (all data), ``'train'``, ``'val'``, or
-            ``'test'``.
-        train_size: Number of training samples.
-        val_size: Number of validation samples.
-        test_size: Number of test samples.
-        force_key: Key name for forces in the output dict.
-            Default: ``'force'``.
-        transforms: Optional transforms to apply to each sample.
-            Defaults to None.
-        **kwargs: Additional arguments (for compatibility).
+        path: Root directory for storing raw and cached data.
+        name: Molecule name from the supported list.
+        split: ``'train'``, ``'val'``, ``'test'``, or ``None`` (all).
+        train_size: Number of training samples (default 1000).
+        val_size: Number of validation samples (default 1000).
+        force_key: Key name for forces in the output dict (default ``'force'``).
+        build_graph_cfg: Configuration dict for graph converter. Defaults to None.
+        transforms: Optional transform callable.
+        **kwargs: Compatibility.
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
@@ -126,7 +114,7 @@ class MD17Dataset(Dataset):
         split=None,
         train_size=None,
         val_size=None,
-        test_size=None,
+        *,
         force_key="force",
         build_graph_cfg: Optional[Dict] = None,
         transforms: Optional[Callable] = None,
@@ -144,109 +132,123 @@ class MD17Dataset(Dataset):
         self.transforms = transforms
 
         os.makedirs(path, exist_ok=True)
-        self.root = path
-
-        # --- Inline download (MP20 pattern) ---
-        raw_dir = osp.join(self.root, "raw")
+        raw_dir = osp.join(path, "raw")
         os.makedirs(raw_dir, exist_ok=True)
 
-        individual_path = osp.join(raw_dir, f"{self.mol_name}_dft.npz")
+        # ---- 1. Inline download (MP20 pattern) ----
+        individual_path = osp.join(raw_dir, f"{name}_dft.npz")
         if osp.exists(individual_path):
             raw_path = individual_path
         else:
-            # Try bcebos bundle first
+            raw_path = None
             try:
                 extract_dir = get_datasets_path_from_url(self.url, self.md5)
-                bundle_rel = _BUNDLE_NPZ_MAP[self.mol_name]
-                bundle_found = None
+                bundle_rel = _BUNDLE_NPZ_MAP[name]
                 for sub in ["", "md17/"]:
                     candidate = osp.join(extract_dir, sub, bundle_rel)
                     if osp.exists(candidate):
-                        bundle_found = candidate
+                        raw_path = candidate
                         break
-                if bundle_found is not None:
-                    raw_path = bundle_found
-                else:
-                    raw_path = None
             except Exception as e:
-                logger.warning(
-                    f"bcebos download failed for MD17/{self.mol_name}: {e}. "
-                    "Falling back to individual URL."
-                )
-                raw_path = None
-
+                logger.warning(f"bcebos download failed: {e}")
             if raw_path is None:
-                # Fallback to individual molecule URL
                 import urllib.request
-                url = _MOLECULE_URLS[self.mol_name]
-                logger.info(f"Downloading MD17/{self.mol_name} from {url} ...")
-                try:
-                    urllib.request.urlretrieve(url, individual_path)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to download MD17/{self.mol_name} from {url}: {e}. "
-                        "The bcebos mirror may also be unavailable."
-                    )
+                url = _MOLECULE_URLS[name]
+                logger.info(f"Downloading MD17/{name} from {url} ...")
+                urllib.request.urlretrieve(url, individual_path)
                 raw_path = individual_path
 
-        # Instantiate graph converter if configured
-        if build_graph_cfg is not None:
-            self.graph_converter = build_graph_converter(build_graph_cfg)
-        else:
-            self.graph_converter = None
-
-        # Load npz data
+        # ---- 2. Load npz data ----
         data = np.load(raw_path)
-        all_z = data["z"]  # (num_atoms,)
-        all_pos = data["R"]  # (N, num_atoms, 3)
-        all_energy = data["E"]  # (N,)
-        all_forces = data["F"]  # (N, num_atoms, 3)
+        all_z = data["z"]
+        all_pos = data["R"]
+        all_energy = data["E"]
+        all_forces = data["F"]
+        total = all_pos.shape[0]
 
-        # Build indices
-        num_samples = all_pos.shape[0]
-        indices = np.arange(num_samples)
-
-        # Shuffle with fixed seed for reproducibility
-        rng = np.random.RandomState(42)
-        rng.shuffle(indices)
-
-        # Apply split (DIG convention: train=1000, val=1000, test=rest)
+        # ---- 3. Split indices (DIG convention) ----
         ts = train_size or _DEFAULT_SPLITS[name][0]
         vs = val_size or _DEFAULT_SPLITS[name][1]
-
+        rng = np.random.RandomState(42)
+        indices = rng.permutation(total)
         if split == "train":
             self._indices = indices[:ts]
         elif split == "val":
-            self._indices = indices[ts : ts + vs]
+            self._indices = indices[ts:ts + vs]
         elif split == "test":
-            self._indices = indices[ts + vs :]
+            self._indices = indices[ts + vs:]
         else:
             self._indices = indices
 
-        self._z = paddle.to_tensor(all_z, dtype=paddle.int64)
-        self._pos = paddle.to_tensor(all_pos, dtype=paddle.get_default_dtype())
-        self._energy = paddle.to_tensor(all_energy, dtype=paddle.get_default_dtype())
-        self._forces = paddle.to_tensor(all_forces, dtype=paddle.get_default_dtype())
+        self._z_tensor = paddle.to_tensor(all_z, dtype=paddle.int64)
+        self._pos_np = all_pos
+        self._energy_np = all_energy
+        self._forces_np = all_forces
+
+        # ---- 4. Pre‑build edge_index (rank 0 + barrier, MP20 pattern) ----
+        self.graph_cache = None
+        if build_graph_cfg is not None:
+            gc_name = build_graph_cfg.get("__class_name__", "custom")
+            cutoff = build_graph_cfg.get("__init_params__", {}).get("cutoff", 5)
+            graph_cache_dir = osp.join(
+                path, f"md17_graphs_{name}_{gc_name}_cutoff{cutoff}"
+            )
+            cfg_pkl = osp.join(graph_cache_dir, "build_graph_cfg.pkl")
+            cache_ready = osp.exists(graph_cache_dir) and osp.exists(cfg_pkl)
+            if not cache_ready:
+                if dist.get_rank() == 0:
+                    os.makedirs(graph_cache_dir, exist_ok=True)
+                    logger.info(
+                        f"Pre‑building graphs for MD17/{name} ({total} frames) ..."
+                    )
+                    converter = build_graph_converter(build_graph_cfg)
+                    for i in tqdm(range(total), desc="Build graphs"):
+                        pos_i = all_pos[i]
+                        batch_t = np.zeros(all_z.shape[0], dtype=np.int64)
+                        ei = converter(
+                            paddle.to_tensor(pos_i),
+                            paddle.to_tensor(batch_t),
+                        )
+                        self._save_pickle(
+                            osp.join(graph_cache_dir, f"{i:010d}.pkl"),
+                            ei.numpy(),
+                        )
+                    self._save_pickle(cfg_pkl, build_graph_cfg)
+                if dist.is_initialized():
+                    dist.barrier()
+            self.graph_cache = [
+                osp.join(graph_cache_dir, f"{i:010d}.pkl") for i in range(total)
+            ]
 
         self.num_samples = len(self._indices)
         logger.info(
-            f"MD17Dataset ({name}) ready: {self.num_samples} samples "
-            f"(split={split})"
+            f"MD17Dataset ({name}) ready: {self.num_samples} samples, "
+            f"split={split}"
         )
+
+    @staticmethod
+    def _save_pickle(path, obj):
+        with open(path, "wb") as f:
+            pickle.dump(obj, f)
+
+    @staticmethod
+    def _load_pickle(path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     def __getitem__(self, idx):
         real_idx = self._indices[idx]
         sample = {
-            "z": self._z.numpy(),
-            "pos": self._pos[real_idx].numpy(),
-            "energy": np.array([float(self._energy[real_idx])], dtype=np.float32),
-            self.force_key: self._forces[real_idx].numpy(),
+            "z": self._z_tensor.numpy(),
+            "pos": self._pos_np[real_idx],
+            "energy": np.array([float(self._energy_np[real_idx])], dtype=np.float32),
+            self.force_key: self._forces_np[real_idx],
         }
-        if self.graph_converter is not None:
-            pos_t = paddle.to_tensor(sample["pos"])
-            batch_t = paddle.zeros([sample["z"].shape[0]], dtype=paddle.int64)
-            ei = self.graph_converter(pos_t, batch_t)
-            sample["edge_index"] = ei.numpy()
+        if self.graph_cache is not None:
+            gpath = self.graph_cache[real_idx]
+            sample["edge_index"] = (
+                self._load_pickle(gpath) if isinstance(gpath, str) else gpath
+            )
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample

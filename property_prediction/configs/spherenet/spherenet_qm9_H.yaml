@@ -83,7 +83,6 @@ Dataset:
       __init_params__:
         path: ./data/qm9
         property_names: [H]
-        mode: raw_tensor
         split: train
         build_graph_cfg:
           __class_name__: RadiusGraph
@@ -105,7 +104,6 @@ Dataset:
       __init_params__:
         path: ./data/qm9
         property_names: [H]
-        mode: raw_tensor
         split: val
         build_graph_cfg:
           __class_name__: RadiusGraph
@@ -127,7 +125,6 @@ Dataset:
       __init_params__:
         path: ./data/qm9
         property_names: [H]
-        mode: raw_tensor
         split: test
         build_graph_cfg:
           __class_name__: RadiusGraph
