@@ -13,7 +13,11 @@ to the same pairwise distances or angles. By incorporating torsion angles
 (dihedral angles), SphereNet resolves this ambiguity and achieves
 state-of-the-art results on the QM9 and MD17 benchmarks.
 
-> See the [original paper](https://openreview.net/forum?id=givsRXsOt9r) for the architecture diagram.
+<p align="center">
+  <img src="figures/spherenet_architecture.png" alt="SphereNet Architecture" width="80%"/>
+  <br/>
+  <em>Figure 1: SphereNet architecture (from the original paper).</em>
+</p>
 
 ## Datasets
 
