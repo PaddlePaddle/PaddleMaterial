@@ -120,38 +120,20 @@ class StructureDiversityReward(RewardComponent):
     required_metrics = ["structure_diversity"]
 
     def compute(self, gen_structures, metrics_obj, device, **kwargs):
-        assert metrics_obj._reference_structure_features is not None
-        ref_structure_features = metrics_obj._reference_structure_features
-        gen_features = paddle.randn([len(gen_structures), ref_structure_features.shape[-1]])
-        gen_structure_features = gen_features
-        
-        if len(ref_structure_features) > 50000:
-            indices = paddle.randperm(len(ref_structure_features))[:50000]
-            ref_structure_features = ref_structure_features[indices]
-        
-        r_structure_diversity = mmd_reward(
-            z_gen=gen_structure_features, z_ref=ref_structure_features
-        )['r_indiv']
-        return r_structure_diversity
+        raise NotImplementedError(
+            "StructureDiversityReward requires real feature extractor. "
+            "Override this method and provide gen_structure_features."
+        )
 
 
 class CompositionDiversityReward(RewardComponent):
     required_metrics = ["composition_diversity"]
 
     def compute(self, gen_structures, metrics_obj, device, **kwargs):
-        assert metrics_obj._reference_composition_features is not None
-        ref_composition_features = metrics_obj._reference_composition_features
-        gen_features = paddle.randn([len(gen_structures), ref_composition_features.shape[-1]])
-        gen_composition_features = gen_features
-        
-        if len(ref_composition_features) > 50000:
-            indices = paddle.randperm(len(ref_composition_features))[:50000]
-            ref_composition_features = ref_composition_features[indices]
-        
-        r_composition_diversity = mmd_reward(
-            z_gen=gen_composition_features, z_ref=ref_composition_features
-        )['r_indiv']
-        return r_composition_diversity
+        raise NotImplementedError(
+            "CompositionDiversityReward requires real feature extractor. "
+            "Override this method and provide gen_composition_features."
+        )
 
 
 class PredictorReward(RewardComponent):
@@ -163,14 +145,10 @@ class PredictorReward(RewardComponent):
         self.target_value = target_value
 
     def compute(self, gen_structures, **kwargs):
-        predictions = paddle.randn([len(gen_structures)])
-        
-        if self.target_value is not None:
-            rewards = -paddle.abs(predictions - self.target_value)
-        else:
-            rewards = predictions
-        
-        return rewards
+        raise NotImplementedError(
+            "PredictorReward requires a real predictor model. "
+            "Pass a predictor to __init__ or override this method."
+        )
 
 
 def mmd_reward(z_gen, z_ref):

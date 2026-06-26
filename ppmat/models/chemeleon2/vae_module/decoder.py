@@ -41,13 +41,6 @@ class TransformerDecoder(nn.Layer):
         self.num_layers = num_layers
         self.atom_type_predict = atom_type_predict
 
-        if activation == "gelu":
-            act_fn = nn.GELU(approximate='tanh')
-        elif activation == "relu":
-            act_fn = nn.ReLU()
-        else:
-            act_fn = nn.GELU(approximate='tanh')
-
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -64,8 +57,9 @@ class TransformerDecoder(nn.Layer):
             norm=layer_norm,
         )
         
-        for layer in self.transformer.layers:
-            layer.activation = act_fn
+        if activation == "gelu":
+            for layer in self.transformer.layers:
+                layer.activation = nn.GELU(approximate='tanh')
 
         if atom_type_predict:
             self.atom_types_head = nn.Linear(d_model, max_num_elements, bias_attr=True)

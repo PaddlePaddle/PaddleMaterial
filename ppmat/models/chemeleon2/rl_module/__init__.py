@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# NOTE: RLModule is experimental. The rollout pipeline and reward components
+# are incomplete (several reward components raise NotImplementedError).
+# PPO training loop skeleton exists but has not been validated end-to-end.
+
 from ppmat.models.chemeleon2.rl_module.rl import RLModule
 from ppmat.models.chemeleon2.rl_module.components import (
     RewardComponent,

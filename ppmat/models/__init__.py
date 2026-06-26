@@ -77,9 +77,6 @@ __all__ = [
     "VAEModule",
     "LDMModule",
     "RLModule",
-    "DiT",
-    "TransformerEncoder",
-    "TransformerDecoder",
     "SFIN",
 ]
 

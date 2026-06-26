@@ -48,13 +48,6 @@ class TransformerEncoder(nn.Layer):
             nn.Linear(d_model, d_model),
         )
 
-        if activation == "gelu":
-            act_fn = nn.GELU(approximate='tanh')
-        elif activation == "relu":
-            act_fn = nn.ReLU()
-        else:
-            act_fn = nn.GELU(approximate='tanh')
-
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -71,8 +64,9 @@ class TransformerEncoder(nn.Layer):
             norm=layer_norm,
         )
         
-        for layer in self.transformer.layers:
-            layer.activation = act_fn
+        if activation == "gelu":
+            for layer in self.transformer.layers:
+                layer.activation = nn.GELU(approximate='tanh')
 
     @property
     def hidden_dim(self):

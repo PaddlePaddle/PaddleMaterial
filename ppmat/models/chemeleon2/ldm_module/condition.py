@@ -255,11 +255,7 @@ class ChemicalSystemEncoder(BaseEncoder):
 
 class TextEncoder(BaseEncoder):
     def __init__(self, hidden_dim):
-        def preprocess(batch):
-            return paddle.zeros([len(batch), 100])
-
-        super().__init__(
-            in_dim=100,
-            hidden_dim=hidden_dim,
-            preprocess=preprocess,
+        raise NotImplementedError(
+            "TextEncoder requires a text embedding model. "
+            "Override this class and provide real text embeddings."
         )

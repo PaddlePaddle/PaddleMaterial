@@ -184,17 +184,6 @@ class DiT(nn.Layer):
         
         out_dim = input_dim * 2 if learn_sigma else input_dim
         self.final_layer = FinalLayer(hidden_dim, out_dim)
-        
-        self.initialize_weights()
-    
-    def initialize_weights(self):
-        def _basic_init(m):
-            if isinstance(m, nn.Linear):
-                nn.initializer.XavierUniform()(m.weight)
-                if m.bias is not None:
-                    nn.initializer.Constant(0.0)(m.bias)
-        
-        self.apply(_basic_init)
 
     def forward(self, x, t, mask=None, y=None):
         if mask is not None:

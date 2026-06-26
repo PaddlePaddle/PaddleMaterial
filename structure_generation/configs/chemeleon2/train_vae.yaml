@@ -32,9 +32,9 @@ Model:
     loss_weights:
       atom_types: 1.0
       lengths: 1.0
-      angles: 10.0
-      frac_coords: 10.0
-      kl: 1e-5
+      angles: 10.0    # angles ~0-180deg, 10x larger scale than lengths
+      frac_coords: 10.0  # frac_coords ~0-1, 10x to match lengths magnitude
+      kl: 1e-5           # KL is ~tens, scaled down to balance reconstruction
       fa: 0.0
     augmentation:
       translate: False

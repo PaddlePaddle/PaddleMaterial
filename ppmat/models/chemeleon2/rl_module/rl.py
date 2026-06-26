@@ -69,33 +69,12 @@ class RLModule(nn.Layer):
 
     @paddle.no_grad()
     def rollout(self, batch):
-        batch_gen = self.ldm.sample(batch, **self.sampling_configs)
-        
-        if self.use_cfg:
-            batch_gen.zs = paddle.chunk(batch_gen.zs, 2, axis=1)[0]
-            batch_gen.means = paddle.chunk(batch_gen.means, 2, axis=1)[0]
-            batch_gen.stds = paddle.chunk(batch_gen.stds, 2, axis=1)[0]
-        
-        log_probs = []
-        for i in range(self.sampling_diffusion.num_timesteps):
-            log_prob = _calculate_log_prob(
-                batch_gen.zs[i + 1],
-                batch_gen.means[i],
-                batch_gen.stds[i],
-                batch_gen.mask,
-            )
-            log_probs.append(log_prob)
-        log_probs = paddle.stack(log_probs, axis=0)
-        
-        trajectory = {
-            'zs': batch_gen.zs,
-            'means': batch_gen.means,
-            'stds': batch_gen.stds,
-            'log_probs': log_probs,
-            'mask': batch_gen.mask,
-            'y': batch_gen.y,
-        }
-        return batch_gen, trajectory
+        result = self.ldm.sample(batch, **self.sampling_configs, collect_trajectory=True)
+        if isinstance(result, dict):
+            trajectory = result.get('trajectory', {})
+        else:
+            trajectory = result
+        return result, trajectory
 
     def compute_rewards(self, batch_gen):
         num_samples = batch_gen.num_graphs
@@ -199,57 +178,6 @@ class RLModule(nn.Layer):
             res['ratio'] = ratio.mean().detach().item()
         
         return res
-
-    def save_checkpoint(self, save_path, epoch=None, optimizer_state=None, scheduler_state=None):
-        checkpoint = {
-            'model_state_dict': self.state_dict(),
-            'clip_ratio': self.clip_ratio,
-            'kl_weight': self.kl_weight,
-            'entropy_weight': self.entropy_weight,
-            'num_group_samples': self.num_group_samples,
-            'group_reward_norm': self.group_reward_norm,
-            'num_inner_batch': self.num_inner_batch,
-            'sampling_configs': self.sampling_configs,
-        }
-        
-        if epoch is not None:
-            checkpoint['epoch'] = epoch
-        if optimizer_state is not None:
-            checkpoint['optimizer_state_dict'] = optimizer_state
-        if scheduler_state is not None:
-            checkpoint['scheduler_state_dict'] = scheduler_state
-        
-        paddle.save(checkpoint, save_path)
-        
-    @staticmethod
-    def load_checkpoint(load_path, ldm_module, reward_fn, map_location=None):
-        if map_location is not None and map_location == 'cpu':
-            checkpoint = paddle.load(load_path, map_location=paddle.CPUPlace())
-        else:
-            checkpoint = paddle.load(load_path)
-        
-        rl_configs = {
-            'clip_ratio': checkpoint.get('clip_ratio', 0.2),
-            'kl_weight': checkpoint.get('kl_weight', 0.1),
-            'entropy_weight': checkpoint.get('entropy_weight', 0.01),
-            'num_group_samples': checkpoint.get('num_group_samples', 4),
-            'group_reward_norm': checkpoint.get('group_reward_norm', True),
-            'num_inner_batch': checkpoint.get('num_inner_batch', 1),
-        }
-        sampling_configs = checkpoint.get('sampling_configs', {})
-        
-        model = RLModule(
-            ldm_ckpt_path=None,
-            rl_configs=rl_configs,
-            reward_fn=reward_fn,
-            sampling_configs=sampling_configs,
-        )
-        
-        model.ldm = ldm_module
-        model.set_state_dict(checkpoint['model_state_dict'])
-        
-        return model, checkpoint
-
 
     def get_config(self):
         return {

@@ -30,7 +30,6 @@ class VAEModule(nn.Layer):
         augmentation=None,
         noise=None,
         atom_type_predict=True,
-        structure_matcher=None,
         optimizer=None,
         scheduler=None,
     ):
@@ -52,7 +51,6 @@ class VAEModule(nn.Layer):
         self.augmentation = augmentation
         self.noise = noise
         self.atom_type_predict = atom_type_predict
-        self.structure_matcher = structure_matcher
         self.optimizer_config = optimizer
         self.scheduler_config = scheduler
 
@@ -79,8 +77,7 @@ class VAEModule(nn.Layer):
     
     def reconstruct(self, decoder_out, batch):
         from ppmat.models.chemeleon2.common.schema import CrystalBatch
-        from pymatgen.core import Lattice
-        import numpy as np
+        from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
         batch_rec = CrystalBatch()
 
@@ -109,19 +106,7 @@ class VAEModule(nn.Layer):
         batch_rec.angles = angles_degrees
         batch_rec.angles_radians = angles_radians
 
-        lengths_np = lengths.cpu().numpy()
-        angles_np = angles_degrees.cpu().numpy()
-
-        lattices_list = []
-        for i in range(lengths_np.shape[0]):
-            lattice = Lattice.from_parameters(
-                lengths_np[i, 0], lengths_np[i, 1], lengths_np[i, 2],
-                angles_np[i, 0], angles_np[i, 1], angles_np[i, 2]
-            )
-            lattices_list.append(lattice.matrix)
-
-        lattices_array = np.stack(lattices_list, axis=0)
-        batch_rec.lattices = paddle.to_tensor(lattices_array, dtype='float32')
+        batch_rec.lattices = lattice_params_to_matrix_paddle(lengths, angles_degrees)
 
         batch_rec.num_atoms = batch.num_atoms
         batch_rec.batch = batch.batch
@@ -130,15 +115,9 @@ class VAEModule(nn.Layer):
         batch_rec.num_graphs = batch.num_graphs
         return batch_rec
 
-    def _dict_to_crystal_batch(self, batch):
-        """Convert dictionary format to CrystalBatch format.
-
-        Args:
-            batch: Dict with 'structure_array' key containing structure data
-
-        Returns:
-            CrystalBatch: Converted batch object
-        """
+    def _convert_train_batch(self, batch):
+        """Convert dict -> CrystalBatch for VAE training.
+        Computes lengths_scaled, angles_radians, cart_coords from structure_array."""
         from ppmat.models.chemeleon2.common.schema import CrystalBatch
         from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
@@ -167,7 +146,7 @@ class VAEModule(nn.Layer):
         # Store original lengths and angles (scaled/radians as needed)
         crystal_batch.lengths = structure_array["lengths"]
         crystal_batch.angles = structure_array["angles"]
-        crystal_batch.angles_radians = structure_array["angles"] * 3.141592653589793 / 180.0
+        crystal_batch.angles_radians = paddle.deg2rad(structure_array["angles"])
 
         # Calculate lengths_scaled
         num_atoms_tensor = structure_array["num_atoms"]
@@ -205,7 +184,7 @@ class VAEModule(nn.Layer):
             dict: Contains 'loss_dict' with training losses (tensors for backward pass)
         """
         # Convert dict format to CrystalBatch format
-        crystal_batch = self._dict_to_crystal_batch(batch)
+        crystal_batch = self._convert_train_batch(batch)
         loss_dict = self.calculate_loss(crystal_batch, training=True)
 
         # The framework needs loss_dict with tensor values for backward pass
@@ -279,52 +258,6 @@ class VAEModule(nn.Layer):
             "loss_kl": loss_kl,
             "fa_loss": fa_loss,
         }
-
-    def save_checkpoint(self, save_path, epoch=None, optimizer_state=None, scheduler_state=None):
-        checkpoint = {
-            'model_state_dict': self.state_dict(),
-            'latent_dim': self.latent_dim,
-            'loss_weights': self.loss_weights,
-            'augmentation': self.augmentation,
-            'noise': self.noise,
-            'atom_type_predict': self.atom_type_predict,
-        }
-        
-        if epoch is not None:
-            checkpoint['epoch'] = epoch
-        if optimizer_state is not None:
-            checkpoint['optimizer_state_dict'] = optimizer_state
-        if scheduler_state is not None:
-            checkpoint['scheduler_state_dict'] = scheduler_state
-        
-        paddle.save(checkpoint, save_path)
-        
-    @staticmethod
-    def load_checkpoint(load_path, encoder, decoder, map_location=None):
-        if map_location is not None and map_location == 'cpu':
-            checkpoint = paddle.load(load_path, map_location=paddle.CPUPlace())
-        else:
-            checkpoint = paddle.load(load_path)
-        
-        latent_dim = checkpoint['latent_dim']
-        loss_weights = checkpoint['loss_weights']
-        augmentation = checkpoint.get('augmentation', None)
-        noise = checkpoint.get('noise', None)
-        atom_type_predict = checkpoint.get('atom_type_predict', True)
-        
-        model = VAEModule(
-            encoder=encoder,
-            decoder=decoder,
-            latent_dim=latent_dim,
-            loss_weights=loss_weights,
-            augmentation=augmentation,
-            noise=noise,
-            atom_type_predict=atom_type_predict,
-        )
-        
-        model.set_state_dict(checkpoint['model_state_dict'])
-        
-        return model, checkpoint
 
     def get_config(self):
         return {

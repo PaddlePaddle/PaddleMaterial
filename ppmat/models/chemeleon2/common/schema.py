@@ -80,20 +80,29 @@ class CrystalBatch:
 
     def to(self, device):
         for attr_name in dir(self):
+            if attr_name.startswith('_') or callable(getattr(self, attr_name)):
+                continue
             attr = getattr(self, attr_name)
             if isinstance(attr, paddle.Tensor):
                 setattr(self, attr_name, attr.cuda() if device == 'gpu' else attr.cpu())
+            elif isinstance(attr, dict):
+                for k, v in attr.items():
+                    if isinstance(v, paddle.Tensor):
+                        attr[k] = v.cuda() if device == 'gpu' else v.cpu()
         return self
 
     def clone(self):
         cloned = CrystalBatch()
         for attr_name in dir(self):
-            if not attr_name.startswith('_') and attr_name not in ['clone', 'add', 'update', 'remove', 'to', '_split_by_batch_index', 'to_atoms', 'to_structures']:
-                attr = getattr(self, attr_name)
-                if isinstance(attr, paddle.Tensor):
-                    setattr(cloned, attr_name, attr.clone())
-                else:
-                    setattr(cloned, attr_name, attr)
+            if attr_name.startswith('_') or callable(getattr(self, attr_name)):
+                continue
+            attr = getattr(self, attr_name)
+            if isinstance(attr, paddle.Tensor):
+                setattr(cloned, attr_name, attr.clone())
+            elif isinstance(attr, dict):
+                setattr(cloned, attr_name, {k: v.clone() if isinstance(v, paddle.Tensor) else v for k, v in attr.items()})
+            else:
+                setattr(cloned, attr_name, attr)
         return cloned
 
     def _split_by_batch_index(self):
@@ -217,14 +226,12 @@ class CrystalBatch:
         batch.num_graphs = len(data_list)
         
         batch_indices = []
-        offset = 0
         
         for graph_idx, data in enumerate(data_list):
             num_nodes = data.get('num_atoms', 0)
             if isinstance(num_nodes, paddle.Tensor):
                 num_nodes = int(num_nodes.item())
             batch_indices.extend([graph_idx] * num_nodes)
-            offset += num_nodes
         
         batch.batch = paddle.to_tensor(batch_indices, dtype='int64')
         
@@ -274,9 +281,8 @@ class CrystalBatch:
             if isinstance(num, paddle.Tensor):
                 num = int(num.item())
             num_nodes_list.append(num)
-        batch.num_nodes = num_nodes_list
+        batch.num_nodes = paddle.to_tensor(num_nodes_list, dtype='int64')
         
-        node_count = sum(num_nodes_list)
         batch.mask = paddle.ones([len(data_list), max(num_nodes_list)], dtype='bool')
         for i, num in enumerate(num_nodes_list):
             if num < max(num_nodes_list):

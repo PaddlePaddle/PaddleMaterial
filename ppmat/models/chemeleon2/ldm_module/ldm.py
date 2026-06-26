@@ -111,14 +111,6 @@ class LDMModule(nn.Layer):
             self.use_cfg = True
             self.condition_module = condition_module
 
-    def _to_dense_batch(self, x, batch_idx):
-        return to_dense_batch(x, batch_idx)
-    
-    def _apply_augmentation(self, batch):
-        if self.augmentation is None:
-            return batch
-        return batch
-
     def forward(self, batch):
         """Forward pass for training compatibility.
 
@@ -133,22 +125,16 @@ class LDMModule(nn.Layer):
             dict: Contains 'loss_dict' with training losses (tensors for backward pass)
         """
         # Convert dict format to CrystalBatch format
-        crystal_batch = self._dict_to_crystal_batch(batch)
+        crystal_batch = self._convert_sample_batch(batch)
         loss_dict = self.calculate_loss(crystal_batch, training=True)
 
         # The framework needs loss_dict with tensor values for backward pass
         # Don't detach or convert to scalars - keep tensors as-is
         return {"loss_dict": loss_dict}
 
-    def _dict_to_crystal_batch(self, batch):
-        """Convert dictionary format to CrystalBatch format.
-
-        Args:
-            batch: Dict with 'structure_array' key containing structure data
-
-        Returns:
-            CrystalBatch: Converted batch object
-        """
+    def _convert_sample_batch(self, batch):
+        """Convert dict -> CrystalBatch for LDM sampling.
+        Generates random fallbacks for missing lattice/frac_coords."""
         from ppmat.models.chemeleon2.common.schema import CrystalBatch
 
         structure_array = batch["structure_array"]
@@ -200,20 +186,17 @@ class LDMModule(nn.Layer):
         if not hasattr(self, 'vae') or self.vae is None:
             raise ValueError("VAE must be loaded before training. Set vae_ckpt_path in __init__.")
         
-        if training and self.augmentation is not None:
-            batch = self._apply_augmentation(batch)
-        
         with paddle.no_grad():
             encoded = self.vae.encode(batch)
             x = encoded["posterior"].sample() / self.latent_std
-            x, mask = self._to_dense_batch(x, encoded["batch"])
+            x, mask = to_dense_batch(x, encoded["batch"])
         
         t = paddle.randint(0, self.diffusion.num_timesteps, shape=[x.shape[0]], dtype='int64')
         
         y = None
         if self.use_cfg:
-            y = batch.get("y")
-            assert y is not None, "Batch must contain 'y' key when use_cfg=True"
+            y = batch.y
+            assert y is not None, "Batch must contain 'y' field when use_cfg=True"
             y = self.condition_module(y, training=training)
         
         model_kwargs = {"mask": mask, "y": y}
@@ -246,7 +229,7 @@ class LDMModule(nn.Layer):
     ):
         # Convert dict format to CrystalBatch format if needed
         if isinstance(batch, dict):
-            batch = self._dict_to_crystal_batch(batch)
+            batch = self._convert_sample_batch(batch)
 
         if sampler == "ddim":
             timestep_respacing = "ddim" + str(sampling_steps)
@@ -276,12 +259,12 @@ class LDMModule(nn.Layer):
         else:
             num_nodes = int(batch.num_nodes.item())
         z = paddle.randn([num_nodes, self.vae.latent_dim])
-        z, mask = self._to_dense_batch(z, batch.batch)
+        z, mask = to_dense_batch(z, batch.batch)
         
         y = None
         if self.use_cfg:
-            y = batch.get("y")
-            assert y is not None, "Batch must contain 'y' key when use_cfg=True"
+            y = batch.y
+            assert y is not None, "Batch must contain 'y' field when use_cfg=True"
             z = paddle.concat([z, z], axis=0)
             mask = paddle.concat([mask, mask], axis=0)
             y = self.condition_module(y, training=False)
@@ -356,53 +339,6 @@ class LDMModule(nn.Layer):
             print("LoRA weights merged into base model")
         else:
             print("No LoRA weights to merge")
-
-    def save_checkpoint(self, save_path, epoch=None, optimizer_state=None, scheduler_state=None):
-        checkpoint = {
-            'model_state_dict': self.state_dict(),
-            'normalize_latent': self.normalize_latent,
-            'latent_std': self.latent_std,
-            'diffusion_configs': self.diffusion_configs,
-            'augmentation': self.augmentation,
-            'lora_configs': self.lora_configs,
-            'use_cfg': self.use_cfg,
-        }
-        
-        if epoch is not None:
-            checkpoint['epoch'] = epoch
-        if optimizer_state is not None:
-            checkpoint['optimizer_state_dict'] = optimizer_state
-        if scheduler_state is not None:
-            checkpoint['scheduler_state_dict'] = scheduler_state
-        
-        paddle.save(checkpoint, save_path)
-        
-    @staticmethod
-    def load_checkpoint(load_path, denoiser, condition_module=None, map_location=None):
-        if map_location is not None and map_location == 'cpu':
-            checkpoint = paddle.load(load_path, map_location=paddle.CPUPlace())
-        else:
-            checkpoint = paddle.load(load_path)
-        
-        normalize_latent = checkpoint.get('normalize_latent', True)
-        diffusion_configs = checkpoint.get('diffusion_configs', None)
-        augmentation = checkpoint.get('augmentation', None)
-        lora_configs = checkpoint.get('lora_configs', None)
-        
-        model = LDMModule(
-            normalize_latent=normalize_latent,
-            denoiser=denoiser,
-            augmentation=augmentation,
-            diffusion_configs=diffusion_configs,
-            condition_module=condition_module,
-            lora_configs=lora_configs,
-        )
-        
-        model.set_state_dict(checkpoint['model_state_dict'])
-        if 'latent_std' in checkpoint:
-            model.latent_std = checkpoint['latent_std']
-        
-        return model, checkpoint
 
     def get_config(self):
         return {
