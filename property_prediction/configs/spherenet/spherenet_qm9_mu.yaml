@@ -81,7 +81,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data/qm9
+        path: ./data
         property_names: [mu]
         split: train
         build_graph_cfg:
@@ -102,7 +102,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data/qm9
+        path: ./data
         property_names: [mu]
         split: val
         build_graph_cfg:
@@ -123,7 +123,7 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data/qm9
+        path: ./data
         property_names: [mu]
         split: test
         build_graph_cfg:
