@@ -25,7 +25,7 @@ from ppmat.models.chemeleon2.common import merge_lora_weights
 from ppmat.models.chemeleon2.common import to_dense_batch
 from ppmat.models.chemeleon2.ldm_module.diffusion import create_diffusion
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-from ppmat.models.chemeleon2.common.schema import CrystalBatch
+from ppmat.models.chemeleon2.common.schema import CrystalBatch, _build_structure_array
 
 
 class LDMModule(nn.Layer):
@@ -127,45 +127,16 @@ class LDMModule(nn.Layer):
         structure_array = batch["structure_array"]
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
-        total_atoms = num_atoms.sum().item()
 
-        # Create CrystalBatch from structure_array
-        crystal_batch = CrystalBatch()
-        crystal_batch.atom_types = structure_array["atom_types"]
-        crystal_batch.num_atoms = num_atoms
-        crystal_batch.batch = paddle.repeat_interleave(
-            paddle.arange(batch_size), repeats=num_atoms
-        )
+        crystal_batch = _build_structure_array(CrystalBatch(), structure_array)
 
-        # Handle frac_coords (required for training, optional for sampling)
-        if "frac_coords" in structure_array:
-            crystal_batch.frac_coords = structure_array["frac_coords"]
-        else:
-            # For sampling, generate random fractional coords
-            crystal_batch.frac_coords = paddle.rand([total_atoms, 3])
-
-        # Handle lattice - VAE encoder expects lattices (matrix format)
-        if "lattice" in structure_array:
-            crystal_batch.lattices = structure_array["lattice"]
-        elif "lengths" in structure_array and "angles" in structure_array:
-            # Convert lengths + angles to lattice matrix
-            crystal_batch.lattices = lattice_params_to_matrix_paddle(
-                structure_array["lengths"], structure_array["angles"]
-            )
-        else:
-            # For sampling, generate random lattice parameters
+        # Generate random lattice parameters if not provided (sampling path)
+        if not hasattr(crystal_batch, 'lattices') or crystal_batch.lattices is None:
             crystal_batch.lengths = paddle.rand([batch_size, 3]) * 10 + 5
             crystal_batch.angles = paddle.rand([batch_size, 3]) * 60 + 60
             crystal_batch.lattices = lattice_params_to_matrix_paddle(
                 crystal_batch.lengths, crystal_batch.angles
             )
-
-        # Additional fields
-        crystal_batch.num_nodes = total_atoms
-        crystal_batch.num_graphs = batch_size
-        crystal_batch.token_idx = paddle.concat([
-            paddle.arange(n) for n in num_atoms
-        ])
 
         return crystal_batch
 
@@ -223,6 +194,8 @@ class LDMModule(nn.Layer):
         else:
             timestep_respacing = str(sampling_steps)
 
+        if self.diffusion_configs is None:
+            raise ValueError("diffusion_configs must be set before sampling")
         sampling_configs = self.diffusion_configs.copy()
         sampling_configs.update(timestep_respacing=timestep_respacing)
         sampling_diffusion = create_diffusion(**sampling_configs)
@@ -348,6 +321,7 @@ class LDMModule(nn.Layer):
             cb = min(batch_size, num_samples - i)
             cur = num_atoms_list[i:i+cb]
             batch = create_empty_batch(cur)
+            batch.y = data.get('condition', None)
             with paddle.no_grad():
                 result = self.sample(batch, sampler=sampler, sampling_steps=sampling_steps, progress=False)
             all_results.append(result)

@@ -138,12 +138,14 @@ class RLModule(nn.Layer):
                 out['std'] = paddle.chunk(out['std'], 2, axis=0)[0]
                 mask = paddle.chunk(mask, 2, axis=0)[0]
             
+            if (t_tensor == 0).all() and (out['std'] == 0).all():
+                continue
+            
+            if i + 1 >= len(zs):
+                break
             current_log_probs = _calculate_log_prob(
                 zs[i + 1], out['mean'], out['std'], mask
             )
-            
-            if (t_tensor == 0).all() and (out['std'] == 0).all():
-                continue
             
             log_ratio = current_log_probs - old_log_probs
             ratio = paddle.exp(log_ratio)

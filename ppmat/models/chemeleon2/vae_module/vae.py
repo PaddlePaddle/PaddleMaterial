@@ -18,7 +18,7 @@ import paddle.nn.functional as F
 
 from ppmat.models.chemeleon2.common import apply_augmentation, apply_noise
 from ppmat.models.chemeleon2.common import DiagonalGaussianDistribution
-from ppmat.models.chemeleon2.common.schema import CrystalBatch
+from ppmat.models.chemeleon2.common.schema import CrystalBatch, _build_structure_array
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
@@ -89,7 +89,11 @@ class VAEModule(nn.Layer):
 
         # Decoder outputs lengths_scaled, need to scale back by num_atoms^(1/3)
         lengths_scaled = decoder_out["lengths"]
-        num_atoms = batch.num_atoms.unsqueeze(-1) if batch.num_atoms.ndim == 1 else batch.num_atoms
+        num_atoms = batch.num_atoms
+        if num_atoms.ndim == 0:
+            num_atoms = num_atoms.unsqueeze(-1)
+        elif num_atoms.ndim == 1:
+            num_atoms = num_atoms.unsqueeze(-1)
 
         lengths = lengths_scaled * num_atoms ** (1 / 3)
         batch_rec.lengths = lengths
@@ -111,52 +115,18 @@ class VAEModule(nn.Layer):
 
     def _convert_train_batch(self, batch):
         structure_array = batch["structure_array"]
-        num_atoms = structure_array["num_atoms"]
-        batch_size = num_atoms.shape[0]
-        total_atoms = num_atoms.sum().item()
-
-        # Create CrystalBatch from structure_array
-        crystal_batch = CrystalBatch()
-        crystal_batch.atom_types = structure_array["atom_types"]
-        crystal_batch.frac_coords = structure_array["frac_coords"]
-        crystal_batch.num_atoms = num_atoms
-        crystal_batch.batch = paddle.repeat_interleave(
-            paddle.arange(batch_size), repeats=num_atoms
-        )
-
-        # Handle lattice - convert lengths + angles to lattice matrix
-        if "lattice" in structure_array:
-            crystal_batch.lattices = structure_array["lattice"]
-        else:
-            crystal_batch.lattices = lattice_params_to_matrix_paddle(
-                structure_array["lengths"], structure_array["angles"]
-            )
-
-        # Store original lengths and angles (scaled/radians as needed)
+        crystal_batch = _build_structure_array(CrystalBatch(), structure_array)
         crystal_batch.lengths = structure_array["lengths"]
         crystal_batch.angles = structure_array["angles"]
         crystal_batch.angles_radians = paddle.deg2rad(structure_array["angles"])
-
-        # Calculate lengths_scaled
         num_atoms_tensor = structure_array["num_atoms"]
         if num_atoms_tensor.ndim == 1:
             num_atoms_tensor = num_atoms_tensor.unsqueeze(-1)
         crystal_batch.lengths_scaled = structure_array["lengths"] / (
             num_atoms_tensor ** (1 / 3)
         )
-
-        # Calculate cart_coords: cart_coords = frac_coords @ lattice.T
-        # lattice shape: [batch_size, 3, 3], frac_coords shape: [total_atoms, 3]
         cart_coords = paddle.matmul(crystal_batch.frac_coords, crystal_batch.lattices[crystal_batch.batch])
         crystal_batch.cart_coords = cart_coords
-
-        # Additional fields
-        crystal_batch.num_nodes = total_atoms
-        crystal_batch.num_graphs = batch_size
-        crystal_batch.token_idx = paddle.concat([
-            paddle.arange(n) for n in num_atoms
-        ])
-
         return crystal_batch
 
     def forward(self, batch):
@@ -209,7 +179,7 @@ class VAEModule(nn.Layer):
             )
             diff = paddle.abs(z_cos_sim - mace_cos_sim)
             fa_loss_1 = F.relu(diff - 0.25).mean()
-            fa_loss_2 = F.relu(1 - 0.5 - F.cosine_similarity(mace_features, z)).mean()
+            fa_loss_2 = F.relu(0.5 - F.cosine_similarity(mace_features, z)).mean()
             fa_loss = fa_loss_1 + fa_loss_2
 
         loss = (

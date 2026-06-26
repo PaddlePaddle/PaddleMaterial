@@ -162,6 +162,9 @@ def mmd_reward(z_gen, z_ref):
     k_rr = poly_k(z_ref, z_ref)
     k_gr = poly_k(z_gen, z_ref)
     
+    if N <= 1 or M <= 1:
+        return {'r': paddle.to_tensor(0.0), 'r_indiv': paddle.zeros([M])}
+
     R_term = (k_rr.sum() - k_rr.trace()) / (N * (N - 1))
     G = k_gg.sum() - k_gg.trace()
     C = k_gr.sum()

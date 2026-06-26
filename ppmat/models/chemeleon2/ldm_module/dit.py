@@ -166,15 +166,8 @@ class DiT(nn.Layer):
         
         x = self.final_layer(x, c)
         
-        if self.learn_sigma:
-            assert x.shape[2] == 2 * self.latent_dim
-            x = x.reshape([x.shape[0], 2 * x.shape[1], self.latent_dim])
-            if mask is not None:
-                x = x * mask.tile([1, 2]).unsqueeze(-1).astype(x.dtype)
-        else:
-            assert x.shape[2] == self.latent_dim
-            if mask is not None:
-                x = x * mask.unsqueeze(-1).astype(x.dtype)
+        if mask is not None:
+            x = x * mask.unsqueeze(-1).astype(x.dtype)
         
         return x
     

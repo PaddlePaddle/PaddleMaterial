@@ -15,6 +15,12 @@
 import paddle
 
 from ppmat.datasets.geometric_data_type.data import Data
+from ppmat.utils.crystal import lattice_params_to_matrix_paddle
+
+__all__ = [
+    "CrystalBatch",
+    "create_empty_batch",
+]
 
 
 class CrystalBatch(Data):
@@ -84,21 +90,55 @@ class CrystalBatch(Data):
                 types_int = [item for sublist in types_int for item in sublist]
             symbols = [Element.from_Z(int(z)).symbol for z in types_int]
             lat_np = sd['lattices'].cpu().numpy().squeeze()
-            coords = sd.get('frac_coords' if frac_coords else 'cart_coords')
-            if coords is None and frac_coords and 'cart_coords' in sd:
+            if frac_coords and 'frac_coords' in sd:
+                coords = sd['frac_coords']
+                coords_are_cartesian = False
+            elif 'cart_coords' in sd:
                 coords = sd['cart_coords']
-            if coords is None:
+                coords_are_cartesian = True
+            else:
                 raise ValueError("frac_coords or cart_coords required")
-            s = Structure(Lattice(lat_np), symbols, coords.cpu().numpy(), coords_are_cartesian=not frac_coords)
+            s = Structure(Lattice(lat_np), symbols, coords.cpu().numpy(), coords_are_cartesian=coords_are_cartesian)
             structure_list.append(s)
         return structure_list
+
+
+def _build_structure_array(batch, structure_array):
+    num_atoms = structure_array["num_atoms"]
+    batch_size = num_atoms.shape[0]
+    total_atoms = num_atoms.sum().item()
+
+    batch.atom_types = structure_array["atom_types"]
+    batch.num_atoms = num_atoms
+    batch.batch = paddle.repeat_interleave(
+        paddle.arange(batch_size), repeats=num_atoms
+    )
+
+    if "frac_coords" in structure_array:
+        batch.frac_coords = structure_array["frac_coords"]
+    else:
+        batch.frac_coords = paddle.rand([total_atoms, 3])
+
+    if "lattice" in structure_array:
+        batch.lattices = structure_array["lattice"]
+    elif "lengths" in structure_array and "angles" in structure_array:
+        batch.lattices = lattice_params_to_matrix_paddle(
+            structure_array["lengths"], structure_array["angles"]
+        )
+
+    batch.num_nodes = total_atoms
+    batch.num_graphs = batch_size
+    batch.token_idx = paddle.concat([
+        paddle.arange(n) for n in num_atoms
+    ])
+
+    return batch
 
 
 def create_empty_batch(num_atoms, device='cpu', atom_types=None):
     data_list = []
     for i, n in enumerate(num_atoms):
         d = CrystalBatch(
-            pos=paddle.empty([n, 3]),
             atom_types=paddle.empty([n], dtype='int64') if atom_types is None else paddle.to_tensor(atom_types[i], dtype='int64'),
             frac_coords=paddle.empty([n, 3]),
             cart_coords=paddle.empty([n, 3]),
