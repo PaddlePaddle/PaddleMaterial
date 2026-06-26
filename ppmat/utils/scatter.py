@@ -141,13 +141,3 @@ def scatter_sum(
     dim_size: Optional[int] = None,
 ):
     return _scatter_sum(src, index, dim, out, dim_size)
-
-
-def scatter_min(
-    src: paddle.Tensor,
-    index: paddle.Tensor,
-    dim: int = -1,
-    out: Optional[paddle.Tensor] = None,
-    dim_size: Optional[int] = None,
-):
-    return _scatter_min(src, index, dim, out, dim_size)

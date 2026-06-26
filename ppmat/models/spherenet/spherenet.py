@@ -22,7 +22,7 @@ from ppmat.models.common.spherical_fourier_bessel import AngleEmbedding
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
 from ppmat.models.common.spherical_fourier_bessel import TorsionEmbedding
 from ppmat.utils.scatter import scatter_sum
-from ppmat.utils.xyz_utils import xyz_to_dat
+from ppmat.models.common.xyz_utils import xyz_to_dat
 
 
 def swish(x):

@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-3D geometry utilities for molecular systems.
+3D geometry utilities for spherical message-passing models.
 
-Provides functions to compute distances, angles, and torsion (dihedral)
-angles from atomic 3D coordinates, used by message-passing neural networks.
+Moved from ``ppmat.utils.xyz_utils`` to ``ppmat.models.common`` per
+reviewer feedback — this module is model-specific (used by SphereNet),
+not a general-purpose utility.
 """
 
 import paddle
+from ppmat.utils.scatter import _scatter_min
 
 
 def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
@@ -56,38 +58,23 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)
 
     # --- Build triplets (k -> j -> i) ---
-    # For each edge (j -> i), find all (k -> j) where k != i.
-    # Vectorized approach: expand edge pairs and filter.
     num_edges = j.shape[0]
-    j_expand = j.unsqueeze(0).expand([num_edges, -1])  # [E, E]
-    i_candidate = i.unsqueeze(-1).expand([-1, num_edges])  # [E, E]
+    j_expand = j.unsqueeze(0).expand([num_edges, -1])
+    i_candidate = i.unsqueeze(-1).expand([-1, num_edges])
 
-    # k_j_edge targets == j_i_edge sources
     valid_triplet = j_expand == i_candidate
-
-    # k != i (exclude the reverse edge)
     not_self = paddle.arange(num_edges).unsqueeze(0).expand(
         [num_edges, -1]
     ) != paddle.arange(num_edges).unsqueeze(-1).expand([-1, num_edges])
     valid_triplet = valid_triplet & not_self
 
-    # Get indices of valid triplets
     idx_kj, idx_ji = paddle.nonzero(valid_triplet, as_tuple=True)
     idx_kj = idx_kj.flatten()
     idx_ji = idx_ji.flatten()
 
-    # For the angle computation we need both edges:
-    # v_kj = pos[k] - pos[j] for edge k_j
-    # v_ji = pos[j] - pos[i] for edge j_i
-    vec_kj = vec[idx_kj]  # vectors along k->j edges
-    vec_ji = vec[idx_ji]  # vectors along j->i edges
+    vec_kj = vec[idx_kj]
+    vec_ji = vec[idx_ji]
 
-    # Compute angle using arctan2 for numerical stability
-    # Compute the bond angle k-j-i at atom j.
-    # Vectors pointing FROM j: v_jk = pos[k] - pos[j] = -vec_kj,
-    #                          v_ji = pos[i] - pos[j] =  vec_ji.
-    # angle = atan2(||cross(v_jk, v_ji)||, dot(v_jk, v_ji))
-    #       = atan2(||cross(vec_kj, vec_ji)||, -dot(vec_kj, vec_ji))
     angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
     angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
     angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
@@ -95,24 +82,11 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
 
     torsion = paddle.zeros_like(angle)
     if use_torsion:
-        # Build quadruplets (l -> k -> j -> i)
-        # l is the source of edge l_k such that l_k.targets are k_j.sources
-
-        # For each triplet (idx_kj, idx_ji):
-        #   - edge_idx_kj has source=k, target=j
-        #   - edge_idx_ji has source=j, target=i
-        # The next level: edges (l -> k) where l_k.target == k_j.source (= k)
-
-        # k is source of edge k_j
-        k_nodes = i[idx_kj]  # source of k_j edge = k
-
-        # Build: for each quadruplet candidate, k_j_edge.source == l_k_edge.target
+        k_nodes = i[idx_kj]
         k_expand = k_nodes.unsqueeze(0).expand([num_edges, -1])
         j_all = j.unsqueeze(-1).expand([-1, idx_kj.shape[0]])
 
         valid_quad = j_all == k_expand
-
-        # l != k (l shouldn't be the same as the quadruplet's k)
         l_edge_idx = (
             paddle.arange(num_edges).unsqueeze(-1).expand([-1, idx_kj.shape[0]])
         )
@@ -123,22 +97,11 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         idx_lk = idx_lk.flatten()
         idx_triplet = idx_triplet.flatten()
 
-        # Now compute torsion: for quadruple (l, k, j, i)
-        # v1 = pos[l] - pos[k]  (edge l_k)
-        # v2 = pos[k] - pos[j]  (edge k_j)
-        # v3 = pos[j] - pos[i]  (edge j_i)
         k_idx_from_edge_lk = j[idx_lk]
         v1 = pos[k_idx_from_edge_lk] - pos[i[idx_lk]]
-
-        # For each quadruplet indexed by idx_triplet:
-        # v2 = vec_kj[idx_triplet], v3 = vec_ji[idx_triplet]
         v2 = vec_kj[idx_triplet]
         v3 = vec_ji[idx_triplet]
 
-        # Torsion = atan2(
-        #     ||v2|| * v1 . (v2 x v3),
-        #     (v1 x v2) . (v2 x v3)
-        # )
         v2_norm = paddle.sqrt(paddle.sum(v2 * v2, axis=-1) + 1e-8)
         v2_cross_v3 = paddle.linalg.cross(v2, v3)
         v1_dot_v2crossv3 = paddle.sum(v1 * v2_cross_v3, axis=-1)
@@ -149,20 +112,13 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
             v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
         )
 
-        # Aggregate torsion per triplet: for each triplet, take the
-        # torsion with minimum absolute value (closest neighbor).
-        from ppmat.utils.scatter import scatter_min as _scatter_min
-
         abs_torsion = paddle.abs(torsion_angle)
-        # Use scatter_min with absolute values as proxy — the per-triplet
-        # torsion with the smallest |torsion| is kept via reduce="min".
         _ = _scatter_min(
             abs_torsion,
             idx_triplet,
             dim=0,
             dim_size=idx_kj.shape[0],
         )
-        # Recompute keep mask via index comparison
         best_abs = paddle.full([idx_kj.shape[0]], float("inf"), dtype=abs_torsion.dtype)
         best_abs = paddle.put_along_axis(
             best_abs.unsqueeze(-1),
@@ -172,7 +128,6 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
             reduce="amin",
         ).squeeze(-1)
         keep = abs_torsion == best_abs[idx_triplet]
-        # Scatter the kept torsion values
         torsion = paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype)
         kept_vals = paddle.masked_select(torsion_angle, keep)
         kept_idx = paddle.masked_select(idx_triplet, keep)
