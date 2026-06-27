@@ -123,9 +123,13 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
                 order = paddle.argsort(inv.to(abs_a.dtype) * scale + abs_a)
                 _, first = paddle.unique(inv[order], return_index=True)
                 keep = order[first]
-            sel = inv[keep]
-            torsion = paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype)
-            torsion[sel] = torsion_angle[keep]
+                sel = inv[keep]
+            torsion = paddle.scatter(
+                paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype),
+                sel,
+                torsion_angle[keep],
+                overwrite=True,
+            )
         else:
             torsion = paddle.zeros_like(angle)
 
