@@ -261,9 +261,9 @@ class NodeUpdate(paddle.nn.Layer):
         if self.output_init == "GlorotOrthogonal":
             glorot_orthogonal_(self.lin.weight, scale=1.0)
 
-    def forward(self, e, i):
+    def forward(self, e, i, dim_size=None):
         _, e2 = e
-        v = scatter_sum(e2, i, dim=0)
+        v = scatter_sum(e2, i, dim=0, dim_size=dim_size)
         v = self.lin_up(v)
         for lin in self.lins:
             v = self.act(lin(v))
@@ -453,7 +453,7 @@ class SphereNet(paddle.nn.Layer):
 
         # Initialize edge, node, graph features
         e = self.init_e(z, extra_node_feature, emb_out, i, j)
-        v = self.init_v(e, i)
+        v = self.init_v(e, i, dim_size=num_nodes)
         u = self.init_u(
             paddle.zeros_like(scatter_sum(v, batch, dim=0)),
             v,
@@ -464,7 +464,7 @@ class SphereNet(paddle.nn.Layer):
             self.update_es, self.update_vs, self.update_us
         ):
             e = update_e(e, emb_out, idx_kj, idx_ji)
-            v = update_v(e, i)
+            v = update_v(e, i, dim_size=num_nodes)
             u = update_u(u, v, batch)
 
         return u
