@@ -600,7 +600,11 @@ class SphereNetPP(paddle.nn.Layer):
         if return_prediction:
             pred_out = self._unnormalize(pred)
             prediction[self.property_name] = pred_out
-            if self.energy_and_force and forces_pred is not None:
-                prediction[self.force_key] = forces_pred.detach()
+            if self.energy_and_force:
+                if forces_pred is not None:
+                    prediction[self.force_key] = forces_pred.detach()
+                else:
+                    # eval with paddle.no_grad(): force graph unavailable
+                    prediction[self.force_key] = paddle.zeros_like(pos)
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}
