@@ -66,7 +66,6 @@ class CSPLayer(paddle.nn.Layer):
         dis_emb=None,
         ln=False,
         ip=True,
-        use_prop_mlp=True,
     ):
         super(CSPLayer, self).__init__()
         self.dis_dim = 3
@@ -89,13 +88,12 @@ class CSPLayer(paddle.nn.Layer):
             act_fn,
         )
 
-        if use_prop_mlp:
-            self.prop_mlp = paddle.nn.Sequential(
-                paddle.nn.Linear(in_features=prop_dim, out_features=hidden_dim),
-                act_fn,
-                paddle.nn.Linear(in_features=hidden_dim, out_features=hidden_dim),
-                act_fn,
-            )
+        self.prop_mlp = paddle.nn.Sequential(
+            paddle.nn.Linear(in_features=prop_dim, out_features=hidden_dim),
+            act_fn,
+            paddle.nn.Linear(in_features=hidden_dim, out_features=hidden_dim),
+            act_fn,
+        )
 
         self.ln = ln
         if self.ln:
@@ -151,7 +149,7 @@ class CSPLayer(paddle.nn.Layer):
         property_emb=None,
         property_mask=None,
     ):
-        if property_emb is not None and hasattr(self, "prop_mlp"):
+        if property_emb is not None:
             property_features = self.prop_mlp(property_emb)
             if property_mask is not None:
                 property_features = property_features * property_mask
@@ -215,7 +213,6 @@ class CSPNet(paddle.nn.Layer):
         prop_dim: int = 512,
         pred_scalar: bool = False,
         num_classes: int = 100,
-        use_prop_mlp: bool = True,
     ):
         super(CSPNet, self).__init__()
         self.ip = ip
@@ -250,7 +247,6 @@ class CSPNet(paddle.nn.Layer):
                     dis_emb=self.dis_emb,
                     ln=ln,
                     ip=ip,
-                    use_prop_mlp=use_prop_mlp,
                 ),
             )
         self.num_layers = num_layers

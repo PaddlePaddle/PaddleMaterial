@@ -25,13 +25,15 @@ from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
 
 class MiADCSPNet(CSPNet):
-    """CSPNet with block-diagonal edge generation for GPU compatibility."""
+    """CSPNet with block-diagonal edge generation.
+    Uses block_diag instead of meshgrid to avoid GPU crash on certain batch sizes.
+    """
 
     def gen_edges(self, num_atoms, frac_coords):
         lis = [paddle.ones([int(n), int(n)], dtype="int64") for n in num_atoms]
         fc_graph = paddle.block_diag(lis)
         fc_edges = paddle.nonzero(fc_graph).t()
-        return fc_edges, (frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]]) % 1.0
+        return fc_edges, frac_coords[fc_edges[1]] - frac_coords[fc_edges[0]]
 
 
 def _to_numpy(x):
@@ -91,7 +93,7 @@ class MiAD(nn.Layer):
             "prop_dim", "pred_scalar", "num_classes",
         }
         cspnet_kwargs = {k: v for k, v in model_cfg.items() if k in _cspnet_keys}
-        self.decoder = MiADCSPNet(use_prop_mlp=False, **cspnet_kwargs)
+        self.decoder = MiADCSPNet(**cspnet_kwargs)
         if isinstance(diffusion_cfg, dict):
             diffusion_cfg = _dict_to_sns(diffusion_cfg)
         self.diffusion = CrystalGen(diffusion_cfg, logger=None)
@@ -99,13 +101,6 @@ class MiAD(nn.Layer):
     def set_state_dict(self, state_dict, use_structured_name=True):
         if not any(k.startswith("decoder.") for k in state_dict.keys()):
             state_dict = {f"decoder.{k}": v for k, v in state_dict.items()}
-        expected_shapes = {
-            k: v.shape for k, v in self.state_dict().items()
-        }
-        for k, v in state_dict.items():
-            expected = expected_shapes.get(k)
-            if expected is not None and v.shape != expected and v.T.shape == expected:
-                state_dict[k] = v.T
         param_state = {}
         for name, param in self.named_parameters():
             if name in state_dict:
@@ -114,6 +109,8 @@ class MiAD(nn.Layer):
                     v = v.numpy()
                 elif not isinstance(v, np.ndarray):
                     v = np.asarray(v)
+                if name.endswith(".weight") and len(v.shape) == 2:
+                    v = v.T
                 if v.shape == param.shape:
                     param_state[name] = v.astype(param.numpy().dtype)
         for name in param_state:
