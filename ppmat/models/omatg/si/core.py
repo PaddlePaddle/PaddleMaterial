@@ -15,24 +15,25 @@
 """Single Stochastic Interpolant implementation.
 """
 
+import importlib
 from enum import Enum
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import paddle
+
+from ppmat.datasets.omatg_dataset import OMATGData
 from ppmat.utils.scatter import scatter_mean
 
 from .interpolants import (
     Corrector,
     Epsilon,
+    IdentityCorrector,
     Interpolant,
     LatentGamma,
-    StochasticInterpolant,
-    StochasticInterpolantSpecies,
-)
-from .interpolants import (
-    IdentityCorrector,
     ScoreBasedDiffusionModelInterpolantVE,
     ScoreBasedDiffusionModelInterpolantVP,
+    StochasticInterpolant,
+    StochasticInterpolantSpecies,
 )
 
 
@@ -41,6 +42,13 @@ class DifferentialEquationType(Enum):
 
     ODE = "ode"
     SDE = "sde"
+
+
+def _compute_mean_velocity(
+    velocity: paddle.Tensor, batch_indices: paddle.Tensor
+) -> paddle.Tensor:
+    mean_vel = scatter_mean(velocity, batch_indices, dim=0)
+    return mean_vel[batch_indices]
 
 
 class SingleStochasticInterpolant(StochasticInterpolant):
@@ -178,11 +186,11 @@ class SingleStochasticInterpolant(StochasticInterpolant):
             expected_velocity_m = expected_velocity_without_gamma - gamma_derivative * z
 
             if self._correct_center_of_mass_motion:
-                mean_velocity_p = self._compute_mean_velocity(
+                mean_velocity_p = _compute_mean_velocity(
                     expected_velocity_p, batch_indices
                 )
                 expected_velocity_p = expected_velocity_p - mean_velocity_p
-                mean_velocity_m = self._compute_mean_velocity(
+                mean_velocity_m = _compute_mean_velocity(
                     expected_velocity_m, batch_indices
                 )
                 expected_velocity_m = expected_velocity_m - mean_velocity_m
@@ -204,7 +212,7 @@ class SingleStochasticInterpolant(StochasticInterpolant):
             pred_b = model_function(x_t)[0]
 
             if self._correct_center_of_mass_motion:
-                mean_velocity = self._compute_mean_velocity(
+                mean_velocity = _compute_mean_velocity(
                     expected_velocity, batch_indices
                 )
                 expected_velocity = expected_velocity - mean_velocity
@@ -249,11 +257,11 @@ class SingleStochasticInterpolant(StochasticInterpolant):
             expected_velocity_m = expected_velocity_without_gamma - gamma_derivative * z
 
             if self._correct_center_of_mass_motion:
-                mean_velocity_p = self._compute_mean_velocity(
+                mean_velocity_p = _compute_mean_velocity(
                     expected_velocity_p, batch_indices
                 )
                 expected_velocity_p = expected_velocity_p - mean_velocity_p
-                mean_velocity_m = self._compute_mean_velocity(
+                mean_velocity_m = _compute_mean_velocity(
                     expected_velocity_m, batch_indices
                 )
                 expected_velocity_m = expected_velocity_m - mean_velocity_m
@@ -275,7 +283,7 @@ class SingleStochasticInterpolant(StochasticInterpolant):
             pred_b, pred_z = model_function(x_t)
 
             if self._correct_center_of_mass_motion:
-                mean_velocity = self._compute_mean_velocity(
+                mean_velocity = _compute_mean_velocity(
                     expected_velocity, batch_indices
                 )
                 expected_velocity = expected_velocity - mean_velocity
@@ -285,26 +293,6 @@ class SingleStochasticInterpolant(StochasticInterpolant):
         loss_z = paddle.mean(pred_z**2) - 2.0 * paddle.mean(pred_z * z)
 
         return {"loss_b": loss_b, "loss_z": loss_z}
-
-    def _compute_mean_velocity(
-        self, velocity: paddle.Tensor, batch_indices: paddle.Tensor
-    ) -> paddle.Tensor:
-        """
-        Compute the mean velocity for every configuration and replicate for every atom.
-
-        :param velocity:
-            Velocity tensor.
-        :type velocity: paddle.Tensor
-        :param batch_indices:
-            Batch indices for each atom.
-        :type batch_indices: paddle.Tensor
-
-        :return:
-            Mean velocity replicated for each atom.
-        :rtype: paddle.Tensor
-        """
-        mean_vel = scatter_mean(velocity, batch_indices, dim=0)
-        return mean_vel[batch_indices]
 
     def _ode_integrate(
         self,
@@ -499,12 +487,6 @@ class SingleStochasticInterpolantOS(StochasticInterpolant):
     def loss(self, *args, **kwargs):
         raise NotImplementedError  # Overridden in __init__ via self.loss = _ode_loss / _sde_loss
 
-    def _compute_mean_velocity(
-        self, velocity: paddle.Tensor, batch_indices: paddle.Tensor
-    ) -> paddle.Tensor:
-        mean_vel = scatter_mean(velocity, batch_indices, dim=0)
-        return mean_vel[batch_indices]
-
     def _ode_loss(
         self,
         model_function: Callable[[paddle.Tensor], Tuple[paddle.Tensor, paddle.Tensor]],
@@ -527,10 +509,10 @@ class SingleStochasticInterpolantOS(StochasticInterpolant):
                     t, -x_0, x_1
                 )
                 if self._correct_center_of_mass_motion:
-                    expected_velocity_p = expected_velocity_p - self._compute_mean_velocity(
+                    expected_velocity_p = expected_velocity_p - _compute_mean_velocity(
                         expected_velocity_p, batch_indices
                     )
-                    expected_velocity_m = expected_velocity_m - self._compute_mean_velocity(
+                    expected_velocity_m = expected_velocity_m - _compute_mean_velocity(
                         expected_velocity_m, batch_indices
                     )
                 pred_b_p = model_function(x_t_p)[0]
@@ -547,7 +529,7 @@ class SingleStochasticInterpolantOS(StochasticInterpolant):
                 )
                 pred_b = model_function(x_t)[0]
                 if self._correct_center_of_mass_motion:
-                    expected_velocity = expected_velocity - self._compute_mean_velocity(
+                    expected_velocity = expected_velocity - _compute_mean_velocity(
                         expected_velocity, batch_indices
                     )
                 loss = paddle.mean(pred_b**2) - 2.0 * paddle.mean(
@@ -581,10 +563,10 @@ class SingleStochasticInterpolantOS(StochasticInterpolant):
                     t, -x_0, x_1
                 )
                 if self._correct_center_of_mass_motion:
-                    expected_velocity_p = expected_velocity_p - self._compute_mean_velocity(
+                    expected_velocity_p = expected_velocity_p - _compute_mean_velocity(
                         expected_velocity_p, batch_indices
                     )
-                    expected_velocity_m = expected_velocity_m - self._compute_mean_velocity(
+                    expected_velocity_m = expected_velocity_m - _compute_mean_velocity(
                         expected_velocity_m, batch_indices
                     )
                 pred_b_m = model_function(x_t_m)[0]
@@ -599,7 +581,7 @@ class SingleStochasticInterpolantOS(StochasticInterpolant):
                     t, x_0, x_1
                 )
                 if self._correct_center_of_mass_motion:
-                    expected_velocity = expected_velocity - self._compute_mean_velocity(
+                    expected_velocity = expected_velocity - _compute_mean_velocity(
                         expected_velocity, batch_indices
                     )
                 loss_b = paddle.mean(pred_b**2) - 2.0 * paddle.mean(
@@ -805,30 +787,6 @@ class SingleStochasticInterpolantIdentity(StochasticInterpolantSpecies):
         """
         # Dataset does not contain masked species.
         return False
-
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Stochastic Interpolants main class.
-"""
-
-from enum import Enum
-from typing import Callable, List, Sequence, Tuple, Union
-
-import paddle
-
-from ppmat.datasets.omatg_dataset import OMATGData
 
 # Global constants
 SMALL_TIME: float = 1.0e-3
@@ -1048,7 +1006,7 @@ class StochasticInterpolants:
                 model_result = model_function(x_t_clone, t)
                 return model_result[b_data_field], model_result[eta_data_field]
 
-            l = stochastic_interpolant.loss(
+            field_losses = stochastic_interpolant.loss(
                 model_prediction_fn,
                 reshaped_t,
                 getattr(x_0, field_name),
@@ -1058,9 +1016,9 @@ class StochasticInterpolants:
                 batch_indices,
             )
 
-            for l_key, l_value in l.items():
-                assert l_key not in losses
-                losses[f"{field_name}_{l_key}"] = l_value
+            for loss_key, loss_value in field_losses.items():
+                assert loss_key not in losses
+                losses[f"{field_name}_{loss_key}"] = loss_value
 
         return losses
 
@@ -1162,10 +1120,6 @@ class StochasticInterpolants:
         index = self._data_fields.index(df)
         return self._stochastic_interpolants[index]
 
-import importlib
-
-from ppmat.models.omatg.model import IndependentSampler
-
 _SI_MODULE = "ppmat.models.omatg.si"
 _SUB_MODULES = [
     "ppmat.models.omatg.si.interpolants",
@@ -1243,7 +1197,7 @@ def build_si_from_cfg(si_cfg: dict) -> StochasticInterpolants:
     )
 
 
-def build_sampler_from_cfg(sampler_cfg: dict) -> IndependentSampler:
+def build_sampler_from_cfg(sampler_cfg: dict):
     """Build IndependentSampler from a config dict.
 
     Expected schema (all keys optional):
@@ -1251,17 +1205,14 @@ def build_sampler_from_cfg(sampler_cfg: dict) -> IndependentSampler:
         mirror_species: bool
         mask_species: bool
     """
+    from ppmat.models.omatg.model import IndependentSampler
+
     return IndependentSampler(
         dataset_name=sampler_cfg.get("dataset_name"),
         mirror_species=sampler_cfg.get("mirror_species", True),
         mask_species=sampler_cfg.get("mask_species", False),
     )
 
-from typing import Callable, Dict, Iterable, Tuple
-
-import paddle
-
-from .interpolants import StochasticInterpolantSpecies
 
 MAX_ATOM_NUM: int = 100
 

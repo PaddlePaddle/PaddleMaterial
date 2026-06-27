@@ -481,8 +481,6 @@ class Tau(ABC, TimeChecker):
         """
         raise NotImplementedError
 
-import paddle
-
 
 class IdentityCorrector(Corrector):
     def correct(self, x: paddle.Tensor) -> paddle.Tensor:

@@ -421,7 +421,6 @@ class TestSITrainingPath(unittest.TestCase):
         """DNG SI training path (SDE + gamma + DFM mask)."""
         from ppmat.models.omatg.si import (
             StochasticInterpolants, SingleStochasticInterpolant,
-            SingleStochasticInterpolantIdentity,
             PeriodicLinearInterpolant, LinearInterpolant,
         )
         from ppmat.models.omatg.si.core import DiscreteFlowMatchingMask

@@ -21,12 +21,21 @@ Extends diffcsp.CSPNet to add:
   - species_shift and enable_masked_species() for DNG mode
 """
 
+import paddle
 import paddle.nn as nn
 
+from ase.geometry.cell import cellpar_to_cell
+
+from ppmat.datasets.omatg_dataset import OMATGData, Structure
 from ppmat.losses import MSELoss
 from ppmat.models.diffcsp.diffcsp import CSPNet
 from ppmat.utils.crystal import radius_graph_pbc, frac_to_cart_coords_with_lattice
 from ppmat.utils.misc import repeat_blocks
+
+__all__ = [
+    "OMATGCSPNetFull",
+    "IndependentSampler",
+]
 
 
 class OMATGCSPNet(CSPNet):
@@ -537,12 +546,24 @@ class OMATGCSPNetFull(OMATGCSPNet):
         from ppmat.models.omatg.si import StochasticInterpolants
 
         si_list = si_cfg.get("stochastic_interpolants", [])
-        use_factory = si_list and isinstance(si_list[0], dict) and "__class_name__" in si_list[0]
-        self._si = build_si_from_cfg(si_cfg) if use_factory else StochasticInterpolants(
-            stochastic_interpolants=si_list,
-            data_fields=si_cfg["data_fields"],
-            integration_time_steps=si_cfg.get("integration_time_steps", 210),
-        )
+        if not si_list:
+            self._si = None
+            self._relative_si_costs = {}
+            self._sampler = None
+            return
+
+        use_factory = isinstance(si_list[0], dict) and "__class_name__" in si_list[0]
+        if use_factory:
+            self._si = build_si_from_cfg(si_cfg)
+        else:
+            data_fields = si_cfg.get("data_fields")
+            if not data_fields:
+                raise ValueError("si_cfg must contain 'data_fields' when use_si=True.")
+            self._si = StochasticInterpolants(
+                stochastic_interpolants=si_list,
+                data_fields=data_fields,
+                integration_time_steps=si_cfg.get("integration_time_steps", 210),
+            )
         self._relative_si_costs = si_cfg.get("relative_si_costs", {})
 
         if sampler_cfg:
@@ -583,15 +604,7 @@ class OMATGCSPNetFull(OMATGCSPNet):
         return {"loss_dict": loss_dict}
 
 
-__all__ = [
-    "OMATGCSPNetFull",
-]
 """Independent base distribution sampler using Paddle native APIs."""
-
-import paddle
-from ase.geometry.cell import cellpar_to_cell
-
-from ppmat.datasets.omatg_dataset import Structure, OMATGData
 
 _LATTICE_PARAMS = {
     "carbon_24": {
@@ -655,7 +668,7 @@ class IndependentSampler:
             elif self._mirror_species:
                 species = x_1.species[sl].clone()
             else:
-                species = x_1.species[sl].clone()
+                species = paddle.randint(1, 100, x_1.species[sl].shape, dtype=x_1.species[sl].dtype)
             sampled = Structure(
                 cell=cell,
                 atomic_numbers=species,

@@ -46,13 +46,12 @@ class Structure:
         metadata: Optional[dict[str, Any]] = None,
         pos_is_fractional: bool = False,
     ) -> None:
-        assert cell.shape == (3, 3), f"cell must be 3x3, got {cell.shape}"
-        assert (
-            atomic_numbers.dim() == 1
-        ), f"atomic_numbers must be 1D, got {atomic_numbers.dim()}D"
-        assert (
-            pos.shape[0] == len(atomic_numbers) and pos.shape[1] == 3
-        ), f"pos must be (N, 3), got {pos.shape}"
+        if cell.shape != (3, 3):
+            raise ValueError(f"cell must be 3x3, got {cell.shape}")
+        if atomic_numbers.dim() != 1:
+            raise ValueError(f"atomic_numbers must be 1D, got {atomic_numbers.dim()}D")
+        if pos.shape[0] != len(atomic_numbers) or pos.shape[1] != 3:
+            raise ValueError(f"pos must be (N, 3), got {pos.shape}")
 
         self._cell = cell
         self._atomic_numbers = atomic_numbers
@@ -484,7 +483,7 @@ class StructureDataset(paddle.io.Dataset):
         for col in required_cols:
             if col not in df.columns:
                 raise KeyError(
-                    f"Parquet file does not contain '{col}' column. "
+                    f"Parquet file missing '{col}'. "
                     f"Available columns: {list(df.columns)}"
                 )
 
