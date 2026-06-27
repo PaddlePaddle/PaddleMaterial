@@ -108,22 +108,18 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         v1_cross_v2 = paddle.linalg.cross(v1, v2)
         v1crossv2_dot_v2crossv3 = paddle.sum(v1_cross_v2 * v2_cross_v3, axis=-1)
 
-        # Torsion angles are used as geometric features only;
-        # detach to avoid Paddle put_along_axis gradient issues.
         torsion_angle = paddle.atan2(
             v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
         )
 
-        # Per-triplet best-angle selection without reduce="amin"
-        # (Paddle put_along_axis amin gradient is buggy).
-        # Use argsort + unique to pick the quadruplet with smallest
-        # abs torsion for each triplet.
+        # Per-triplet best-angle selection.
+        # Paddle's put_along_axis(..., reduce="amin") has a buggy backward,
+        # so use argsort + unique + scatter instead.
         if idx_triplet.shape[0] > 0:
             abs_torsion = paddle.abs(torsion_angle)
-            # Sort by (triplet_id, abs_torsion) so smallest abs comes first per group
-            sort_key = idx_triplet.to(abs_torsion.dtype) * (
-                abs_torsion.max() + 1.0
-            ) + abs_torsion
+            # Sort by (triplet_id, abs_torsion) — smallest abs per group first
+            scale = abs_torsion.max() + 1.0
+            sort_key = idx_triplet.to(abs_torsion.dtype) * scale + abs_torsion
             order = paddle.argsort(sort_key)
             sorted_triplet = idx_triplet[order]
             unique_triplet, first_idx = paddle.unique(
@@ -131,13 +127,9 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
             )
             keep_idx = order[first_idx]
             torsion = paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype)
-            torsion = paddle.put_along_axis(
-                torsion.unsqueeze(-1),
-                unique_triplet.unsqueeze(-1),
-                torsion_angle[keep_idx].unsqueeze(-1),
-                axis=0,
-                reduce="assign",
-            ).squeeze(-1)
+            torsion = paddle.scatter(
+                torsion, unique_triplet, torsion_angle[keep_idx], overwrite=True
+            )
         else:
             torsion = paddle.zeros_like(angle)
 
