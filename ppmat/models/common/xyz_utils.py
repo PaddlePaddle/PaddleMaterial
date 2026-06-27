@@ -113,23 +113,19 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         )
 
         # Per-triplet best-angle selection.
-        # Paddle's put_along_axis(..., reduce="amin") has a buggy backward,
-        # so use argsort + unique + scatter instead.
+        # no_grad avoids Paddle's buggy scatter backward; gradient flows
+        # through direct indexing of torsion_angle.
         if idx_triplet.shape[0] > 0:
-            abs_torsion = paddle.abs(torsion_angle)
-            # Sort by (triplet_id, abs_torsion) — smallest abs per group first
-            scale = abs_torsion.max() + 1.0
-            sort_key = idx_triplet.to(abs_torsion.dtype) * scale + abs_torsion
-            order = paddle.argsort(sort_key)
-            sorted_triplet = idx_triplet[order]
-            unique_triplet, first_idx = paddle.unique(
-                sorted_triplet, return_index=True
-            )
-            keep_idx = order[first_idx]
+            with paddle.no_grad():
+                abs_a = paddle.abs(torsion_angle)
+                inv = paddle.unique(idx_triplet, return_inverse=True)[1]
+                scale = abs_a.max() + 1.0
+                order = paddle.argsort(inv.to(abs_a.dtype) * scale + abs_a)
+                _, first = paddle.unique(inv[order], return_index=True)
+                keep = order[first]
+            sel = inv[keep]
             torsion = paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype)
-            torsion = paddle.scatter(
-                torsion, unique_triplet, torsion_angle[keep_idx], overwrite=True
-            )
+            torsion[sel] = torsion_angle[keep]
         else:
             torsion = paddle.zeros_like(angle)
 
