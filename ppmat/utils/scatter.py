@@ -48,8 +48,8 @@ def _scatter_sum(
         else:
             size[dim] = int(index.max()) + 1
         out = paddle.zeros(size, dtype=src.dtype)
-    # Use one-hot + matmul instead of put_along_axis to avoid
-    # Paddle's buggy PutAlongAxisGradNode backward kernel.
+    # FIXME: Paddle's put_along_axis backward (PutAlongAxisGradNode) crashes
+    # for dim=0; use one-hot + matmul as drop-in replacement.
     if dim == 0:
         # _broadcast expanded index to src.shape; collapse back to 1D via first column
         idx_1d = index.reshape([-1, src.shape[1]])[:, 0] if index.ndim > 1 else index

@@ -573,9 +573,9 @@ class SphereNetPP(paddle.nn.Layer):
         # Compute forces if needed (used in both loss and prediction paths)
         forces_pred = None
         if self.energy_and_force:
-            # F = -dE/d(pos); use create_graph=False to avoid Paddle's
-            # Atan2GradNode and PutAlongAxisGradNode backward bugs that
-            # produce NaN second-order gradients.
+            # F = -dE/d(pos)
+            # FIXME: Paddle's atan2/put_along_axis lack 2nd-order grad ops;
+            # use create_graph=False to avoid NaN during force computation.
             grad = paddle.grad(pred.sum(), pos, create_graph=False, allow_unused=True)
             if grad is None or grad[0] is None:
                 forces_pred = None

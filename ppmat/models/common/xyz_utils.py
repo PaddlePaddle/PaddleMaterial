@@ -78,7 +78,9 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
     angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
     angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
-    angle = paddle.atan2(angle_sin, angle_cos)
+    # FIXME: detach to avoid Paddle atan2 2nd-order grad NaN (create_graph=False still
+    # has numerical instability for planar geometries e.g. benzene).
+    angle = paddle.atan2(angle_sin, angle_cos).detach()
 
     torsion = paddle.zeros_like(angle)
     if use_torsion:
@@ -110,7 +112,7 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
 
         torsion_angle = paddle.atan2(
             v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
-        )
+        ).detach()
 
         # Per-triplet best-angle selection.
         # no_grad avoids Paddle's buggy scatter backward; gradient flows
