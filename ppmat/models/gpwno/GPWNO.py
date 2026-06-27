@@ -863,12 +863,11 @@ class GPWNO(paddle.nn.Layer):
         if self.residual:
             density = density + residue.view(*density.size())
         if self.scalar_mask:
-            # 修复1：bool转float32 + 移除.cuda()，改用Paddle的设备对齐
+            # Match the mask dtype and device with the scalar field.
             mask_float = mask.astype(paddle.float32).to(scalar_field.place)
             scalar_field = scalar_field * mask_float
-            
+
             if self.scalar_inv:
-                # 修复2：1 - mask时先转浮点，避免bool运算，同时对齐设备
                 mask_inv_float = (1 - mask_float).astype(paddle.float32)
                 density = density * mask_inv_float
         if self.positive_output:
@@ -890,7 +889,7 @@ class GPWNO(paddle.nn.Layer):
             "scalar_field": scalar_field,
             "coefficient_field": density - scalar_field,
             "scalar_field_influence": scalar_field_influence,
-            "probe": probe,   # ⚠️ 只做 aux，不再 cpu()
+            "probe": probe,
         }
 
         return density, aux

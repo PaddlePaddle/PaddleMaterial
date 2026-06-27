@@ -8,6 +8,10 @@ Official implementation: [seongsukim-ml/GPWNO](https://github.com/seongsukim-ml/
 
 GPWNO is an equivariant neural operator for electron-density estimation. It combines atom-centered Gaussian basis functions with a plane-wave neural operator, allowing the model to capture both local atomic environments and global Fourier-space density patterns. The model follows the same electron-density prediction setting as InfGCN and was originally built on top of a similar data pipeline.
 
+<div align="center">
+  <img src="../../docs/gpwno_overview.png" alt="GPWNO overview" width="95%">
+</div>
+
 ---
 
 ## Model Description
@@ -71,6 +75,7 @@ $$
 GPWNO uses the same electron-density datasets and dataloaders as InfGCN.
 
 - **MD17_EC**: Small-molecule molecular dynamics electron-density data. The supported molecules include benzene, ethanol, phenol, resorcinol, ethane, and malonaldehyde. [Data](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17_ES/md17_es.tar.gz).
+- **QM9_EC**: QM9 molecule electron-density data stored as `qm9.json`, `qm9_data_split.json`, and `*.CHGCAR.lz4` files under `./data/data_qm9`. Data link: TBD.
 - **MP_EC (cubic)**: Materials Project-style crystal electron densities stored as `*.json.xz` under `./data/data_mp`. [Data](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/mp_es.tar), [atom dictionary](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/crystal.json), [split file](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MP_ES/crystal_data_split.json).
 
 ---
@@ -82,6 +87,7 @@ The PaddleMaterials configs follow the original GPWNO hyper-parameter choices:
 | Dataset | Original model profile | Main differences |
 | --- | --- | --- |
 | MD17_EC | `GPWNO_MD.yaml` | `num_spherical=3`, `num_fourier=40`, `padding=4`, `use_max_cell=true`, `equivariant_frame=true`, `residual=false` |
+| QM9_EC | `GPWNO_QM9.yaml` | `num_spherical=4`, `num_fourier=40`, `padding=4`, `use_max_cell=true`, `equivariant_frame=true`, `residual=true` |
 | MP_EC | `GPWNO_pbc.yaml` | `pbc=true`, `num_fourier=20`, `padding=0`, `use_max_cell=false`, `max_cell_size=324`, `equivariant_frame=false` |
 
 ---
@@ -120,6 +126,15 @@ The PaddleMaterials configs follow the original GPWNO hyper-parameter choices:
             <td nowrap="nowrap">TBD</td>
         </tr>
         <tr>
+            <td nowrap="nowrap">gpwno_qm9</td>
+            <td nowrap="nowrap">QM9_EC</td>
+            <td nowrap="nowrap">7.4001% (test, 2 epochs)</td>
+            <td nowrap="nowrap">3</td>
+            <td nowrap="nowrap">36hour33min</td>
+            <td nowrap="nowrap"><a href="../../../electronic_structure/configs/gpwno/gpwno_qm9.yaml">gpwno_qm9</a></td>
+            <td nowrap="nowrap">TBD</td>
+        </tr>
+        <tr>
             <td nowrap="nowrap">gpwno_mp</td>
             <td nowrap="nowrap">MP_EC (cubic)</td>
             <td nowrap="nowrap">37.8910%</td>
@@ -135,9 +150,9 @@ Note: The MD17_EC_Benzene result is reported from the epoch-10 validation of the
 
 Note: The MD17_EC_Ethane result is reported from the final test set evaluation of the local run `gpwno_md17_ethane_t_20260529_204928_s_42`. The final validation NMAE is `4.8302%`, and the final test NMAE is `4.8339%`.
 
-Note: The MP_EC result is reported from the final test set evaluation of the local run `gpwno_mp_resume_t_20260528_204842_s_42`. The final validation NMAE is `34.8928%`, and the final test NMAE is `37.8910%`.
+Note: The QM9_EC result is reported from the final test set evaluation of the local run `gpwno_qm9_t_20260626_164201_s_42`, which resumed from `gpwno_qm9_t_20260625_221247_s_42/checkpoints/latest`. The best validation NMAE is `7.0865%`, and the final test NMAE is `7.4001%`. The corresponding checkpoint is `checkpoints/best.pdparams`.
 
-Note: Checkpoint and log links are reserved as `TBD`. The local checkpoints and logs are not submitted in this PR; they will be uploaded separately by the project maintainers and replaced with Paddle-hosted links after conversion.
+Note: The MP_EC result is reported from the final test set evaluation of the local run `gpwno_mp_resume_t_20260528_204842_s_42`. The final validation NMAE is `34.8928%`, and the final test NMAE is `37.8910%`.
 
 ---
 
@@ -150,6 +165,9 @@ The datasets are downloaded automatically by the dataset classes when the config
 ```bash
 # MD17_EC will be prepared under ./data/data_md
 python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml Global.do_train=False Global.do_eval=False Global.do_test=True
+
+# QM9_EC will be prepared under ./data/data_qm9 after the dataset package is downloaded and extracted
+python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml Global.do_train=False Global.do_eval=False Global.do_test=True
 ```
 
 ### Training
@@ -160,18 +178,28 @@ python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno
 
 # multi-gpu training
 python -m paddle.distributed.launch --gpus="0,1,2,3" electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_md17_benzene.yaml
+
+# QM9_EC multi-gpu training
+python -m paddle.distributed.launch --gpus="0,1,2" electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml
+
+# resume training from checkpoint
+python -m paddle.distributed.launch --gpus="0,1,2" electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml Trainer.resume_from_checkpoint='path/to/checkpoints/latest'
 ```
 
 ### Validation
 
 ```bash
 python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='path/to/model.pdparams'
+
+python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml Global.do_train=False Global.do_eval=True Global.do_test=False Trainer.pretrained_model_path='path/to/checkpoints/best.pdparams'
 ```
 
 ### Testing
 
 ```bash
 python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='path/to/model.pdparams'
+
+python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml Global.do_train=False Global.do_eval=False Global.do_test=True Trainer.pretrained_model_path='path/to/checkpoints/best.pdparams'
 ```
 
 ### Prediction
