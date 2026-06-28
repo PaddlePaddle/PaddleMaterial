@@ -95,7 +95,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 32
+        batch_size: 8
         shuffle: true
         drop_last: true
   val:
@@ -116,7 +116,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 32
+        batch_size: 8
         shuffle: false
         drop_last: false
   test:
@@ -137,6 +137,6 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 32
+        batch_size: 8
         shuffle: false
         drop_last: false
