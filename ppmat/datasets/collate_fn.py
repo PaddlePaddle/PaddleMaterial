@@ -150,25 +150,28 @@ class SphereNetCollator:
 
         if has_triplet:
             # Precomputed triplet/quadruplet indices also need batch offsets.
-            # Edge-counting keys (idx_kj, idx_ji, idx_lk): offset by cumulative
-            # edge count.  Triplet-counting key (idx_triplet): offset by
-            # cumulative triplet count.
+            #   i, j: node indices — offset by cumulative node count.
+            #   idx_kj, idx_ji, idx_lk: edge indices — offset by cumulative
+            #     edge count.
+            #   idx_triplet: triplet indices — offset by cumulative triplet
+            #     count.
+            n_offsets = np.cumsum(
+                [0] + num_nodes_list[:-1]
+            )
             e_offsets = np.cumsum(
                 [0] + [b["edge_index"].shape[1] for b in batch[:-1]]
             )
-            # Accumulate triplet count per sample from idx_kj length.
             t_offsets = np.cumsum(
                 [0] + [b["triplet_indices"]["idx_kj"].shape[0] for b in batch[:-1]]
             )
-            ti_keys = ["i", "j", "idx_kj", "idx_ji", "idx_lk"]
             concat = {k: [] for k in ["i", "j", "idx_kj", "idx_ji", "idx_lk",
                                        "idx_triplet"]}
             for i, b in enumerate(batch):
                 ti = b["triplet_indices"]
-                for k in ["i", "j", "idx_lk"]:
+                for k in ["i", "j"]:
                     arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
-                    concat[k].append(arr + e_offsets[i])
-                for k in ["idx_kj", "idx_ji"]:
+                    concat[k].append(arr + n_offsets[i])
+                for k in ["idx_kj", "idx_ji", "idx_lk"]:
                     arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
                     concat[k].append(arr + e_offsets[i])
                 arr_t = (ti["idx_triplet"] if isinstance(ti["idx_triplet"], np.ndarray)
