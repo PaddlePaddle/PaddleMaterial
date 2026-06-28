@@ -115,7 +115,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">59min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_benzene.yaml">infgcn_md17_benzene</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_benzene_t_20260104_083255_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_benzene.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_md17_ethane</td>
@@ -124,7 +124,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">1hour17min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_ethane.yaml">infgcn_md17_ethane</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethane_t_20260105_035402_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethane.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_md17_ethanol</td>
@@ -133,7 +133,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">7min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_ethanol.yaml">infgcn_md17_ethanol</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethanol_t_20260105_051323_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethanol.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_md17_malonaldehyde</td>
@@ -142,7 +142,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">1hour29min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_malonaldehyde.yaml">infgcn_md17_malonaldehyde</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_malonaldehyde_t_20260105_052204_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_malonaldehyde.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_md17_phenol</td>
@@ -151,7 +151,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">1hour17min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_phenol.yaml">infgcn_md17_phenol</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_phenol_t_20260107_041611_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_phenol.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_md17_resorcinol</td>
@@ -160,7 +160,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">1hour23min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_md17_resorcinol.yaml">infgcn_md17_resorcinol</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_resorcinol_t_20260104_083255_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_resorcinol.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_qm9</td>
@@ -169,7 +169,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">75hour41min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_qm9.yaml">infgcn_qm9</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9_t_20260107_113954_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_cubic</td>
@@ -178,7 +178,7 @@ $$
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">12hour6min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_mp.yaml">infgcn_cubic</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_mp_t_20260108_024145_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_mp.zip">checkpoint</td>
         </tr>
         <tr>
             <td nowrap="nowrap">infgcn_omol25_mc_5k</td>
@@ -187,12 +187,12 @@ $$
             <td nowrap="nowrap">4</td>
             <td nowrap="nowrap">66hour28min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml">infgcn_omol25</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_omol25_s1_trimmed_t_20260118_183549_s_42.zip">checkpoint | log</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_omol25_mc_5k_trimmed.zip">checkpoint</td>
         </tr>
     </tbody>
 </table>
 
-**Note**: Benchmarks are being regenerated in Paddle; metrics and downloadable checkpoints will be published once validation completes. Pretrained QM9 package: [infgcn_qm9.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.zip), with weights stored under `checkpoints/`.
+**Note**: Benchmarks are being regenerated in Paddle; metrics and downloadable checkpoints will be published once validation completes. Pretrained packages store weights under `checkpoints/`.
 
 ---
 
@@ -223,7 +223,7 @@ python electronic_structure/train.py -c electronic_structure/configs/infgcn/infg
 # 1) One-click dataset-sample inference with a registered pretrained model.
 python electronic_structure/predict.py \
   --model_name infgcn_qm9 \
-  --weights_name infgcn_qm9.pdparams \
+  --weights_name best.pdparams \
   --split validation \
   --index 0 \
   --grid_batch_size 20000 \

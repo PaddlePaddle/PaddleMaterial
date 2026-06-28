@@ -9,6 +9,17 @@ from omegaconf import OmegaConf
 
 ROOT = Path(__file__).resolve().parents[1]
 INFGCN_CONFIG_DIR = ROOT / "electronic_structure/configs/infgcn"
+INFGCN_MODEL_NAMES = [
+    "infgcn_md17_benzene",
+    "infgcn_md17_ethane",
+    "infgcn_md17_ethanol",
+    "infgcn_md17_malonaldehyde",
+    "infgcn_md17_phenol",
+    "infgcn_md17_resorcinol",
+    "infgcn_mp",
+    "infgcn_omol25_mc_5k_trimmed",
+    "infgcn_qm9",
+]
 
 
 def _models_module_ast():
@@ -28,11 +39,12 @@ def test_infgcn_and_diffnmr_are_registered_for_one_click_loading():
     registry = _literal_assign("MODEL_REGISTRY")
     config_registry = _literal_assign("MODEL_CONFIG_REGISTRY")
 
-    for model_name in ["infgcn_qm9", "diffnmr_msdnmr_nless15"]:
+    for model_name in [*INFGCN_MODEL_NAMES, "diffnmr_msdnmr_nless15"]:
         assert model_name in registry
         assert model_name in config_registry
         assert registry[model_name].startswith("https://paddle-org.bj.bcebos.com/")
         assert registry[model_name].endswith(".zip")
+        assert registry[model_name].endswith(f"{model_name}.zip")
         assert (ROOT / config_registry[model_name]).exists()
 
 
@@ -45,7 +57,7 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     checkpoints_dir = package_dir / "checkpoints"
     checkpoints_dir.mkdir(parents=True)
     config_path = package_dir / "infgcn_qm9.yaml"
-    weight_path = checkpoints_dir / "infgcn_qm9.pdparams"
+    weight_path = checkpoints_dir / "best.pdparams"
     config_path.write_text("Model: {}\n")
     weight_path.write_bytes(b"fake")
 
@@ -53,7 +65,7 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
         get_model_config_path_from_package("infgcn_qm9", str(cache_dir))
     ) == config_path
     assert Path(
-        get_model_file_path_from_package(cache_dir, "infgcn_qm9.pdparams")
+        get_model_file_path_from_package(cache_dir, "best.pdparams")
     ) == weight_path
 
 
@@ -131,10 +143,12 @@ def test_infgcn_readme_commands_and_config_links_are_clean():
     readme = readme_path.read_text()
 
     assert "--model_name infgcn_qm9" in readme
-    assert "--weights_name infgcn_qm9.pdparams" in readme
+    assert "--weights_name best.pdparams" in readme
     assert "conda run" not in readme
     assert "/home/" not in readme
     assert ".pt" not in readme
+    assert "_t_2026" not in readme
+    assert "_s_42.zip" not in readme
 
     hrefs = re.findall(r'href="([^"]*configs/infgcn/[^"]+\.yaml)"', readme)
     assert hrefs

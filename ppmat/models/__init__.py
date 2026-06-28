@@ -117,11 +117,27 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
+    "infgcn_md17_benzene": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_benzene.zip",
+    "infgcn_md17_ethane": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethane.zip",
+    "infgcn_md17_ethanol": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_ethanol.zip",
+    "infgcn_md17_malonaldehyde": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_malonaldehyde.zip",
+    "infgcn_md17_phenol": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_phenol.zip",
+    "infgcn_md17_resorcinol": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_md17_resorcinol.zip",
+    "infgcn_mp": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_mp.zip",
+    "infgcn_omol25_mc_5k_trimmed": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_omol25_mc_5k_trimmed.zip",
     "infgcn_qm9": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.zip",
     "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/diffnmr_msdnmr_nless15.zip",
 }
 
 MODEL_CONFIG_REGISTRY = {
+    "infgcn_md17_benzene": "electronic_structure/configs/infgcn/infgcn_md17_benzene.yaml",
+    "infgcn_md17_ethane": "electronic_structure/configs/infgcn/infgcn_md17_ethane.yaml",
+    "infgcn_md17_ethanol": "electronic_structure/configs/infgcn/infgcn_md17_ethanol.yaml",
+    "infgcn_md17_malonaldehyde": "electronic_structure/configs/infgcn/infgcn_md17_malonaldehyde.yaml",
+    "infgcn_md17_phenol": "electronic_structure/configs/infgcn/infgcn_md17_phenol.yaml",
+    "infgcn_md17_resorcinol": "electronic_structure/configs/infgcn/infgcn_md17_resorcinol.yaml",
+    "infgcn_mp": "electronic_structure/configs/infgcn/infgcn_mp.yaml",
+    "infgcn_omol25_mc_5k_trimmed": "electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml",
     "infgcn_qm9": "electronic_structure/configs/infgcn/infgcn_qm9.yaml",
     "diffnmr_msdnmr_nless15": "spectrum_elucidation/configs/diffnmr/DiffNMR.yaml",
 }
