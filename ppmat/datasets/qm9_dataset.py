@@ -248,8 +248,14 @@ class QM9Dataset(Dataset):
                 line = f.readline()
                 if not line:
                     break
-                n_atoms = int(line.strip())
-                for _ in range(1 + n_atoms):
+                try:
+                    n_atoms = int(line.strip())
+                except ValueError:
+                    # Some BOS .xyz files pack multiple molecules per file
+                    # with tab separators instead of newlines. Scan forward
+                    # to the next atom-count line.
+                    continue
+                for _ in range(2 + n_atoms):
                     f.readline()
                 index.append(offset)
         return index
