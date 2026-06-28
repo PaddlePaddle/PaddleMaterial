@@ -28,10 +28,10 @@
 +----------------+----------+--------+-------+----------+-------+
 """
 
-import multiprocessing as mp
 import os
 import os.path as osp
 import pickle
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 from typing import Dict
 from typing import Optional
@@ -78,26 +78,13 @@ _BUNDLE_NPZ_MAP = {
 }
 
 
-def _init_md17_worker(all_z, all_pos, build_graph_cfg, cache_dir):
-    """Initializer for MD17 multiprocessing pool — sets module-level globals."""
-    global _MD17_Z, _MD17_POS, _MD17_CFG, _MD17_CACHE_DIR
-    paddle.set_device('cpu')
-    _MD17_Z = all_z
-    _MD17_POS = all_pos
-    _MD17_CFG = build_graph_cfg
-    _MD17_CACHE_DIR = cache_dir
-
-
-def _build_md17_graph_idx(idx):
-    """Multiprocessing worker: build graph + triplet indices for one MD17 frame."""
-    converter = build_graph_converter(_MD17_CFG)
-    pos_i = _MD17_POS[idx]
-    batch_t = np.zeros(_MD17_Z.shape[0], dtype=np.int64)
-    ei = converter(
-        paddle.to_tensor(pos_i),
-        paddle.to_tensor(batch_t),
-    )
-    ti = compute_triplet_indices(ei, _MD17_Z.shape[0])
+def _build_md17_graph_thread(idx, all_z, all_pos, build_graph_cfg, cache_dir):
+    """Thread worker: build graph + triplet indices for one MD17 frame."""
+    converter = build_graph_converter(build_graph_cfg)
+    pos_i = all_pos[idx]
+    batch_t = np.zeros(all_z.shape[0], dtype=np.int64)
+    ei = converter(paddle.to_tensor(pos_i), paddle.to_tensor(batch_t))
+    ti = compute_triplet_indices(ei, all_z.shape[0])
     cache_data = {
         'edge_index': ei.numpy(),
         'ti_i': ti['i'].numpy(),
@@ -107,7 +94,7 @@ def _build_md17_graph_idx(idx):
         'ti_idx_lk': ti['idx_lk'].numpy(),
         'ti_idx_triplet': ti['idx_triplet'].numpy(),
     }
-    save_path = osp.join(_MD17_CACHE_DIR, f"{idx:010d}.pkl")
+    save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
     with open(save_path, 'wb') as f:
         pickle.dump(cache_data, f)
     return idx
@@ -230,18 +217,18 @@ class MD17Dataset(Dataset):
                     self._save_pickle(cfg_pkl, build_graph_cfg)
                     logger.info(
                         f"Pre‑building graphs for MD17/{name} ({total} frames) "
-                        f"with 24 workers ..."
+                        f"with 24 threads ..."
                     )
-                    ctx = mp.get_context('spawn')
-                    with ctx.Pool(
-                        24,
-                        initializer=_init_md17_worker,
-                        initargs=(all_z, all_pos, build_graph_cfg, graph_cache_dir),
-                    ) as pool:
+                    with ThreadPoolExecutor(max_workers=24) as executor:
+                        futures = {
+                            executor.submit(
+                                _build_md17_graph_thread,
+                                i, all_z, all_pos,
+                                build_graph_cfg, graph_cache_dir,
+                            ): i for i in range(total)
+                        }
                         for _ in tqdm(
-                            pool.imap_unordered(_build_md17_graph_idx, range(total)),
-                            total=total,
-                            desc="Build graphs",
+                            as_completed(futures), total=total, desc="Build graphs"
                         ):
                             pass
                 if dist.is_initialized():

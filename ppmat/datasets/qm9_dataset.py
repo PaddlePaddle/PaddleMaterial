@@ -20,10 +20,10 @@
 from __future__ import annotations
 
 import math
-import multiprocessing as mp
 import os
 import os.path as osp
 import pickle
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from typing import Callable
 from typing import Dict
@@ -87,20 +87,14 @@ def _parse_qm9_xyz(lines):
     return np.array(z_list, dtype=np.int64), np.array(pos_list, dtype=np.float32), props
 
 
-def _init_qm9_worker(merged_xyz, offsets, build_graph_cfg, cache_dir):
-    """Initializer for QM9 multiprocessing pool."""
-    global _QM9_XYZ, _QM9_OFFSETS, _QM9_CFG, _QM9_CACHE_DIR
-    paddle.set_device('cpu')
-    _QM9_XYZ = merged_xyz
-    _QM9_OFFSETS = offsets
-    _QM9_CFG = build_graph_cfg
-    _QM9_CACHE_DIR = cache_dir
-
-
-def _build_qm9_graph_idx(idx):
-    """Multiprocessing worker: build graph + triplet indices for one QM9 molecule."""
-    converter = build_graph_converter(_QM9_CFG)
-    z, pos = QM9Dataset._read_one_molecule(_QM9_XYZ, _QM9_OFFSETS, idx)
+def _build_qm9_graph_thread(idx, merged_xyz, offsets, build_graph_cfg, cache_dir):
+    """Thread worker: build graph + triplet indices for one QM9 molecule.
+    
+    No pickling needed (threads share memory).  Each thread creates its
+    own converter instance for thread-safety.
+    """
+    converter = build_graph_converter(build_graph_cfg)
+    z, pos = QM9Dataset._read_one_molecule(merged_xyz, offsets, idx)
     num_nodes = z.shape[0]
     batch_t = np.zeros(num_nodes, dtype=np.int64)
     ei = converter(paddle.to_tensor(pos), paddle.to_tensor(batch_t))
@@ -114,7 +108,7 @@ def _build_qm9_graph_idx(idx):
         'ti_idx_lk': ti['idx_lk'].numpy(),
         'ti_idx_triplet': ti['idx_triplet'].numpy(),
     }
-    save_path = osp.join(_QM9_CACHE_DIR, f"{idx:010d}.pkl")
+    save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
     with open(save_path, 'wb') as f:
         pickle.dump(cache_data, f)
     return idx
@@ -247,21 +241,18 @@ class QM9Dataset(Dataset):
                     )
                     logger.info(
                         f"Pre‑building graphs for QM9 ({total} molecules) "
-                        f"with 24 workers ..."
+                        f"with 24 threads ..."
                     )
-                    ctx = mp.get_context('spawn')
-                    with ctx.Pool(
-                        24,
-                        initializer=_init_qm9_worker,
-                        initargs=(
-                            merged_xyz, self._offsets,
-                            build_graph_cfg, graph_cache_dir,
-                        ),
-                    ) as pool:
+                    with ThreadPoolExecutor(max_workers=24) as executor:
+                        futures = {
+                            executor.submit(
+                                _build_qm9_graph_thread,
+                                i, merged_xyz, self._offsets,
+                                build_graph_cfg, graph_cache_dir,
+                            ): i for i in range(total)
+                        }
                         for _ in tqdm(
-                            pool.imap_unordered(_build_qm9_graph_idx, range(total)),
-                            total=total,
-                            desc="Build graphs",
+                            as_completed(futures), total=total, desc="Build graphs"
                         ):
                             pass
                 if dist.is_initialized():
