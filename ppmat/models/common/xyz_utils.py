@@ -19,6 +19,7 @@ reviewer feedback — this module is model-specific (used by SphereNet),
 not a general-purpose utility.
 """
 
+import numpy as np
 import paddle
 from ppmat.utils.scatter import _scatter_min
 
@@ -42,13 +43,17 @@ def compute_triplet_indices(edge_index, num_nodes):
             idx_lk, idx_triplet: quadruplet → edge / quadruplet → triplet maps.
     """
     i, j = edge_index[0], edge_index[1]
-    num_edges = j.shape[0]
+
+    # Convert to numpy for fast per-element access (avoids GPU sync per call).
+    i_np = i.numpy()
+    j_np = j.numpy()
+    num_edges = len(j_np)
 
     in_idx = [[] for _ in range(num_nodes)]
     out_idx = [[] for _ in range(num_nodes)]
     for e in range(num_edges):
-        in_idx[int(j[e])].append(e)
-        out_idx[int(i[e])].append(e)
+        in_idx[j_np[e]].append(e)
+        out_idx[i_np[e]].append(e)
 
     # Triplets
     idx_kj_list, idx_ji_list = [], []
@@ -63,16 +68,15 @@ def compute_triplet_indices(edge_index, num_nodes):
     idx_kj = paddle.to_tensor(idx_kj_list, dtype='int64')
     idx_ji = paddle.to_tensor(idx_ji_list, dtype='int64')
 
-    # Quadruplets
-    k_nodes = i[idx_kj]
+    # Quadruplets: use numpy to avoid GPU sync in loop.
+    k_np = i_np[idx_kj_list] if idx_kj_list else np.array([], dtype=np.int64)
     in_idx_edges = [[] for _ in range(num_nodes)]
     for e in range(num_edges):
-        in_idx_edges[int(j[e])].append(e)
+        in_idx_edges[j_np[e]].append(e)
 
     idx_lk_list, idx_triplet_list = [], []
-    for t in range(idx_kj.shape[0]):
-        k_node = int(k_nodes[t])
-        lk_list = in_idx_edges[k_node]
+    for t in range(len(k_np)):
+        lk_list = in_idx_edges[k_np[t]]
         if lk_list:
             idx_lk_list.extend(lk_list)
             idx_triplet_list.extend([t] * len(lk_list))
