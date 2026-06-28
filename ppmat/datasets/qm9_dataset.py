@@ -86,6 +86,53 @@ def _parse_qm9_xyz(lines):
     return np.array(z_list, dtype=np.int64), np.array(pos_list, dtype=np.float32), props
 
 
+class _GraphBuildDataset(Dataset):
+    """Worker dataset for parallel graph building via DataLoader.
+
+    Each worker process builds edge_index and precomputed triplet/
+    quadruplet indices for one molecule, then saves the result to a
+    .pkl file.  This avoids O(E²) memory in xyz_to_dat and eliminates
+    the Python per-node grouping loop from every training step.
+    """
+
+    def __init__(self, merged_xyz, offsets, build_graph_cfg, cache_dir):
+        super().__init__()
+        self.merged_xyz = merged_xyz
+        self.offsets = offsets
+        self.build_graph_cfg = build_graph_cfg
+        self.cache_dir = cache_dir
+
+    def __getitem__(self, idx):
+        # Recreate converter per call (each worker has own process context).
+        converter = build_graph_converter(self.build_graph_cfg)
+        z, pos = QM9Dataset._read_one_molecule(
+            self.merged_xyz, self.offsets, idx
+        )
+        num_nodes = z.shape[0]
+        batch_t = np.zeros(num_nodes, dtype=np.int64)
+        ei = converter(
+            paddle.to_tensor(pos),
+            paddle.to_tensor(batch_t),
+        )
+        ti = compute_triplet_indices(ei, num_nodes)
+        cache_data = {
+            'edge_index': ei.numpy(),
+            'ti_i': ti['i'].numpy(),
+            'ti_j': ti['j'].numpy(),
+            'ti_idx_kj': ti['idx_kj'].numpy(),
+            'ti_idx_ji': ti['idx_ji'].numpy(),
+            'ti_idx_lk': ti['idx_lk'].numpy(),
+            'ti_idx_triplet': ti['idx_triplet'].numpy(),
+        }
+        save_path = osp.join(self.cache_dir, f"{idx:010d}.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(cache_data, f)
+        return idx
+
+    def __len__(self):
+        return len(self.offsets)
+
+
 class QM9Dataset(Dataset):
     """QM9 (GDB-9) dataset for quantum-chemical property prediction.
 
@@ -200,44 +247,34 @@ class QM9Dataset(Dataset):
         else:
             graph_cache_dir = None
 
-        # ---- 5. Pre‑build edge_index + triplet indices (rank 0 + barrier) ----
+        # ---- 5. Pre‑build edge_index + triplet indices (rank 0 + barrier, parallel) ----
         if build_graph_cfg is not None:
             self.graph_paths = [None] * total  # placeholder for all samples
             cache_ready = osp.exists(graph_cache_dir) and not overwrite
             if not cache_ready:
                 if dist.get_rank() == 0:
                     os.makedirs(graph_cache_dir, exist_ok=True)
-                    logger.info(f"Pre‑building graphs for QM9 ({total} molecules) ...")
-                    converter = build_graph_converter(build_graph_cfg)
-                    for i in tqdm(range(total), desc="Build graphs"):
-                        z, pos = self._read_one_molecule(merged_xyz, self._offsets, i)
-                        num_nodes = z.shape[0]
-                        batch_t = np.zeros(num_nodes, dtype=np.int64)
-                        ei = converter(
-                            paddle.to_tensor(pos),
-                            paddle.to_tensor(batch_t),
-                        )
-                        # Precompute triplet/quadruplet indices (connectivity-only:
-                        # independent of atomic positions — same indices apply at
-                        # every training step for this molecule).
-                        ti = compute_triplet_indices(ei, num_nodes)
-                        cache_data = {
-                            'edge_index': ei.numpy(),
-                            'ti_i': ti['i'].numpy(),
-                            'ti_j': ti['j'].numpy(),
-                            'ti_idx_kj': ti['idx_kj'].numpy(),
-                            'ti_idx_ji': ti['idx_ji'].numpy(),
-                            'ti_idx_lk': ti['idx_lk'].numpy(),
-                            'ti_idx_triplet': ti['idx_triplet'].numpy(),
-                        }
-                        self._save_pickle(
-                            osp.join(graph_cache_dir, f"{i:010d}.pkl"),
-                            cache_data,
-                        )
                     self._save_pickle(
                         osp.join(graph_cache_dir, "build_graph_cfg.pkl"),
                         build_graph_cfg,
                     )
+                    logger.info(
+                        f"Pre‑building graphs for QM9 ({total} molecules) "
+                        f"with 24 workers ..."
+                    )
+                    build_dataset = _GraphBuildDataset(
+                        merged_xyz, self._offsets, build_graph_cfg, graph_cache_dir
+                    )
+                    build_loader = paddle.io.DataLoader(
+                        build_dataset,
+                        batch_size=1,
+                        num_workers=24,
+                        shuffle=False,
+                        use_shared_memory=False,
+                        collate_fn=lambda x: x,
+                    )
+                    for _ in tqdm(build_loader, total=total, desc="Build graphs"):
+                        pass
                 if dist.is_initialized():
                     dist.barrier()
             for i in range(total):

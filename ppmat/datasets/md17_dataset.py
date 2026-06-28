@@ -77,6 +77,43 @@ _BUNDLE_NPZ_MAP = {
 }
 
 
+class _MD17GraphBuildDataset(Dataset):
+    """Worker dataset for parallel MD17 graph building via DataLoader."""
+
+    def __init__(self, all_z, all_pos, build_graph_cfg, cache_dir):
+        super().__init__()
+        self.all_z = all_z
+        self.all_pos = all_pos
+        self.build_graph_cfg = build_graph_cfg
+        self.cache_dir = cache_dir
+
+    def __getitem__(self, idx):
+        converter = build_graph_converter(self.build_graph_cfg)
+        pos_i = self.all_pos[idx]
+        batch_t = np.zeros(self.all_z.shape[0], dtype=np.int64)
+        ei = converter(
+            paddle.to_tensor(pos_i),
+            paddle.to_tensor(batch_t),
+        )
+        ti = compute_triplet_indices(ei, self.all_z.shape[0])
+        cache_data = {
+            'edge_index': ei.numpy(),
+            'ti_i': ti['i'].numpy(),
+            'ti_j': ti['j'].numpy(),
+            'ti_idx_kj': ti['idx_kj'].numpy(),
+            'ti_idx_ji': ti['idx_ji'].numpy(),
+            'ti_idx_lk': ti['idx_lk'].numpy(),
+            'ti_idx_triplet': ti['idx_triplet'].numpy(),
+        }
+        save_path = osp.join(self.cache_dir, f"{idx:010d}.pkl")
+        with open(save_path, 'wb') as f:
+            pickle.dump(cache_data, f)
+        return idx
+
+    def __len__(self):
+        return self.all_pos.shape[0]
+
+
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
 
@@ -178,7 +215,7 @@ class MD17Dataset(Dataset):
         self._energy_np = all_energy
         self._forces_np = all_forces
 
-        # ---- 4. Pre‑build edge_index (rank 0 + barrier, MP20 pattern) ----
+        # ---- 4. Pre‑build edge_index + triplet indices (rank 0 + barrier, parallel) ----
         self.graph_cache = None
         if build_graph_cfg is not None:
             gc_name = build_graph_cfg.get("__class_name__", "custom")
@@ -191,33 +228,24 @@ class MD17Dataset(Dataset):
             if not cache_ready:
                 if dist.get_rank() == 0:
                     os.makedirs(graph_cache_dir, exist_ok=True)
-                    logger.info(
-                        f"Pre‑building graphs for MD17/{name} ({total} frames) ..."
-                    )
-                    converter = build_graph_converter(build_graph_cfg)
-                    for i in tqdm(range(total), desc="Build graphs"):
-                        pos_i = all_pos[i]
-                        batch_t = np.zeros(all_z.shape[0], dtype=np.int64)
-                        ei = converter(
-                            paddle.to_tensor(pos_i),
-                            paddle.to_tensor(batch_t),
-                        )
-                        num_nodes = all_z.shape[0]
-                        ti = compute_triplet_indices(ei, num_nodes)
-                        cache_data = {
-                            'edge_index': ei.numpy(),
-                            'ti_i': ti['i'].numpy(),
-                            'ti_j': ti['j'].numpy(),
-                            'ti_idx_kj': ti['idx_kj'].numpy(),
-                            'ti_idx_ji': ti['idx_ji'].numpy(),
-                            'ti_idx_lk': ti['idx_lk'].numpy(),
-                            'ti_idx_triplet': ti['idx_triplet'].numpy(),
-                        }
-                        self._save_pickle(
-                            osp.join(graph_cache_dir, f"{i:010d}.pkl"),
-                            cache_data,
-                        )
                     self._save_pickle(cfg_pkl, build_graph_cfg)
+                    logger.info(
+                        f"Pre‑building graphs for MD17/{name} ({total} frames) "
+                        f"with 24 workers ..."
+                    )
+                    build_dataset = _MD17GraphBuildDataset(
+                        all_z, all_pos, build_graph_cfg, graph_cache_dir
+                    )
+                    build_loader = paddle.io.DataLoader(
+                        build_dataset,
+                        batch_size=1,
+                        num_workers=24,
+                        shuffle=False,
+                        use_shared_memory=False,
+                        collate_fn=lambda x: x,
+                    )
+                    for _ in tqdm(build_loader, total=total, desc="Build graphs"):
+                        pass
                 if dist.is_initialized():
                     dist.barrier()
             self.graph_cache = [
