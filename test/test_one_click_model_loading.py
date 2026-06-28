@@ -32,8 +32,29 @@ def test_infgcn_and_diffnmr_are_registered_for_one_click_loading():
         assert model_name in registry
         assert model_name in config_registry
         assert registry[model_name].startswith("https://paddle-org.bj.bcebos.com/")
-        assert registry[model_name].endswith(".pdparams")
+        assert registry[model_name].endswith(".zip")
         assert (ROOT / config_registry[model_name]).exists()
+
+
+def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
+    from ppmat.models import get_model_config_path_from_package
+    from ppmat.models import get_model_file_path_from_package
+
+    cache_dir = tmp_path / "infgcn_qm9"
+    package_dir = cache_dir / "infgcn_qm9"
+    checkpoints_dir = package_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True)
+    config_path = package_dir / "infgcn_qm9.yaml"
+    weight_path = checkpoints_dir / "infgcn_qm9.pdparams"
+    config_path.write_text("Model: {}\n")
+    weight_path.write_bytes(b"fake")
+
+    assert Path(
+        get_model_config_path_from_package("infgcn_qm9", str(cache_dir))
+    ) == config_path
+    assert Path(
+        get_model_file_path_from_package(cache_dir, "infgcn_qm9.pdparams")
+    ) == weight_path
 
 
 def test_infgcn_predict_cli_accepts_one_click_model_arguments():

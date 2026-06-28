@@ -117,8 +117,8 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
-    "infgcn_qm9": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.pdparams",
-    "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_nless15_best.pdparams",
+    "infgcn_qm9": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.zip",
+    "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/diffnmr_msdnmr_nless15.zip",
 }
 
 MODEL_CONFIG_REGISTRY = {
@@ -154,6 +154,45 @@ def get_model_config_path_from_name(model_name: str):
             "Please add it to MODEL_CONFIG_REGISTRY or use an explicit config path."
         )
     return _resolve_repo_path(MODEL_CONFIG_REGISTRY[model_name])
+
+
+def get_model_package_path_from_name(model_name: str):
+    return download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+
+
+def get_model_file_path_from_package(package_path: str, file_name: str):
+    if osp.isfile(package_path):
+        if osp.basename(package_path) == file_name:
+            return package_path
+        raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
+
+    for root, _, files in os.walk(package_path):
+        for name in files:
+            if osp.basename(name) == file_name:
+                return osp.join(root, name)
+
+    raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
+
+
+def get_model_config_path_from_package(model_name: str, package_path: str):
+    for config_name in (f"{model_name}.yaml", f"{model_name}.yml"):
+        try:
+            return get_model_file_path_from_package(package_path, config_name)
+        except FileNotFoundError:
+            pass
+
+    find_list = []
+    for root, _, files in os.walk(package_path):
+        for name in files:
+            if name.endswith(".yaml") or name.endswith(".yml"):
+                find_list.append(osp.join(root, name))
+
+    if len(find_list) == 1:
+        config_path = find_list[0]
+        logger.warning(f"Find config file: {config_path}, using this file.")
+        return config_path
+
+    raise ValueError(f"Multiple yaml files found: {find_list}, must be only one")
 
 
 def build_graph_converter(cfg: Dict):
@@ -239,7 +278,7 @@ def build_model(
 
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
-    path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+    path = get_model_package_path_from_name(model_name)
     if osp.isfile(path):
         config_path = get_model_config_path_from_name(model_name)
         config = OmegaConf.load(config_path)
@@ -253,25 +292,8 @@ def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
 
         return model, config
 
-    path = osp.join(path, model_name)
     logger.info(f"Save model and configuration files in path: {path}")
-    config_path = osp.join(path, f"{model_name}.yaml")
-    if not osp.exists(config_path):
-        logger.warning(
-            f"Config file not found: {config_path}, try find other yaml files."
-        )
-        file_list = os.listdir(path)
-        find_list = []
-        for file in file_list:
-            if file.endswith(".yaml") or file.endswith(".yml"):
-                find_list.append(osp.join(path, file))
-        if len(find_list) == 1:
-            config_path = find_list[0]
-        else:
-            raise ValueError(
-                f"Multiple yaml files found: {find_list}, must be only one"
-            )
-        logger.warning(f"Find config file: {config_path}, using this file.")
+    config_path = get_model_config_path_from_package(model_name, path)
 
     config = OmegaConf.load(config_path)
     config = OmegaConf.to_container(config, resolve=True)

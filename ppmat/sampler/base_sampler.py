@@ -38,7 +38,9 @@ from ppmat.metrics import build_metric
 from ppmat.models import MODEL_REGISTRY
 from ppmat.models import MODEL_SUPPORT_REGISTRY
 from ppmat.models import build_model
+from ppmat.models import get_model_config_path_from_package
 from ppmat.models import get_model_config_path_from_name
+from ppmat.models import get_model_file_path_from_package
 from ppmat.models.diffnmr.extra_features_graph import DummyExtraFeatures
 from ppmat.models.diffnmr.extra_features_graph import ExtraFeatures
 from ppmat.models.diffnmr.extra_features_molecular_graph import ExtraMolecularFeatures
@@ -108,10 +110,15 @@ class MolecularSampler:
             checkpoint_path = download.get_weights_path_from_url(
                 MODEL_REGISTRY[model_name]
             )
-            config_path = get_model_config_path_from_name(model_name)
+            if os.path.isdir(checkpoint_path):
+                config_path = get_model_config_path_from_package(
+                    model_name, checkpoint_path
+                )
+            else:
+                config_path = get_model_config_path_from_name(model_name)
             config = OmegaConf.load(config_path)
             config = OmegaConf.to_container(config, resolve=True)
-            self._apply_registered_support_files(model_name, config)
+            self._apply_registered_support_files(model_name, config, checkpoint_path)
 
         model_config = config.get("Model", None)
         assert model_config is not None, "Model config must be provided."
@@ -191,11 +198,19 @@ class MolecularSampler:
             if checkpoint_path is not None
             else config.get("pretrained_model_path", None)
         )
-        self.pretrained_weight_name = (
-            weights_name
-            if weights_name is not None
-            else config.get("pretrained_weight_name", None)
-        )
+        self.pretrained_weight_name = weights_name
+        if self.pretrained_weight_name is None:
+            self.pretrained_weight_name = config.get("pretrained_weight_name", None)
+        if (
+            self.pretrained_weight_name is None
+            and self.pretrained_model_path is not None
+            and os.path.isdir(self.pretrained_model_path)
+        ):
+            sampler_pretrained_path = config.get("Sampler", {}).get(
+                "pretrained_model_path", None
+            )
+            if sampler_pretrained_path is not None:
+                self.pretrained_weight_name = os.path.basename(sampler_pretrained_path)
         if self.pretrained_model_path is not None:
             save_load.load_pretrain(
                 model, self.pretrained_model_path, self.pretrained_weight_name
@@ -257,15 +272,26 @@ class MolecularSampler:
         )
         setattr(self.model, "streaming_adapter", self.streaming)
 
-    def _apply_registered_support_files(self, model_name: str, config: Dict):
+    def _apply_registered_support_files(
+        self, model_name: str, config: Dict, package_path: Optional[str] = None
+    ):
         support_urls = MODEL_SUPPORT_REGISTRY.get(model_name, {})
         if not support_urls:
             return
 
-        support_paths = {
-            name: download.get_weights_path_from_url(url)
-            for name, url in support_urls.items()
-        }
+        support_paths = {}
+        for name, url in support_urls.items():
+            support_path = None
+            if package_path is not None and os.path.isdir(package_path):
+                try:
+                    support_path = get_model_file_path_from_package(
+                        package_path, os.path.basename(url)
+                    )
+                except FileNotFoundError:
+                    pass
+            if support_path is None:
+                support_path = download.get_weights_path_from_url(url)
+            support_paths[name] = support_path
 
         nmrnet_path = support_paths.get("nmrnet")
         if nmrnet_path is not None:

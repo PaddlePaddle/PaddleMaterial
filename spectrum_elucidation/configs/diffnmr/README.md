@@ -91,7 +91,12 @@ To set up the DiffNMR environment, please follow these steps:
     </body>
 </table>
 
-Note: please refer to the following pretrained weights:
+Note: one-click sampling uses the registered pretrained package:
+- [diffnmr_msdnmr_nless15.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/diffnmr_msdnmr_nless15.zip)
+
+The package stores all `*.pdparams` files under `checkpoints/`.
+
+Please refer to the following individual pretrained weights for custom loading:
 - [DiffNMR_DiffGraphFormer_nless15_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_best.pdparams)
 - [DiffNMR_DiffGraphFormer_nless15_init.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_init.pdparams)
 - [DiffNMR_NMRNet_nless15_best.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_best.pdparams)
