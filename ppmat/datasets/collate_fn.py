@@ -101,17 +101,19 @@ class SphereNetCollator:
 
     def __call__(self, batch):
         sample = batch[0]
-        # node_keys: per-atom arrays, but NOT edge_index
+        # node_keys: per-atom arrays, but NOT edge_index / triplet_indices
+        skip_keys = {"edge_index", "triplet_indices"}
         node_keys = [
             k for k, v in sample.items()
-            if isinstance(v, np.ndarray) and k != "edge_index"
+            if isinstance(v, np.ndarray) and k not in skip_keys
             and (v.ndim >= 2 or v.shape[0] > 1)
         ]
         target_keys = [
             k for k in sample.keys()
-            if k not in node_keys and k != "edge_index"
+            if k not in node_keys and k not in skip_keys and k != "edge_index"
         ]
         has_edge_index = "edge_index" in sample
+        has_triplet = "triplet_indices" in sample
 
         node_tensors = {
             k: paddle.to_tensor(np.concatenate([b[k] for b in batch]))
@@ -145,6 +147,37 @@ class SphereNetCollator:
             result["edge_index"] = paddle.to_tensor(
                 np.concatenate(edge_list, axis=1), dtype=paddle.int64
             )
+
+        if has_triplet:
+            # Precomputed triplet/quadruplet indices also need batch offsets.
+            # Edge-counting keys (idx_kj, idx_ji, idx_lk): offset by cumulative
+            # edge count.  Triplet-counting key (idx_triplet): offset by
+            # cumulative triplet count.
+            e_offsets = np.cumsum(
+                [0] + [b["edge_index"].shape[1] for b in batch[:-1]]
+            )
+            # Accumulate triplet count per sample from idx_kj length.
+            t_offsets = np.cumsum(
+                [0] + [b["triplet_indices"]["idx_kj"].shape[0] for b in batch[:-1]]
+            )
+            ti_keys = ["i", "j", "idx_kj", "idx_ji", "idx_lk"]
+            concat = {k: [] for k in ["i", "j", "idx_kj", "idx_ji", "idx_lk",
+                                       "idx_triplet"]}
+            for i, b in enumerate(batch):
+                ti = b["triplet_indices"]
+                for k in ["i", "j", "idx_lk"]:
+                    arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
+                    concat[k].append(arr + e_offsets[i])
+                for k in ["idx_kj", "idx_ji"]:
+                    arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
+                    concat[k].append(arr + e_offsets[i])
+                arr_t = (ti["idx_triplet"] if isinstance(ti["idx_triplet"], np.ndarray)
+                         else np.array(ti["idx_triplet"]))
+                concat["idx_triplet"].append(arr_t + t_offsets[i])
+            result["triplet_indices"] = {
+                k: paddle.to_tensor(np.concatenate(v), dtype=paddle.int64)
+                for k, v in concat.items()
+            }
 
         return result
 
