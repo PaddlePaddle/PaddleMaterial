@@ -57,20 +57,27 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     vec = pos[j] - pos[i]
     dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)
 
-    # --- Build triplets (k -> j -> i) ---
+    # --- Build triplets (k -> j -> i) via per-node grouping ---
+    # Avoids O(E²) memory by grouping edges by (target, source) per node.
     num_edges = j.shape[0]
-    j_expand = j.unsqueeze(0).expand([num_edges, -1])
-    i_candidate = i.unsqueeze(-1).expand([-1, num_edges])
+    in_idx = [[] for _ in range(num_nodes)]
+    out_idx = [[] for _ in range(num_nodes)]
+    for e in range(num_edges):
+        in_idx[int(j[e])].append(e)
+        out_idx[int(i[e])].append(e)
 
-    valid_triplet = j_expand == i_candidate
-    not_self = paddle.arange(num_edges).unsqueeze(0).expand(
-        [num_edges, -1]
-    ) != paddle.arange(num_edges).unsqueeze(-1).expand([-1, num_edges])
-    valid_triplet = valid_triplet & not_self
+    idx_kj_list, idx_ji_list = [], []
+    for n in range(num_nodes):
+        kj_list = in_idx[n]
+        ji_list = out_idx[n]
+        if kj_list and ji_list:
+            n_kj, n_ji = len(kj_list), len(ji_list)
+            # Vectorised cross: repeat kj n_ji times, tile ji n_kj times
+            idx_kj_list.extend(kj_list * n_ji)
+            idx_ji_list.extend(ji_list * n_kj)
 
-    idx_kj, idx_ji = paddle.nonzero(valid_triplet, as_tuple=True)
-    idx_kj = idx_kj.flatten()
-    idx_ji = idx_ji.flatten()
+    idx_kj = paddle.to_tensor(idx_kj_list)
+    idx_ji = paddle.to_tensor(idx_ji_list)
 
     vec_kj = vec[idx_kj]
     vec_ji = vec[idx_ji]
@@ -83,21 +90,23 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     angle = paddle.atan2(angle_sin, angle_cos).detach()
 
     torsion = paddle.zeros_like(angle)
-    if use_torsion:
+    if use_torsion and idx_kj.shape[0] > 0:
+        # Build quadruplet (l -> k -> j -> i) by grouping triplets by k-node
         k_nodes = i[idx_kj]
-        k_expand = k_nodes.unsqueeze(0).expand([num_edges, -1])
-        j_all = j.unsqueeze(-1).expand([-1, idx_kj.shape[0]])
+        in_idx_edges = [[] for _ in range(num_nodes)]
+        for e in range(num_edges):
+            in_idx_edges[int(j[e])].append(e)
 
-        valid_quad = j_all == k_expand
-        l_edge_idx = (
-            paddle.arange(num_edges).unsqueeze(-1).expand([-1, idx_kj.shape[0]])
-        )
-        not_k = l_edge_idx != idx_kj.unsqueeze(0)
-        valid_quad = valid_quad & not_k
+        idx_lk_list, idx_triplet_list = [], []
+        for t in range(idx_kj.shape[0]):
+            k_node = int(k_nodes[t])
+            lk_list = in_idx_edges[k_node]
+            if lk_list:
+                idx_lk_list.extend(lk_list)
+                idx_triplet_list.extend([t] * len(lk_list))
 
-        idx_lk, idx_triplet = paddle.nonzero(valid_quad, as_tuple=True)
-        idx_lk = idx_lk.flatten()
-        idx_triplet = idx_triplet.flatten()
+        idx_lk = paddle.to_tensor(idx_lk_list)
+        idx_triplet = paddle.to_tensor(idx_triplet_list)
 
         k_idx_from_edge_lk = j[idx_lk]
         v1 = pos[k_idx_from_edge_lk] - pos[i[idx_lk]]
@@ -115,8 +124,6 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         ).detach()
 
         # Per-triplet best-angle selection.
-        # no_grad avoids Paddle's buggy scatter backward; gradient flows
-        # through direct indexing of torsion_angle.
         if idx_triplet.shape[0] > 0:
             with paddle.no_grad():
                 abs_a = paddle.abs(torsion_angle)
@@ -132,7 +139,5 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
                 torsion_angle[keep],
                 overwrite=True,
             )
-        else:
-            torsion = paddle.zeros_like(angle)
 
     return dist, angle, torsion, i, j, idx_kj, idx_ji
