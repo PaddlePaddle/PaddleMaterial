@@ -88,6 +88,8 @@ class _MD17GraphBuildDataset(Dataset):
         self.cache_dir = cache_dir
 
     def __getitem__(self, idx):
+        # Workers use CPU only — GPU context is not fork-safe.
+        paddle.set_device('cpu')
         converter = build_graph_converter(self.build_graph_cfg)
         pos_i = self.all_pos[idx]
         batch_t = np.zeros(self.all_z.shape[0], dtype=np.int64)

@@ -103,7 +103,8 @@ class _GraphBuildDataset(Dataset):
         self.cache_dir = cache_dir
 
     def __getitem__(self, idx):
-        # Recreate converter per call (each worker has own process context).
+        # Workers use CPU only — GPU context is not fork-safe.
+        paddle.set_device('cpu')
         converter = build_graph_converter(self.build_graph_cfg)
         z, pos = QM9Dataset._read_one_molecule(
             self.merged_xyz, self.offsets, idx
