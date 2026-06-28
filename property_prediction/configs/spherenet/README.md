@@ -317,20 +317,36 @@ python property_prediction/train.py \
   -c property_prediction/configs/spherenet/spherenet_md17_aspirin.yaml
 ```
 
-### Validation / Testing
+### Validation
 
 ```bash
-# Validation
 python property_prediction/train.py \
   -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
   Global.do_eval=True Global.do_train=False Global.do_test=False \
   Trainer.pretrained_model_path='your_model.pdparams'
+```
 
-# Testing
+### Testing
+
+```bash
 python property_prediction/train.py \
   -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
   Global.do_test=True Global.do_train=False Global.do_eval=False \
   Trainer.pretrained_model_path='your_model.pdparams'
+```
+
+### Prediction
+
+```bash
+# Using a registered model (check MODEL_REGISTRY in ppmat/models/__init__.py)
+python property_prediction/predict.py \
+  --model_name spherenet_qm9_mu
+
+# Using a local checkpoint
+python property_prediction/predict.py \
+  --config_path ./output/spherenet_qm9_mu_t_*/spherenet_qm9_mu.yaml \
+  --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
+  --cif_file_path ./property_prediction/example_data/cifs/
 ```
 
 ## Citation
