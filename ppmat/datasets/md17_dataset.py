@@ -213,10 +213,7 @@ class MD17Dataset(Dataset):
             ]
 
         self.num_samples = len(self._indices)
-        logger.info(
-            f"MD17Dataset ({name}) ready: {self.num_samples} samples, "
-            f"split={split}"
-        )
+        logger.info(f"Load {self.num_samples} samples, split={split}")
 
     @staticmethod
     def _save_pickle(path, obj):

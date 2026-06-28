@@ -235,10 +235,7 @@ class QM9Dataset(Dataset):
         self._merged_xyz_path = merged_xyz
         self._valid_indices = self._filter_invalid(self._indices)
         self.num_samples = len(self._valid_indices)
-        logger.info(
-            f"QM9Dataset ready: {self.num_samples} samples, "
-            f"targets={self.property_names}, split={split}"
-        )
+        logger.info(f"Load {self.num_samples} samples, targets={self.property_names}, split={split}")
 
     # --- index helpers ---
 
