@@ -35,13 +35,16 @@ from ppmat.datasets.msd_nmr_dataset import DataLoaderCollection
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.metrics import DiffNMRStreamingAdapter
 from ppmat.metrics import build_metric
+from ppmat.models import MODEL_REGISTRY
+from ppmat.models import MODEL_SUPPORT_REGISTRY
 from ppmat.models import build_model
-from ppmat.models import build_model_from_name
+from ppmat.models import get_model_config_path_from_name
 from ppmat.models.diffnmr.extra_features_graph import DummyExtraFeatures
 from ppmat.models.diffnmr.extra_features_graph import ExtraFeatures
 from ppmat.models.diffnmr.extra_features_molecular_graph import ExtraMolecularFeatures
 from ppmat.models.diffnmr.utils import diffgraphformer_utils
 from ppmat.schedulers import scheduling_diffnmr
+from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.visualization import MolecularVisualization
@@ -88,109 +91,115 @@ class MolecularSampler:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
-        # if model_name is not None, then config_path and checkpoint_path must be
-        # provided
         if model_name is None:
             assert (
                 config_path is not None and checkpoint_path is not None
-            ), "config_path and checkpoint_path must be provided when model_name is "
-            "None."
+            ), (
+                "config_path and checkpoint_path must be provided when model_name is "
+                "None."
+            )
 
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 
             config = OmegaConf.load(config_path)
             config = OmegaConf.to_container(config, resolve=True)
-
-            model_config = config.get("Model", None)
-            assert model_config is not None, "Model config must be provided."
-
-            # TODO: optimize in the future
-            set_signal_handlers()
-            train_data_cfg = config["Dataset"].get("train")
-            train_loader = build_dataloader(train_data_cfg)
-
-            val_data_cfg = config["Dataset"].get("val")
-            val_loader = build_dataloader(val_data_cfg)
-
-            test_data_cfg = config["Dataset"].get("test")
-            test_loader = build_dataloader(test_data_cfg)
-
-            # build datasetinfo
-            dataloaders = DataLoaderCollection(train_loader, val_loader, test_loader)
-            dataset_infos = build_dataset_infos(
-                dataloaders=dataloaders, cfg=config, recompute_statistics=False
+        else:
+            logger.info(f"Loading registered model: {model_name}")
+            checkpoint_path = download.get_weights_path_from_url(
+                MODEL_REGISTRY[model_name]
             )
-            train_smiles = dataset_infos.train_smiles
+            config_path = get_model_config_path_from_name(model_name)
+            config = OmegaConf.load(config_path)
+            config = OmegaConf.to_container(config, resolve=True)
+            self._apply_registered_support_files(model_name, config)
 
-            # extra features
-            if (
-                config["Model"]["__init_params__"]["diffmodel_cfg"]["extra_features"]
-                is not None
-            ):
-                extra_features = ExtraFeatures(
-                    config["Model"]["__init_params__"]["diffmodel_cfg"][
-                        "extra_features"
-                    ],
-                    dataset_infos=dataset_infos,
-                )
-                domain_features = ExtraMolecularFeatures(
-                    dataset_infos=dataset_infos,
-                )
-            else:
-                extra_features = DummyExtraFeatures()
-                domain_features = DummyExtraFeatures()
-            fallback_loader = train_loader or val_loader or test_loader
-            dataset_infos.compute_input_output_dims(
-                dataloader=fallback_loader,
-                extra_features=extra_features,
-                domain_features=domain_features,
-                conditionDim=config["Model"]["__init_params__"]["diffmodel_cfg"][
-                    "conditdim"
+        model_config = config.get("Model", None)
+        assert model_config is not None, "Model config must be provided."
+
+        # TODO: optimize in the future
+        set_signal_handlers()
+        train_data_cfg = config["Dataset"].get("train")
+        train_loader = build_dataloader(train_data_cfg)
+
+        val_data_cfg = config["Dataset"].get("val")
+        val_loader = build_dataloader(val_data_cfg)
+
+        test_data_cfg = config["Dataset"].get("test")
+        test_loader = build_dataloader(test_data_cfg)
+
+        # build datasetinfo
+        dataloaders = DataLoaderCollection(train_loader, val_loader, test_loader)
+        dataset_infos = build_dataset_infos(
+            dataloaders=dataloaders, cfg=config, recompute_statistics=False
+        )
+        train_smiles = dataset_infos.train_smiles
+
+        # extra features
+        if (
+            config["Model"]["__init_params__"]["diffmodel_cfg"]["extra_features"]
+            is not None
+        ):
+            extra_features = ExtraFeatures(
+                config["Model"]["__init_params__"]["diffmodel_cfg"][
+                    "extra_features"
                 ],
-            )
-
-            # CLIP for sample metric
-            model_cfg = config["CLIP"]
-            self.clip = build_model(
-                model_cfg,
-                extra_features=extra_features,
-                domain_features=domain_features,
                 dataset_infos=dataset_infos,
             )
-
-            # visualization tools
-            self.visualization_tools = MolecularVisualization(
+            domain_features = ExtraMolecularFeatures(
                 dataset_infos=dataset_infos,
-                output_dir=config["Trainer"]["output_dir"],
             )
+        else:
+            extra_features = DummyExtraFeatures()
+            domain_features = DummyExtraFeatures()
+        fallback_loader = train_loader or val_loader or test_loader
+        dataset_infos.compute_input_output_dims(
+            dataloader=fallback_loader,
+            extra_features=extra_features,
+            domain_features=domain_features,
+            conditionDim=config["Model"]["__init_params__"]["diffmodel_cfg"][
+                "conditdim"
+            ],
+        )
 
-            model_cfg = config["Model"]
-            model = build_model(
-                model_cfg,
-                extra_features=extra_features,
-                domain_features=domain_features,
-                dataset_infos=dataset_infos,
-                visualization_tools=self.visualization_tools,
-                clip=self.clip,
-            )
+        # CLIP for sample metric
+        model_cfg = config["CLIP"]
+        self.clip = build_model(
+            model_cfg,
+            extra_features=extra_features,
+            domain_features=domain_features,
+            dataset_infos=dataset_infos,
+        )
 
-            self.pretrained_model_path = (
-                checkpoint_path
-                if checkpoint_path is not None
-                else config.get("pretrained_model_path", None)
-            )
-            self.pretrained_weight_name = (
-                weights_name
-                if weights_name is not None
-                else config.get("pretrained_weight_name", None)
-            )
+        # visualization tools
+        self.visualization_tools = MolecularVisualization(
+            dataset_infos=dataset_infos,
+            output_dir=config["Trainer"]["output_dir"],
+        )
+
+        model_cfg = config["Model"]
+        model = build_model(
+            model_cfg,
+            extra_features=extra_features,
+            domain_features=domain_features,
+            dataset_infos=dataset_infos,
+            visualization_tools=self.visualization_tools,
+            clip=self.clip,
+        )
+
+        self.pretrained_model_path = (
+            checkpoint_path
+            if checkpoint_path is not None
+            else config.get("pretrained_model_path", None)
+        )
+        self.pretrained_weight_name = (
+            weights_name
+            if weights_name is not None
+            else config.get("pretrained_weight_name", None)
+        )
+        if self.pretrained_model_path is not None:
             save_load.load_pretrain(
                 model, self.pretrained_model_path, self.pretrained_weight_name
             )
-
-        else:
-            logger.info("Since model_name is given, downloading it...")
-            model, config = build_model_from_name(model_name, weights_name)
 
         self.model = model
         self.config = config
@@ -247,6 +256,34 @@ class MolecularSampler:
             num_candidate=self.num_candidates,
         )
         setattr(self.model, "streaming_adapter", self.streaming)
+
+    def _apply_registered_support_files(self, model_name: str, config: Dict):
+        support_urls = MODEL_SUPPORT_REGISTRY.get(model_name, {})
+        if not support_urls:
+            return
+
+        support_paths = {
+            name: download.get_weights_path_from_url(url)
+            for name, url in support_urls.items()
+        }
+
+        nmrnet_path = support_paths.get("nmrnet")
+        if nmrnet_path is not None:
+            config["Model"]["__init_params__"]["encoder_cfg"][
+                "pretrained_path"
+            ] = nmrnet_path
+            config["CLIP"]["__init_params__"]["spectrum_encoder"][
+                "pretrained_model_path"
+            ] = nmrnet_path
+
+        diffgraphformer_path = support_paths.get("diffgraphformer")
+        if diffgraphformer_path is not None:
+            config["Model"]["__init_params__"]["decoder_cfg"][
+                "pretrained_path"
+            ] = diffgraphformer_path
+            config["CLIP"]["__init_params__"]["graph_encoder"][
+                "pretrained_model_path"
+            ] = diffgraphformer_path
 
     def compute_metric(
         self,

@@ -117,7 +117,43 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
+    "infgcn_qm9": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.pdparams",
+    "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_nless15_best.pdparams",
 }
+
+MODEL_CONFIG_REGISTRY = {
+    "infgcn_qm9": "electronic_structure/configs/infgcn/infgcn_qm9.yaml",
+    "diffnmr_msdnmr_nless15": "spectrum_elucidation/configs/diffnmr/DiffNMR.yaml",
+}
+
+MODEL_SUPPORT_REGISTRY = {
+    "diffnmr_msdnmr_nless15": {
+        "nmrnet": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_best.pdparams",
+        "diffgraphformer": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_best.pdparams",
+    },
+}
+
+
+def _repo_root():
+    return osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))
+
+
+def _resolve_repo_path(path: str):
+    if osp.isabs(path):
+        return path
+    repo_path = osp.join(_repo_root(), path)
+    if osp.exists(repo_path):
+        return repo_path
+    return path
+
+
+def get_model_config_path_from_name(model_name: str):
+    if model_name not in MODEL_CONFIG_REGISTRY:
+        raise KeyError(
+            f"No config path registered for model '{model_name}'. "
+            "Please add it to MODEL_CONFIG_REGISTRY or use an explicit config path."
+        )
+    return _resolve_repo_path(MODEL_CONFIG_REGISTRY[model_name])
 
 
 def build_graph_converter(cfg: Dict):
@@ -204,6 +240,19 @@ def build_model(
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+    if osp.isfile(path):
+        config_path = get_model_config_path_from_name(model_name)
+        config = OmegaConf.load(config_path)
+        config = OmegaConf.to_container(config, resolve=True)
+
+        model_config = config.get("Model", None)
+        assert model_config is not None, "Model config must be provided."
+        model = build_model(model_config)
+
+        save_load.load_pretrain(model, path, weights_name)
+
+        return model, config
+
     path = osp.join(path, model_name)
     logger.info(f"Save model and configuration files in path: {path}")
     config_path = osp.join(path, f"{model_name}.yaml")

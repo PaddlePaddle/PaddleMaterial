@@ -36,7 +36,9 @@ except ImportError:  # Optional dependency; visualization still works for files
 from ppmat.datasets import DensityDataset
 from ppmat.datasets import SmallDensityDataset
 from ppmat.datasets.geometric_data_type.data import Data
+from ppmat.models import build_model_from_name
 from ppmat.models import build_model
+from ppmat.models import get_model_config_path_from_name
 from ppmat.utils import logger
 from ppmat.utils.misc import set_random_seed
 
@@ -680,6 +682,19 @@ def prepare_info_cube(info, grid_coord):
 def main():
     parser = argparse.ArgumentParser(description="InfGCN electron density inference")
     parser.add_argument(
+        "--model_name",
+        default=None,
+        help=(
+            "Registered model name from MODEL_REGISTRY. When set, config and "
+            "checkpoint are resolved automatically."
+        ),
+    )
+    parser.add_argument(
+        "--weights_name",
+        default=None,
+        help="Optional weight filename inside a registered model package.",
+    )
+    parser.add_argument(
         "--config",
         default="electronic_structure/configs/infgcn/infgcn_qm9.yaml",
         help="Path to config yaml",
@@ -790,7 +805,12 @@ def main():
 
     set_random_seed(42)
 
-    cfg = OmegaConf.load(args.config)
+    config_path = (
+        get_model_config_path_from_name(args.model_name)
+        if args.model_name is not None
+        else args.config
+    )
+    cfg = OmegaConf.load(config_path)
     cfg = OmegaConf.to_container(cfg, resolve=True)
 
     split_key = "val" if args.split == "validation" else args.split
@@ -866,8 +886,12 @@ def main():
     cube_dir = Path(args.cube_dir) if args.cube_dir is not None else output_dir
     cube_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Loading the pretrained model from {args.checkpoint}")
-    model = get_pretrained_model(args.config, args.checkpoint)
+    if args.model_name is not None:
+        logger.info(f"Loading registered model: {args.model_name}")
+        model, _ = build_model_from_name(args.model_name, args.weights_name)
+    else:
+        logger.info(f"Loading the pretrained model from {args.checkpoint}")
+        model = get_pretrained_model(args.config, args.checkpoint)
     logger.info("Model loaded successfully.")
 
     if use_mol_mode:

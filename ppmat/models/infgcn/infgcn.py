@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import paddle
-from paddle_scatter import scatter
 
 from ppmat.models.common.e3nn import o3
 from ppmat.models.common.e3nn.math import soft_one_hot_linspace
@@ -26,6 +25,7 @@ from ppmat.models.common.activation import NormActivation
 
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
+from ppmat.utils.scatter import scatter
 
 
 class GCNLayer(paddle.nn.Layer):

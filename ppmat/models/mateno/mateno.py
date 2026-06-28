@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import paddle
-from paddle_scatter import scatter
 
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius, radius_graph
+from ppmat.utils.scatter import scatter
 
 from ppmat.models.common.e3nn import o3
 from ppmat.models.common.e3nn.math import soft_one_hot_linspace
