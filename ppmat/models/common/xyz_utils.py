@@ -23,7 +23,74 @@ import paddle
 from ppmat.utils.scatter import _scatter_min
 
 
-def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
+def compute_triplet_indices(edge_index, num_nodes):
+    """Precompute triplet/quadruplet selection indices from graph structure.
+
+    Triplet (k -> j -> i) and quadruplet (l -> k -> j -> i) indices depend
+    only on the *connectivity* (edge_index, num_nodes), not on atomic
+    positions.  Caching them per molecule avoids the O(∑ deg×deg) Python
+    loop on every forward pass.
+
+    Args:
+        edge_index: Tensor [2, E] — (source, target) pairs.
+        num_nodes: Number of atoms.
+
+    Returns:
+        dict with keys:
+            i, j: source/target node indices  [E].
+            idx_kj, idx_ji: triplet → edge / triplet → central-edge maps.
+            idx_lk, idx_triplet: quadruplet → edge / quadruplet → triplet maps.
+    """
+    i, j = edge_index[0], edge_index[1]
+    num_edges = j.shape[0]
+
+    in_idx = [[] for _ in range(num_nodes)]
+    out_idx = [[] for _ in range(num_nodes)]
+    for e in range(num_edges):
+        in_idx[int(j[e])].append(e)
+        out_idx[int(i[e])].append(e)
+
+    # Triplets
+    idx_kj_list, idx_ji_list = [], []
+    for n in range(num_nodes):
+        kj_list = in_idx[n]
+        ji_list = out_idx[n]
+        if kj_list and ji_list:
+            n_kj, n_ji = len(kj_list), len(ji_list)
+            idx_kj_list.extend(kj_list * n_ji)
+            idx_ji_list.extend(ji_list * n_kj)
+
+    idx_kj = paddle.to_tensor(idx_kj_list, dtype='int64')
+    idx_ji = paddle.to_tensor(idx_ji_list, dtype='int64')
+
+    # Quadruplets
+    k_nodes = i[idx_kj]
+    in_idx_edges = [[] for _ in range(num_nodes)]
+    for e in range(num_edges):
+        in_idx_edges[int(j[e])].append(e)
+
+    idx_lk_list, idx_triplet_list = [], []
+    for t in range(idx_kj.shape[0]):
+        k_node = int(k_nodes[t])
+        lk_list = in_idx_edges[k_node]
+        if lk_list:
+            idx_lk_list.extend(lk_list)
+            idx_triplet_list.extend([t] * len(lk_list))
+
+    idx_lk = paddle.to_tensor(idx_lk_list, dtype='int64') if idx_lk_list else paddle.empty([0], dtype='int64')
+    idx_triplet = paddle.to_tensor(idx_triplet_list, dtype='int64') if idx_triplet_list else paddle.empty([0], dtype='int64')
+
+    return {
+        'i': i,
+        'j': j,
+        'idx_kj': idx_kj,
+        'idx_ji': idx_ji,
+        'idx_lk': idx_lk,
+        'idx_triplet': idx_triplet,
+    }
+
+
+def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices=None):
     """Compute distance, angle, and torsion from 3D positions.
 
     Given atomic positions and a neighbor edge index, computes:
@@ -31,13 +98,18 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
         - Bond angles for each triplet (k -> j -> i)
         - Torsion (dihedral) angles for each quadruplet (l -> k -> j -> i)
 
-    All operations are fully vectorised (no Python loops).
+    When ``precomputed_indices`` (from :func:`compute_triplet_indices`) is
+    provided, the O(∑ deg×deg) Python loop is skipped — use this for
+    cached/offline graph datasets to accelerate training.
 
     Args:
         pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
         edge_index: Tensor of shape [2, num_edges] — (source, target) indices.
         num_nodes: Number of atoms.
         use_torsion: Whether to compute torsion angles. Defaults to True.
+        precomputed_indices: Optional dict from ``compute_triplet_indices``.
+            When provided, ``edge_index`` and ``num_nodes`` are still used
+            for validation but the structural indices are taken from here.
 
     Returns:
         dist: Edge distances  [num_edges].
@@ -51,47 +123,35 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     """
     pos = paddle.cast(pos, paddle.get_default_dtype())
 
-    i, j = edge_index[0], edge_index[1]
+    if precomputed_indices is not None:
+        i = precomputed_indices['i']
+        j = precomputed_indices['j']
+        idx_kj = precomputed_indices['idx_kj']
+        idx_ji = precomputed_indices['idx_ji']
+        idx_lk = precomputed_indices['idx_lk']
+        idx_triplet = precomputed_indices['idx_triplet']
+    else:
+        i, j = edge_index[0], edge_index[1]
 
-    # Distance vectors and distances
-    vec = pos[j] - pos[i]
-    dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)
+        num_edges = j.shape[0]
+        in_idx = [[] for _ in range(num_nodes)]
+        out_idx = [[] for _ in range(num_nodes)]
+        for e in range(num_edges):
+            in_idx[int(j[e])].append(e)
+            out_idx[int(i[e])].append(e)
 
-    # --- Build triplets (k -> j -> i) via per-node grouping ---
-    # Avoids O(E²) memory by grouping edges by (target, source) per node.
-    num_edges = j.shape[0]
-    in_idx = [[] for _ in range(num_nodes)]
-    out_idx = [[] for _ in range(num_nodes)]
-    for e in range(num_edges):
-        in_idx[int(j[e])].append(e)
-        out_idx[int(i[e])].append(e)
+        idx_kj_list, idx_ji_list = [], []
+        for n in range(num_nodes):
+            kj_list = in_idx[n]
+            ji_list = out_idx[n]
+            if kj_list and ji_list:
+                n_kj, n_ji = len(kj_list), len(ji_list)
+                idx_kj_list.extend(kj_list * n_ji)
+                idx_ji_list.extend(ji_list * n_kj)
 
-    idx_kj_list, idx_ji_list = [], []
-    for n in range(num_nodes):
-        kj_list = in_idx[n]
-        ji_list = out_idx[n]
-        if kj_list and ji_list:
-            n_kj, n_ji = len(kj_list), len(ji_list)
-            # Vectorised cross: repeat kj n_ji times, tile ji n_kj times
-            idx_kj_list.extend(kj_list * n_ji)
-            idx_ji_list.extend(ji_list * n_kj)
+        idx_kj = paddle.to_tensor(idx_kj_list)
+        idx_ji = paddle.to_tensor(idx_ji_list)
 
-    idx_kj = paddle.to_tensor(idx_kj_list)
-    idx_ji = paddle.to_tensor(idx_ji_list)
-
-    vec_kj = vec[idx_kj]
-    vec_ji = vec[idx_ji]
-
-    angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
-    angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
-    angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
-    # FIXME: detach to avoid Paddle atan2 2nd-order grad NaN (create_graph=False still
-    # has numerical instability for planar geometries e.g. benzene).
-    angle = paddle.atan2(angle_sin, angle_cos).detach()
-
-    torsion = paddle.zeros_like(angle)
-    if use_torsion and idx_kj.shape[0] > 0:
-        # Build quadruplet (l -> k -> j -> i) by grouping triplets by k-node
         k_nodes = i[idx_kj]
         in_idx_edges = [[] for _ in range(num_nodes)]
         for e in range(num_edges):
@@ -105,9 +165,22 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
                 idx_lk_list.extend(lk_list)
                 idx_triplet_list.extend([t] * len(lk_list))
 
-        idx_lk = paddle.to_tensor(idx_lk_list)
-        idx_triplet = paddle.to_tensor(idx_triplet_list)
+        idx_lk = paddle.to_tensor(idx_lk_list) if idx_lk_list else paddle.empty([0], dtype='int64')
+        idx_triplet = paddle.to_tensor(idx_triplet_list) if idx_triplet_list else paddle.empty([0], dtype='int64')
 
+    vec = pos[j] - pos[i]
+    dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)
+
+    vec_kj = vec[idx_kj]
+    vec_ji = vec[idx_ji]
+
+    angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
+    angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
+    angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
+    angle = paddle.atan2(angle_sin, angle_cos).detach()
+
+    torsion = paddle.zeros_like(angle)
+    if use_torsion and idx_kj.shape[0] > 0:
         k_idx_from_edge_lk = j[idx_lk]
         v1 = pos[k_idx_from_edge_lk] - pos[i[idx_lk]]
         v2 = vec_kj[idx_triplet]
@@ -123,7 +196,6 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
             v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
         ).detach()
 
-        # Per-triplet best-angle selection.
         if idx_triplet.shape[0] > 0:
             with paddle.no_grad():
                 abs_a = paddle.abs(torsion_angle)

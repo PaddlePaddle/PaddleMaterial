@@ -36,6 +36,7 @@ import paddle.distributed as dist
 from paddle.io import Dataset
 
 from ppmat.models import build_graph_converter
+from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
@@ -199,7 +200,7 @@ class QM9Dataset(Dataset):
         else:
             graph_cache_dir = None
 
-        # ---- 5. Pre‑build edge_index (rank 0 + barrier, MP20 pattern) ----
+        # ---- 5. Pre‑build edge_index + triplet indices (rank 0 + barrier) ----
         if build_graph_cfg is not None:
             self.graph_paths = [None] * total  # placeholder for all samples
             cache_ready = osp.exists(graph_cache_dir) and not overwrite
@@ -210,14 +211,28 @@ class QM9Dataset(Dataset):
                     converter = build_graph_converter(build_graph_cfg)
                     for i in tqdm(range(total), desc="Build graphs"):
                         z, pos = self._read_one_molecule(merged_xyz, self._offsets, i)
-                        batch_t = np.zeros(z.shape[0], dtype=np.int64)
+                        num_nodes = z.shape[0]
+                        batch_t = np.zeros(num_nodes, dtype=np.int64)
                         ei = converter(
                             paddle.to_tensor(pos),
                             paddle.to_tensor(batch_t),
                         )
+                        # Precompute triplet/quadruplet indices (connectivity-only:
+                        # independent of atomic positions — same indices apply at
+                        # every training step for this molecule).
+                        ti = compute_triplet_indices(ei, num_nodes)
+                        cache_data = {
+                            'edge_index': ei.numpy(),
+                            'ti_i': ti['i'].numpy(),
+                            'ti_j': ti['j'].numpy(),
+                            'ti_idx_kj': ti['idx_kj'].numpy(),
+                            'ti_idx_ji': ti['idx_ji'].numpy(),
+                            'ti_idx_lk': ti['idx_lk'].numpy(),
+                            'ti_idx_triplet': ti['idx_triplet'].numpy(),
+                        }
                         self._save_pickle(
                             osp.join(graph_cache_dir, f"{i:010d}.pkl"),
-                            ei.numpy(),
+                            cache_data,
                         )
                     self._save_pickle(
                         osp.join(graph_cache_dir, "build_graph_cfg.pkl"),
@@ -325,7 +340,21 @@ class QM9Dataset(Dataset):
         data = {"z": z, "pos": pos}
         if self.graph_paths is not None:
             gpath = self.graph_paths[real_idx]
-            data["edge_index"] = self._load_pickle(gpath) if isinstance(gpath, str) else gpath
+            loaded = self._load_pickle(gpath) if isinstance(gpath, str) else gpath
+            if isinstance(loaded, dict):
+                # New format: dict with edge_index + precomputed triplet indices
+                data["edge_index"] = loaded["edge_index"]
+                data["triplet_indices"] = {
+                    'i': loaded['ti_i'],
+                    'j': loaded['ti_j'],
+                    'idx_kj': loaded['ti_idx_kj'],
+                    'idx_ji': loaded['ti_idx_ji'],
+                    'idx_lk': loaded['ti_idx_lk'],
+                    'idx_triplet': loaded['ti_idx_triplet'],
+                }
+            else:
+                # Old format: plain numpy array (edge_index only, no triplet cache)
+                data["edge_index"] = loaded
         for name in self.property_names:
             data[name] = np.array([self._raw_properties[name][real_idx]], dtype=np.float32)
         data["id"] = int(real_idx)

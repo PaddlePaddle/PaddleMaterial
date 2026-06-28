@@ -411,7 +411,7 @@ class SphereNet(paddle.nn.Layer):
         for update_v in self.update_vs:
             update_v.reset_parameters()
 
-    def forward(self, z, pos, batch, node_feature=None, edge_index=None):
+    def forward(self, z, pos, batch, node_feature=None, edge_index=None, triplet_indices=None):
         """Pure tensor forward.
 
         Args:
@@ -423,6 +423,10 @@ class SphereNet(paddle.nn.Layer):
                 When provided, the radius graph is not built internally
                 (recommended for production use).  When ``None``, the graph
                 is built on-the-fly via :func:`radius_graph`.
+            triplet_indices: optional dict from
+                :func:`~ppmat.models.common.xyz_utils.compute_triplet_indices`.
+                When provided, ``xyz_to_dat`` skips the O(∑ deg×deg) Python
+                loop — requires pre-built graph cache.
 
         Returns:
             u: [num_graphs, out_channels] predicted properties
@@ -445,8 +449,21 @@ class SphereNet(paddle.nn.Layer):
             pass
 
         num_nodes = z.shape[0]
+        if triplet_indices is not None:
+            # Convert cached numpy indices to tensors (handles collation
+            # where nested dict values may remain as numpy arrays).
+            ti = {k: paddle.to_tensor(v) if not isinstance(v, paddle.Tensor) else v
+                  for k, v in triplet_indices.items()}
+            precomputed = {
+                'i': ti['i'], 'j': ti['j'],
+                'idx_kj': ti['idx_kj'], 'idx_ji': ti['idx_ji'],
+                'idx_lk': ti['idx_lk'], 'idx_triplet': ti['idx_triplet'],
+            }
+        else:
+            precomputed = None
         dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(
-            pos, edge_index, num_nodes, use_torsion=True
+            pos, edge_index, num_nodes, use_torsion=True,
+            precomputed_indices=precomputed,
         )
 
         emb_out = self.emb_layer(dist, angle, torsion, idx_kj)
@@ -563,12 +580,14 @@ class SphereNetPP(paddle.nn.Layer):
         pos = data["pos"]
         batch = data["batch"]
         edge_index = data.get("edge_index", None)
+        triplet_indices = data.get("triplet_indices", None)
 
         if self.energy_and_force:
             pos = pos.detach()
             pos.stop_gradient = False
 
-        pred = self.spherenet(z, pos, batch, edge_index=edge_index)
+        pred = self.spherenet(z, pos, batch, edge_index=edge_index,
+                              triplet_indices=triplet_indices)
 
         # Compute forces if needed (used in both loss and prediction paths)
         forces_pred = None
