@@ -28,6 +28,7 @@
 +----------------+----------+--------+-------+----------+-------+
 """
 
+import multiprocessing as mp
 import os
 import os.path as osp
 import pickle
@@ -77,43 +78,39 @@ _BUNDLE_NPZ_MAP = {
 }
 
 
-class _MD17GraphBuildDataset(Dataset):
-    """Worker dataset for parallel MD17 graph building via DataLoader."""
+def _init_md17_worker(all_z, all_pos, build_graph_cfg, cache_dir):
+    """Initializer for MD17 multiprocessing pool — sets module-level globals."""
+    global _MD17_Z, _MD17_POS, _MD17_CFG, _MD17_CACHE_DIR
+    paddle.set_device('cpu')
+    _MD17_Z = all_z
+    _MD17_POS = all_pos
+    _MD17_CFG = build_graph_cfg
+    _MD17_CACHE_DIR = cache_dir
 
-    def __init__(self, all_z, all_pos, build_graph_cfg, cache_dir):
-        super().__init__()
-        self.all_z = all_z
-        self.all_pos = all_pos
-        self.build_graph_cfg = build_graph_cfg
-        self.cache_dir = cache_dir
 
-    def __getitem__(self, idx):
-        # Workers use CPU only — GPU context is not fork-safe.
-        paddle.set_device('cpu')
-        converter = build_graph_converter(self.build_graph_cfg)
-        pos_i = self.all_pos[idx]
-        batch_t = np.zeros(self.all_z.shape[0], dtype=np.int64)
-        ei = converter(
-            paddle.to_tensor(pos_i),
-            paddle.to_tensor(batch_t),
-        )
-        ti = compute_triplet_indices(ei, self.all_z.shape[0])
-        cache_data = {
-            'edge_index': ei.numpy(),
-            'ti_i': ti['i'].numpy(),
-            'ti_j': ti['j'].numpy(),
-            'ti_idx_kj': ti['idx_kj'].numpy(),
-            'ti_idx_ji': ti['idx_ji'].numpy(),
-            'ti_idx_lk': ti['idx_lk'].numpy(),
-            'ti_idx_triplet': ti['idx_triplet'].numpy(),
-        }
-        save_path = osp.join(self.cache_dir, f"{idx:010d}.pkl")
-        with open(save_path, 'wb') as f:
-            pickle.dump(cache_data, f)
-        return idx
-
-    def __len__(self):
-        return self.all_pos.shape[0]
+def _build_md17_graph_idx(idx):
+    """Multiprocessing worker: build graph + triplet indices for one MD17 frame."""
+    converter = build_graph_converter(_MD17_CFG)
+    pos_i = _MD17_POS[idx]
+    batch_t = np.zeros(_MD17_Z.shape[0], dtype=np.int64)
+    ei = converter(
+        paddle.to_tensor(pos_i),
+        paddle.to_tensor(batch_t),
+    )
+    ti = compute_triplet_indices(ei, _MD17_Z.shape[0])
+    cache_data = {
+        'edge_index': ei.numpy(),
+        'ti_i': ti['i'].numpy(),
+        'ti_j': ti['j'].numpy(),
+        'ti_idx_kj': ti['idx_kj'].numpy(),
+        'ti_idx_ji': ti['idx_ji'].numpy(),
+        'ti_idx_lk': ti['idx_lk'].numpy(),
+        'ti_idx_triplet': ti['idx_triplet'].numpy(),
+    }
+    save_path = osp.join(_MD17_CACHE_DIR, f"{idx:010d}.pkl")
+    with open(save_path, 'wb') as f:
+        pickle.dump(cache_data, f)
+    return idx
 
 
 class MD17Dataset(Dataset):
@@ -235,19 +232,18 @@ class MD17Dataset(Dataset):
                         f"Pre‑building graphs for MD17/{name} ({total} frames) "
                         f"with 24 workers ..."
                     )
-                    build_dataset = _MD17GraphBuildDataset(
-                        all_z, all_pos, build_graph_cfg, graph_cache_dir
-                    )
-                    build_loader = paddle.io.DataLoader(
-                        build_dataset,
-                        batch_size=1,
-                        num_workers=24,
-                        shuffle=False,
-                        use_shared_memory=False,
-                        collate_fn=lambda x: x,
-                    )
-                    for _ in tqdm(build_loader, total=total, desc="Build graphs"):
-                        pass
+                    ctx = mp.get_context('spawn')
+                    with ctx.Pool(
+                        24,
+                        initializer=_init_md17_worker,
+                        initargs=(all_z, all_pos, build_graph_cfg, graph_cache_dir),
+                    ) as pool:
+                        for _ in tqdm(
+                            pool.imap_unordered(_build_md17_graph_idx, range(total)),
+                            total=total,
+                            desc="Build graphs",
+                        ):
+                            pass
                 if dist.is_initialized():
                     dist.barrier()
             self.graph_cache = [

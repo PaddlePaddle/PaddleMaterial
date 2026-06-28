@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import math
+import multiprocessing as mp
 import os
 import os.path as osp
 import pickle
@@ -86,52 +87,37 @@ def _parse_qm9_xyz(lines):
     return np.array(z_list, dtype=np.int64), np.array(pos_list, dtype=np.float32), props
 
 
-class _GraphBuildDataset(Dataset):
-    """Worker dataset for parallel graph building via DataLoader.
+def _init_qm9_worker(merged_xyz, offsets, build_graph_cfg, cache_dir):
+    """Initializer for QM9 multiprocessing pool."""
+    global _QM9_XYZ, _QM9_OFFSETS, _QM9_CFG, _QM9_CACHE_DIR
+    paddle.set_device('cpu')
+    _QM9_XYZ = merged_xyz
+    _QM9_OFFSETS = offsets
+    _QM9_CFG = build_graph_cfg
+    _QM9_CACHE_DIR = cache_dir
 
-    Each worker process builds edge_index and precomputed triplet/
-    quadruplet indices for one molecule, then saves the result to a
-    .pkl file.  This avoids O(E²) memory in xyz_to_dat and eliminates
-    the Python per-node grouping loop from every training step.
-    """
 
-    def __init__(self, merged_xyz, offsets, build_graph_cfg, cache_dir):
-        super().__init__()
-        self.merged_xyz = merged_xyz
-        self.offsets = offsets
-        self.build_graph_cfg = build_graph_cfg
-        self.cache_dir = cache_dir
-
-    def __getitem__(self, idx):
-        # Workers use CPU only — GPU context is not fork-safe.
-        paddle.set_device('cpu')
-        converter = build_graph_converter(self.build_graph_cfg)
-        z, pos = QM9Dataset._read_one_molecule(
-            self.merged_xyz, self.offsets, idx
-        )
-        num_nodes = z.shape[0]
-        batch_t = np.zeros(num_nodes, dtype=np.int64)
-        ei = converter(
-            paddle.to_tensor(pos),
-            paddle.to_tensor(batch_t),
-        )
-        ti = compute_triplet_indices(ei, num_nodes)
-        cache_data = {
-            'edge_index': ei.numpy(),
-            'ti_i': ti['i'].numpy(),
-            'ti_j': ti['j'].numpy(),
-            'ti_idx_kj': ti['idx_kj'].numpy(),
-            'ti_idx_ji': ti['idx_ji'].numpy(),
-            'ti_idx_lk': ti['idx_lk'].numpy(),
-            'ti_idx_triplet': ti['idx_triplet'].numpy(),
-        }
-        save_path = osp.join(self.cache_dir, f"{idx:010d}.pkl")
-        with open(save_path, 'wb') as f:
-            pickle.dump(cache_data, f)
-        return idx
-
-    def __len__(self):
-        return len(self.offsets)
+def _build_qm9_graph_idx(idx):
+    """Multiprocessing worker: build graph + triplet indices for one QM9 molecule."""
+    converter = build_graph_converter(_QM9_CFG)
+    z, pos = QM9Dataset._read_one_molecule(_QM9_XYZ, _QM9_OFFSETS, idx)
+    num_nodes = z.shape[0]
+    batch_t = np.zeros(num_nodes, dtype=np.int64)
+    ei = converter(paddle.to_tensor(pos), paddle.to_tensor(batch_t))
+    ti = compute_triplet_indices(ei, num_nodes)
+    cache_data = {
+        'edge_index': ei.numpy(),
+        'ti_i': ti['i'].numpy(),
+        'ti_j': ti['j'].numpy(),
+        'ti_idx_kj': ti['idx_kj'].numpy(),
+        'ti_idx_ji': ti['idx_ji'].numpy(),
+        'ti_idx_lk': ti['idx_lk'].numpy(),
+        'ti_idx_triplet': ti['idx_triplet'].numpy(),
+    }
+    save_path = osp.join(_QM9_CACHE_DIR, f"{idx:010d}.pkl")
+    with open(save_path, 'wb') as f:
+        pickle.dump(cache_data, f)
+    return idx
 
 
 class QM9Dataset(Dataset):
@@ -263,19 +249,21 @@ class QM9Dataset(Dataset):
                         f"Pre‑building graphs for QM9 ({total} molecules) "
                         f"with 24 workers ..."
                     )
-                    build_dataset = _GraphBuildDataset(
-                        merged_xyz, self._offsets, build_graph_cfg, graph_cache_dir
-                    )
-                    build_loader = paddle.io.DataLoader(
-                        build_dataset,
-                        batch_size=1,
-                        num_workers=24,
-                        shuffle=False,
-                        use_shared_memory=False,
-                        collate_fn=lambda x: x,
-                    )
-                    for _ in tqdm(build_loader, total=total, desc="Build graphs"):
-                        pass
+                    ctx = mp.get_context('spawn')
+                    with ctx.Pool(
+                        24,
+                        initializer=_init_qm9_worker,
+                        initargs=(
+                            merged_xyz, self._offsets,
+                            build_graph_cfg, graph_cache_dir,
+                        ),
+                    ) as pool:
+                        for _ in tqdm(
+                            pool.imap_unordered(_build_qm9_graph_idx, range(total)),
+                            total=total,
+                            desc="Build graphs",
+                        ):
+                            pass
                 if dist.is_initialized():
                     dist.barrier()
             for i in range(total):
