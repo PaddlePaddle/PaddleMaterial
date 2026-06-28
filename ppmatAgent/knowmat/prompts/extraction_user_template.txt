@@ -1,0 +1,404 @@
+You will be provided with OCR-parsed, layout-analyzed, or text-integrated content of a materials science paper.
+
+Your task is to follow the system prompt and extract step-by-step according to the "Composition → Processing → Structure → Properties" four-axis framework.
+The four axes are the unified framework for all items; specific fields within each axis are defined by loaded supplement files.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Input
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Target routing hints (may be empty; if empty, determine yourself):
+`base_material`: `{target_base_material}`
+`application`: `{target_application}`
+`research_paradigm`: `{target_research_paradigm}`
+
+Allowed patch tags hint (may be empty):
+`{target_patch_tags}`
+
+Full paper text:
+
+=== INPUT TEXT START ===
+{paper_text}
+=== INPUT TEXT END ===
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step A: Global Metadata and Routing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Extract Paper_Title and DOI.
+   DOI search strategy (by priority):
+   a) Search for "doi.org/" or "https://doi.org/" links
+   b) Search for "DOI:" or "doi:" followed by 10.xxxx/xxxx format identifiers
+   c) Search page headers/footers (journal name + volume/issue nearby typically has DOI)
+   d) Search for "Digital Object Identifier" keyword
+   If none found, DOI = null.
+
+2. Determine three-dimensional classification:
+   - base_material (5 choices)
+   - application (2 choices)
+   - research_paradigm (3 choices)
+   If user provided routing hints, prioritize them; but if source text evidence clearly conflicts, correct and explain in Mixed_Signals.
+
+3. Derive Supplements_Loaded: determine which supplement files to load based on classification.
+
+4. Determine Patch_Tags and mixed signals.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step B: Item Segmentation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Scan full text to identify all independent material variants/model systems.
+   Whenever composition/formulation, processing state, test direction/configuration, component type, or hierarchical object changes, a new item must be created.
+
+2. Generate stable Sample_ID for each item. Use the paper's own labels when available.
+
+3. CRITICAL SPLITTING RULES (the #1 cause of extraction errors):
+
+   MUST CREATE SEPARATE ITEMS for each:
+   • Different heat-treatment temperature (e.g., 573K vs 673K vs 773K → each is one item)
+   • Different annealing/aging time when it changes the microstructure
+   • Different thermal exposure / oxidation durations (e.g., 50h, 100h, 150h, 200h → each is one item)
+   • Different temperature×time combinations (e.g., 1400°C/50h, 1400°C/100h, 1450°C/50h → each is one item)
+   • Different composition in a screening/parametric study (e.g., T01 through T17 → 17 items)
+   • Different values in a single-variable parametric sweep (e.g., grinding speed 40/70/100/130/160/190/220/240 m/s → 8 items; laser power 5W/10W/12.5W/15W/20W → 5 items; sintering temp at 6 values → 6 items)
+   • Different layers in a multilayer coating (Si layer, YbMS layer, LMA layer → each is one item)
+   • As-built vs HIP vs aged vs annealed states on the same base alloy
+   • Different ECAP passes or deformation states
+   • Computational/simulation results → separate from experimental items (use Data_Nature: Computed)
+   • Each (specimen_type × environment × method) in simulation studies → separate item (e.g., CT_air_sim, CT_air_exp, CT_H2_sim → 3 items)
+   • FEM/thermomechanical models → separate items from experimental measurements
+   • Phase-field simulations with different geometries/BCs → separate item per case
+   • Oxidation kinetics model (parabolic rate constants, activation energies) → separate item
+   • DFT/first-principles calculations → separate item per phase/composition
+   • Phase-field / CALPHAD / Thermo-Calc / Arrhenius / JMAK fitted results → separate item
+   • TEM/STEM-characterized specific interfaces with independent crystallographic data → separate items
+   • Literature comparison data with specimen-resolved quantitative values → separate items (Role: Reference/Comparator)
+   • Constituent materials / precursors / pure components with independent characterization (e.g., pure resin vs composite, monomer vs polymer, powder vs printed part)
+   • In review papers: each reviewed material/case with quantitative property data → separate item
+   • In software/method papers: each demonstration application case with measurable output → separate item
+
+   MUST NOT SPLIT (keep as ONE item with multiple property entries):
+   • Different measurement angles on the same sample (0°, 10°, 30° roughness → 1 item, 3 property entries)
+   • Different surface positions on the same part (upskin/downskin → test condition in Property)
+   • Different tensile test temperatures on the SAME unchanged specimen (RT, 400K, 600K tensile on same bar → 1 item)
+   • Iterations of an optimization/active-learning algorithm that didn't produce characterized specimens
+   • Pure bibliographic citations with no quantitative data (only author+year, no measurable values)
+
+   KEY PRINCIPLE: condition changes that cause microstructural evolution (grain growth, phase transformation,
+   oxidation, precipitate coarsening) → MUST split. Pure measurement parameters on same unchanged specimen → keep together.
+
+   GRID COMPLETENESS RULE: If a paper studies a temperature×time matrix (e.g., 3 temperatures × 4 durations = 12 conditions),
+   you MUST create ALL N×M items. Do NOT split some temperature levels while merging others.
+   Count the matrix dimensions from tables/figures and verify your item count matches.
+
+   PARAMETRIC SWEEP RULE: If a paper varies ONE process parameter across N values (e.g., speed at 8 values,
+   power at 5 levels, sintering temp at 6 points), create N separate items — one per parameter value.
+   Do NOT collapse to a single generic item. Each data point with measurable properties = 1 item.
+
+   When a table has N rows with different processing conditions (temperature×time combinations), create N separate items.
+
+4. Gradient materials are processed holistically first (Gradient_Material = true).
+   Only split when the paper explicitly provides independent data for each layer, linked by Gradient_Group_ID.
+
+5. Mark Role and Data_Nature for each item.
+   - Target: main material synthesized/characterized in this paper
+   - Variant: same composition as a Target but different processing state (e.g., different aging time, different thermal exposure duration)
+   - Reference: literature comparison data from other papers with specimen-resolved quantitative values
+   - Comparator: contrasting material/system compared against Target from literature (comparison table entries)
+   - Demonstration: supporting FEM/simulation item that validates or illustrates a mechanism
+   - Data_Nature: Experimental / Computed / Literature_Experimental / Literature_Computed
+
+6. Record Raw_Evidence_Span for each item, preserving source text fragments that can locate the item.
+
+7. Samples with different ratios/doping levels/modification treatments must each be independent items, even if composition differences are small (e.g., NVCOF vs PA_NVCOF vs ZVCOF).
+
+8. Item-level routing field copy rule (mandatory):
+   Each item's base_material / application / research_paradigm must directly copy the corresponding values from Paper_Routing.
+   These are enum values (e.g., "Metals", "Structural", "Experimental"), free text or other formats not allowed.
+   If an item belongs to a different material system (e.g., metal matrix in a composite paper), still use Paper_Routing's value at item level; explain difference in Note.
+
+9. For active-learning / Bayesian-optimization / design-of-experiments papers:
+   Only extract the FINAL validated/characterized specimens as Target items.
+   Do NOT create items for every intermediate iteration proposal even if they have UTS/TE data.
+   Specifically: if the paper ran N iterations selecting 2 candidates each (resulting in 2N total fabricated specimens),
+   only extract the FINAL Pareto-optimal/recommended sample(s) that the paper highlights as key results.
+   The initial training dataset (from literature) should NOT be extracted.
+   Example: "5 iterations × 2 samples = 10 total" → only extract the 1-2 best/final specimens, not all 10.
+
+10. Literature reference data extraction (comprehensive extraction principle, v10.5 enhanced):
+   All literature comparison data appearing in the paper must be extracted as independent items (Role = Reference or Comparator), including:
+   - Literature comparison data listed in tables with quantitative values (UTS, YS, elongation, hardness, coating life, oxidation rate)
+   - Literature values mentioned in a single sentence (e.g., "The YS of Inconel 718 was reported to be 1100 MPa [15]")
+   - Literature data points cited in figures (only when caption explicitly gives values)
+   - Literature performance data cited in Discussion/Conclusion sections with quantitative values
+   - Literature data in review comparison tables with specimen-resolved data
+   Mark these items with Data_Nature='Literature_Experimental' (or 'Literature_Computed' for DFT/simulation literature).
+   Do NOT extract pure bibliographic citations with no quantitative data (only author+year, no measurable values).
+   **Active scanning strategy**: after completing Step F, additionally scan Discussion/Conclusion sections, searching for values near "[number]" citation markers, ensuring no omissions.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step C: Composition Axis Extraction
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Extract composition information for each item, following faithful-to-source principle.
+
+General procedure:
+1. Identify composition representation (element percentages / stoichiometric formula / composite ratio / model system)
+2. Strictly distinguish nominal vs measured composition, annotate Composition_Source_Type
+3. Range values preserve original range; upper-limit values fill null and record source expression in Note
+4. Standard deviation extracted to Value_StdDev
+5. Specific field structures, naming rules, special constraints → see base supplement
+
+Do NOT: normalize, back-calculate, infer composition from trade names.
+
+6. Composition_Source_Type annotation rules (every item with composition data must annotate):
+   Determination priority (top-down, stop on first match):
+
+   ✅ nominal — source text explicitly uses "nominal" / "designed" / "nominal composition"
+   ✅ measured — source text gives measured data with detection method noted (e.g., ICP-OES, EDS, XRF)
+   ✅ nominal_inferred — composition appears in Experimental preparation description ("The alloy with composition...")
+      but no detection results given → default type for most experimental papers
+   ✅ measured_inferred — source text gives composition values with characterization method mentioned (e.g., "EDS analysis shows...")
+      but doesn't explicitly use the word "measured"
+   ⚠️ Only when none of the above four can be determined, omit the key (don't output null)
+
+   Priority annotation principle: prefer marking nominal_inferred over omitting. 90% of experimental papers' compositions come from preparation formulations and should be marked nominal_inferred.
+
+   Scenario examples (strict comparison):
+   ✅ Paper gives composition table + explicitly mentions "EDS analysis / ICP-OES / XRF measurement" → measured
+   ✅ Paper gives composition table without mentioning detection method, appears in Experimental section → nominal_inferred (default)
+   ✅ Paper uses "nominal composition / designed composition" → nominal
+   ✅ Paper gives composition values + mentions EDS characterization but doesn't say "measured composition" → measured_inferred
+   ❌ Paper only mentions XRD characterization + gives composition table → nominal_inferred (XRD doesn't measure composition, shouldn't mark measured)
+   ❌ Composition appears in preparation formulation but omits Composition_Source_Type → must annotate nominal_inferred
+   ✅ Ceramic paper gives chemical formula + XRD phase analysis confirms phase composition → Composition_Source_Type not applicable at element level, omit; Phase_Composition annotated per XRD results
+   ✅ Composite paper gives matrix/reinforcement ratio (e.g., "SiC fiber 40 vol%") → ratio preserved as source text, mark nominal_inferred as appropriate
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step D: Processing Axis Extraction
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Extract processing/fabrication information for each item.
+
+General procedure:
+1. Identify process type, fill Process_Text (original + simplified)
+2. Extract quantitative parameters to Key_Params, using standardized names with unit suffixes
+3. Multi-stage processing split with Stage1/Stage2/... suffixes; strictly prohibited: averaging across stages
+4. Equipment model/type/manufacturer extracted to Equipment array when mentioned
+5. If unit conversion occurs, preserve Original_Values
+6. Specific field structures, required parameter lists → see base supplement and paradigm supplement
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step D+: Equipment Information Dedicated Scan (Known Highest-Frequency P1 Issue)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This step specifically addresses equipment omission (100% equipment missing in 60-paper testing).
+
+Method:
+1. Return to full paper text, search the following keyword areas:
+   - "Experimental" / "Materials and Methods" / "Experimental Procedures"
+   - "Characterization" / "Microstructural Analysis" / "Microstructure Observation"
+   - "Mechanical Testing" / "Mechanical Properties"
+   - "Measurements" / "Apparatus"
+
+2. In these areas, scan the following equipment types and extract to Processing.Equipment array:
+
+   A) Fabrication/processing equipment (already extracted in Step D, recheck here):
+      AM equipment, furnaces (vacuum/tube/box), grinders, sintering furnaces, hot presses, rolling mills, forging equipment, etc.
+
+   B) Characterization equipment (most frequently omitted, must scan carefully):
+      - Microscopes: SEM, TEM, FIB, optical microscope (OM)
+      - Diffraction/scattering: XRD, SAXS, WAXS, EBSD
+      - Composition analysis: EDS, WDS, EELS, XPS, ICP-OES
+      - Atom probe: APT (Atom Probe Tomography)
+      - Mechanical testing: universal testing machine, hardness tester (Vickers/Rockwell/Nano), impact tester, fatigue tester, creep tester, nanoindenter
+      - Thermal analysis: DSC, DTA, TGA, dilatometer
+      - Other: AFM, laser particle sizer, BET surface area analyzer
+
+   C) Testing/measurement equipment (bound to mechanical properties):
+      Universal testing machine model, extensometer model, load frame model
+
+3. Equipment entry format (merge by main instrument):
+   {"Instrument_Name": "SEM", "Manufacturer": "Zeiss", "Model": "Supra 55"}
+   If paper only mentions "SEM" without manufacturer/model → {"Instrument_Name": "SEM"} (omit Manufacturer/Model)
+   Auxiliary probes (e.g., EDS) merged into same equipment entry, noted in Note (e.g., "equipped with EDS: Oxford X-Max 50")
+
+   Merge examples (mandatory):
+   ✅ {"Instrument_Name": "SEM", "Manufacturer": "FEI", "Model": "Scios", "Note": "equipped with EDS: Oxford X-Max 50; equipped with EBSD: EDAX DigiView"}
+   ❌ {"Instrument_Name": "SEM", "Manufacturer": "FEI", "Model": "Scios"}
+   ❌ {"Instrument_Name": "EDS", "Manufacturer": "Oxford", "Model": "X-Max 50"}
+   (EDS/EBSD/EELS are auxiliary probes of SEM/TEM, must not be split as independent equipment entries)
+
+4. Self-check: before output, cross-reference against paper's Experimental/Characterization section item-by-item, ensure no omissions.
+   If paper says "microstructure observed by SEM" but Equipment has no SEM entry, must add it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step E: Structure Axis Extraction
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Extract microstructure/structure information for each item.
+
+General procedure:
+1. Identify phase constitution, distinguish main phase (matrix/continuous phase) from secondary phases (strengthening/dispersed phases)
+2. Fill Structure_Text (original + simplified)
+   - original should include all microstructure descriptions, including gradient structures, dynamic microstructure evolution, TRIP effects, etc.
+   - Do not use a separate Dynamic_Microstructure field
+3. Extract grain size, precipitate size, and other quantitative parameters to corresponding fields
+4. Size parameters must note whether radius or diameter; mark "undefined" when unspecified
+5. Precipitate range values (e.g., 200-300 nm) fill both Size_Range_Low_nm and Size_Range_High_nm
+6. Porosity / Relative_Density: when one is extracted, auto-calculate the other and annotate in Note
+7. Advanced_Quantitative_Features is an open dictionary: all quantitative parameters with numbers must be extracted
+   - Key naming: descriptive English name + unit suffix (e.g., SFE_mJ_m2, GND_Density_per_m2)
+   - When no data, entire field not output (don't write {}, don't write null)
+8. All characterization equipment (SEM/TEM/APT/XRD/EBSD etc.) unified in Processing.Equipment array (same array as fabrication equipment)
+9. APT data (local phase composition, partitioning coefficients) extracted to corresponding precipitate in Secondary_Phases
+10. Crystallographic symbols preserve complete notation (including negative/overline marks)
+11. Specific field structures, phase identification rules, hierarchy definitions → see base supplement and domain overlay
+12. Multi-condition data in tables (e.g., precipitate sizes at different aging times, grain sizes at different temperatures) must be extracted row-by-row to corresponding Advanced_Quantitative_Features or Property records, not just "representative points"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step E+: Table Pre-Scan (Prevent Omissions)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before entering Step F, complete full-text table pre-scan:
+
+1. Table identification: list all tables in the paper (Table 1, Table 2, ...), record approximate content of each
+2. Table classification: determine each table's type
+   - Composition table: lists chemical compositions/ratios of different samples
+   - Process parameter table: lists fabrication/heat treatment conditions
+   - Structure table: lists grain sizes, phase fractions, precipitate features, etc.
+   - Property table: lists mechanical/physical/chemical property data
+   - Comparison table: lists results compared with literature data
+   - Other: tables not in above categories
+3. Per-table processing rules:
+   - Each row of each table corresponds to at least one item or one extraction record
+   - Conditions in table headers (temperature, time, strain rate, etc.) must be bound to corresponding extraction records
+   - Merged cells must be expanded into independent records
+4. Self-check: number of processed tables vs total tables in paper; if inconsistent, rescan
+
+5. Multi-unit/multi-phase data rules (commonly omitted):
+   - When same table provides both at% and wt% data, both sets must be extracted to Nominal_Composition (use Note to distinguish units)
+   - Multi-phase composition tables (e.g., APT γ phase + γ' phase, EDS regional analysis at different positions) require independent extraction for each phase/region, cannot take only one phase
+   - Example: Table 3 lists APT compositions for γ and γ' phases → at least 2 composition datasets, each annotated with corresponding phase name
+
+6. Figure description value extraction (D2 enhanced):
+   Scan text for "Fig. X shows / reached / achieved / showed a value of" keywords,
+   extract clearly given concrete values (mark Data_Source = "text").
+   ✅ "Fig. 5 shows that the hardness reached 450 HV" → extract Hardness = 450, Data_Source = "text"
+   ❌ "Fig. 5 shows an increasing trend in hardness" → no concrete value, don't extract
+
+7. VLM-digitized block scan (MANDATORY active step):
+   Scan the text for every "> [Figure N VLM-digitized" block and extract its readable values:
+   - bar chart block → each bar/bin value becomes an approximate property/structure record.
+   - line chart block → each readable endpoint and extremum (start/end/peak/valley) becomes an approximate property point; use the stated axis variable+unit for Property_Name/Unit and the x-coordinate as the test condition.
+   - For EVERY value taken this way: Data_Source = "image_digitized" (NOT "image"), Note = "estimated from chart (VLM-digitized), not exact".
+   - Skip a block only if its axes are not material properties (pure force–displacement / solver curves) or its values are null/unreadable.
+   - PRECEDENCE: if the same quantity already appears in text/table/caption with a concrete value, keep that one instead; use digitized values to fill gaps only.
+   ✅ block "y_axis: Nanoindentation_hardness_GPa / γ band,4.5" → Property_Name=Nanoindentation_Hardness, Value_Numeric=4.5, Unit=GPa, Data_Source=image_digitized
+   ✅ line block "end=[800, 390]" on a Yield Strength vs Temperature curve → Yield_Strength=390 MPa @ 800°C, Data_Source=image_digitized
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step F: Properties Axis Extraction
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Extract properties and test conditions for each item.
+
+General procedure:
+1. Identify property types, output in priority order
+2. Every property record must include units
+2.5. Standard deviation extraction rule (± symbol is NOT a range value):
+     - When encountering ± (e.g., 450±20 MPa, 93±36 nm): Value = first number, Value_StdDev = second number
+     - ± is standard deviation/error range, not min-max range, must not be placed in Value_Range
+     - Standard deviation applies to both property data and microstructure size data
+3. Every property record must bind corresponding test conditions where possible (temperature, strain rate, frequency, etc.)
+4. Different test condition results for same item stay in that item's internal array
+5. Tensile and compressive naming must be mutually exclusive (compression scenarios use _Compressive suffix)
+6. Elongation trichotomy: Elongation_Total / Elongation_Uniform / Elongation_At_Fracture
+7. Temperature isolation wall: Test_Temperature_K only fills test temperature; processing/heat treatment temperatures must not be entered
+8. Data source annotation Data_Source (strict distinction):
+     * "text": values given in body text (including concrete values given in text describing figures/tables)
+     * "table": values from tables (must extract all, no table row/column omissions)
+     * "image": only values explicitly written in figure captions/legends (no images after OCR, don't extract data from figures)
+     * "image_digitized": values read from a "> [Figure N VLM-digitized]" block (vision-model estimate of a chart). USE THIS, NOT "image", whenever the value comes from a VLM-digitized block. Note must say "estimated from chart (VLM-digitized), not exact". Prefer text/table/image over this when the same quantity is available there. See system prompt Section IV.5.c2.
+     * "unknown": source indeterminate
+9. Series data completeness (enhanced):
+   - Every row/column in tables must be extracted as independent records, no omissions
+   - Complete matrix data for multi-ratio/multi-condition must all be extracted
+   - Prohibited: extracting only "best performance" or "representative data points"
+10. Property priorities, required test conditions, ordering rules → see application supplement and domain overlay
+
+12. Property_Name naming rules:
+    - Prefer recommended Property_Name vocabulary from Structural.txt / Functional.txt
+    - Properties not in the vocabulary can be freely named, but names must not include unit suffixes (e.g., _MPa, _GPa, _HV)
+    - Synonymous properties must use unified names (e.g., consistently use Yield_Strength, don't mix YS, Yield_Stress)
+
+13. Constitutive model parameter handling (D2 confirmed):
+    - Constitutive model parameters (e.g., Johnson-Cook A/B/C/n, Arrhenius Q/n/α, Crystal Plasticity CRSS/h₀, etc.) retained in AQF
+    - Mark Data_Nature: "Computed" (fitted/calculated values)
+    - Example: AQF extracts "JC_Parameter_A_MPa": {"Value": 850, "Data_Nature": "Computed", "Note": "Johnson-Cook fit"}
+
+14. Discussion/Conclusion literature data secondary scan (v10.6 new):
+    After completing Step F, additionally execute:
+    - Scan Discussion and Conclusion paragraphs
+    - Search for property values near "[number]" citation markers (e.g., "The YS of Inconel 718 was reported to be 1100 MPa [15]")
+    - Search for values in comparative descriptions (e.g., "our result is 20% higher than the 800 MPa reported by Smith et al.")
+    - Extract discovered literature data as Reference items
+    - This step supplements Step B literature extraction, ensuring no omissions
+
+11. Numeric form checklist (check item-by-item before output):
+    □ Range values (e.g., 580-620°C) → Value = null, Value_Range fills both ends, don't take midpoint
+    □ Inequalities (e.g., >6.6×10⁷, <0.5%, ≤200 nm) → Value = null, Note records source
+    □ Approximate values (e.g., ~750°C, approx. 500 MPa) → Value fills the number, Note marks "approximate"
+    □ Standard deviation (e.g., 450±20) → Value=450, Value_StdDev=20 (don't put in Value_Range)
+    □ Upper-limit values (e.g., <0.1%) → Value = null, Note records source
+    □ Unit mismatch (source differs from SI) → Value uses SI, Original_Values preserves source
+    These rules cross-reference with system prompt Section III (Faithful to Source Principle item 5); system prompt takes precedence.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step G: Cross-Validation and Output
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before outputting JSON, complete the following checks:
+
+Faithful to source check:
+- Are there inferred values without Note explanation?
+- Is Composition_Source_Type annotated (null when indeterminate)?
+- Is there unauthorized normalization (primary element calculated as percentage)?
+- Are original units preserved? Were units self-converted?
+- Is all table data extracted? Are there omitted table rows/columns?
+- Is figure data extracted only when explicitly written in captions?
+- Do as-built samples omit Heat_Treatment stage?
+- Are all inequality values (>, <, ≤, ≥) filled null with source recorded in Note? (absolutely prohibited: truncating to concrete values)
+- Does every Property record annotate Data_Nature?
+
+Four-axis consistency check:
+- Composition↔Properties: are properties bound to correct composition system? Is Reference isolated?
+- Processing↔Structure: does structure state correspond to correct processing stage?
+- Processing↔Properties: is test temperature strictly separated from processing temperature?
+- Structure↔Properties: do property conditions match structure state?
+
+Completeness check:
+- Are series data (temperature/time/strain series) extracted point-by-point?
+- Is all data deep in tables captured?
+- Is Reference data (literature cited values) extracted and marked?
+- Are quantitative parameters with numbers omitted from Advanced_Quantitative_Features?
+- Is Porosity / Relative_Density inter-calculated and annotated?
+- Is all equipment (fabrication + characterization) extracted to Processing.Equipment?
+- Does Value use the paper's original units?
+
+Omission review:
+- Scan all null values in output JSON
+- Concepts paper never mentioned → omit key (don't output null)
+- Paper mentions but value indeterminate → keep null and explain in Note
+- Sub-object with all fields null/omitted → entire sub-object should be omitted
+- Empty objects {} → delete or omit (focus scan: Structure, Properties, Equipment, AQF sub-objects)
+- Empty arrays [] → delete or omit (focus scan: Properties, Equipment, Secondary_Phases, Coating_Layers)
+- Gradient_Group_ID: non-gradient materials should omit this key
+   - **Line-by-line scan before final output**: search for `: null`, `: []`, `: {}` patterns, clear all or replace with omission
+   - Equipment list check: did you traverse all subsections of Experimental/Methods? Does it include fabrication equipment AND characterization equipment?
+   - Is every Target item's Equipment array non-empty? Does it contain at least 1 device?
+
+Final output:
+- Output only a single valid JSON object, starting with { and ending with }.
+- Do not output any explanatory text, Markdown fences, or descriptive text.

@@ -1,0 +1,48 @@
+# Optional dependencies for ppmatAgent.
+# Keep these out of PaddleMaterials' default requirements because they are heavy
+# LLM/OCR/runtime stacks.
+
+# Shared LLM and orchestration dependencies for KnowMat
+pydantic>=2.7
+langchain==0.3.26
+langchain-community==0.3.27
+langchain-openai==0.3.27
+langgraph==0.6.10
+trustcall==0.0.39
+openai==1.93.2
+pydantic-settings>=2.0.0
+python-dotenv==1.1.1
+PyYAML>=6.0
+requests>=2.28
+colorlog>=6.0
+tqdm>=4.66
+click>=8.0
+rich>=13.0
+markdownify>=0.13
+pdfminer.six>=20221105
+pandas>=2.0
+pillow>=10.0
+pymatgen
+einops>=0.8
+
+# PaddleOCR-first document parsing
+paddleocr[all]
+pymupdf==1.24.13
+beautifulsoup4>=4.12
+lxml>=6.0
+cssselect>=1.4
+openpyxl>=3.1
+premailer>=3.10
+
+# Optional CLIP image-text alignment and figure enrichment
+torch>=2.8.0
+transformers>=4.40
+
+# HEA CrewAI workflow
+numpy>=1.21
+matplotlib>=3.5
+scipy>=1.7
+crewai>=0.80.0
+pycalphad>=0.10.0
+xarray>=0.20.0
+ase>=3.22.0

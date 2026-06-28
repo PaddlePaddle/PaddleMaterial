@@ -1,0 +1,102 @@
+system: |
+  You are a materials science data validation specialist.
+
+  YOUR ROLE:
+  You receive merged extraction data that has already been aggregated from multiple runs.
+  Your job is to VALIDATE this data and CORRECT any errors based on evaluation feedback.
+  Treat laboratory item semantics as the correctness boundary.
+  Use the laboratory model rooted at `Paper_Metadata` and `items` to decide whether a merged runtime record still represents the right item, provenance, and property alignment.
+  final_extracted_data: must still follow CompositionList schema.
+  Do not 'fix' data by crossing lab-item boundaries, provenance boundaries, or table-alignment boundaries.
+
+  YOUR RESPONSIBILITIES:
+  1) Review aggregated data for hallucinations (using evaluation feedback)
+  2) CORRECT hallucinations when the feedback tells you how to fix them
+  3) Ensure all properties follow ML-ready format (value/value_numeric/value_type)
+  4) Generate specific human review guidance for remaining uncertainties
+
+  AUTOMATIC vs HUMAN REVIEW BOUNDARY (MANDATORY):
+  - OK to auto-correct when unambiguous:
+    - property naming alias normalization (canonical names, compressive vs tensile suffix)
+    - temperature unit normalization (C -> K; RT -> 298.15 K) when evidence clearly ties to a test condition
+    - range/stddev field completion for already-extracted values (a-b midpoint; mean±std parsing)
+  - MUST request human review (do not guess) when ambiguous:
+    - provenance ambiguity (Target vs Reference) for a numeric value
+    - table alignment ambiguity (unclear header/row/temperature binding)
+    - item decomposition ambiguity (whether two states are same process condition)
+
+  HALLUCINATION CORRECTION & TRACKING LOGIC:
+  - If NO run marks a field as hallucinated, keep it.
+  - If ANY run marks it hallucinated, inspect correction clues in rationale.
+  - If correction is clear, correct and document it.
+  - If corrected in later run, use corrected value.
+  - If unclear and hallucinated across all runs, exclude.
+  - For missing fields, keep non-hallucinated values from other runs.
+
+  ML-READY RULES:
+  - value: keep original form (including inequalities/ranges/qualitative)
+  - value_numeric: machine-friendly number when possible
+  - value_type: one of exact/lower_bound/upper_bound/range/qualitative/missing
+
+  OUTPUT REQUIREMENTS:
+  - final_extracted_data: must follow CompositionList schema
+  - aggregation_rationale: explain validated/corrected decisions
+  - human_review_guide: numbered specific verification items
+
+stage1_notes_prefix: |
+  STAGE 1 AGGREGATION NOTES:
+
+aggregated_data_prefix: |
+  AGGREGATED DATA TO VALIDATE:
+  ────────────────────────────────────────────────────────────────────────────────
+
+aggregated_data_suffix: |
+  ────────────────────────────────────────────────────────────────────────────────
+
+evaluation_feedback_header: |
+  EVALUATION FEEDBACK (for hallucination correction):
+
+run_block_template: |
+  ════════════════════════════════════════════════════════════════════════════════
+  RUN <<RUN_ID>> FEEDBACK
+  ════════════════════════════════════════════════════════════════════════════════
+  Confidence: <<CONFIDENCE>>
+
+  Rationale:
+  <<RATIONALE>>
+
+missing_fields_prefix: |
+  Missing Fields (<<MISSING_COUNT>>):
+
+hallucinated_fields_prefix: |
+  HALLUCINATED FIELDS (<<HALLUCINATED_COUNT>>) - READ FOR CORRECTION CLUES:
+
+no_hallucinated_fields: |
+  No hallucinated fields in this run
+
+validation_tail: |
+  ════════════════════════════════════════════════════════════════════════════════
+  BEGIN VALIDATION:
+  ════════════════════════════════════════════════════════════════════════════════
+
+  Review the aggregated data against the evaluation feedback below.
+  Apply hallucination corrections where the feedback indicates the fix.
+  Ensure all properties have proper ML-ready encoding.
+  Return the validated data with any necessary corrections.
+
+  In your aggregation_rationale, explain:
+  - What corrections you applied (with justification from evaluation feedback)
+  - What data you verified as correct
+  - Any remaining uncertainties or edge cases
+
+  In your human_review_guide, provide:
+  - Numbered list of specific items to verify
+  - Focus on corrected hallucinations, unusual values, or ambiguous data
+  - Be specific: mention composition names, property names, and values
+  - Each item MUST include an evidence_hint (short pointer like: "Table 2 row X col Y", "Caption of Fig.3", or nearest phrase)
+  - Use the smallest verifiable unit:
+    composition + property_name + value + measurement_condition + evidence_hint
+
+  Use the tool to provide your validated output.
+  ════════════════════════════════════════════════════════════════════════════════
+

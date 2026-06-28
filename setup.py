@@ -53,6 +53,22 @@ if __name__ == "__main__":
                 "structure_generation",
             )
         ),
+        package_data={
+            "ppmatAgent.knowmat": [
+                "domain_rules.yaml",
+                "properties.json",
+                "data/*.json",
+                "prompts/*.md",
+                "prompts/*.txt",
+                "prompts/*.yaml",
+            ],
+            "ppmatAgent.hea_crewai_agent": [
+                "config.yaml",
+                "tdb_files/*.TDB",
+                "tdb_files/*.tdb",
+                "tdb_files/*.txt",
+            ],
+        },
         classifiers=[
             "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Science/Research",

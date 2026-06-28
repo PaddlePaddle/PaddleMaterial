@@ -1,0 +1,342 @@
+# Domain rules for KnowMat 2.0 schema conversion.
+# Materials scientists can edit this file to adjust extraction heuristics
+# without modifying Python code.
+
+valid_elements:
+  # Period 1-2
+  - H
+  - He
+  - Li
+  - Be
+  - B
+  - C
+  - N
+  - O
+  - F
+  - Ne
+  # Period 3
+  - Na
+  - Mg
+  - Al
+  - Si
+  - P
+  - S
+  - Cl
+  - Ar
+  # Period 4
+  - K
+  - Ca
+  - Sc
+  - Ti
+  - V
+  - Cr
+  - Mn
+  - Fe
+  - Co
+  - Ni
+  - Cu
+  - Zn
+  - Ga
+  - Ge
+  - As
+  - Se
+  - Br
+  - Kr
+  # Period 5
+  - Rb
+  - Sr
+  - Y
+  - Zr
+  - Nb
+  - Mo
+  - Tc
+  - Ru
+  - Rh
+  - Pd
+  - Ag
+  - Cd
+  - In
+  - Sn
+  - Sb
+  - Te
+  - I
+  - Xe
+  # Period 6
+  - Cs
+  - Ba
+  - La
+  - Ce
+  - Pr
+  - Nd
+  - Pm
+  - Sm
+  - Eu
+  - Gd
+  - Tb
+  - Dy
+  - Ho
+  - Er
+  - Tm
+  - Yb
+  - Lu
+  - Hf
+  - Ta
+  - W
+  - Re
+  - Os
+  - Ir
+  - Pt
+  - Au
+  - Hg
+  - Tl
+  - Pb
+  - Bi
+  - Po
+  - At
+  - Rn
+  # Period 7
+  - Fr
+  - Ra
+  - Ac
+  - Th
+  - Pa
+  - U
+  - Np
+  - Pu
+  - Am
+  - Cm
+  - Bk
+  - Cf
+
+# Mapping from lowercase text patterns to standardised phase names.
+phase_patterns:
+  bcc: BCC
+  fcc: FCC
+  hcp: HCP
+  amorphous: amorphous
+  glassy: amorphous
+  l12: L12
+  l1_2: L12
+  laves: Laves
+  sigma phase: sigma
+
+# Keywords whose presence in characterisation text implies precipitates.
+precipitate_keywords:
+  - precipitate
+  - precipitates
+  - precipitation
+  - carbide
+  - nitride
+  - oxide
+  - nbc
+  - tic
+  - tac
+  - vc
+  - cr23c6
+  - sigma phase
+  - mu phase
+  - chi phase
+  - l12
+  - l21
+  - laves
+
+# Mapping from free-text property names to standardised column names.
+property_name_mapping:
+  yield strength: Yield_Strength
+  compressive yield strength: Yield_Strength_Compressive
+  compression yield strength: Yield_Strength_Compressive
+  0.2% proof stress (compression): Yield_Strength_Compressive
+  ultimate tensile strength: Ultimate_Tensile_Strength
+  ultimate compressive strength: Ultimate_Strength_Compressive
+  compressive strength: Ultimate_Strength_Compressive
+  tensile strength: Ultimate_Tensile_Strength
+  uts: Ultimate_Tensile_Strength
+  total elongation: Elongation_Total
+  total tensile elongation: Elongation_Total
+  uniform elongation: Elongation_Uniform
+  elongation: Elongation_Total
+  elongation to failure: Elongation_At_Fracture
+  elongation at fracture: Elongation_At_Fracture
+  fracture elongation: Elongation_At_Fracture
+  fracture strain: Elongation_At_Fracture
+  ductility: Elongation_Total
+  ag: Elongation_Uniform
+  a_g: Elongation_Uniform
+  af: Elongation_At_Fracture
+  a_f: Elongation_At_Fracture
+  elongation in compression: Elongation_Compressive
+  compressive strain: Elongation_Compressive
+  "young's modulus": Elastic_Modulus
+  elastic modulus: Elastic_Modulus
+  modulus: Elastic_Modulus
+  vickers hardness: Hardness_HV
+  hardness hv: Hardness_HV
+  hardness (hv): Hardness_HV
+  microhardness: Hardness_HV
+  nanoindentation hardness: Nanoindentation_Hardness
+  instrumented indentation hardness: Nanoindentation_Hardness
+  hardness: Hardness_HV
+  kic: Fracture_Toughness_KIC
+  fracture toughness kic: Fracture_Toughness_KIC
+  mode i fracture toughness: Fracture_Toughness_KIC
+  fatigue crack growth threshold: Fatigue_Crack_Growth_Threshold
+  threshold stress intensity factor range for fatigue crack growth: Fatigue_Crack_Growth_Threshold
+  paris exponent: Paris_Exponent
+  unnotched fatigue strength: Fatigue_Strength_Unnotched
+  grain size: Grain_Size
+  average grain size: Grain_Size
+  grain diameter: Grain_Size
+  relative density: Relative_Density
+  density: Density
+  porosity: Porosity
+  dislocation density: Dislocation_Density
+  lattice parameter: Lattice_Parameter
+  lattice constant: Lattice_Parameter
+  stacking fault energy: Stacking_Fault_Energy
+  sfe: Stacking_Fault_Energy
+
+# Keywords for inferring manufacturing process category.
+process_category_keywords:
+  AM_DED:
+    - lens
+    - ded
+    - directed energy deposition
+    - laser-engineered net shaping
+    - laser cladding
+    - laam
+    - laser-aided additive manufacturing
+    - laser aided additive manufacturing
+    - laser metal deposition
+  AM_LPBF:
+    - lpbf
+    - l-pbf
+    - pbf-lb
+    - laser powder bed fusion
+    - powder bed fusion
+  AM_SLM:
+    - slm
+    - selective laser melting
+  WAAM:
+    - waam
+    - wire arc additive
+    - wire + arc
+  EBM:
+    - ebm
+    - electron beam melting
+    - electron beam powder bed fusion
+    - powder bed fusion electron beam
+    - pbf-eb
+    - arcam
+  Powder_Metallurgy:
+    - powder metallurgy
+    - powder-metallurgy
+    - pm route
+    - hot isostatic pressing
+    - hot isostatic pressed
+    - hipped
+    - extruded
+    - extrusion
+    - isothermal forging
+    - isothermally forged
+    - sintered
+  Wrought:
+    - wrought
+    - wrought alloy
+    - wrought aluminum
+  SPS:
+    - sps
+    - spark plasma sintering
+  HIP:
+    - hip
+    - hot isostatic pressing
+  Arc_Melting:
+    - arc melting
+    - vacuum arc melting
+    - arc-melting
+  HeatTreat:
+    - heat treat
+    - annealed
+    - annealing
+    - aged
+    - aging
+    - solution treatment
+    - quench
+  Casting:
+    - cast
+    - casting
+    - melt spinning
+    - suction casting
+    - induction melting
+  Forging:
+    - forging
+    - forged
+    - hot forging
+    - cold forging
+  Rolling:
+    - rolling
+    - rolled
+    - hot rolling
+    - cold rolling
+  Mechanical_Alloying:
+    - mechanical alloying
+    - ball milling
+    - high-energy ball milling
+
+# Regex patterns for extracting key process parameters from free text.
+# Each entry maps a parameter name to a list of regex patterns (tried in order).
+# The first capturing group of the first matching pattern is used as the value.
+parameter_patterns:
+  Laser_Power_W:
+    - "(?:laser\\s+power|power)\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*W"
+    - "P\\s*=\\s*(\\d+(?:\\.\\d+)?)\\s*W"
+    - "(?:laser\\s+)?power\\s*(?:of|was|is|set\\s+to)?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*W"
+  Scan_Speed_mm_s:
+    - "(?:scan(?:ning)?\\s+speed|scanning\\s+velocity)\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*mm/s"
+    - "v\\s*=\\s*(\\d+(?:\\.\\d+)?)\\s*mm/s"
+    - "(?:scan(?:ning)?\\s+speed|scan(?:ning)?\\s+velocity)\\s*(?:of|was|is|set\\s+to)?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*mm/s"
+  Layer_Thickness_um:
+    - "layer\\s+thickness\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+    - "t\\s*=\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+  Hatch_Spacing_um:
+    - "hatch(?:ing)?\\s+spac(?:e|ing)\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+    - "line\\s+spacing\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+    - "h\\s*=\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+    - "(?:hatch(?:ing)?\\s+spac(?:e|ing)|line\\s+spacing)\\s*(?:of|was|is|set\\s+to)?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:μm|um|µm)"
+  Preheat_Temperature_C:
+    - "(?:preheat|preheating|substrate)\\s+(?:temperature|temp)\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*°?\\s*C"
+  Oxygen_Content_ppm:
+    - "oxygen\\s+(?:content\\s+)?(?:below|<|under)?\\s*(\\d+)\\s*ppm"
+  Beam_Current_mA:
+    - "(?:beam\\s+current|current)\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*mA"
+    - "(?:beam\\s+current|current)\\s*(?:of|was|is|set\\s+to)?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*mA"
+  Acceleration_Voltage_kV:
+    - "(?:acceleration|accelerating)\\s+voltage\\s*[=:]\\s*(\\d+(?:\\.\\d+)?)\\s*kV"
+    - "(?:acceleration|accelerating)\\s+voltage\\s*(?:of|was|is|set\\s+to)?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)\\s*kV"
+
+# Configurable commercial alloy aliases and nominal composition maps.
+# These are used as a conservative fallback only when explicit nominal/measured
+# compositions are missing in extracted data.
+commercial_alloy_aliases:
+  ti6al4v:
+    - ti6al4v
+    - ti-6al-4v
+    - ti64
+  in718:
+    - in718
+    - inconel 718
+    - inconel718
+
+commercial_nominal_maps:
+  ti6al4v:
+    Ti: 90.0
+    Al: 6.0
+    V: 4.0
+  in718:
+    Ni: 52.99
+    Cr: 19.04
+    Fe: 18.20
+    Nb: 4.90
+    Mo: 2.73
+    Ti: 0.97
+    Al: 0.48
+    other: 0.69
