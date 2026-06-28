@@ -41,6 +41,7 @@ import paddle.distributed as dist
 from paddle.io import Dataset
 
 from ppmat.models import build_graph_converter
+from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
 
@@ -201,9 +202,20 @@ class MD17Dataset(Dataset):
                             paddle.to_tensor(pos_i),
                             paddle.to_tensor(batch_t),
                         )
+                        num_nodes = all_z.shape[0]
+                        ti = compute_triplet_indices(ei, num_nodes)
+                        cache_data = {
+                            'edge_index': ei.numpy(),
+                            'ti_i': ti['i'].numpy(),
+                            'ti_j': ti['j'].numpy(),
+                            'ti_idx_kj': ti['idx_kj'].numpy(),
+                            'ti_idx_ji': ti['idx_ji'].numpy(),
+                            'ti_idx_lk': ti['idx_lk'].numpy(),
+                            'ti_idx_triplet': ti['idx_triplet'].numpy(),
+                        }
                         self._save_pickle(
                             osp.join(graph_cache_dir, f"{i:010d}.pkl"),
-                            ei.numpy(),
+                            cache_data,
                         )
                     self._save_pickle(cfg_pkl, build_graph_cfg)
                 if dist.is_initialized():
@@ -235,9 +247,19 @@ class MD17Dataset(Dataset):
         }
         if self.graph_cache is not None:
             gpath = self.graph_cache[real_idx]
-            sample["edge_index"] = (
-                self._load_pickle(gpath) if isinstance(gpath, str) else gpath
-            )
+            loaded = self._load_pickle(gpath) if isinstance(gpath, str) else gpath
+            if isinstance(loaded, dict):
+                sample["edge_index"] = loaded["edge_index"]
+                sample["triplet_indices"] = {
+                    'i': loaded['ti_i'],
+                    'j': loaded['ti_j'],
+                    'idx_kj': loaded['ti_idx_kj'],
+                    'idx_ji': loaded['ti_idx_ji'],
+                    'idx_lk': loaded['ti_idx_lk'],
+                    'idx_triplet': loaded['ti_idx_triplet'],
+                }
+            else:
+                sample["edge_index"] = loaded
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample
