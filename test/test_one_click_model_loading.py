@@ -190,11 +190,13 @@ def test_field_predictor_is_shared_predictor_entrypoint():
 
 def test_field_predictor_reuses_base_and_keeps_helpers_outside_predictor():
     field_source = (ROOT / "ppmat/predictor/field.py").read_text()
-    field_io_source = (ROOT / "ppmat/utils/field_io.py").read_text()
-    field_vis_source = (ROOT / "ppmat/utils/field_visualization.py").read_text()
+    io_source = (ROOT / "ppmat/utils/io.py").read_text()
+    visualization_source = (ROOT / "ppmat/utils/visualization.py").read_text()
 
     assert "from ppmat.predictor.base import BasePredictor" in field_source
     assert "class FieldPredictor(BasePredictor):" in field_source
+    assert not (ROOT / "ppmat/utils/field_io.py").exists()
+    assert not (ROOT / "ppmat/utils/field_visualization.py").exists()
 
     for helper_name in [
         "draw_volume",
@@ -207,10 +209,20 @@ def test_field_predictor_reuses_base_and_keeps_helpers_outside_predictor():
         assert f"def {helper_name}" not in field_source
 
     for helper_name in ["read_cube_density", "write_cube_generic", "prepare_info_cube"]:
-        assert f"def {helper_name}" in field_io_source
+        assert f"def {helper_name}" in io_source
 
     for helper_name in ["draw_volume", "safe_write_image", "maybe_downsample_volume"]:
-        assert f"def {helper_name}" in field_vis_source
+        assert f"def {helper_name}" in visualization_source
+
+    top_level_vis_imports = "\n".join(
+        line
+        for line in visualization_source.splitlines()
+        if line.startswith("import ") or line.startswith("from ")
+    )
+    assert "import matplotlib.pyplot as plt" not in top_level_vis_imports
+    assert "import imageio" not in top_level_vis_imports
+    assert "import rdkit" not in top_level_vis_imports
+    assert "from rdkit" not in top_level_vis_imports
 
     assert "def _save_cubes" in field_source
     assert "def _save_visualizations" in field_source

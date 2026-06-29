@@ -368,7 +368,9 @@ def main():
         if trainer_output_dir:
             output_dir = osp.join(trainer_output_dir, "predictions")
         elif args.config_path:
-            output_dir = osp.join("./output", Path(args.config_path).stem, "predictions")
+            output_dir = osp.join(
+                "./output", Path(args.config_path).stem, "predictions"
+            )
         elif args.model_name:
             output_dir = osp.join("./output", args.model_name, "predictions")
         else:

@@ -30,14 +30,14 @@ from ppmat.models import build_model
 from ppmat.models import build_model_from_name
 from ppmat.predictor.base import BasePredictor
 from ppmat.utils import logger
-from ppmat.utils.field_io import prepare_info_cube
-from ppmat.utils.field_io import read_cube_density
-from ppmat.utils.field_io import unavailable_cube_writer
-from ppmat.utils.field_io import write_cube_generic
-from ppmat.utils.field_visualization import draw_volume
-from ppmat.utils.field_visualization import maybe_downsample_volume
-from ppmat.utils.field_visualization import safe_write_image
+from ppmat.utils.io import prepare_info_cube
+from ppmat.utils.io import read_cube_density
+from ppmat.utils.io import unavailable_cube_writer
+from ppmat.utils.io import write_cube_generic
 from ppmat.utils.misc import set_random_seed
+from ppmat.utils.visualization import draw_volume
+from ppmat.utils.visualization import maybe_downsample_volume
+from ppmat.utils.visualization import safe_write_image
 
 BOHR2ANG = 0.529177
 ANG2BOHR = 1.0 / BOHR2ANG
