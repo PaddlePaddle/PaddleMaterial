@@ -329,7 +329,7 @@ def test_diffnmr_sample_readme_documents_one_click_sample_command():
 
 def test_diffnmr_sample_entrypoint_supports_config_overrides():
     source = (ROOT / "spectrum_elucidation/sample.py").read_text()
-    sampler_source = (ROOT / "ppmat/sampler/base_sampler.py").read_text()
+    sampler_source = (ROOT / "ppmat/sample/molecular_sampler.py").read_text()
 
     assert "parse_known_args()" in source
     assert "config_overrides=dynamic_args" in source
@@ -337,3 +337,14 @@ def test_diffnmr_sample_entrypoint_supports_config_overrides():
     assert "OmegaConf.merge(config, cli_config)" in sampler_source
     assert "_apply_package_support_files" not in sampler_source
     assert "_replace_with_package_file" not in sampler_source
+
+
+def test_diffnmr_uses_molecular_sampler_from_sample_package():
+    source = (ROOT / "spectrum_elucidation/sample.py").read_text()
+    sampler_path = ROOT / "ppmat/sample/molecular_sampler.py"
+    legacy_source = (ROOT / "ppmat/sampler/base_sampler.py").read_text()
+
+    assert sampler_path.exists()
+    assert "from ppmat.sample import MolecularSampler" in source
+    assert "class MolecularSampler" in sampler_path.read_text()
+    assert "class MolecularSampler" not in legacy_source
