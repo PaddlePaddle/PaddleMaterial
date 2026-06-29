@@ -189,8 +189,55 @@ class PropertyPredictor:
 
             return result
 
+    def from_molecule(self, atomic_numbers, positions, edge_index=None):
+        """Predict properties from molecular data directly.
+
+        Args:
+            atomic_numbers: ``[num_atoms]`` int tensor or array.
+            positions: ``[num_atoms, 3]`` float tensor or array.
+            edge_index: Optional ``[2, num_edges]`` tensor or array.
+                Built from ``build_graph_cfg`` when not provided.
+
+        Returns:
+            Prediction dict (e.g. ``{"mu": tensor}`` or ``{"energy": tensor}``).
+        """
+        if not isinstance(atomic_numbers, paddle.Tensor):
+            atomic_numbers = paddle.to_tensor(atomic_numbers, dtype=paddle.int64)
+        if not isinstance(positions, paddle.Tensor):
+            positions = paddle.to_tensor(positions, dtype=paddle.get_default_dtype())
+
+        batch = paddle.zeros([atomic_numbers.shape[0]], dtype=paddle.int64)
+        data = {"z": atomic_numbers, "pos": positions, "batch": batch}
+
+        if edge_index is not None:
+            if not isinstance(edge_index, paddle.Tensor):
+                edge_index = paddle.to_tensor(edge_index, dtype=paddle.int64)
+            data["edge_index"] = edge_index
+        else:
+            # Build graph from config if available
+            graph_cfg = None
+            if self.predict_config is not None:
+                graph_cfg = self.predict_config.get("graph_converter", None)
+            if graph_cfg is None:
+                dataset_cfg = self.config.get("Model", {}).get("dataset", None)
+                if dataset_cfg is not None:
+                    graph_cfg = dataset_cfg.get("build_graph_cfg", None)
+            if graph_cfg is not None:
+                converter = build_graph_converter(graph_cfg)
+                data["edge_index"] = converter(positions, batch)
+
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                out = self.model.predict(data)
+        else:
+            out = self.model.predict(data)
+        return self.post_process(out)
+
     def from_xyz_file(self, xyz_file_path, save_path=None):
         """Predict molecular properties from XYZ file(s).
+
+        Parses each ``.xyz`` file and delegates to :meth:`from_molecule`
+        for the actual prediction.
 
         Args:
             xyz_file_path: Path to a single ``.xyz`` file or a directory
@@ -211,17 +258,6 @@ class PropertyPredictor:
         else:
             xyz_files = [xyz_file_path]
 
-        # Build graph converter from config (Predict.graph_converter or
-        # fallback to Model.dataset.build_graph_cfg).
-        graph_cfg = None
-        if self.predict_config is not None:
-            graph_cfg = self.predict_config.get("graph_converter", None)
-        if graph_cfg is None:
-            dataset_cfg = self.config.get("Model", {}).get("dataset", None)
-            if dataset_cfg is not None:
-                graph_cfg = dataset_cfg.get("build_graph_cfg", None)
-        converter = build_graph_converter(graph_cfg) if graph_cfg else None
-
         results = []
         for xyz_path in tqdm(xyz_files, desc="Predict"):
             with open(xyz_path, "r") as f:
@@ -234,15 +270,7 @@ class PropertyPredictor:
                 x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
                 z_list.append(_SYMBOL_TO_Z.get(symbol, 0))
                 pos_list.append([x, y, z])
-            z_t = paddle.to_tensor(z_list, dtype=paddle.int64)
-            pos_t = paddle.to_tensor(pos_list, dtype=paddle.get_default_dtype())
-            batch_t = paddle.zeros([n_atoms], dtype=paddle.int64)
-
-            data = {"z": z_t, "pos": pos_t, "batch": batch_t}
-            if converter is not None:
-                data["edge_index"] = converter(pos_t, batch_t)
-
-            out = self.model.predict(data)
+            out = self.from_molecule(z_list, pos_list)
             results.append(out)
 
         if save_path is not None and results:
