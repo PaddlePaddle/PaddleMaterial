@@ -36,11 +36,13 @@ except ImportError:  # Optional dependency; visualization still works for files
 from ppmat.datasets import DensityDataset
 from ppmat.datasets import SmallDensityDataset
 from ppmat.datasets.geometric_data_type.data import Data
-from ppmat.models import build_model_from_name
+from ppmat.models import MODEL_REGISTRY
 from ppmat.models import build_model
-from ppmat.models import get_model_config_path_from_name
+from ppmat.utils import download
 from ppmat.utils import logger
+from ppmat.utils import save_load
 from ppmat.utils.misc import set_random_seed
+from ppmat.utils.model_package import find_config_file_in_package
 
 BOHR2ANG = 0.529177
 ANG2BOHR = 1.0 / BOHR2ANG
@@ -89,6 +91,20 @@ def get_pretrained_model(cfg_path, model_path):
     else:
         model.set_state_dict(state_dict)
     return model
+
+
+def load_registered_model(model_name, weights_name=None, package_path=None):
+    if package_path is None:
+        package_path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+
+    logger.info(f"Loading registered model package from {package_path}")
+    config_path = find_config_file_in_package(model_name, package_path)
+    cfg = OmegaConf.load(config_path)
+    cfg = OmegaConf.to_container(cfg, resolve=True)
+
+    model = build_model(cfg["Model"])
+    save_load.load_pretrain(model, package_path, weights_name)
+    return model, cfg
 
 
 def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
@@ -805,11 +821,16 @@ def main():
 
     set_random_seed(42)
 
-    config_path = (
-        get_model_config_path_from_name(args.model_name)
-        if args.model_name is not None
-        else args.config
-    )
+    registered_package_path = None
+    if args.model_name is not None:
+        registered_package_path = download.get_weights_path_from_url(
+            MODEL_REGISTRY[args.model_name]
+        )
+        config_path = find_config_file_in_package(
+            args.model_name, registered_package_path
+        )
+    else:
+        config_path = args.config
     cfg = OmegaConf.load(config_path)
     cfg = OmegaConf.to_container(cfg, resolve=True)
 
@@ -888,7 +909,11 @@ def main():
 
     if args.model_name is not None:
         logger.info(f"Loading registered model: {args.model_name}")
-        model, _ = build_model_from_name(args.model_name, args.weights_name)
+        model, _ = load_registered_model(
+            args.model_name,
+            args.weights_name,
+            package_path=registered_package_path,
+        )
     else:
         logger.info(f"Loading the pretrained model from {args.checkpoint}")
         model = get_pretrained_model(args.config, args.checkpoint)

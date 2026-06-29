@@ -37,20 +37,34 @@ def _literal_assign(name: str):
 
 def test_infgcn_and_diffnmr_are_registered_for_one_click_loading():
     registry = _literal_assign("MODEL_REGISTRY")
-    config_registry = _literal_assign("MODEL_CONFIG_REGISTRY")
 
     for model_name in [*INFGCN_MODEL_NAMES, "diffnmr_msdnmr_nless15"]:
         assert model_name in registry
-        assert model_name in config_registry
         assert registry[model_name].startswith("https://paddle-org.bj.bcebos.com/")
         assert registry[model_name].endswith(".zip")
         assert registry[model_name].endswith(f"{model_name}.zip")
-        assert (ROOT / config_registry[model_name]).exists()
+
+
+def test_models_init_keeps_one_click_surface_minimal():
+    source = (ROOT / "ppmat/models/__init__.py").read_text()
+
+    forbidden_names = [
+        "MODEL_CONFIG_REGISTRY",
+        "MODEL_SUPPORT_REGISTRY",
+        "_repo_root",
+        "_resolve_repo_path",
+        "get_model_config_path_from_name",
+        "get_model_package_path_from_name",
+        "get_model_file_path_from_package",
+        "get_model_config_path_from_package",
+    ]
+    for name in forbidden_names:
+        assert name not in source
 
 
 def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
-    from ppmat.models import get_model_config_path_from_package
-    from ppmat.models import get_model_file_path_from_package
+    from ppmat.utils.model_package import find_config_file_in_package
+    from ppmat.utils.model_package import find_file_in_package
 
     cache_dir = tmp_path / "infgcn_qm9"
     package_dir = cache_dir / "infgcn_qm9"
@@ -61,12 +75,8 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     config_path.write_text("Model: {}\n")
     weight_path.write_bytes(b"fake")
 
-    assert Path(
-        get_model_config_path_from_package("infgcn_qm9", str(cache_dir))
-    ) == config_path
-    assert Path(
-        get_model_file_path_from_package(cache_dir, "best.pdparams")
-    ) == weight_path
+    assert Path(find_config_file_in_package("infgcn_qm9", str(cache_dir))) == config_path
+    assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
 
 
 def test_infgcn_predict_cli_accepts_one_click_model_arguments():
@@ -74,7 +84,7 @@ def test_infgcn_predict_cli_accepts_one_click_model_arguments():
 
     assert '"--model_name"' in source
     assert '"--weights_name"' in source
-    assert "build_model_from_name" in source
+    assert "load_registered_model" in source
 
 
 def test_electronic_structure_models_use_builtin_scatter():

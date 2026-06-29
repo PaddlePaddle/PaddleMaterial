@@ -14,8 +14,6 @@
 
 import copy
 import inspect
-import os
-import os.path as osp
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -46,6 +44,7 @@ from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+from ppmat.utils.model_package import find_config_file_in_package
 
 __all__ = [
     "iComformer",
@@ -128,88 +127,6 @@ MODEL_REGISTRY = {
     "infgcn_qm9": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/electronic_structure/infgcn/infgcn_qm9.zip",
     "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/diffnmr_msdnmr_nless15.zip",
 }
-
-MODEL_CONFIG_REGISTRY = {
-    "infgcn_md17_benzene": "electronic_structure/configs/infgcn/infgcn_md17_benzene.yaml",
-    "infgcn_md17_ethane": "electronic_structure/configs/infgcn/infgcn_md17_ethane.yaml",
-    "infgcn_md17_ethanol": "electronic_structure/configs/infgcn/infgcn_md17_ethanol.yaml",
-    "infgcn_md17_malonaldehyde": "electronic_structure/configs/infgcn/infgcn_md17_malonaldehyde.yaml",
-    "infgcn_md17_phenol": "electronic_structure/configs/infgcn/infgcn_md17_phenol.yaml",
-    "infgcn_md17_resorcinol": "electronic_structure/configs/infgcn/infgcn_md17_resorcinol.yaml",
-    "infgcn_mp": "electronic_structure/configs/infgcn/infgcn_mp.yaml",
-    "infgcn_omol25_mc_5k_trimmed": "electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml",
-    "infgcn_qm9": "electronic_structure/configs/infgcn/infgcn_qm9.yaml",
-    "diffnmr_msdnmr_nless15": "spectrum_elucidation/configs/diffnmr/DiffNMR.yaml",
-}
-
-MODEL_SUPPORT_REGISTRY = {
-    "diffnmr_msdnmr_nless15": {
-        "nmrnet": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_NMRNet_nless15_best.pdparams",
-        "diffgraphformer": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/DiffNMR_DiffGraphFormer_nless15_best.pdparams",
-    },
-}
-
-
-def _repo_root():
-    return osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))
-
-
-def _resolve_repo_path(path: str):
-    if osp.isabs(path):
-        return path
-    repo_path = osp.join(_repo_root(), path)
-    if osp.exists(repo_path):
-        return repo_path
-    return path
-
-
-def get_model_config_path_from_name(model_name: str):
-    if model_name not in MODEL_CONFIG_REGISTRY:
-        raise KeyError(
-            f"No config path registered for model '{model_name}'. "
-            "Please add it to MODEL_CONFIG_REGISTRY or use an explicit config path."
-        )
-    return _resolve_repo_path(MODEL_CONFIG_REGISTRY[model_name])
-
-
-def get_model_package_path_from_name(model_name: str):
-    return download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
-
-
-def get_model_file_path_from_package(package_path: str, file_name: str):
-    if osp.isfile(package_path):
-        if osp.basename(package_path) == file_name:
-            return package_path
-        raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
-
-    for root, _, files in os.walk(package_path):
-        for name in files:
-            if osp.basename(name) == file_name:
-                return osp.join(root, name)
-
-    raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
-
-
-def get_model_config_path_from_package(model_name: str, package_path: str):
-    for config_name in (f"{model_name}.yaml", f"{model_name}.yml"):
-        try:
-            return get_model_file_path_from_package(package_path, config_name)
-        except FileNotFoundError:
-            pass
-
-    find_list = []
-    for root, _, files in os.walk(package_path):
-        for name in files:
-            if name.endswith(".yaml") or name.endswith(".yml"):
-                find_list.append(osp.join(root, name))
-
-    if len(find_list) == 1:
-        config_path = find_list[0]
-        logger.warning(f"Find config file: {config_path}, using this file.")
-        return config_path
-
-    raise ValueError(f"Multiple yaml files found: {find_list}, must be only one")
-
 
 def build_graph_converter(cfg: Dict):
     """Build graph converter.
@@ -294,22 +211,9 @@ def build_model(
 
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
-    path = get_model_package_path_from_name(model_name)
-    if osp.isfile(path):
-        config_path = get_model_config_path_from_name(model_name)
-        config = OmegaConf.load(config_path)
-        config = OmegaConf.to_container(config, resolve=True)
-
-        model_config = config.get("Model", None)
-        assert model_config is not None, "Model config must be provided."
-        model = build_model(model_config)
-
-        save_load.load_pretrain(model, path, weights_name)
-
-        return model, config
-
+    path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
     logger.info(f"Save model and configuration files in path: {path}")
-    config_path = get_model_config_path_from_package(model_name, path)
+    config_path = find_config_file_in_package(model_name, path)
 
     config = OmegaConf.load(config_path)
     config = OmegaConf.to_container(config, resolve=True)

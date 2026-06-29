@@ -36,11 +36,7 @@ from ppmat.datasets.transform import build_post_transforms
 from ppmat.metrics import DiffNMRStreamingAdapter
 from ppmat.metrics import build_metric
 from ppmat.models import MODEL_REGISTRY
-from ppmat.models import MODEL_SUPPORT_REGISTRY
 from ppmat.models import build_model
-from ppmat.models import get_model_config_path_from_package
-from ppmat.models import get_model_config_path_from_name
-from ppmat.models import get_model_file_path_from_package
 from ppmat.models.diffnmr.extra_features_graph import DummyExtraFeatures
 from ppmat.models.diffnmr.extra_features_graph import ExtraFeatures
 from ppmat.models.diffnmr.extra_features_molecular_graph import ExtraMolecularFeatures
@@ -49,6 +45,8 @@ from ppmat.schedulers import scheduling_diffnmr
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+from ppmat.utils.model_package import find_config_file_in_package
+from ppmat.utils.model_package import find_file_in_package
 from ppmat.utils.visualization import MolecularVisualization
 
 
@@ -111,14 +109,15 @@ class MolecularSampler:
                 MODEL_REGISTRY[model_name]
             )
             if os.path.isdir(checkpoint_path):
-                config_path = get_model_config_path_from_package(
-                    model_name, checkpoint_path
-                )
+                config_path = find_config_file_in_package(model_name, checkpoint_path)
             else:
-                config_path = get_model_config_path_from_name(model_name)
+                raise ValueError(
+                    f"Registered model '{model_name}' must be a package with a "
+                    "configuration file."
+                )
             config = OmegaConf.load(config_path)
             config = OmegaConf.to_container(config, resolve=True)
-            self._apply_registered_support_files(model_name, config, checkpoint_path)
+            self._apply_package_support_files(config, checkpoint_path)
 
         model_config = config.get("Model", None)
         assert model_config is not None, "Model config must be provided."
@@ -272,44 +271,42 @@ class MolecularSampler:
         )
         setattr(self.model, "streaming_adapter", self.streaming)
 
-    def _apply_registered_support_files(
-        self, model_name: str, config: Dict, package_path: Optional[str] = None
-    ):
-        support_urls = MODEL_SUPPORT_REGISTRY.get(model_name, {})
-        if not support_urls:
+    def _apply_package_support_files(self, config: Dict, package_path: str):
+        if not os.path.isdir(package_path):
             return
 
-        support_paths = {}
-        for name, url in support_urls.items():
-            support_path = None
-            if package_path is not None and os.path.isdir(package_path):
-                try:
-                    support_path = get_model_file_path_from_package(
-                        package_path, os.path.basename(url)
-                    )
-                except FileNotFoundError:
-                    pass
-            if support_path is None:
-                support_path = download.get_weights_path_from_url(url)
-            support_paths[name] = support_path
+        support_paths = [
+            ("Model", "__init_params__", "encoder_cfg", "pretrained_path"),
+            ("Model", "__init_params__", "decoder_cfg", "pretrained_path"),
+            (
+                "CLIP",
+                "__init_params__",
+                "spectrum_encoder",
+                "pretrained_model_path",
+            ),
+            ("CLIP", "__init_params__", "graph_encoder", "pretrained_model_path"),
+        ]
+        for path in support_paths:
+            self._replace_with_package_file(config, path, package_path)
 
-        nmrnet_path = support_paths.get("nmrnet")
-        if nmrnet_path is not None:
-            config["Model"]["__init_params__"]["encoder_cfg"][
-                "pretrained_path"
-            ] = nmrnet_path
-            config["CLIP"]["__init_params__"]["spectrum_encoder"][
-                "pretrained_model_path"
-            ] = nmrnet_path
+    def _replace_with_package_file(
+        self, config: Dict, path: Tuple[str, ...], package_path: str
+    ):
+        node = config
+        for key in path[:-1]:
+            node = node.get(key, {})
+            if not isinstance(node, dict):
+                return
 
-        diffgraphformer_path = support_paths.get("diffgraphformer")
-        if diffgraphformer_path is not None:
-            config["Model"]["__init_params__"]["decoder_cfg"][
-                "pretrained_path"
-            ] = diffgraphformer_path
-            config["CLIP"]["__init_params__"]["graph_encoder"][
-                "pretrained_model_path"
-            ] = diffgraphformer_path
+        value = node.get(path[-1])
+        if value is None:
+            return
+
+        file_name = os.path.basename(value)
+        try:
+            node[path[-1]] = find_file_in_package(package_path, file_name)
+        except FileNotFoundError:
+            logger.warning(f"No such file named {file_name} in {package_path}")
 
     def compute_metric(
         self,
