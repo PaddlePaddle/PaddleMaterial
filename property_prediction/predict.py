@@ -195,32 +195,53 @@ class PropertyPredictor:
 
             return result
 
-    def from_molecule(self, atomic_numbers, positions, edge_index=None):
-        """Predict properties from molecular data directly.
+    def from_molecule(self, atomic_numbers, positions=None, edge_index=None, molecule_format=None):
+        """Predict properties from molecular data.
+
+        Two modes:
+
+        **1. Raw atomic data (default).**
+        ``atomic_numbers`` / ``positions`` are ``[num_atoms]`` / ``[num_atoms, 3]``
+        tensors or arrays.
+
+        **2. BuildMolecule pipeline** (when ``molecule_format`` is set).
+        ``atomic_numbers`` is the raw molecule input (SMILES string, Mol file
+        path, RDKit Mol object, etc.) and ``positions`` is unused.  The
+        pipeline ``BuildMolecule → graph_converter → predict`` is followed.
 
         Args:
-            atomic_numbers: ``[num_atoms]`` int tensor or array.
-            positions: ``[num_atoms, 3]`` float tensor or array.
-            edge_index: Optional ``[2, num_edges]`` tensor or array.
-                Built from ``build_graph_cfg`` when not provided.
+            atomic_numbers: Atomic numbers (mode 1) or molecule data (mode 2).
+            positions: 3-D coordinates (mode 1, ignored in mode 2).
+            edge_index: Optional pre-built edge index.
+            molecule_format: Format string for ``BuildMolecule``, e.g.
+                ``"smiles"``, ``"rdmol"``, ``"mol_file"``, ``"sdf_file"``.
+                When set, mode 2 is used.
 
         Returns:
-            Prediction dict (e.g. ``{"mu": tensor}`` or ``{"energy": tensor}``).
+            Prediction dict.
         """
-        if not isinstance(atomic_numbers, paddle.Tensor):
-            atomic_numbers = paddle.to_tensor(atomic_numbers, dtype=paddle.int64)
-        if not isinstance(positions, paddle.Tensor):
-            positions = paddle.to_tensor(positions, dtype=paddle.get_default_dtype())
-
-        batch = paddle.zeros([atomic_numbers.shape[0]], dtype=paddle.int64)
-        data = {"z": atomic_numbers, "pos": positions, "batch": batch}
-
-        if edge_index is not None:
-            if not isinstance(edge_index, paddle.Tensor):
-                edge_index = paddle.to_tensor(edge_index, dtype=paddle.int64)
-            data["edge_index"] = edge_index
-        elif self.graph_converter_fn is not None:
-            data["edge_index"] = self.graph_converter_fn(positions, batch)
+        if molecule_format is not None:
+            # Mode 2: BuildMolecule → graph_converter → predict
+            from ppmat.datasets.build_molecule import BuildMolecule
+            mol = BuildMolecule(format=molecule_format)(atomic_numbers)
+            if self.graph_converter_fn is not None:
+                data = self.graph_converter_fn(mol)
+            else:
+                data = mol
+        else:
+            # Mode 1: raw atomic data
+            if not isinstance(atomic_numbers, paddle.Tensor):
+                atomic_numbers = paddle.to_tensor(atomic_numbers, dtype=paddle.int64)
+            if not isinstance(positions, paddle.Tensor):
+                positions = paddle.to_tensor(positions, dtype=paddle.get_default_dtype())
+            batch = paddle.zeros([atomic_numbers.shape[0]], dtype=paddle.int64)
+            data = {"z": atomic_numbers, "pos": positions, "batch": batch}
+            if edge_index is not None:
+                if not isinstance(edge_index, paddle.Tensor):
+                    edge_index = paddle.to_tensor(edge_index, dtype=paddle.int64)
+                data["edge_index"] = edge_index
+            elif self.graph_converter_fn is not None:
+                data["edge_index"] = self.graph_converter_fn(positions, batch)
 
         if self.eval_with_no_grad:
             with paddle.no_grad():
