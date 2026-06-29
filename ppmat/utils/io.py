@@ -143,20 +143,27 @@ def append_timestamp_to_output_dir(
 
 
 def find_file_in_package(package_path: str, file_name: str):
+    logger.debug(f"Find file {file_name} in package path: {package_path}")
     if osp.isfile(package_path):
         if osp.basename(package_path) == file_name:
+            logger.debug(f"Find file: {package_path}")
             return package_path
+        logger.debug(f"No such file named {file_name} in {package_path}")
         raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
 
     for root, _, files in os.walk(package_path):
         for name in files:
             if osp.basename(name) == file_name:
-                return osp.join(root, name)
+                file_path = osp.join(root, name)
+                logger.debug(f"Find file: {file_path}")
+                return file_path
 
+    logger.debug(f"No such file named {file_name} in {package_path}")
     raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
 
 
 def find_config_file_in_package(model_name: str, package_path: str):
+    logger.debug(f"Find config file for model {model_name} in {package_path}")
     for config_name in (f"{model_name}.yaml", f"{model_name}.yml"):
         try:
             return find_file_in_package(package_path, config_name)

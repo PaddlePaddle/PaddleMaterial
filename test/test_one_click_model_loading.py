@@ -82,6 +82,17 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
 
 
+def test_model_package_helpers_use_ppmat_logger():
+    import ppmat.utils.io as io_utils
+
+    find_file_source = inspect.getsource(io_utils.find_file_in_package)
+    find_config_source = inspect.getsource(io_utils.find_config_file_in_package)
+
+    assert "from ppmat.utils import logger" in (ROOT / "ppmat/utils/io.py").read_text()
+    assert "logger." in find_file_source
+    assert "logger." in find_config_source
+
+
 def test_model_package_helpers_live_in_io_module():
     assert not (ROOT / "ppmat/utils/model_package.py").exists()
 
