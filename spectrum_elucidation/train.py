@@ -32,6 +32,7 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
+from ppmat.utils.output_dir import append_timestamp_to_output_dir
 from ppmat.utils.visualization import MolecularVisualization
 
 if dist.get_world_size() > 1:
@@ -55,6 +56,9 @@ if __name__ == "__main__":
     cli_config = OmegaConf.from_dotlist(dynamic_args)
     config = OmegaConf.merge(config, cli_config)
 
+    seed = config["Trainer"].get("seed", 42)
+    append_timestamp_to_output_dir(config)
+
     # save config to output_dir, only rank 0 process will do this
     if dist.get_rank() == 0:
         os.makedirs(config["Trainer"]["output_dir"], exist_ok=True)
@@ -69,7 +73,6 @@ if __name__ == "__main__":
     logger.info(f"Logger saved to {logger_path}")
 
     # set random seed
-    seed = config["Trainer"].get("seed", 42)
     misc.set_random_seed(seed)
     logger.info(f"Set random seed to {seed}")
 

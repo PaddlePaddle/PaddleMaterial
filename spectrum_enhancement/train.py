@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import os
 import os.path as osp
 from typing import Any
@@ -33,6 +32,7 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
+from ppmat.utils.output_dir import append_timestamp_to_output_dir
 
 
 def read_independent_dataloader_config(config: Dict[str, Any]):
@@ -84,7 +84,7 @@ def parse_args():
     parser.add_argument(
         "--append_timestamp",
         action="store_true",
-        help="Append timestamp to Trainer.output_dir.",
+        help="Deprecated. Timestamp is appended by default.",
     )
     return parser.parse_known_args()
 
@@ -99,11 +99,7 @@ def main():
     cli_cfg = OmegaConf.from_dotlist(dynamic_args)
     cfg = OmegaConf.merge(cfg, cli_cfg)
 
-    if args.append_timestamp or cfg["Trainer"].get("append_timestamp", False):
-        seed = cfg["Trainer"].get("seed", 42)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_output_dir = cfg["Trainer"]["output_dir"]
-        cfg["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+    append_timestamp_to_output_dir(cfg)
 
     if dist.get_rank() == 0:
         os.makedirs(cfg["Trainer"]["output_dir"], exist_ok=True)
