@@ -157,3 +157,17 @@ Predict:
   num_infer: null
   num_vis: 2
   inf_samples: 4096
+  split: test
+  index: 0
+  output_dir: ./output/infgcn_md17_phenol/predict
+  grid_batch_size: 4096
+  skip_vis: False
+  save_true_cube: False
+  save_pred_cube: True
+  save_html: False
+  cube_dir: ./output/infgcn_md17_phenol/predict/cubes
+  show_plot: False
+  mol_pattern: "*.mol"
+  mol_grid_shape: "80,80,80"
+  mol_grid_padding: 6.0
+  mol_true_cube_dir: null

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import re
+from types import SimpleNamespace
 from pathlib import Path
 
 from omegaconf import OmegaConf
@@ -79,6 +81,74 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
 
 
+def test_build_model_from_name_keeps_original_layout_logic():
+    import ppmat.models as models
+
+    source = inspect.getsource(models.build_model_from_name)
+
+    assert "path = osp.join(path, model_name)" in source
+    assert "config_path = osp.join(path, f\"{model_name}.yaml\")" in source
+    assert "os.listdir(path)" in source
+    assert "find_config_file_in_package" not in source
+
+
+def test_infgcn_predict_uses_config_defaults_for_cli_options():
+    source = (ROOT / "electronic_structure/predict.py").read_text()
+    cfg = OmegaConf.to_container(
+        OmegaConf.load(INFGCN_CONFIG_DIR / "infgcn_qm9.yaml"),
+        resolve=True,
+    )
+
+    assert "apply_predict_config(args, cfg)" in source
+    assert cfg["Predict"]["grid_batch_size"] == 20000
+    assert cfg["Predict"]["output_dir"] == "output/infgcn_qm9/vis_val0"
+    assert cfg["Predict"]["save_pred_cube"] is True
+    assert cfg["Predict"]["save_true_cube"] is True
+    assert cfg["Predict"]["cube_dir"] == "output/infgcn_qm9/cubes"
+
+
+def test_infgcn_predict_config_fills_unset_cli_options():
+    from electronic_structure.predict import apply_predict_config
+
+    args = SimpleNamespace(
+        split=None,
+        index=None,
+        data_root=None,
+        split_file=None,
+        atom_file=None,
+        output_dir=None,
+        grid_batch_size=123,
+        skip_vis=None,
+        save_true_cube=None,
+        save_pred_cube=None,
+        save_html=None,
+        cube_dir=None,
+        show_plot=None,
+        mol_pattern=None,
+        mol_grid_shape=None,
+        mol_grid_padding=None,
+        mol_true_cube_dir=None,
+    )
+    cfg = {
+        "Predict": {
+            "split": "validation",
+            "index": 3,
+            "output_dir": "from_config",
+            "grid_batch_size": 456,
+            "save_pred_cube": True,
+        }
+    }
+
+    apply_predict_config(args, cfg)
+
+    assert args.split == "validation"
+    assert args.index == 3
+    assert args.output_dir == "from_config"
+    assert args.grid_batch_size == 123
+    assert args.save_pred_cube is True
+    assert args.save_true_cube is False
+
+
 def test_infgcn_predict_cli_accepts_one_click_model_arguments():
     source = (ROOT / "electronic_structure/predict.py").read_text()
 
@@ -146,6 +216,21 @@ def test_all_infgcn_configs_are_parseable_and_complete():
                 "DensityCollator",
                 "DensityVoxelCollator",
             }, config_path.name
+
+        predict_cfg = cfg["Predict"]
+        for key in [
+            "split",
+            "index",
+            "output_dir",
+            "grid_batch_size",
+            "save_true_cube",
+            "save_pred_cube",
+            "save_html",
+            "cube_dir",
+            "mol_grid_shape",
+            "mol_grid_padding",
+        ]:
+            assert key in predict_cfg, config_path.name
 
 
 def test_infgcn_readme_commands_and_config_links_are_clean():

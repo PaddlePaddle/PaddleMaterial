@@ -107,6 +107,35 @@ def load_registered_model(model_name, weights_name=None, package_path=None):
     return model, cfg
 
 
+def apply_predict_config(args, cfg):
+    predict_cfg = cfg.get("Predict", {}) or {}
+    defaults = {
+        "split": "test",
+        "index": 0,
+        "data_root": None,
+        "split_file": None,
+        "atom_file": None,
+        "output_dir": "./results",
+        "grid_batch_size": 4096,
+        "skip_vis": False,
+        "save_true_cube": False,
+        "save_pred_cube": False,
+        "save_html": False,
+        "cube_dir": None,
+        "show_plot": False,
+        "mol_pattern": "*.mol",
+        "mol_grid_shape": "80,80,80",
+        "mol_grid_padding": 6.0,
+        "mol_true_cube_dir": None,
+    }
+
+    for name, default in defaults.items():
+        if getattr(args, name) is None:
+            setattr(args, name, predict_cfg.get(name, default))
+
+    return args
+
+
 def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
     with paddle.no_grad():
         model.eval()
@@ -722,13 +751,13 @@ def main():
     )
     parser.add_argument(
         "--split",
-        default="test",
+        default=None,
         choices=["train", "validation", "test"],
         help="Dataset split to sample from",
     )
     parser.add_argument(
         "--index",
-        default=0,
+        default=None,
         type=int,
         help="Index within the chosen split",
     )
@@ -749,33 +778,37 @@ def main():
     )
     parser.add_argument(
         "--output_dir",
-        default="./results",
+        default=None,
         help="Directory to store predictions/visualizations",
     )
     parser.add_argument(
         "--grid_batch_size",
-        default=4096,
+        default=None,
         type=int,
         help="Number of grid points per forward pass",
     )
     parser.add_argument(
         "--skip_vis",
         action="store_true",
+        default=None,
         help="Skip writing/visualizing density plots",
     )
     parser.add_argument(
         "--save_true_cube",
         action="store_true",
+        default=None,
         help="Save reference (DFT) electron density as a cube file",
     )
     parser.add_argument(
         "--save_pred_cube",
         action="store_true",
+        default=None,
         help="Save predicted electron density as a cube file",
     )
     parser.add_argument(
         "--save_html",
         action="store_true",
+        default=None,
         help="Save Plotly figures as interactive HTML (in addition to PNG)",
     )
     parser.add_argument(
@@ -786,6 +819,7 @@ def main():
     parser.add_argument(
         "--show_plot",
         action="store_true",
+        default=None,
         help="Display plotly figures inline (requires kaleido)",
     )
     parser.add_argument(
@@ -795,17 +829,17 @@ def main():
     )
     parser.add_argument(
         "--mol_pattern",
-        default="*.mol",
+        default=None,
         help="Glob pattern when --mol_input is a directory",
     )
     parser.add_argument(
         "--mol_grid_shape",
-        default="80,80,80",
+        default=None,
         help="Grid shape for MOL inference, e.g. '80' or '80,80,80'",
     )
     parser.add_argument(
         "--mol_grid_padding",
-        default=6.0,
+        default=None,
         type=float,
         help="Padding (Angstrom) around molecular coordinates for MOL grid generation",
     )
@@ -833,6 +867,7 @@ def main():
         config_path = args.config
     cfg = OmegaConf.load(config_path)
     cfg = OmegaConf.to_container(cfg, resolve=True)
+    apply_predict_config(args, cfg)
 
     split_key = "val" if args.split == "validation" else args.split
     ds_cfg_full = cfg["Dataset"][split_key]["dataset"]

@@ -14,6 +14,8 @@
 
 import copy
 import inspect
+import os
+import os.path as osp
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -44,7 +46,6 @@ from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
-from ppmat.utils.model_package import find_config_file_in_package
 
 __all__ = [
     "iComformer",
@@ -212,8 +213,25 @@ def build_model(
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+    path = osp.join(path, model_name)
     logger.info(f"Save model and configuration files in path: {path}")
-    config_path = find_config_file_in_package(model_name, path)
+    config_path = osp.join(path, f"{model_name}.yaml")
+    if not osp.exists(config_path):
+        logger.warning(
+            f"Config file not found: {config_path}, try find other yaml files."
+        )
+        file_list = os.listdir(path)
+        find_list = []
+        for file in file_list:
+            if file.endswith(".yaml") or file.endswith(".yml"):
+                find_list.append(osp.join(path, file))
+        if len(find_list) == 1:
+            config_path = find_list[0]
+        else:
+            raise ValueError(
+                f"Multiple yaml files found: {find_list}, must be only one"
+            )
+        logger.warning(f"Find config file: {config_path}, using this file.")
 
     config = OmegaConf.load(config_path)
     config = OmegaConf.to_container(config, resolve=True)

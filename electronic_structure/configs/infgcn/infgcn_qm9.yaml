@@ -175,3 +175,17 @@ Predict:
   num_infer: 100
   num_vis: 2
   inf_samples: 4096
+  split: validation
+  index: 0
+  output_dir: output/infgcn_qm9/vis_val0
+  grid_batch_size: 20000
+  skip_vis: False
+  save_true_cube: True
+  save_pred_cube: True
+  save_html: False
+  cube_dir: output/infgcn_qm9/cubes
+  show_plot: False
+  mol_pattern: "*.mol"
+  mol_grid_shape: "80,80,80"
+  mol_grid_padding: 6.0
+  mol_true_cube_dir: null

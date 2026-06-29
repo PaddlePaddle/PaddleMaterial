@@ -223,26 +223,12 @@ python electronic_structure/train.py -c electronic_structure/configs/infgcn/infg
 # 1) One-click dataset-sample inference with a registered pretrained model.
 python electronic_structure/predict.py \
   --model_name infgcn_qm9 \
-  --weights_name best.pdparams \
-  --split validation \
-  --index 0 \
-  --grid_batch_size 20000 \
-  --output_dir output/infgcn_qm9/vis_val0 \
-  --save_pred_cube \
-  --save_true_cube \
-  --cube_dir output/infgcn_qm9/cubes
+  --weights_name best.pdparams
 
 # 2) Dataset-sample inference with a custom config and checkpoint.
 python electronic_structure/predict.py \
   --config electronic_structure/configs/infgcn/infgcn_qm9.yaml \
-  --checkpoint path/to/infgcn_qm9.pdparams \
-  --split validation \
-  --index 0 \
-  --grid_batch_size 20000 \
-  --output_dir output/infgcn_qm9/vis_val0 \
-  --save_pred_cube \
-  --save_true_cube \
-  --cube_dir output/infgcn_qm9/cubes
+  --checkpoint path/to/infgcn_qm9.pdparams
 
 # 3) MOL-file inference (single file or directory).
 # This mode predicts electron density from molecular structure files (*.mol),
@@ -250,13 +236,7 @@ python electronic_structure/predict.py \
 python electronic_structure/predict.py \
   --config electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml \
   --checkpoint path/to/infgcn_omol25.pdparams \
-  --mol_input path/to/mols_or_mol_file \
-  --atom_file data/dataset_OMol25_MC_5k/omol25.json \
-  --output_dir output/infgcn_omol25/mol_predict \
-  --cube_dir output/infgcn_omol25/mol_predict/cubes \
-  --save_pred_cube \
-  --save_html \
-  --grid_batch_size 4096
+  --mol_input path/to/mols_or_mol_file
 
 # 4) MOL-file inference with reference (true) cube files.
 # If --mol_true_cube_dir provides matching files (<name>.cube or <name>_true.cube),
@@ -266,17 +246,14 @@ python electronic_structure/predict.py \
   --checkpoint path/to/infgcn_omol25.pdparams \
   --mol_input path/to/mols_or_mol_file \
   --mol_true_cube_dir path/to/true_cubes \
-  --atom_file data/dataset_OMol25_MC_5k/omol25.json \
-  --output_dir output/infgcn_omol25/mol_predict_with_ref \
-  --cube_dir output/infgcn_omol25/mol_predict_with_ref/cubes \
-  --save_true_cube \
-  --save_pred_cube \
-  --save_html \
-  --grid_batch_size 4096
+  --save_true_cube
 ```
 
 Notes:
 - Replace `path/to/*.pdparams` with a downloaded pretrained checkpoint or a checkpoint produced by training.
+- Prediction defaults such as `split`, `index`, `output_dir`, `grid_batch_size`,
+  cube export, html export, and MOL grid settings are configured under `Predict`
+  in each YAML and can still be overridden from the command line.
 - `--mol_input` supports either one `.mol` file or a directory of `.mol` files.
 - Optional grid controls for MOL mode: `--mol_grid_shape` (default `80,80,80`) and `--mol_grid_padding` (default `6.0` Angstrom).
 - If true/reference cube is not provided, only predicted outputs are available (`*_pred.cube`, `*_pred_density.html`).
