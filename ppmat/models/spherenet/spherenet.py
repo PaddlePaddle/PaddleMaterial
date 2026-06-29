@@ -629,24 +629,34 @@ class SphereNetPP(paddle.nn.Layer):
     def predict(self, graphs):
         """Inference interface.
 
-        Accepts a single data dict or a list of data dicts, each with
-        ``z``, ``pos``, ``batch`` and optionally ``edge_index``.
-
-        Crystals / CIF files are **not** supported — SphereNet is a
-        molecular model (QM9 / MD17).  Use the training entry point
-        (``train.py``) with a molecular dataset instead.
+        Accepts a single data dict, a list of data dicts (each with
+        ``z``, ``pos``, ``batch`` and optionally ``edge_index``), or
+        a ``pymatgen.Structure`` (automatically converted).
         """
         from pymatgen.core import Structure
         if isinstance(graphs, Structure):
-            raise TypeError(
-                "SphereNet does not support CIF/crystal prediction. "
-                "Use property_prediction/train.py with a molecular dataset."
+            # Convert pymatgen Structure → molecular data dict
+            atomic_nums = paddle.to_tensor(
+                [el.Z for el in graphs.species], dtype=paddle.int64
             )
+            pos = paddle.to_tensor(
+                graphs.cart_coords, dtype=paddle.get_default_dtype()
+            )
+            batch = paddle.zeros([len(atomic_nums)], dtype=paddle.int64)
+            graphs = {"z": atomic_nums, "pos": pos, "batch": batch}
         if isinstance(graphs, list):
             if any(isinstance(g, Structure) for g in graphs):
-                raise TypeError(
-                    "SphereNet does not support CIF/crystal prediction."
-                )
+                converted = []
+                for g in graphs:
+                    atomic_nums = paddle.to_tensor(
+                        [el.Z for el in g.species], dtype=paddle.int64
+                    )
+                    pos = paddle.to_tensor(
+                        g.cart_coords, dtype=paddle.get_default_dtype()
+                    )
+                    batch = paddle.zeros([len(atomic_nums)], dtype=paddle.int64)
+                    converted.append({"z": atomic_nums, "pos": pos, "batch": batch})
+                graphs = converted
             results = []
             for g in graphs:
                 pred = self.spherenet(

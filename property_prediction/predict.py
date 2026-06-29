@@ -103,7 +103,7 @@ class PropertyPredictor:
 
         predict_config = config.get("Predict", None)
         self.predict_config = predict_config
-        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
+        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True) if predict_config is not None else True
 
         self.graph_converter_fn = None
         if self.predict_config is not None:
@@ -111,7 +111,7 @@ class PropertyPredictor:
             if graph_converter_config is not None:
                 self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
-        self.post_transforms_cfg = predict_config.get("post_transforms", None)
+        self.post_transforms_cfg = predict_config.get("post_transforms", None) if predict_config is not None else None
         if self.post_transforms_cfg is not None:
             self.post_transforms = build_post_transforms(self.post_transforms_cfg)
         else:
