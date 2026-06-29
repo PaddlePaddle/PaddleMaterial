@@ -258,6 +258,22 @@ def test_infgcn_readme_commands_and_config_links_are_clean():
 
 def test_diffnmr_sample_readme_documents_one_click_sample_command():
     readme = (ROOT / "spectrum_elucidation/configs/diffnmr/README.md").read_text()
+    sample_csv = ROOT / "spectrum_elucidation/configs/diffnmr/sample.csv"
 
     assert "--model_name='diffnmr_msdnmr_nless15'" in readme
     assert "--weights_name='DiffNMR_nless15_best.pdparams'" in readme
+    assert "data/MSD_nmr/sample.csv" in readme
+    assert "Sampler.sample_batch_iters=1" in readme
+    assert "Sampler.data.sampler.__init_params__.batch_size=1" in readme
+    assert sample_csv.exists()
+    assert sample_csv.read_text().splitlines()[0] == "smiles,tokenized_input,atom_count"
+
+
+def test_diffnmr_sample_entrypoint_supports_config_overrides():
+    source = (ROOT / "spectrum_elucidation/sample.py").read_text()
+    sampler_source = (ROOT / "ppmat/sampler/base_sampler.py").read_text()
+
+    assert "parse_known_args()" in source
+    assert "config_overrides=dynamic_args" in source
+    assert "config_overrides: Optional[List[str]] = None" in sampler_source
+    assert "OmegaConf.merge(config, cli_config)" in sampler_source

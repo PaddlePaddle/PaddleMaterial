@@ -90,6 +90,7 @@ class MolecularSampler:
         weights_name: Optional[str] = None,
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
+        config_overrides: Optional[List[str]] = None,
     ):
         if model_name is None:
             assert config_path is not None and checkpoint_path is not None, (
@@ -100,6 +101,9 @@ class MolecularSampler:
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 
             config = OmegaConf.load(config_path)
+            if config_overrides:
+                cli_config = OmegaConf.from_dotlist(config_overrides)
+                config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
         else:
             logger.info(f"Loading registered model: {model_name}")
@@ -114,6 +118,9 @@ class MolecularSampler:
                     "configuration file."
                 )
             config = OmegaConf.load(config_path)
+            if config_overrides:
+                cli_config = OmegaConf.from_dotlist(config_overrides)
+                config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
             self._apply_package_support_files(config, checkpoint_path)
 

@@ -38,7 +38,7 @@ if __name__ == "__main__":
         "--checkpoint_path",
         type=str,
         default=None,
-        help="Path to the checkpoint file.",
+        help="Path to the checkpoint file or directory.",
     )
     argparse.add_argument("--save_path", type=str, default="results")
     argparse.add_argument(
@@ -51,13 +51,14 @@ if __name__ == "__main__":
         default="by_dataloader",
     )
 
-    args = argparse.parse_args()
+    args, dynamic_args = argparse.parse_known_args()
 
     sampler = MolecularSampler(
         model_name=args.model_name,
         weights_name=args.weights_name,
         config_path=args.config_path,
         checkpoint_path=args.checkpoint_path,
+        config_overrides=dynamic_args,
     )
     if args.mode == "compute_metric":
         metric_result = sampler.compute_metric(
