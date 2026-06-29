@@ -92,9 +92,7 @@ class MolecularSampler:
         checkpoint_path: Optional[str] = None,
     ):
         if model_name is None:
-            assert (
-                config_path is not None and checkpoint_path is not None
-            ), (
+            assert config_path is not None and checkpoint_path is not None, (
                 "config_path and checkpoint_path must be provided when model_name is "
                 "None."
             )
@@ -146,9 +144,7 @@ class MolecularSampler:
             is not None
         ):
             extra_features = ExtraFeatures(
-                config["Model"]["__init_params__"]["diffmodel_cfg"][
-                    "extra_features"
-                ],
+                config["Model"]["__init_params__"]["diffmodel_cfg"]["extra_features"],
                 dataset_infos=dataset_infos,
             )
             domain_features = ExtraMolecularFeatures(

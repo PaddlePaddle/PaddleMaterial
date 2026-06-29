@@ -19,17 +19,19 @@ import gzip
 import json
 import lzma
 import math
-from pathlib import Path
-import numpy as np
 import time
+from functools import partial
+from pathlib import Path
 
+import numpy as np
 import paddle
 import plotly.graph_objects as go
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
 try:
-    from IPython.display import Image, display
+    from IPython.display import Image
+    from IPython.display import display
 except ImportError:  # Optional dependency; visualization still works for files
     Image, display = None, None
 
@@ -141,7 +143,9 @@ def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
         model.eval()
         device = paddle.get_device()
         prepared_infos = (
-            model._prepare_infos(infos, device) if hasattr(model, "_prepare_infos") else infos
+            model._prepare_infos(infos, device)
+            if hasattr(model, "_prepare_infos")
+            else infos
         )
         if grid_batch_size is None:
             if hasattr(model, "_forward_density"):
@@ -150,7 +154,9 @@ def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
                 ).squeeze(0)
             else:
                 # Fallback for legacy models expecting raw tensors
-                preds = model(g.x, g.pos, grid_coord, g.batch, prepared_infos).squeeze(0)
+                preds = model(g.x, g.pos, grid_coord, g.batch, prepared_infos).squeeze(
+                    0
+                )
         else:
             preds = []
             total = grid_coord.shape[1]
@@ -281,7 +287,8 @@ def safe_write_image(fig, path, show_plot=False):
 
 def maybe_downsample_volume(grid, values, shape, max_points=250_000):
     """
-    Downsample a regular 3D grid for visualization to keep Plotly volume traces responsive.
+    Downsample a regular 3D grid for visualization to keep Plotly volume
+    traces responsive.
     grid: numpy array of shape (n_points, 3)
     values: list of numpy arrays aligned with grid, each of shape (n_points,)
     shape: original lattice shape [nx, ny, nz]
@@ -305,7 +312,9 @@ def maybe_downsample_volume(grid, values, shape, max_points=250_000):
         grid_view = grid.reshape(shape[0], shape[1], shape[2], 3)
         grid_ds = grid_view[::stride, ::stride, ::stride, :].reshape(-1, 3)
         values_ds = [
-            val.reshape(shape[0], shape[1], shape[2])[::stride, ::stride, ::stride].reshape(-1)
+            val.reshape(shape[0], shape[1], shape[2])[
+                ::stride, ::stride, ::stride
+            ].reshape(-1)
             for val in values
         ]
     except Exception as e:
@@ -315,10 +324,12 @@ def maybe_downsample_volume(grid, values, shape, max_points=250_000):
     return grid_ds, values_ds, True, stride
 
 
-def write_cube_generic(fileobj, atom_type, atom_coord, density, info, idx2atom_num=None):
+def write_cube_generic(
+    fileobj, atom_type, atom_coord, density, info, idx2atom_num=None
+):
     """
     Minimal cube writer for datasets without a built-in write_cube method.
-    idx2atom_num maps dataset atom indices to atomic numbers (e.g., [6,1,8] for C/H/O).
+    idx2atom_num maps dataset atom indices to atomic numbers.
     """
     fileobj.write("Cube file written on " + time.strftime("%c"))
     fileobj.write("\nOUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z\n")
@@ -339,17 +350,25 @@ def write_cube_generic(fileobj, atom_type, atom_coord, density, info, idx2atom_n
     density.tofile(fileobj, sep="\n", format="%e")
 
 
+def unavailable_cube_writer(*args, **kwargs):
+    raise AttributeError("Cube writer not available for this dataset")
+
+
 def parse_grid_shape(shape_str):
     parts = [p.strip() for p in str(shape_str).split(",") if p.strip()]
     if len(parts) == 1:
         n = int(parts[0])
         if n <= 1:
-            raise ValueError(f"Invalid mol_grid_shape {shape_str}, each dimension must be > 1")
+            raise ValueError(
+                f"Invalid mol_grid_shape {shape_str}, each dimension must be > 1"
+            )
         return [n, n, n]
     if len(parts) == 3:
         shape = [int(p) for p in parts]
         if any(s <= 1 for s in shape):
-            raise ValueError(f"Invalid mol_grid_shape {shape_str}, each dimension must be > 1")
+            raise ValueError(
+                f"Invalid mol_grid_shape {shape_str}, each dimension must be > 1"
+            )
         return shape
     raise ValueError(f"Invalid mol_grid_shape {shape_str}, expected 'N' or 'Nx,Ny,Nz'")
 
@@ -409,7 +428,13 @@ def collect_mol_files(mol_input, mol_pattern):
 
     files = sorted([p for p in mol_path.glob(mol_pattern) if p.is_file()])
     if not files:
-        files = sorted([p for p in mol_path.iterdir() if p.is_file() and p.suffix.lower() == ".mol"])
+        files = sorted(
+            [
+                p
+                for p in mol_path.iterdir()
+                if p.is_file() and p.suffix.lower() == ".mol"
+            ]
+        )
     if not files:
         raise FileNotFoundError(f"No .mol files found in directory: {mol_path}")
     return files
@@ -472,7 +497,9 @@ def read_cube_density(path):
             if parts:
                 vals.extend(parts)
         if len(vals) < n_grid:
-            raise ValueError(f"CUBE data too short in {path}: expect {n_grid}, got {len(vals)}")
+            raise ValueError(
+                f"CUBE data too short in {path}: expect {n_grid}, got {len(vals)}"
+            )
         density = np.array(vals[:n_grid], dtype=np.float32)
 
     return (
@@ -493,11 +520,14 @@ def align_mol_atoms_to_cube(g, atom_coord_ref, sample_name, tol=0.05):
     ref = np.asarray(atom_coord_ref, dtype=np.float32)
     mol = g.pos.numpy().astype(np.float32)
     if ref.ndim != 2 or ref.shape[1] != 3:
-        logger.warning(f"Invalid reference atom coordinates for {sample_name}, skip alignment")
+        logger.warning(
+            f"Invalid reference atom coordinates for {sample_name}, skip alignment"
+        )
         return g
     if mol.shape != ref.shape:
         logger.warning(
-            f"Atom count mismatch for {sample_name} (mol={mol.shape[0]}, cube={ref.shape[0]}), "
+            f"Atom count mismatch for {sample_name} "
+            f"(mol={mol.shape[0]}, cube={ref.shape[0]}), "
             "skip alignment"
         )
         return g
@@ -516,7 +546,7 @@ def align_mol_atoms_to_cube(g, atom_coord_ref, sample_name, tol=0.05):
     rms = float(np.sqrt(np.mean((aligned - ref) ** 2)))
 
     # Typical unit mismatch is Angstrom->Bohr (about 1.8897).
-    # Apply alignment when scale obviously differs from 1.0 or residual is tiny after scaling.
+    # Apply alignment when scale differs from 1.0 or residual is tiny after scaling.
     if abs(scale - 1.0) > tol or rms < 1e-3:
         g.pos = paddle.to_tensor(aligned, dtype="float32")
         logger.info(
@@ -525,7 +555,8 @@ def align_mol_atoms_to_cube(g, atom_coord_ref, sample_name, tol=0.05):
         )
     else:
         logger.info(
-            f"No coordinate rescale needed for {sample_name}: scale={scale:.6f}, rms={rms:.6e}"
+            f"No coordinate rescale needed for {sample_name}: "
+            f"scale={scale:.6f}, rms={rms:.6e}"
         )
     return g
 
@@ -539,7 +570,16 @@ def resolve_true_cube_for_mol(mol_path, true_cube_dir=None):
     roots.append(mol_path.parent)
 
     stems = [base, f"{base}_true", base_density]
-    exts = [".cube", ".cub", ".cube.lz4", ".cube.gz", ".cube.xz", ".cub.lz4", ".cub.gz", ".cub.xz"]
+    exts = [
+        ".cube",
+        ".cub",
+        ".cube.lz4",
+        ".cube.gz",
+        ".cube.xz",
+        ".cub.lz4",
+        ".cub.gz",
+        ".cub.xz",
+    ]
     name_candidates = []
     for s in stems:
         for ext in exts:
@@ -604,7 +644,9 @@ def parse_mol_v2000(mol_path):
                 z = float(line[20:30])
                 sym = line[31:34].strip()
             except Exception as e:
-                raise ValueError(f"Failed to parse atom line in {mol_path}: {line}") from e
+                raise ValueError(
+                    f"Failed to parse atom line in {mol_path}: {line}"
+                ) from e
 
         coords.append([x, y, z])
         symbols.append(normalize_element_symbol(sym))
@@ -625,7 +667,8 @@ def build_mol_sample(mol_path, atom_name2idx, mol_grid_shape, mol_grid_padding):
             atom_type_idx.append(idx)
     if missing:
         raise ValueError(
-            f"Found atoms not covered by atom_file mapping in {mol_path}: {sorted(missing)}"
+            "Found atoms not covered by atom_file mapping in "
+            f"{mol_path}: {sorted(missing)}"
         )
 
     atom_type = paddle.to_tensor(atom_type_idx, dtype="int64")
@@ -635,15 +678,39 @@ def build_mol_sample(mol_path, atom_name2idx, mol_grid_shape, mol_grid_padding):
     shape = [int(s) for s in mol_grid_shape]
     min_coord = atom_coord_np.min(axis=0)
     max_coord = atom_coord_np.max(axis=0)
-    span = np.maximum(max_coord - min_coord, np.array([1e-3, 1e-3, 1e-3], dtype=np.float32))
+    span = np.maximum(
+        max_coord - min_coord, np.array([1e-3, 1e-3, 1e-3], dtype=np.float32)
+    )
     axis_len = span + 2.0 * float(mol_grid_padding)
     center = 0.5 * (min_coord + max_coord)
     origin = center - 0.5 * axis_len
 
-    x = np.linspace(origin[0], origin[0] + axis_len[0], num=shape[0], endpoint=False, dtype=np.float32)
-    y = np.linspace(origin[1], origin[1] + axis_len[1], num=shape[1], endpoint=False, dtype=np.float32)
-    z = np.linspace(origin[2], origin[2] + axis_len[2], num=shape[2], endpoint=False, dtype=np.float32)
-    grid = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3).astype(np.float32)
+    x = np.linspace(
+        origin[0],
+        origin[0] + axis_len[0],
+        num=shape[0],
+        endpoint=False,
+        dtype=np.float32,
+    )
+    y = np.linspace(
+        origin[1],
+        origin[1] + axis_len[1],
+        num=shape[1],
+        endpoint=False,
+        dtype=np.float32,
+    )
+    z = np.linspace(
+        origin[2],
+        origin[2] + axis_len[2],
+        num=shape[2],
+        endpoint=False,
+        dtype=np.float32,
+    )
+    grid = (
+        np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1)
+        .reshape(-1, 3)
+        .astype(np.float32)
+    )
     grid_coord = paddle.to_tensor(grid, dtype="float32")
 
     cell = np.diag(axis_len.astype(np.float32))
@@ -825,7 +892,10 @@ def main():
     parser.add_argument(
         "--mol_input",
         default=None,
-        help="Path to a .mol file or a directory of .mol files for direct structure inference",
+        help=(
+            "Path to a .mol file or a directory of .mol files for direct "
+            "structure inference"
+        ),
     )
     parser.add_argument(
         "--mol_pattern",
@@ -898,9 +968,7 @@ def main():
         atom_name2idx, idx2atom_num = load_atom_mapping(atom_file_path)
         mol_files = collect_mol_files(args.mol_input, args.mol_pattern)
         mol_grid_shape = parse_grid_shape(args.mol_grid_shape)
-        cube_writer = lambda f, a, c, d, i: write_cube_generic(
-            f, a, c, d, i, idx2atom_num
-        )
+        cube_writer = partial(write_cube_generic, idx2atom_num=idx2atom_num)
         logger.info(
             f"MOL mode enabled: {len(mol_files)} file(s), atom_file={atom_file_path}, "
             f"grid_shape={mol_grid_shape}, padding={args.mol_grid_padding}, "
@@ -921,16 +989,16 @@ def main():
             if isinstance(dataset, SmallDensityDataset):
                 # Atom order in SmallDensityDataset: C=0, H=1, O=2
                 idx2atom_num = np.array([6, 1, 8], dtype=np.int64)
-                cube_writer = lambda f, a, c, d, i: write_cube_generic(
-                    f, a, c, d, i, idx2atom_num
+                cube_writer = partial(
+                    write_cube_generic,
+                    idx2atom_num=idx2atom_num,
                 )
             else:
-                cube_writer = lambda *args, **kwargs: (_ for _ in ()).throw(
-                    AttributeError("Cube writer not available for this dataset")
-                )
+                cube_writer = unavailable_cube_writer
         if args.index >= len(dataset):
             raise IndexError(
-                f"Index {args.index} exceeds dataset size {len(dataset)} for split {args.split}"
+                f"Index {args.index} exceeds dataset size {len(dataset)} "
+                f"for split {args.split}"
             )
 
     device = "gpu" if paddle.is_compiled_with_cuda() else "cpu"
@@ -972,14 +1040,19 @@ def main():
             if true_cube_path is not None:
                 try:
                     density, grid_coord, info_ref = read_cube_density(true_cube_path)
-                    g = align_mol_atoms_to_cube(g, info_ref.get("atom_coord_ref"), mol_path.name)
+                    g = align_mol_atoms_to_cube(
+                        g, info_ref.get("atom_coord_ref"), mol_path.name
+                    )
                     info = dict(info_ref)
                     info["file_name"] = mol_path.name
                     info["true_cube_file"] = str(true_cube_path)
-                    logger.info(f"Using reference cube for {mol_path.name}: {true_cube_path}")
+                    logger.info(
+                        f"Using reference cube for {mol_path.name}: {true_cube_path}"
+                    )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to read reference cube for {mol_path.name} at {true_cube_path}: {e}"
+                        f"Failed to read reference cube for {mol_path.name} "
+                        f"at {true_cube_path}: {e}"
                     )
             sample_name = info.get("file_name", mol_path.name)
         else:
@@ -1008,7 +1081,9 @@ def main():
                 f"Loss: {float(loss):.6f}, MAE: {float(mae):.6f}"
             )
         else:
-            logger.info(f"Prediction completed for {sample_name} (no reference density)")
+            logger.info(
+                f"Prediction completed for {sample_name} (no reference density)"
+            )
 
         sample_tag = sanitize_base_name(sample_name)
 
@@ -1020,7 +1095,8 @@ def main():
             if args.save_true_cube:
                 if density is None:
                     logger.warning(
-                        f"Skipping true cube for {sample_name}: no reference density available"
+                        f"Skipping true cube for {sample_name}: "
+                        "no reference density available"
                     )
                 else:
                     true_cube_path = cube_dir / f"{sample_tag}_true.cube"
@@ -1056,17 +1132,21 @@ def main():
             if density is not None:
                 density_np = density.detach().cpu().numpy()
                 diff_np = density_np - preds_np
-                grid_vis, (density_vis, diff_vis, preds_vis), did_downsample, stride = (
-                    maybe_downsample_volume(
-                        grid_np,
-                        [density_np, diff_np, preds_np],
-                        shape if shape is None else [int(s) for s in shape],
-                    )
+                (
+                    grid_vis,
+                    (density_vis, diff_vis, preds_vis),
+                    did_downsample,
+                    stride,
+                ) = maybe_downsample_volume(
+                    grid_np,
+                    [density_np, diff_np, preds_np],
+                    shape if shape is None else [int(s) for s in shape],
                 )
                 if did_downsample:
                     logger.warning(
-                        f"Downsampled volume grid from {grid_np.shape[0]} to {grid_vis.shape[0]} "
-                        f"points for visualization (stride={stride}) to keep HTML output responsive."
+                        f"Downsampled volume grid from {grid_np.shape[0]} "
+                        f"to {grid_vis.shape[0]} points for visualization "
+                        f"(stride={stride}) to keep HTML output responsive."
                     )
 
                 logger.info("Visualizing the DFT electron density")
@@ -1117,15 +1197,21 @@ def main():
                 if args.save_html:
                     fig.write_html(output_dir / f"{sample_tag}_pred_density.html")
             else:
-                grid_vis, (preds_vis,), did_downsample, stride = maybe_downsample_volume(
+                (
+                    grid_vis,
+                    (preds_vis,),
+                    did_downsample,
+                    stride,
+                ) = maybe_downsample_volume(
                     grid_np,
                     [preds_np],
                     shape if shape is None else [int(s) for s in shape],
                 )
                 if did_downsample:
                     logger.warning(
-                        f"Downsampled volume grid from {grid_np.shape[0]} to {grid_vis.shape[0]} "
-                        f"points for visualization (stride={stride}) to keep HTML output responsive."
+                        f"Downsampled volume grid from {grid_np.shape[0]} "
+                        f"to {grid_vis.shape[0]} points for visualization "
+                        f"(stride={stride}) to keep HTML output responsive."
                     )
 
                 logger.info("Visualizing predicted electron density")

@@ -3,11 +3,10 @@ from __future__ import annotations
 import ast
 import inspect
 import re
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 from omegaconf import OmegaConf
-
 
 ROOT = Path(__file__).resolve().parents[1]
 INFGCN_CONFIG_DIR = ROOT / "electronic_structure/configs/infgcn"
@@ -77,7 +76,9 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     config_path.write_text("Model: {}\n")
     weight_path.write_bytes(b"fake")
 
-    assert Path(find_config_file_in_package("infgcn_qm9", str(cache_dir))) == config_path
+    assert (
+        Path(find_config_file_in_package("infgcn_qm9", str(cache_dir))) == config_path
+    )
     assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
 
 
@@ -87,7 +88,7 @@ def test_build_model_from_name_keeps_original_layout_logic():
     source = inspect.getsource(models.build_model_from_name)
 
     assert "path = osp.join(path, model_name)" in source
-    assert "config_path = osp.join(path, f\"{model_name}.yaml\")" in source
+    assert 'config_path = osp.join(path, f"{model_name}.yaml")' in source
     assert "os.listdir(path)" in source
     assert "find_config_file_in_package" not in source
 
@@ -252,9 +253,7 @@ def test_infgcn_readme_commands_and_config_links_are_clean():
 
 
 def test_diffnmr_sample_readme_documents_one_click_sample_command():
-    readme = (
-        ROOT / "spectrum_elucidation/configs/diffnmr/README.md"
-    ).read_text()
+    readme = (ROOT / "spectrum_elucidation/configs/diffnmr/README.md").read_text()
 
     assert "--model_name='diffnmr_msdnmr_nless15'" in readme
     assert "--weights_name='DiffNMR_nless15_best.pdparams'" in readme
