@@ -35,14 +35,36 @@ from ppmat.utils import save_load
 class PropertyPredictor:
     """Property predictor.
 
-    Supports two initialization modes:
+    This class provides an interface for predicting properties of crystalline
+    structures using pre-trained deep learning models. Supports two initialization
+    modes:
 
     1. **Automatic Model Loading**
-       Specify ``model_name`` and (optionally) ``weights_name`` to
-       download and load pre-trained weights from ``MODEL_REGISTRY``.
+       Specify `model_name` and `weights_name` to automatically download
+       and load pre-trained weights from the `MODEL_REGISTRY`.
 
     2. **Custom Model Loading**
-       Provide explicit ``config_path`` and ``checkpoint_path``.
+       Provide explicit `config_path` and `checkpoint_path` to load
+       custom-trained models from local files.
+
+    Args:
+        model_name (Optional[str], optional): Name of the pre-defined model architecture
+            from the `MODEL_REGISTRY` registry. When specified, associated weights
+            will be automatically downloaded. Defaults to None.
+
+        weights_name (Optional[str], optional): Specific pre-trained weight identifier.
+            Used only when `model_name` is provided. Valid options include:
+            - 'best.pdparams' (highest validation performance)
+            - 'latest.pdparams' (most recent training checkpoint)
+            - Custom weight files ending with '.pdparams'
+            Defaults to None.
+
+        config_path (Optional[str], optional): Path to model configuration file (YAML)
+            for custom models. Required when not using predefined `model_name`.
+            Defaults to None.
+        checkpoint_path (Optional[str], optional): Path to model checkpoint file
+            (.pdparams) for custom models. Required when not using predefined
+            `model_name`. Defaults to None.
     """
 
     def __init__(
@@ -52,10 +74,13 @@ class PropertyPredictor:
         config_path: Optional[str] = None,
         checkpoint_path: Optional[str] = None,
     ):
+        # if model_name is not None, then config_path and checkpoint_path must be
+        # provided
         if model_name is None:
             assert (
                 config_path is not None and checkpoint_path is not None
-            ), "config_path and checkpoint_path must be provided when model_name is None."
+            ), "config_path and checkpoint_path must be provided when model_name is "
+            "None."
 
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 
@@ -78,23 +103,15 @@ class PropertyPredictor:
 
         predict_config = config.get("Predict", None)
         self.predict_config = predict_config
-        self.eval_with_no_grad = (
-            predict_config.get("eval_with_no_grad", True)
-            if predict_config is not None else True
-        )
+        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
 
         self.graph_converter_fn = None
         if self.predict_config is not None:
             graph_converter_config = predict_config.get("graph_converter", None)
             if graph_converter_config is not None:
-                self.graph_converter_fn = build_graph_converter(
-                    graph_converter_config
-                )
+                self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
-        self.post_transforms_cfg = (
-            predict_config.get("post_transforms", None)
-            if predict_config is not None else None
-        )
+        self.post_transforms_cfg = predict_config.get("post_transforms", None)
         if self.post_transforms_cfg is not None:
             self.post_transforms = build_post_transforms(self.post_transforms_cfg)
         else:
@@ -111,6 +128,7 @@ class PropertyPredictor:
         return self.post_transforms(data)
 
     def from_structures(self, structures):
+
         data = self.graph_converter(structures)
         if self.eval_with_no_grad:
             with paddle.no_grad():
@@ -135,102 +153,34 @@ class PropertyPredictor:
                 result = self.from_structures(structure)
                 results.append(result)
             if save_path is not None:
+
                 keys = list(results[0].keys())
                 result_properties = defaultdict(list)
                 for key in keys:
                     for r in results:
                         result_properties[key].append(r[key])
+
+                # save cif_files and result to csv file
                 df = pd.DataFrame({"cif_file": cif_files, **result_properties})
                 df.to_csv(save_path, index=False)
                 logger.info(f"Saved the prediction result to {save_path}")
+
             return results
         else:
             structure = Structure.from_file(cif_file_path)
             result = self.from_structures(structure)
+
             keys = list(result.keys())
             result_properties = defaultdict(list)
             for key in keys:
                 result_properties[key].append(result[key])
+
             if save_path is not None:
-                df = pd.DataFrame(
-                    {"cif_file": [cif_file_path], **result_properties}
-                )
+                df = pd.DataFrame({"cif_file": [cif_file_path], **result_properties})
                 df.to_csv(save_path, index=False)
                 logger.info(f"Saved the prediction result to {save_path}")
+
             return result
-
-    def from_xyz_file(self, xyz_file_path, save_path=None):
-        """Predict molecular properties from XYZ file(s).
-
-        Args:
-            xyz_file_path: Path to a single ``.xyz`` file or a directory
-                of ``.xyz`` files.
-            save_path: Optional CSV path to save results.
-
-        Returns:
-            Single result dict or list of result dicts.
-        """
-        from ppmat.datasets.qm9_dataset import _SYMBOL_TO_Z
-
-        if save_path is not None:
-            assert save_path.endswith(".csv"), "save_path must end with .csv"
-
-        if osp.isdir(xyz_file_path):
-            xyz_files = sorted([
-                osp.join(xyz_file_path, f)
-                for f in os.listdir(xyz_file_path)
-                if f.endswith(".xyz")
-            ])
-        else:
-            xyz_files = [xyz_file_path]
-
-        graph_cfg = None
-        dataset_cfg = self.config.get("Model", {}).get("dataset", None)
-        if dataset_cfg is not None:
-            graph_cfg = dataset_cfg.get("build_graph_cfg", None)
-        converter = None
-        if graph_cfg is not None:
-            converter = build_graph_converter(graph_cfg)
-
-        results = []
-        for xyz_path in tqdm(xyz_files, desc="Predict"):
-            with open(xyz_path, "r") as f:
-                lines = f.readlines()
-            n_atoms = int(lines[0].strip())
-            z_list, pos_list = [], []
-            for i in range(n_atoms):
-                parts = lines[2 + i].strip().split()
-                symbol = parts[0]
-                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                z_list.append(_SYMBOL_TO_Z.get(symbol, 0))
-                pos_list.append([x, y, z])
-            z_t = paddle.to_tensor(z_list, dtype=paddle.int64)
-            pos_t = paddle.to_tensor(
-                pos_list, dtype=paddle.get_default_dtype()
-            )
-            batch_t = paddle.zeros([n_atoms], dtype=paddle.int64)
-
-            data = {"z": z_t, "pos": pos_t, "batch": batch_t}
-            if converter is not None:
-                data["edge_index"] = converter(pos_t, batch_t)
-
-            out = self.model.predict(data)
-            results.append(out)
-
-        if save_path is not None and results:
-            keys = list(results[0].keys())
-            result_properties = defaultdict(list)
-            for key in keys:
-                for r in results:
-                    result_properties[key].append(r[key])
-            df = pd.DataFrame({
-                "xyz_file": [osp.basename(f) for f in xyz_files],
-                **result_properties,
-            })
-            df.to_csv(save_path, index=False)
-            logger.info(f"Saved prediction results to {save_path}")
-
-        return results if len(results) > 1 else results[0]
 
 
 if __name__ == "__main__":
@@ -263,16 +213,8 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--cif_file_path",
         type=str,
-        default=None,
-        help="Path to CIF file(s) for crystal property prediction.",
-    )
-    argparse.add_argument(
-        "--xyz_file_path",
-        type=str,
-        default=None,
-        help="Path to XYZ file(s) for molecular property prediction.  "
-        "When neither --cif_file_path nor --xyz_file_path is given, "
-        "defaults to the example molecule (qm9_sample.xyz).",
+        default="./property_prediction/example_data/cifs/",
+        help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
         "--save_path",
@@ -289,12 +231,5 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    if args.xyz_file_path is not None:
-        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
-    elif args.cif_file_path is not None:
-        results = predictor.from_cif_file(args.cif_file_path, args.save_path)
-    else:
-        results = predictor.from_xyz_file(
-            "./property_prediction/example_data/molecules/", args.save_path
-        )
+    results = predictor.from_cif_file(args.cif_file_path, args.save_path)
     print(results)
