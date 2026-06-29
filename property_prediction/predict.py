@@ -31,13 +31,6 @@ from ppmat.models import build_model_from_name
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
-# Element symbol → atomic number (subset sufficient for QM9/MD17)
-_SYMBOL_TO_Z = {
-    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8,
-    "F": 9, "Ne": 10, "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15,
-    "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
-}
-
 
 class PropertyPredictor:
     """Property predictor.
@@ -195,53 +188,49 @@ class PropertyPredictor:
 
             return result
 
-    def from_molecule(self, atomic_numbers, positions=None, edge_index=None, molecule_format=None):
+    def from_molecule(self, molecule_data, molecule_format):
         """Predict properties from molecular data.
 
-        Two modes:
-
-        **1. Raw atomic data (default).**
-        ``atomic_numbers`` / ``positions`` are ``[num_atoms]`` / ``[num_atoms, 3]``
-        tensors or arrays.
-
-        **2. BuildMolecule pipeline** (when ``molecule_format`` is set).
-        ``atomic_numbers`` is the raw molecule input (SMILES string, Mol file
-        path, RDKit Mol object, etc.) and ``positions`` is unused.  The
-        pipeline ``BuildMolecule → graph_converter → predict`` is followed.
+        Follows the standard PaddleMaterials pipeline:
+        ``BuildMolecule → graph_converter → predict``.
 
         Args:
-            atomic_numbers: Atomic numbers (mode 1) or molecule data (mode 2).
-            positions: 3-D coordinates (mode 1, ignored in mode 2).
-            edge_index: Optional pre-built edge index.
-            molecule_format: Format string for ``BuildMolecule``, e.g.
-                ``"smiles"``, ``"rdmol"``, ``"mol_file"``, ``"sdf_file"``.
-                When set, mode 2 is used.
+            molecule_data: Input for ``BuildMolecule`` — a SMILES string,
+                RDKit Mol object, Mol/SDF file path, etc.
+            molecule_format: Format string, e.g. ``"smiles"``, ``"rdmol"``,
+                ``"mol_file"``, ``"sdf_file"``, ``"inchi"``.
 
         Returns:
             Prediction dict.
         """
-        if molecule_format is not None:
-            # Mode 2: BuildMolecule → graph_converter → predict
-            from ppmat.datasets.build_molecule import BuildMolecule
-            mol = BuildMolecule(format=molecule_format)(atomic_numbers)
-            if self.graph_converter_fn is not None:
-                data = self.graph_converter_fn(mol)
-            else:
-                data = mol
-        else:
-            # Mode 1: raw atomic data
-            if not isinstance(atomic_numbers, paddle.Tensor):
-                atomic_numbers = paddle.to_tensor(atomic_numbers, dtype=paddle.int64)
-            if not isinstance(positions, paddle.Tensor):
-                positions = paddle.to_tensor(positions, dtype=paddle.get_default_dtype())
-            batch = paddle.zeros([atomic_numbers.shape[0]], dtype=paddle.int64)
-            data = {"z": atomic_numbers, "pos": positions, "batch": batch}
-            if edge_index is not None:
-                if not isinstance(edge_index, paddle.Tensor):
-                    edge_index = paddle.to_tensor(edge_index, dtype=paddle.int64)
-                data["edge_index"] = edge_index
-            elif self.graph_converter_fn is not None:
-                data["edge_index"] = self.graph_converter_fn(positions, batch)
+        from ppmat.datasets.build_molecule import BuildMolecule
+        mol = BuildMolecule(format=molecule_format)(molecule_data)
+
+        # Extract atomic numbers and 3-D coordinates from RDKit Mol.
+        num_atoms = mol.GetNumAtoms()
+        z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+        # If no 3-D conformer (e.g. from SMILES), try to generate one.
+        conf = mol.GetConformer()
+        if conf is None or not conf.Is3D():
+            from rdkit.Chem import AllChem
+            from rdkit import Chem as RDChem
+            if molecule_format == "smiles":
+                mol = RDChem.AddHs(mol)
+            AllChem.EmbedMolecule(mol, randomSeed=42)
+            AllChem.MMFFOptimizeMolecule(mol)
+            conf = mol.GetConformer()
+        pos = [
+            [conf.GetAtomPosition(i).x, conf.GetAtomPosition(i).y, conf.GetAtomPosition(i).z]
+            for i in range(num_atoms)
+        ]
+
+        z_t = paddle.to_tensor(z, dtype=paddle.int64)
+        pos_t = paddle.to_tensor(pos, dtype=paddle.get_default_dtype())
+        batch = paddle.zeros([num_atoms], dtype=paddle.int64)
+        data = {"z": z_t, "pos": pos_t, "batch": batch}
+
+        if self.graph_converter_fn is not None:
+            data["edge_index"] = self.graph_converter_fn(pos_t, batch)
 
         if self.eval_with_no_grad:
             with paddle.no_grad():
@@ -253,8 +242,8 @@ class PropertyPredictor:
     def from_xyz_file(self, xyz_file_path, save_path=None):
         """Predict molecular properties from XYZ file(s).
 
-        Parses each ``.xyz`` file and delegates to :meth:`from_molecule`
-        for the actual prediction.
+        Reads each ``.xyz`` file via RDKit, then delegates to
+        :meth:`from_molecule` (``BuildMolecule → graph_converter → predict``).
 
         Args:
             xyz_file_path: Path to a single ``.xyz`` file or a directory
@@ -264,6 +253,8 @@ class PropertyPredictor:
         Returns:
             Single result dict or list of result dicts.
         """
+        from rdkit import Chem
+
         if save_path is not None:
             assert save_path.endswith(".csv"), "save_path must end with .csv"
 
@@ -278,16 +269,11 @@ class PropertyPredictor:
         results = []
         for xyz_path in tqdm(xyz_files, desc="Predict"):
             with open(xyz_path, "r") as f:
-                lines = f.readlines()
-            n_atoms = int(lines[0].strip())
-            z_list, pos_list = [], []
-            for i in range(n_atoms):
-                parts = lines[2 + i].strip().split()
-                symbol = parts[0]
-                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                z_list.append(_SYMBOL_TO_Z.get(symbol, 0))
-                pos_list.append([x, y, z])
-            out = self.from_molecule(z_list, pos_list)
+                xyz_block = f.read()
+            mol = Chem.MolFromXYZBlock(xyz_block)
+            if mol is None:
+                raise ValueError(f"Failed to parse XYZ file: {xyz_path}")
+            out = self.from_molecule(mol, "rdmol")
             results.append(out)
 
         if save_path is not None and results:
@@ -337,10 +323,16 @@ if __name__ == "__main__":
         help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
-        "--xyz_file_path",
+        "--molecule",
         type=str,
         default=None,
-        help="Path to XYZ file(s) for molecular property prediction.",
+        help="Molecular input (SMILES string, file path, etc.). Requires --format.",
+    )
+    argparse.add_argument(
+        "--format",
+        type=str,
+        default=None,
+        help="Input format: xyz, smiles, sdf_file, mol_file, rdmol, inchi, ...",
     )
     argparse.add_argument(
         "--save_path",
@@ -357,8 +349,18 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    if args.xyz_file_path is not None:
-        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
-    else:
+    if args.molecule is not None:
+        if args.format is None:
+            raise ValueError("--format is required when --molecule is provided.")
+        if args.format == "xyz":
+            results = predictor.from_xyz_file(args.molecule, args.save_path)
+        else:
+            results = predictor.from_molecule(args.molecule, args.format)
+    elif args.cif_file_path is not None:
         results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    else:
+        raise ValueError(
+            "Provide --molecule + --format for molecular prediction, "
+            "or --cif_file_path for crystal prediction."
+        )
     print(results)
