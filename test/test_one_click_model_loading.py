@@ -82,15 +82,15 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
     assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
 
 
-def test_build_model_from_name_keeps_original_layout_logic():
+def test_build_model_from_name_uses_package_config_discovery():
     import ppmat.models as models
 
     source = inspect.getsource(models.build_model_from_name)
 
     assert "path = osp.join(path, model_name)" in source
-    assert 'config_path = osp.join(path, f"{model_name}.yaml")' in source
-    assert "os.listdir(path)" in source
-    assert "find_config_file_in_package" not in source
+    assert "find_config_file_in_package(model_name, path)" in source
+    assert 'config_path = osp.join(path, f"{model_name}.yaml")' not in source
+    assert "os.listdir(path)" not in source
 
 
 def test_infgcn_predict_uses_config_defaults_for_cli_options():
