@@ -335,3 +335,5 @@ def test_diffnmr_sample_entrypoint_supports_config_overrides():
     assert "config_overrides=dynamic_args" in source
     assert "config_overrides: Optional[List[str]] = None" in sampler_source
     assert "OmegaConf.merge(config, cli_config)" in sampler_source
+    assert "_apply_package_support_files" not in sampler_source
+    assert "_replace_with_package_file" not in sampler_source

@@ -15,6 +15,7 @@
 import copy
 import os
 import time
+from contextlib import contextmanager
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -46,7 +47,6 @@ from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.io import find_config_file_in_package
-from ppmat.utils.io import find_file_in_package
 from ppmat.utils.visualization import MolecularVisualization
 
 
@@ -92,6 +92,7 @@ class MolecularSampler:
         checkpoint_path: Optional[str] = None,
         config_overrides: Optional[List[str]] = None,
     ):
+        package_config_dir = None
         if model_name is None:
             assert config_path is not None and checkpoint_path is not None, (
                 "config_path and checkpoint_path must be provided when model_name is "
@@ -112,6 +113,7 @@ class MolecularSampler:
             )
             if os.path.isdir(checkpoint_path):
                 config_path = find_config_file_in_package(model_name, checkpoint_path)
+                package_config_dir = os.path.dirname(config_path)
             else:
                 raise ValueError(
                     f"Registered model '{model_name}' must be a package with a "
@@ -122,7 +124,6 @@ class MolecularSampler:
                 cli_config = OmegaConf.from_dotlist(config_overrides)
                 config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
-            self._apply_package_support_files(config, checkpoint_path)
 
         model_config = config.get("Model", None)
         assert model_config is not None, "Model config must be provided."
@@ -172,12 +173,13 @@ class MolecularSampler:
 
         # CLIP for sample metric
         model_cfg = config["CLIP"]
-        self.clip = build_model(
-            model_cfg,
-            extra_features=extra_features,
-            domain_features=domain_features,
-            dataset_infos=dataset_infos,
-        )
+        with self._relative_to(package_config_dir):
+            self.clip = build_model(
+                model_cfg,
+                extra_features=extra_features,
+                domain_features=domain_features,
+                dataset_infos=dataset_infos,
+            )
 
         # visualization tools
         self.visualization_tools = MolecularVisualization(
@@ -186,14 +188,15 @@ class MolecularSampler:
         )
 
         model_cfg = config["Model"]
-        model = build_model(
-            model_cfg,
-            extra_features=extra_features,
-            domain_features=domain_features,
-            dataset_infos=dataset_infos,
-            visualization_tools=self.visualization_tools,
-            clip=self.clip,
-        )
+        with self._relative_to(package_config_dir):
+            model = build_model(
+                model_cfg,
+                extra_features=extra_features,
+                domain_features=domain_features,
+                dataset_infos=dataset_infos,
+                visualization_tools=self.visualization_tools,
+                clip=self.clip,
+            )
 
         self.pretrained_model_path = (
             checkpoint_path
@@ -274,42 +277,19 @@ class MolecularSampler:
         )
         setattr(self.model, "streaming_adapter", self.streaming)
 
-    def _apply_package_support_files(self, config: Dict, package_path: str):
-        if not os.path.isdir(package_path):
+    @staticmethod
+    @contextmanager
+    def _relative_to(path: Optional[str]):
+        if path is None:
+            yield
             return
 
-        support_paths = [
-            ("Model", "__init_params__", "encoder_cfg", "pretrained_path"),
-            ("Model", "__init_params__", "decoder_cfg", "pretrained_path"),
-            (
-                "CLIP",
-                "__init_params__",
-                "spectrum_encoder",
-                "pretrained_model_path",
-            ),
-            ("CLIP", "__init_params__", "graph_encoder", "pretrained_model_path"),
-        ]
-        for path in support_paths:
-            self._replace_with_package_file(config, path, package_path)
-
-    def _replace_with_package_file(
-        self, config: Dict, path: Tuple[str, ...], package_path: str
-    ):
-        node = config
-        for key in path[:-1]:
-            node = node.get(key, {})
-            if not isinstance(node, dict):
-                return
-
-        value = node.get(path[-1])
-        if value is None:
-            return
-
-        file_name = os.path.basename(value)
+        cwd = os.getcwd()
+        os.chdir(path)
         try:
-            node[path[-1]] = find_file_in_package(package_path, file_name)
-        except FileNotFoundError:
-            logger.warning(f"No such file named {file_name} in {package_path}")
+            yield
+        finally:
+            os.chdir(cwd)
 
     def compute_metric(
         self,
