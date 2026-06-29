@@ -188,6 +188,36 @@ def test_field_predictor_is_shared_predictor_entrypoint():
     assert "from ppmat.datasets import DensityDataset" not in entry_source
 
 
+def test_field_predictor_reuses_base_and_keeps_helpers_outside_predictor():
+    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
+    field_io_source = (ROOT / "ppmat/utils/field_io.py").read_text()
+    field_vis_source = (ROOT / "ppmat/utils/field_visualization.py").read_text()
+
+    assert "from ppmat.predictor.base import BasePredictor" in field_source
+    assert "class FieldPredictor(BasePredictor):" in field_source
+
+    for helper_name in [
+        "draw_volume",
+        "safe_write_image",
+        "maybe_downsample_volume",
+        "read_cube_density",
+        "write_cube_generic",
+        "prepare_info_cube",
+    ]:
+        assert f"def {helper_name}" not in field_source
+
+    for helper_name in ["read_cube_density", "write_cube_generic", "prepare_info_cube"]:
+        assert f"def {helper_name}" in field_io_source
+
+    for helper_name in ["draw_volume", "safe_write_image", "maybe_downsample_volume"]:
+        assert f"def {helper_name}" in field_vis_source
+
+    assert "def _save_cubes" in field_source
+    assert "def _save_visualizations" in field_source
+    assert "FieldPredictor._save_cubes(" in field_source
+    assert "FieldPredictor._save_visualizations(" in field_source
+
+
 def test_electronic_structure_models_use_builtin_scatter():
     for relative_path in [
         "ppmat/models/infgcn/infgcn.py",

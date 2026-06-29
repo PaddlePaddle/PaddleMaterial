@@ -14,32 +14,29 @@
 
 
 import copy
-import gzip
 import json
-import lzma
-import math
-import time
 from functools import partial
 from pathlib import Path
 
 import numpy as np
 import paddle
-import plotly.graph_objects as go
 from omegaconf import OmegaConf
 from tqdm import tqdm
-
-try:
-    from IPython.display import Image
-    from IPython.display import display
-except ImportError:  # Optional dependency; visualization still works for files
-    Image, display = None, None
 
 from ppmat.datasets import DensityDataset
 from ppmat.datasets import SmallDensityDataset
 from ppmat.datasets.geometric_data_type.data import Data
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
+from ppmat.predictor.base import BasePredictor
 from ppmat.utils import logger
+from ppmat.utils.field_io import prepare_info_cube
+from ppmat.utils.field_io import read_cube_density
+from ppmat.utils.field_io import unavailable_cube_writer
+from ppmat.utils.field_io import write_cube_generic
+from ppmat.utils.field_visualization import draw_volume
+from ppmat.utils.field_visualization import maybe_downsample_volume
+from ppmat.utils.field_visualization import safe_write_image
 from ppmat.utils.misc import set_random_seed
 
 BOHR2ANG = 0.529177
@@ -172,170 +169,6 @@ def inference_model(model, g, density, grid_coord, infos, grid_batch_size=8196):
     return preds, loss, mae
 
 
-def draw_volume(
-    grid,
-    density,
-    atom_type,
-    atom_coord,
-    isomin=0.05,
-    isomax=None,
-    surface_count=5,
-    title=None,
-):
-    atom_colorscale = ["grey", "white", "red", "blue", "green"]
-    fig = go.Figure()
-    fig.add_trace(
-        go.Volume(
-            x=grid[..., 0],
-            y=grid[..., 1],
-            z=grid[..., 2],
-            value=density,
-            isomin=isomin,
-            isomax=isomax,
-            opacity=0.1,
-            surface_count=surface_count,
-            caps=dict(x_show=False, y_show=False, z_show=False),
-        )
-    )
-
-    axis_dict = dict(
-        showgrid=False,
-        showbackground=False,
-        zeroline=False,
-        visible=False,
-    )
-
-    fig.add_trace(
-        go.Scatter3d(
-            x=atom_coord[:, 0],
-            y=atom_coord[:, 1],
-            z=atom_coord[:, 2],
-            mode="markers",
-            marker=dict(
-                size=10,
-                color=atom_type,
-                cmin=0,
-                cmax=4,
-                colorscale=atom_colorscale,
-                opacity=0.6,
-            ),
-        )
-    )
-
-    if title is not None:
-        title = dict(
-            text=title,
-            x=0.5,
-            y=0.3,
-            xanchor="center",
-            yanchor="bottom",
-        )
-
-    fig.update_layout(
-        autosize=False,
-        width=800,
-        height=800,
-        showlegend=False,
-        scene=dict(xaxis=axis_dict, yaxis=axis_dict, zaxis=axis_dict),
-        title=title,
-        title_font_family="Times New Roman",
-    )
-
-    return fig
-
-
-def safe_write_image(fig, path, show_plot=False):
-    try:
-        fig.write_image(path)
-        logger.info(f"Image saved to: {path}")
-    except Exception as e:
-        logger.warning(f"Failed to save image {path}: {e}")
-        try:
-            html_path = path.with_suffix(".html")
-            fig.write_html(html_path)
-            logger.info(f"Saved interactive HTML instead: {html_path}")
-        except Exception as html_e:
-            logger.warning(f"Failed to save HTML fallback for {path}: {html_e}")
-
-    if show_plot:
-        try:
-            if Image is None or display is None:
-                raise ImportError("IPython not installed")
-            img_bytes = fig.to_image(format="png", scale=2)
-            display(Image(img_bytes))
-        except Exception as e:
-            logger.warning(f"Failed to display image: {e}")
-
-
-def maybe_downsample_volume(grid, values, shape, max_points=250_000):
-    """
-    Downsample a regular 3D grid for visualization to keep Plotly volume
-    traces responsive.
-    grid: numpy array of shape (n_points, 3)
-    values: list of numpy arrays aligned with grid, each of shape (n_points,)
-    shape: original lattice shape [nx, ny, nz]
-    """
-    if shape is None or len(shape) != 3:
-        return grid, values, False, 1
-
-    try:
-        shape = [int(s) for s in shape]
-        total = shape[0] * shape[1] * shape[2]
-    except Exception:
-        return grid, values, False, 1
-
-    if total != grid.shape[0] or any(val.shape[0] != grid.shape[0] for val in values):
-        return grid, values, False, 1
-    if total <= max_points:
-        return grid, values, False, 1
-
-    stride = max(1, math.ceil((total / max_points) ** (1 / 3)))
-    try:
-        grid_view = grid.reshape(shape[0], shape[1], shape[2], 3)
-        grid_ds = grid_view[::stride, ::stride, ::stride, :].reshape(-1, 3)
-        values_ds = [
-            val.reshape(shape[0], shape[1], shape[2])[
-                ::stride, ::stride, ::stride
-            ].reshape(-1)
-            for val in values
-        ]
-    except Exception as e:
-        logger.warning(f"Failed to downsample grid for visualization: {e}")
-        return grid, values, False, 1
-
-    return grid_ds, values_ds, True, stride
-
-
-def write_cube_generic(
-    fileobj, atom_type, atom_coord, density, info, idx2atom_num=None
-):
-    """
-    Minimal cube writer for datasets without a built-in write_cube method.
-    idx2atom_num maps dataset atom indices to atomic numbers.
-    """
-    fileobj.write("Cube file written on " + time.strftime("%c"))
-    fileobj.write("\nOUTER LOOP: X, MIDDLE LOOP: Y, INNER LOOP: Z\n")
-    cell = info["cell"]
-    shape = info["shape"]
-    origin = info.get("origin", np.zeros(3, dtype=np.float32))
-    fileobj.write("{0:5}{1:12.6f}{2:12.6f}{3:12.6f}\n".format(len(atom_type), *origin))
-    for s, c in zip(shape, cell):
-        d = c / s
-        fileobj.write("{0:5}{1:12.6f}{2:12.6f}{3:12.6f}\n".format(s, *d))
-    for Z, (x, y, z) in zip(atom_type, atom_coord):
-        atomic_num = int(idx2atom_num[int(Z)]) if idx2atom_num is not None else int(Z)
-        fileobj.write(
-            "{0:5}{1:12.6f}{2:12.6f}{3:12.6f}{4:12.6f}\n".format(
-                atomic_num, float(atomic_num), x, y, z
-            )
-        )
-    density.tofile(fileobj, sep="\n", format="%e")
-
-
-def unavailable_cube_writer(*args, **kwargs):
-    raise AttributeError("Cube writer not available for this dataset")
-
-
 def parse_grid_shape(shape_str):
     parts = [p.strip() for p in str(shape_str).split(",") if p.strip()]
     if len(parts) == 1:
@@ -420,80 +253,6 @@ def collect_mol_files(mol_input, mol_pattern):
     if not files:
         raise FileNotFoundError(f"No .mol files found in directory: {mol_path}")
     return files
-
-
-def open_text_maybe_compressed(path):
-    suffixes = "".join(path.suffixes).lower()
-    if suffixes.endswith(".lz4"):
-        import lz4.frame
-
-        return lz4.frame.open(path, mode="rt")
-    if suffixes.endswith(".xz"):
-        return lzma.open(path, mode="rt")
-    if suffixes.endswith(".gz"):
-        return gzip.open(path, mode="rt")
-    return path.open(mode="rt")
-
-
-def read_cube_density(path):
-    with open_text_maybe_compressed(path) as f:
-        f.readline()
-        f.readline()
-        line = f.readline().split()
-        if len(line) < 4:
-            raise ValueError(f"Invalid CUBE header (line 3) in {path}")
-        n_atom = int(line[0])
-        origin = np.array([float(x) for x in line[1:4]], dtype=np.float32)
-
-        shape = []
-        cell = np.zeros((3, 3), dtype=np.float32)
-        for i in range(3):
-            row = f.readline().split()
-            if len(row) < 4:
-                raise ValueError(f"Invalid CUBE axis line in {path}")
-            n, x, y, z = [float(s) for s in row[:4]]
-            shape.append(int(n))
-            cell[i] = np.array([x, y, z], dtype=np.float32)
-
-        x_coord = np.arange(shape[0], dtype=np.float32)[:, None] * cell[0][None, :]
-        y_coord = np.arange(shape[1], dtype=np.float32)[:, None] * cell[1][None, :]
-        z_coord = np.arange(shape[2], dtype=np.float32)[:, None] * cell[2][None, :]
-        grid_coord = (
-            x_coord.reshape(-1, 1, 1, 3)
-            + y_coord.reshape(1, -1, 1, 3)
-            + z_coord.reshape(1, 1, -1, 3)
-        ).reshape(-1, 3)
-        grid_coord = grid_coord + origin
-
-        atom_coord_ref = []
-        for _ in range(n_atom):
-            row = f.readline().split()
-            if len(row) < 5:
-                raise ValueError(f"Invalid CUBE atom line in {path}")
-            atom_coord_ref.append([float(row[2]), float(row[3]), float(row[4])])
-
-        n_grid = shape[0] * shape[1] * shape[2]
-        vals = []
-        for line in f:
-            parts = line.split()
-            if parts:
-                vals.extend(parts)
-        if len(vals) < n_grid:
-            raise ValueError(
-                f"CUBE data too short in {path}: expect {n_grid}, got {len(vals)}"
-            )
-        density = np.array(vals[:n_grid], dtype=np.float32)
-
-    return (
-        paddle.to_tensor(density, dtype="float32"),
-        paddle.to_tensor(grid_coord, dtype="float32"),
-        {
-            "shape": shape,
-            "cell": paddle.to_tensor(cell, dtype="float32"),
-            "origin": paddle.to_tensor(origin, dtype="float32"),
-            "atom_coord_ref": np.asarray(atom_coord_ref, dtype=np.float32),
-        },
-    )
 
 
 def align_mol_atoms_to_cube(g, atom_coord_ref, sample_name, tol=0.05):
@@ -717,63 +476,7 @@ def sanitize_base_name(sample_name):
     return base_name
 
 
-def prepare_info_cube(info, grid_coord):
-    info_cube = {}
-    shape = info.get("shape")
-    cell = info.get("cell")
-    origin = info.get("origin", None)
-    grid_np_full = grid_coord.detach().cpu().numpy()
-
-    if shape is not None and len(shape) == 3:
-        try:
-            shape_i = [int(s) for s in shape]
-            grid_view = grid_np_full.reshape(shape_i[0], shape_i[1], shape_i[2], 3)
-            origin_np = grid_view[0, 0, 0]
-            step_x = (
-                grid_view[1, 0, 0] - grid_view[0, 0, 0]
-                if shape_i[0] > 1
-                else np.zeros(3, dtype=np.float32)
-            )
-            step_y = (
-                grid_view[0, 1, 0] - grid_view[0, 0, 0]
-                if shape_i[1] > 1
-                else np.zeros(3, dtype=np.float32)
-            )
-            step_z = (
-                grid_view[0, 0, 1] - grid_view[0, 0, 0]
-                if shape_i[2] > 1
-                else np.zeros(3, dtype=np.float32)
-            )
-            cell_from_grid = np.stack(
-                [step_x * shape_i[0], step_y * shape_i[1], step_z * shape_i[2]], axis=0
-            )
-        except Exception:
-            origin_np = None
-            cell_from_grid = None
-    else:
-        origin_np = None
-        cell_from_grid = None
-
-    if shape is not None:
-        info_cube["shape"] = [int(s) for s in shape]
-    if cell is not None:
-        if hasattr(cell, "numpy"):
-            info_cube["cell"] = cell.numpy()
-        else:
-            info_cube["cell"] = np.array(cell, dtype=np.float32)
-    if cell_from_grid is not None:
-        info_cube["cell"] = cell_from_grid
-    if origin is not None:
-        if hasattr(origin, "numpy"):
-            info_cube["origin"] = origin.numpy()
-        else:
-            info_cube["origin"] = np.array(origin, dtype=np.float32)
-    if origin_np is not None:
-        info_cube["origin"] = origin_np
-    return info_cube
-
-
-class FieldPredictor:
+class FieldPredictor(BasePredictor):
     """Electron-density field predictor."""
 
     def __init__(
@@ -784,31 +487,228 @@ class FieldPredictor:
         checkpoint_path=None,
         seed=42,
     ):
+        super().__init__(
+            model_name=model_name,
+            weights_name=weights_name,
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            work_dir="",
+            device=None,
+        )
         set_random_seed(seed)
 
-        self.model_name = model_name
-        self.weights_name = weights_name
-        self.config_path = config_path
-        self.checkpoint_path = checkpoint_path
-
-        if model_name is not None:
-            logger.info(f"Loading registered model: {model_name}")
-            self.model, self.config = build_model_from_name(model_name, weights_name)
+        if self.model_name is not None:
+            logger.info(f"Loading registered model: {self.model_name}")
+            self.model, self.config = build_model_from_name(
+                self.model_name, self.weights_name
+            )
         else:
-            assert config_path is not None and checkpoint_path is not None, (
+            assert self.config_path is not None and self.checkpoint_path is not None, (
                 "config_path and checkpoint_path must be provided when model_name "
                 "is None."
             )
-            logger.info(f"Loading the pretrained model from {checkpoint_path}")
-            cfg = OmegaConf.load(config_path)
+            logger.info(f"Loading the pretrained model from {self.checkpoint_path}")
+            cfg = OmegaConf.load(self.config_path)
             self.config = OmegaConf.to_container(cfg, resolve=True)
-            self.model = get_pretrained_model(config_path, checkpoint_path)
+            self.model = get_pretrained_model(self.config_path, self.checkpoint_path)
 
         self.model.eval()
         logger.info("Model loaded successfully.")
 
     def predict(self, args):
         return run_prediction(args, self.model, self.config)
+
+    @staticmethod
+    def _save_cubes(
+        args,
+        cube_dir,
+        cube_writer,
+        sample_name,
+        sample_tag,
+        g,
+        density,
+        preds,
+        info,
+        grid_coord,
+    ):
+        if not (args.save_true_cube or args.save_pred_cube):
+            return
+
+        atom_type_np = g.x.detach().cpu().numpy()
+        atom_coord_np = g.pos.detach().cpu().numpy()
+        info_cube = prepare_info_cube(info, grid_coord)
+
+        if args.save_true_cube:
+            if density is None:
+                logger.warning(
+                    f"Skipping true cube for {sample_name}: "
+                    "no reference density available"
+                )
+            else:
+                true_cube_path = cube_dir / f"{sample_tag}_true.cube"
+                with true_cube_path.open("w") as f:
+                    cube_writer(
+                        f,
+                        atom_type_np,
+                        atom_coord_np,
+                        density.detach().cpu().numpy(),
+                        info_cube,
+                    )
+                logger.info(f"Saved reference density cube to: {true_cube_path}")
+
+        if args.save_pred_cube:
+            pred_cube_path = cube_dir / f"{sample_tag}_pred.cube"
+            with pred_cube_path.open("w") as f:
+                cube_writer(
+                    f,
+                    atom_type_np,
+                    atom_coord_np,
+                    preds.detach().cpu().numpy(),
+                    info_cube,
+                )
+            logger.info(f"Saved predicted density cube to: {pred_cube_path}")
+
+    @staticmethod
+    def _save_visualizations(
+        args,
+        output_dir,
+        sample_tag,
+        g,
+        density,
+        preds,
+        info,
+        grid_coord,
+    ):
+        if args.skip_vis:
+            return
+
+        grid_np = grid_coord.detach().cpu().numpy()
+        preds_np = preds.detach().cpu().numpy()
+        shape = info.get("shape")
+        atom_type = g.x.detach().cpu().numpy()
+        atom_coord = g.pos.detach().cpu().numpy()
+        shape = shape if shape is None else [int(s) for s in shape]
+
+        if density is not None:
+            density_np = density.detach().cpu().numpy()
+            diff_np = density_np - preds_np
+            (
+                grid_vis,
+                (density_vis, diff_vis, preds_vis),
+                did_downsample,
+                stride,
+            ) = maybe_downsample_volume(
+                grid_np,
+                [density_np, diff_np, preds_np],
+                shape,
+            )
+            FieldPredictor._log_downsample(grid_np, grid_vis, did_downsample, stride)
+
+            FieldPredictor._write_volume_plot(
+                args,
+                output_dir,
+                sample_tag,
+                "true_density",
+                "DFT electron density",
+                grid_vis,
+                density_vis,
+                atom_type,
+                atom_coord,
+                isomin=0.05,
+                isomax=3.5,
+                surface_count=5,
+            )
+            FieldPredictor._write_volume_plot(
+                args,
+                output_dir,
+                sample_tag,
+                "diff_density",
+                "Electron Density Difference",
+                grid_vis,
+                diff_vis,
+                atom_type,
+                atom_coord,
+                isomin=-0.06,
+                isomax=0.06,
+                surface_count=4,
+            )
+            FieldPredictor._write_volume_plot(
+                args,
+                output_dir,
+                sample_tag,
+                "pred_density",
+                "Predicted Electron Density",
+                grid_vis,
+                preds_vis,
+                atom_type,
+                atom_coord,
+                isomin=0.05,
+                isomax=3.5,
+                surface_count=5,
+            )
+            return
+
+        (
+            grid_vis,
+            (preds_vis,),
+            did_downsample,
+            stride,
+        ) = maybe_downsample_volume(grid_np, [preds_np], shape)
+        FieldPredictor._log_downsample(grid_np, grid_vis, did_downsample, stride)
+        FieldPredictor._write_volume_plot(
+            args,
+            output_dir,
+            sample_tag,
+            "pred_density",
+            "Predicted Electron Density",
+            grid_vis,
+            preds_vis,
+            atom_type,
+            atom_coord,
+            isomin=0.05,
+            isomax=3.5,
+            surface_count=5,
+        )
+
+    @staticmethod
+    def _log_downsample(grid_np, grid_vis, did_downsample, stride):
+        if did_downsample:
+            logger.warning(
+                f"Downsampled volume grid from {grid_np.shape[0]} "
+                f"to {grid_vis.shape[0]} points for visualization "
+                f"(stride={stride}) to keep HTML output responsive."
+            )
+
+    @staticmethod
+    def _write_volume_plot(
+        args,
+        output_dir,
+        sample_tag,
+        suffix,
+        title,
+        grid,
+        values,
+        atom_type,
+        atom_coord,
+        isomin,
+        isomax,
+        surface_count,
+    ):
+        logger.info(f"Visualizing {title}")
+        fig = draw_volume(
+            grid,
+            values,
+            atom_type,
+            atom_coord,
+            isomin=isomin,
+            isomax=isomax,
+            surface_count=surface_count,
+            title=title,
+        )
+        image_path = output_dir / f"{sample_tag}_{suffix}.png"
+        safe_write_image(fig, image_path, show_plot=args.show_plot)
+        if args.save_html:
+            fig.write_html(output_dir / f"{sample_tag}_{suffix}.html")
 
 
 def run_prediction(args, model, cfg):
@@ -950,145 +850,25 @@ def run_prediction(args, model, cfg):
 
         sample_tag = sanitize_base_name(sample_name)
 
-        if args.save_true_cube or args.save_pred_cube:
-            atom_type_np = g.x.detach().cpu().numpy()
-            atom_coord_np = g.pos.detach().cpu().numpy()
-            info_cube = prepare_info_cube(info, grid_coord)
-
-            if args.save_true_cube:
-                if density is None:
-                    logger.warning(
-                        f"Skipping true cube for {sample_name}: "
-                        "no reference density available"
-                    )
-                else:
-                    true_cube_path = cube_dir / f"{sample_tag}_true.cube"
-                    with true_cube_path.open("w") as f:
-                        cube_writer(
-                            f,
-                            atom_type_np,
-                            atom_coord_np,
-                            density.detach().cpu().numpy(),
-                            info_cube,
-                        )
-                    logger.info(f"Saved reference density cube to: {true_cube_path}")
-
-            if args.save_pred_cube:
-                pred_cube_path = cube_dir / f"{sample_tag}_pred.cube"
-                with pred_cube_path.open("w") as f:
-                    cube_writer(
-                        f,
-                        atom_type_np,
-                        atom_coord_np,
-                        preds.detach().cpu().numpy(),
-                        info_cube,
-                    )
-                logger.info(f"Saved predicted density cube to: {pred_cube_path}")
-
-        if not args.skip_vis:
-            grid_np = grid_coord.detach().cpu().numpy()
-            preds_np = preds.detach().cpu().numpy()
-            shape = info.get("shape")
-            atom_type = g.x.detach().cpu().numpy()
-            atom_coord = g.pos.detach().cpu().numpy()
-
-            if density is not None:
-                density_np = density.detach().cpu().numpy()
-                diff_np = density_np - preds_np
-                (
-                    grid_vis,
-                    (density_vis, diff_vis, preds_vis),
-                    did_downsample,
-                    stride,
-                ) = maybe_downsample_volume(
-                    grid_np,
-                    [density_np, diff_np, preds_np],
-                    shape if shape is None else [int(s) for s in shape],
-                )
-                if did_downsample:
-                    logger.warning(
-                        f"Downsampled volume grid from {grid_np.shape[0]} "
-                        f"to {grid_vis.shape[0]} points for visualization "
-                        f"(stride={stride}) to keep HTML output responsive."
-                    )
-
-                logger.info("Visualizing the DFT electron density")
-                fig = draw_volume(
-                    grid_vis,
-                    density_vis,
-                    atom_type,
-                    atom_coord,
-                    isomin=0.05,
-                    isomax=3.5,
-                    surface_count=5,
-                    title="DFT electron density",
-                )
-                true_density_path = output_dir / f"{sample_tag}_true_density.png"
-                safe_write_image(fig, true_density_path, show_plot=args.show_plot)
-                if args.save_html:
-                    fig.write_html(output_dir / f"{sample_tag}_true_density.html")
-
-                logger.info("Visualizing electron density difference")
-                fig = draw_volume(
-                    grid_vis,
-                    diff_vis,
-                    atom_type,
-                    atom_coord,
-                    isomin=-0.06,
-                    isomax=0.06,
-                    surface_count=4,
-                    title="Electron Density Difference",
-                )
-                diff_density_path = output_dir / f"{sample_tag}_diff_density.png"
-                safe_write_image(fig, diff_density_path, show_plot=args.show_plot)
-                if args.save_html:
-                    fig.write_html(output_dir / f"{sample_tag}_diff_density.html")
-
-                logger.info("Visualizing predicted electron density")
-                fig = draw_volume(
-                    grid_vis,
-                    preds_vis,
-                    atom_type,
-                    atom_coord,
-                    isomin=0.05,
-                    isomax=3.5,
-                    surface_count=5,
-                    title="Predicted Electron Density",
-                )
-                pred_density_path = output_dir / f"{sample_tag}_pred_density.png"
-                safe_write_image(fig, pred_density_path, show_plot=args.show_plot)
-                if args.save_html:
-                    fig.write_html(output_dir / f"{sample_tag}_pred_density.html")
-            else:
-                (
-                    grid_vis,
-                    (preds_vis,),
-                    did_downsample,
-                    stride,
-                ) = maybe_downsample_volume(
-                    grid_np,
-                    [preds_np],
-                    shape if shape is None else [int(s) for s in shape],
-                )
-                if did_downsample:
-                    logger.warning(
-                        f"Downsampled volume grid from {grid_np.shape[0]} "
-                        f"to {grid_vis.shape[0]} points for visualization "
-                        f"(stride={stride}) to keep HTML output responsive."
-                    )
-
-                logger.info("Visualizing predicted electron density")
-                fig = draw_volume(
-                    grid_vis,
-                    preds_vis,
-                    atom_type,
-                    atom_coord,
-                    isomin=0.05,
-                    isomax=3.5,
-                    surface_count=5,
-                    title="Predicted Electron Density",
-                )
-                pred_density_path = output_dir / f"{sample_tag}_pred_density.png"
-                safe_write_image(fig, pred_density_path, show_plot=args.show_plot)
-                if args.save_html:
-                    fig.write_html(output_dir / f"{sample_tag}_pred_density.html")
+        FieldPredictor._save_cubes(
+            args,
+            cube_dir,
+            cube_writer,
+            sample_name,
+            sample_tag,
+            g,
+            density,
+            preds,
+            info,
+            grid_coord,
+        )
+        FieldPredictor._save_visualizations(
+            args,
+            output_dir,
+            sample_tag,
+            g,
+            density,
+            preds,
+            info,
+            grid_coord,
+        )
