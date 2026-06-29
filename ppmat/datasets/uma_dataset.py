@@ -182,13 +182,6 @@ def uma_data_list_to_batch(data_list: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
-class UMASingleCollator:
-    """UMA collator for single-dataset training."""
-
-    def __call__(self, batch: list[dict[str, Any]]) -> dict[str, Any]:
-        return uma_data_list_to_batch(batch)
-
-
 class UMASingleDataset(Dataset):
     """ASE-backed single dataset for UMA.
 

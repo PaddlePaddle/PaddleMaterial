@@ -12,16 +12,6 @@ PaddleMaterials interatomic-potential workflow: datasets are built under
 `Dataset.*.build_graph_cfg`, and training/evaluation runs through
 `interatomic_potentials/train.py`.
 
-```mermaid
-flowchart LR
-    A[Atomic structure] --> B[UMA dataset]
-    B --> C[UMAGraphConverter]
-    C --> D[Neighbor graph]
-    D --> E[UMA / eSCN backbone]
-    E --> F[Energy head]
-    E --> G[Force head]
-```
-
 ## Datasets
 
 UMA uses atomistic structures with total energy and atomic force labels.
@@ -87,7 +77,6 @@ The PaddleMaterials implementation exposes:
 | Model | `ppmat.models.uma.escn_md.UMASingleTaskModel` |
 | Dataset | `ppmat.datasets.uma_dataset.UMAAseDBDataset` |
 | Graph converter | `ppmat.models.uma.uma_graph_converter.UMAGraphConverter` |
-| Collator | `ppmat.datasets.collate_fn.UMASingleCollator` |
 
 Precomputed Wigner-d coefficients required by the UMA rotation module are stored
 as Paddle tensors in `ppmat/models/uma/Jd.pdparams`.
