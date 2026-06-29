@@ -209,8 +209,11 @@ class PropertyPredictor:
         # Extract atomic numbers and 3-D coordinates from RDKit Mol.
         num_atoms = mol.GetNumAtoms()
         z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
-        # If no 3-D conformer (e.g. from SMILES), try to generate one.
-        conf = mol.GetConformer()
+        # If no 3-D conformer (e.g. from SMILES), generate one.
+        try:
+            conf = mol.GetConformer()
+        except ValueError:
+            conf = None
         if conf is None or not conf.Is3D():
             from rdkit.Chem import AllChem
             from rdkit import Chem as RDChem
