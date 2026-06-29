@@ -110,12 +110,14 @@ def test_build_model_from_name_uses_package_config_discovery():
 
 def test_infgcn_predict_uses_config_defaults_for_cli_options():
     source = (ROOT / "electronic_structure/predict.py").read_text()
+    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
     cfg = OmegaConf.to_container(
         OmegaConf.load(INFGCN_CONFIG_DIR / "infgcn_qm9.yaml"),
         resolve=True,
     )
 
-    assert "apply_predict_config(args, cfg)" in source
+    assert "FieldPredictor" in source
+    assert "def apply_predict_config" in field_source
     assert cfg["Predict"]["grid_batch_size"] == 20000
     assert cfg["Predict"]["output_dir"] == "output/infgcn_qm9/vis_val0"
     assert cfg["Predict"]["save_pred_cube"] is True
@@ -170,7 +172,20 @@ def test_infgcn_predict_cli_accepts_one_click_model_arguments():
 
     assert '"--model_name"' in source
     assert '"--weights_name"' in source
-    assert "load_registered_model" in source
+    assert "FieldPredictor(" in source
+
+
+def test_field_predictor_is_shared_predictor_entrypoint():
+    import ppmat.predictor as predictor
+
+    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
+    entry_source = (ROOT / "electronic_structure/predict.py").read_text()
+
+    assert hasattr(predictor, "FieldPredictor")
+    assert "class FieldPredictor" in field_source
+    assert "from ppmat.predictor import FieldPredictor" in entry_source
+    assert "from ppmat.models import MODEL_REGISTRY" not in entry_source
+    assert "from ppmat.datasets import DensityDataset" not in entry_source
 
 
 def test_electronic_structure_models_use_builtin_scatter():

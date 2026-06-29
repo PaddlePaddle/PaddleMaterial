@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from ppmat.predictor.base import BasePredictor
+from ppmat.predictor.field import FieldPredictor
 
 __all__ = [
     "BasePredictor",
+    "FieldPredictor",
 ]
