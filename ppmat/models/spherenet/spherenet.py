@@ -624,3 +624,41 @@ class SphereNetPP(paddle.nn.Layer):
                     prediction[self.force_key] = paddle.zeros_like(pos)
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}
+
+    @paddle.no_grad()
+    def predict(self, graphs):
+        """Inference interface.
+
+        Accepts a single data dict or a list of data dicts, each with
+        ``z``, ``pos``, ``batch`` and optionally ``edge_index``.
+
+        Crystals / CIF files are **not** supported — SphereNet is a
+        molecular model (QM9 / MD17).  Use the training entry point
+        (``train.py``) with a molecular dataset instead.
+        """
+        from pymatgen.core import Structure
+        if isinstance(graphs, Structure):
+            raise TypeError(
+                "SphereNet does not support CIF/crystal prediction. "
+                "Use property_prediction/train.py with a molecular dataset."
+            )
+        if isinstance(graphs, list):
+            if any(isinstance(g, Structure) for g in graphs):
+                raise TypeError(
+                    "SphereNet does not support CIF/crystal prediction."
+                )
+            results = []
+            for g in graphs:
+                pred = self.spherenet(
+                    g["z"], g["pos"], g["batch"], edge_index=g.get("edge_index", None)
+                )
+                val = self._unnormalize(pred).numpy()[0, 0]
+                results.append({self.property_name: val})
+            return results
+        else:
+            pred = self.spherenet(
+                graphs["z"], graphs["pos"], graphs["batch"],
+                edge_index=graphs.get("edge_index", None),
+            )
+            val = self._unnormalize(pred)
+            return {self.property_name: val}
