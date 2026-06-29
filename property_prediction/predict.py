@@ -103,7 +103,7 @@ class PropertyPredictor:
 
         predict_config = config.get("Predict", None)
         self.predict_config = predict_config
-        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
+        self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True) if predict_config is not None else True
 
         self.graph_converter_fn = None
         if self.predict_config is not None:

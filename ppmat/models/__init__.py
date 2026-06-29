@@ -230,18 +230,22 @@ def build_model(
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
-    path = osp.join(path, model_name)
+    # If the zip already contains a model_name/ inner wrapper dir
+    # (e.g. zipped as `zip -r model.zip model/`), the decompressor
+    # returns the inner path directly.  Otherwise join it.
+    if osp.basename(path) != model_name:
+        path = osp.join(path, model_name)
     logger.info(f"Save model and configuration files in path: {path}")
     config_path = osp.join(path, f"{model_name}.yaml")
     if not osp.exists(config_path):
         logger.warning(
-            f"Config file not found: {config_path}, try find other yaml files."
+            f"Config file not found: {config_path}, try recursive search."
         )
-        file_list = os.listdir(path)
         find_list = []
-        for file in file_list:
-            if file.endswith(".yaml") or file.endswith(".yml"):
-                find_list.append(osp.join(path, file))
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                if f.endswith((".yaml", ".yml")):
+                    find_list.append(osp.join(root, f))
         if len(find_list) == 1:
             config_path = find_list[0]
         else:
