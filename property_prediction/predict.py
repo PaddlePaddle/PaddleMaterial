@@ -270,7 +270,9 @@ if __name__ == "__main__":
         "--xyz_file_path",
         type=str,
         default=None,
-        help="Path to XYZ file(s) for molecular property prediction.",
+        help="Path to XYZ file(s) for molecular property prediction.  "
+        "When neither --cif_file_path nor --xyz_file_path is given, "
+        "defaults to the example molecule (qm9_sample.xyz).",
     )
     argparse.add_argument(
         "--save_path",
@@ -292,8 +294,7 @@ if __name__ == "__main__":
     elif args.cif_file_path is not None:
         results = predictor.from_cif_file(args.cif_file_path, args.save_path)
     else:
-        raise ValueError(
-            "Either --xyz_file_path (molecules) or --cif_file_path (crystals) "
-            "must be provided."
+        results = predictor.from_xyz_file(
+            "./property_prediction/example_data/molecules/", args.save_path
         )
     print(results)
