@@ -42,9 +42,11 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
-from ppmat.models.chemeleon2 import VAEModule
-from ppmat.models.chemeleon2 import LDMModule
+from ppmat.models.chemeleon2 import LDMModule, VAEModule
+from ppmat.models.chemeleon2.ldm_module.dit import DiT
 from ppmat.models.chemeleon2.rl_module.rl import RLModule
+from ppmat.models.chemeleon2.vae_module.decoder import TransformerDecoder
+from ppmat.models.chemeleon2.vae_module.encoder import TransformerEncoder
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -73,6 +75,9 @@ __all__ = [
     "MatENO",
     "VAEModule",
     "LDMModule",
+    "DiT",
+    "TransformerDecoder",
+    "TransformerEncoder",
     "RLModule",
     "SFIN",
 ]
@@ -123,8 +128,8 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
-    "chemeleon2_vae": "http://localhost/models/chemeleon2_vae.zip",
-    "chemeleon2_ldm": "http://localhost/models/chemeleon2_ldm.zip",
+    "chemeleon2_vae": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/Chemeleon2/chemeleon2_vae.zip",
+    "chemeleon2_ldm": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/Chemeleon2/chemeleon2_ldm.zip",
 }
 
 
