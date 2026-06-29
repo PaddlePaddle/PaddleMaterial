@@ -31,6 +31,13 @@ from ppmat.models import build_model_from_name
 from ppmat.utils import logger
 from ppmat.utils import save_load
 
+# Element symbol → atomic number (subset sufficient for QM9/MD17)
+_SYMBOL_TO_Z = {
+    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8,
+    "F": 9, "Ne": 10, "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15,
+    "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
+}
+
 
 class PropertyPredictor:
     """Property predictor.
@@ -182,6 +189,74 @@ class PropertyPredictor:
 
             return result
 
+    def from_xyz_file(self, xyz_file_path, save_path=None):
+        """Predict molecular properties from XYZ file(s).
+
+        Args:
+            xyz_file_path: Path to a single ``.xyz`` file or a directory
+                of ``.xyz`` files.
+            save_path: Optional CSV path.
+
+        Returns:
+            Single result dict or list of result dicts.
+        """
+        if save_path is not None:
+            assert save_path.endswith(".csv"), "save_path must end with .csv"
+
+        if osp.isdir(xyz_file_path):
+            xyz_files = sorted([
+                osp.join(xyz_file_path, f)
+                for f in os.listdir(xyz_file_path) if f.endswith(".xyz")
+            ])
+        else:
+            xyz_files = [xyz_file_path]
+
+        # Build graph converter from config (Predict.graph_converter or
+        # fallback to Model.dataset.build_graph_cfg).
+        graph_cfg = None
+        if self.predict_config is not None:
+            graph_cfg = self.predict_config.get("graph_converter", None)
+        if graph_cfg is None:
+            dataset_cfg = self.config.get("Model", {}).get("dataset", None)
+            if dataset_cfg is not None:
+                graph_cfg = dataset_cfg.get("build_graph_cfg", None)
+        converter = build_graph_converter(graph_cfg) if graph_cfg else None
+
+        results = []
+        for xyz_path in tqdm(xyz_files, desc="Predict"):
+            with open(xyz_path, "r") as f:
+                lines = f.readlines()
+            n_atoms = int(lines[0].strip())
+            z_list, pos_list = [], []
+            for i in range(n_atoms):
+                parts = lines[2 + i].strip().split()
+                symbol = parts[0]
+                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                z_list.append(_SYMBOL_TO_Z.get(symbol, 0))
+                pos_list.append([x, y, z])
+            z_t = paddle.to_tensor(z_list, dtype=paddle.int64)
+            pos_t = paddle.to_tensor(pos_list, dtype=paddle.get_default_dtype())
+            batch_t = paddle.zeros([n_atoms], dtype=paddle.int64)
+
+            data = {"z": z_t, "pos": pos_t, "batch": batch_t}
+            if converter is not None:
+                data["edge_index"] = converter(pos_t, batch_t)
+
+            out = self.model.predict(data)
+            results.append(out)
+
+        if save_path is not None and results:
+            keys = list(results[0].keys())
+            props = defaultdict(list)
+            for key in keys:
+                for r in results:
+                    props[key].append(r[key])
+            df = pd.DataFrame({"xyz_file": [osp.basename(f) for f in xyz_files], **props})
+            df.to_csv(save_path, index=False)
+            logger.info(f"Saved prediction results to {save_path}")
+
+        return results if len(results) > 1 else results[0]
+
 
 if __name__ == "__main__":
 
@@ -217,6 +292,12 @@ if __name__ == "__main__":
         help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
+        "--xyz_file_path",
+        type=str,
+        default=None,
+        help="Path to XYZ file(s) for molecular property prediction.",
+    )
+    argparse.add_argument(
         "--save_path",
         type=str,
         default="result.csv",
@@ -231,5 +312,8 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    if args.xyz_file_path is not None:
+        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
+    else:
+        results = predictor.from_cif_file(args.cif_file_path, args.save_path)
     print(results)
