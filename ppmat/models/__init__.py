@@ -45,7 +45,7 @@ from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
-from ppmat.utils.model_package import find_config_file_in_package
+from ppmat.utils.io import find_config_file_in_package
 
 __all__ = [
     "iComformer",

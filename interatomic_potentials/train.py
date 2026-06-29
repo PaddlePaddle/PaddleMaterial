@@ -29,7 +29,7 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
-from ppmat.utils.output_dir import append_timestamp_to_output_dir
+from ppmat.utils.io import append_timestamp_to_output_dir
 
 if dist.get_world_size() > 1:
     fleet.init(is_collective=True)

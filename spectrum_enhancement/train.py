@@ -32,15 +32,15 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.eager_comp_setting import setting_eager_mode
-from ppmat.utils.output_dir import append_timestamp_to_output_dir
+from ppmat.utils.io import append_timestamp_to_output_dir
 
 
 def read_independent_dataloader_config(config: Dict[str, Any]):
     if config["Global"].get("do_train", True):
         train_data_cfg = config["Dataset"].get("train")
-        assert train_data_cfg is not None, (
-            "train_data_cfg must be defined when Global.do_train is True"
-        )
+        assert (
+            train_data_cfg is not None
+        ), "train_data_cfg must be defined when Global.do_train is True"
         train_loader = build_dataloader(train_data_cfg)
     else:
         train_loader = None
@@ -57,9 +57,9 @@ def read_independent_dataloader_config(config: Dict[str, Any]):
 
     if config["Global"].get("do_test", False):
         test_data_cfg = config["Dataset"].get("test")
-        assert test_data_cfg is not None, (
-            "test_data_cfg must be defined when Global.do_test is True"
-        )
+        assert (
+            test_data_cfg is not None
+        ), "test_data_cfg must be defined when Global.do_test is True"
         test_loader = build_dataloader(test_data_cfg)
     else:
         test_loader = None
@@ -136,12 +136,12 @@ def main():
     model = build_model(model_cfg)
 
     if config.get("Optimizer") is not None and config["Global"].get("do_train", True):
-        assert train_loader is not None, (
-            "train_loader must be defined when Optimizer is provided."
-        )
-        assert config["Trainer"].get("max_epochs") is not None, (
-            "Trainer.max_epochs must be defined when Optimizer is provided."
-        )
+        assert (
+            train_loader is not None
+        ), "train_loader must be defined when Optimizer is provided."
+        assert (
+            config["Trainer"].get("max_epochs") is not None
+        ), "Trainer.max_epochs must be defined when Optimizer is provided."
         optimizer, lr_scheduler = build_optimizer(
             config["Optimizer"],
             model,

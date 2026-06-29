@@ -4,7 +4,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from ppmat.utils.output_dir import append_timestamp_to_output_dir
+from ppmat.utils.io import append_timestamp_to_output_dir
 
 
 def test_append_timestamp_to_output_dir_uses_seed_and_timestamp():
@@ -16,6 +16,10 @@ def test_append_timestamp_to_output_dir_uses_seed_and_timestamp():
     )
 
     assert config["Trainer"]["output_dir"] == "./output/demo_t_20260629_123456_s_7"
+
+
+def test_output_dir_helper_lives_in_io_module():
+    assert not Path("ppmat/utils/output_dir.py").exists()
 
 
 def test_train_entrypoints_append_timestamp_by_default():

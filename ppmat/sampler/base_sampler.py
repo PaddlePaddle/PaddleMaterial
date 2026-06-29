@@ -45,8 +45,8 @@ from ppmat.schedulers import scheduling_diffnmr
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
-from ppmat.utils.model_package import find_config_file_in_package
-from ppmat.utils.model_package import find_file_in_package
+from ppmat.utils.io import find_config_file_in_package
+from ppmat.utils.io import find_file_in_package
 from ppmat.utils.visualization import MolecularVisualization
 
 

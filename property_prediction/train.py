@@ -28,7 +28,7 @@ from ppmat.optimizer import build_optimizer
 from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
-from ppmat.utils.output_dir import append_timestamp_to_output_dir
+from ppmat.utils.io import append_timestamp_to_output_dir
 
 
 def read_independent_dataloader_config(config):

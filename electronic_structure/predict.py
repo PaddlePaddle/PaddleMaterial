@@ -43,8 +43,8 @@ from ppmat.models import build_model
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+from ppmat.utils.io import find_config_file_in_package
 from ppmat.utils.misc import set_random_seed
-from ppmat.utils.model_package import find_config_file_in_package
 
 BOHR2ANG = 0.529177
 ANG2BOHR = 1.0 / BOHR2ANG

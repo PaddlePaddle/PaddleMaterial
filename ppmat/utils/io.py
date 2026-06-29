@@ -14,13 +14,17 @@
 
 import argparse
 import ast
+import datetime
 import hashlib
 import json
 import os
 import os.path as osp
 from typing import List
+from typing import Optional
 
 import numpy as np
+
+from ppmat.utils import logger
 
 
 def count_samples_json_lines(path: str):
@@ -125,6 +129,52 @@ def calc_md5(fullname):
     calc_md5sum = md5.hexdigest()
 
     return calc_md5sum
+
+
+def append_timestamp_to_output_dir(
+    config,
+    now: Optional[datetime.datetime] = None,
+):
+    seed = config["Trainer"].get("seed", 42)
+    timestamp = (now or datetime.datetime.now()).strftime("%Y%m%d_%H%M%S")
+    base_output_dir = config["Trainer"]["output_dir"]
+    config["Trainer"]["output_dir"] = f"{base_output_dir}_t_{timestamp}_s_{seed}"
+    return config
+
+
+def find_file_in_package(package_path: str, file_name: str):
+    if osp.isfile(package_path):
+        if osp.basename(package_path) == file_name:
+            return package_path
+        raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
+
+    for root, _, files in os.walk(package_path):
+        for name in files:
+            if osp.basename(name) == file_name:
+                return osp.join(root, name)
+
+    raise FileNotFoundError(f"No such file named {file_name} in {package_path}")
+
+
+def find_config_file_in_package(model_name: str, package_path: str):
+    for config_name in (f"{model_name}.yaml", f"{model_name}.yml"):
+        try:
+            return find_file_in_package(package_path, config_name)
+        except FileNotFoundError:
+            pass
+
+    find_list = []
+    for root, _, files in os.walk(package_path):
+        for name in files:
+            if name.endswith(".yaml") or name.endswith(".yml"):
+                find_list.append(osp.join(root, name))
+
+    if len(find_list) == 1:
+        config_path = find_list[0]
+        logger.warning(f"Find config file: {config_path}, using this file.")
+        return config_path
+
+    raise ValueError(f"Multiple yaml files found: {find_list}, must be only one")
 
 
 if __name__ == "__main__":

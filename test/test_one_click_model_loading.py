@@ -64,8 +64,8 @@ def test_models_init_keeps_one_click_surface_minimal():
 
 
 def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
-    from ppmat.utils.model_package import find_config_file_in_package
-    from ppmat.utils.model_package import find_file_in_package
+    from ppmat.utils.io import find_config_file_in_package
+    from ppmat.utils.io import find_file_in_package
 
     cache_dir = tmp_path / "infgcn_qm9"
     package_dir = cache_dir / "infgcn_qm9"
@@ -80,6 +80,10 @@ def test_model_package_helpers_resolve_standard_zip_layout(tmp_path):
         Path(find_config_file_in_package("infgcn_qm9", str(cache_dir))) == config_path
     )
     assert Path(find_file_in_package(cache_dir, "best.pdparams")) == weight_path
+
+
+def test_model_package_helpers_live_in_io_module():
+    assert not (ROOT / "ppmat/utils/model_package.py").exists()
 
 
 def test_build_model_from_name_uses_package_config_discovery():
