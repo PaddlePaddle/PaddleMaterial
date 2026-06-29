@@ -318,9 +318,11 @@ def test_diffnmr_sample_readme_documents_one_click_sample_command():
 
     assert "--model_name='diffnmr_msdnmr_nless15'" in readme
     assert "--weights_name='DiffNMR_nless15_best.pdparams'" in readme
-    assert "data/MSD_nmr/sample.csv" in readme
-    assert "Sampler.sample_batch_iters=1" in readme
-    assert "Sampler.data.sampler.__init_params__.batch_size=1" in readme
+    assert "data/MSD_nmr/test.csv" in readme
+    assert "### Sampling Sample" not in readme
+    assert "Sampler.sample_batch_iters=1" not in readme
+    assert "Sampler.data.sampler.__init_params__.batch_size=1" not in readme
+    assert "--checkpoint_path='./output/DiffNMR/DiffNMR/checkpoints'" in readme
     assert sample_csv.exists()
     assert sample_csv.read_text().splitlines()[0] == "smiles,tokenized_input,atom_count"
 

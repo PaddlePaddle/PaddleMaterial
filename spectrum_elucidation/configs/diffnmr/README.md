@@ -88,13 +88,12 @@ spectrum_elucidation/vocab/nless15/
 spectrum_elucidation/retrival_database/
 ```
 
-### Sampling Sample
-
-For a quick sampling smoke test, build a one-row MSD-NMR style CSV:
+For a quick sampling smoke test, the bundled one-row CSV can be used as the
+default test split:
 
 ```bash
 mkdir -p data/MSD_nmr
-cp spectrum_elucidation/configs/diffnmr/sample.csv data/MSD_nmr/sample.csv
+cp spectrum_elucidation/configs/diffnmr/sample.csv data/MSD_nmr/test.csv
 ```
 
 ---
@@ -142,38 +141,13 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 ### Sample
 
 ```bash
-# Mode 1: one-click sampling with the registered pretrained package.
-python spectrum_elucidation/sample.py \
-  --model_name='diffnmr_msdnmr_nless15' \
-  --weights_name='DiffNMR_nless15_best.pdparams' \
-  --save_path='result_diffnmr_sample/' \
-  Dataset.train.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.val.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.test.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Sampler.data.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.train.sampler.__init_params__.batch_size=1 \
-  Dataset.val.sampler.__init_params__.batch_size=1 \
-  Dataset.test.sampler.__init_params__.batch_size=1 \
-  Sampler.data.sampler.__init_params__.batch_size=1 \
-  Sampler.sample_batch_iters=1 \
-  Sampler.visual_num=1 \
-  Sampler.chains_to_save=1
+# This command is used to sample molecular structures conditioned on NMR spectra.
+# Mode 1: Use a pre-trained model (downloads automatically).
+# Mode 2: Use a custom configuration file and checkpoint.
+# Results are saved to the folder specified by --save_path (default: results).
 
-# Mode 2: sampling with a custom configuration file and checkpoint.
-python spectrum_elucidation/sample.py \
-  --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' \
-  --checkpoint_path='path/to/checkpoints' \
-  --weights_name='DiffNMR_nless15_best.pdparams' \
-  --save_path='result_diffnmr_sample/' \
-  Dataset.train.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.val.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.test.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Sampler.data.dataset.__init_params__.path='data/MSD_nmr/sample.csv' \
-  Dataset.train.sampler.__init_params__.batch_size=1 \
-  Dataset.val.sampler.__init_params__.batch_size=1 \
-  Dataset.test.sampler.__init_params__.batch_size=1 \
-  Sampler.data.sampler.__init_params__.batch_size=1 \
-  Sampler.sample_batch_iters=1
+python spectrum_elucidation/sample.py --model_name='diffnmr_msdnmr_nless15' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
+python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --checkpoint_path='./output/DiffNMR/DiffNMR/checkpoints' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
 ```
 
 ---
