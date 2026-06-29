@@ -20,6 +20,40 @@ After each iteration, high-reward structures are stored in a replay buffer and a
 
 ---
 
+## Dataset Description
+
+### Dataset contents
+
+#### 1) Atom count sampling (DiffCSP backbone)
+When using the **DiffCSP** backbone, MatInvent samples random atom counts uniformly between 1 and 50 atoms per unit cell.
+
+#### 2) Atom count sampling (MatterGen backbone)
+When using the **MatterGen** backbone, MatInvent samples random atom counts uniformly between 2 and 50 atoms per unit cell.
+
+#### 3) Reference dataset for novelty and stability evaluation
+Novelty and stability of generated structures are assessed against a reference convex-hull dataset (`reference_MP2020correction.gz`) downloaded automatically from [Hugging Face (jwchen25/MatInvent)](https://huggingface.co/jwchen25/MatInvent). This reference is based on the MP2020 energy correction scheme and is used during both RL training and post-hoc evaluation.
+
+#### 4) Reward computation (no additional labeled dataset required)
+For property-conditioned RL, rewards are computed **on-the-fly** by property calculators (PyMatGen). Each generated structure is scored immediately after sampling, so the RL loop is self-contained and requires no pre-labeled training set.
+
+### Data format
+Each structure sample produced by the diffusion backbone provides:
+- `atom_types` / `atomic_numbers`: length-$N$ array of atomic numbers
+- `frac_coords` / `pos`: $N \times 3$ fractional coordinates in $[0, 1)$
+- `lengths` + `angles` or `cell`: lattice parameters / $3 \times 3$ lattice matrix
+
+Optional fields used during RL: `reward` (scalar), `num_atoms`, `structure_id`.
+
+---
+
+## Results
+
+Key RL metrics tracked during training include **reward mean**, **burden** (computational cost per high-reward candidate), and **diversity ratio** (unique compositions / total evaluations). Post-hoc generation quality is reported as the **SUN ratio** (Stable, Unique, Novel fraction). Refer to the [paper](https://arxiv.org/abs/2511.03112) for full quantitative results.
+
+Pretrained checkpoints are available on [HuggingFace (jwchen25/MatInvent)](https://huggingface.co/jwchen25/MatInvent).
+
+---
+
 ## Command
 
 ### Training
