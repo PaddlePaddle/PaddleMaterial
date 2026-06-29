@@ -25,6 +25,7 @@ from pathlib import Path
 
 from ppmatAgent.knowmat.nodes.paddleocrvl_parse_pdf import parse_pdf_with_paddleocrvl
 from ppmatAgent.knowmat.app_config import settings
+from ppmatAgent.knowmat.config import ensure_runtime_env
 
 # 进度打印间隔（秒）
 _PROGRESS_INTERVAL_SEC = 60
@@ -284,6 +285,14 @@ def main(argv: list[str] | None = None) -> None:
     extraction_output_dir = args.output_dir if args.output_dir else settings.output_dir
     print(f"Input (raw + OCR intermediates): {input_folder}")
     print(f"Extraction output:               {extraction_output_dir}")
+
+    requires_llm = not args.ocr_only and not args.final_md
+    if requires_llm:
+        try:
+            ensure_runtime_env(require_llm=True)
+        except RuntimeError as exc:
+            print(f"Error: {exc}")
+            return
 
     # --- Batch parallel mode ---
     if args.batch:
@@ -640,8 +649,9 @@ def main(argv: list[str] | None = None) -> None:
             fut = llm_pool.submit(_process_one, path)
             llm_futures[fut] = path
 
-        # 非强制重跑时，对已有 .md/.txt 直接做抽取；强制重跑时只对 OCR 产出做抽取，避免重复
-        if not args.ocr_only and not args.force_rerun:
+        # Existing .md/.txt files are always valid extraction inputs. --force-rerun
+        # only disables the extraction-output skip inside _process_one.
+        if not args.ocr_only:
             for text_path in sorted(existing_txt_files, key=lambda x: x.name.lower()):
                 md_path = _ensure_md(text_path)
                 if md_path:

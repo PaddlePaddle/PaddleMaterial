@@ -445,7 +445,7 @@ def main() -> None:
         "allowed_elements": elements,
     }
 
-    selected_db = find_best_local_tdb(elements, tdb_dir=Path("tdb_files"), allow_simplified=False)
+    selected_db = find_best_local_tdb(elements, allow_simplified=False)
     if selected_db is None:
         raise RuntimeError(
             f"No full pycalphad-loadable database matches {elements}. "

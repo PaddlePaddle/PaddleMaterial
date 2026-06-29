@@ -2,9 +2,10 @@
 Global configuration and environment handling for KnowMat 2.0.
 
 This module attempts to locate and load environment variables from a
-``.env`` file if present.  It also ensures that critical secrets such as
-``LLM_API_KEY`` are set.  When required variables are missing the code will
-prompt interactively for them at runtime.
+``.env`` file if present.  Runtime secrets such as ``LLM_API_KEY`` are
+validated by ``ensure_runtime_env`` instead of at import time so that
+``ppmatAgent.knowmat`` remains importable in CI, documentation builds, and
+lightweight library use.
 
 In addition, this module can configure LangSmith tracing when a
 ``LANGCHAIN_API_KEY`` is provided.
@@ -47,17 +48,22 @@ def _set_env(var: str, required: bool = True) -> None:
     os.environ[var] = getpass.getpass(f"{var}: ")
 
 
-# Ensure that the primary LLM key exists.
-_set_env("LLM_API_KEY", required=True)
+def ensure_runtime_env(require_llm: bool = True) -> None:
+    """Validate runtime environment variables before LLM-backed execution."""
+    _set_env("LLM_API_KEY", required=require_llm)
+    _set_env("LANGCHAIN_API_KEY", required=False)
+    configure_openai_aliases()
 
-# Keep LangSmith key optional.
-_set_env("LANGCHAIN_API_KEY", required=False)
+
+def configure_openai_aliases() -> None:
+    """Expose LLM_* settings through OPENAI_* aliases for compatible clients."""
+    if os.getenv("LLM_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = os.environ["LLM_API_KEY"]
+    if os.getenv("LLM_BASE_URL") and not os.getenv("OPENAI_BASE_URL"):
+        os.environ["OPENAI_BASE_URL"] = os.environ["LLM_BASE_URL"]
 
 # Provide OpenAI-compatible env aliases for libraries that still read OPENAI_*.
-if os.getenv("LLM_API_KEY") and not os.getenv("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = os.environ["LLM_API_KEY"]
-if os.getenv("LLM_BASE_URL") and not os.getenv("OPENAI_BASE_URL"):
-    os.environ["OPENAI_BASE_URL"] = os.environ["LLM_BASE_URL"]
+configure_openai_aliases()
 
 # LangSmith tracing is optional. Enable by default only if API key is provided.
 if os.getenv("LANGCHAIN_API_KEY"):

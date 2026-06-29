@@ -530,6 +530,20 @@ def _candidate_pdf_for_text_source(source_path: Path) -> Optional[Path]:
     return None
 
 
+def _pdf_page_count_if_available(pdf_path: Path) -> Optional[int]:
+    """Return PDF page count when PyMuPDF is installed; otherwise None."""
+    try:
+        import fitz  # type: ignore
+    except ImportError:
+        return None
+
+    doc = fitz.open(str(pdf_path))
+    try:
+        return len(doc)
+    finally:
+        doc.close()
+
+
 def _extract_pdf_with_paddleocrvl(
     pdf_path: str,
     output_dir: str,
@@ -1428,25 +1442,27 @@ def parse_pdf_with_paddleocrvl(state: KnowMatState) -> dict:
         parse_output_dir.mkdir(parents=True, exist_ok=True)
     model_dir = default_model_dir()
 
-    try:
-        import fitz  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError("PyMuPDF is required for PDF parsing.") from exc
+    paddleocr_api_mode = _use_paddleocr_api_mode()
+    mineru_mode = _use_mineru_api_mode()
+    openai_ocr_mode = _use_openai_ocr_mode()
+    use_api_mode = paddleocr_api_mode or mineru_mode or openai_ocr_mode
 
-    doc = fitz.open(str(source_path))
-    total_pages = len(doc)
-    doc.close()
+    total_pages = _pdf_page_count_if_available(source_path)
+    if total_pages is None and not use_api_mode:
+        raise RuntimeError("PyMuPDF is required for local PDF parsing. Install with: pip install pymupdf")
 
     raw_pages = state.get("ocr_pages")
     if raw_pages is None:
         raw_pages = os.getenv("KNOWMAT_OCR_PAGES", "")
     pages_spec = (raw_pages or "").strip()
     if pages_spec:
+        if total_pages is None:
+            raise RuntimeError("PyMuPDF is required to resolve --ocr-pages for API OCR backends.")
         selected_pages = parse_pages_argument(pages_spec, total_pages)
         if not selected_pages:
             raise ValueError("No valid pages in --ocr-pages / ocr_pages for this PDF.")
     else:
-        selected_pages = list(range(1, total_pages + 1))
+        selected_pages = list(range(1, total_pages + 1)) if total_pages is not None else None
 
     render_dpi = _env_int("OCR_RENDER_DPI", 300)
     if render_dpi < 72 or render_dpi > 600:
@@ -1455,11 +1471,8 @@ def parse_pdf_with_paddleocrvl(state: KnowMatState) -> dict:
     # PP-StructureV3 精修始终参与；缓存键固定为完整 VL+Structure 管线
     skip_pp = False
     skip_chem = _env_truthy("KNOWMAT_SKIP_CHEM_REOCR")
-    pages_key = pages_key_for_cache(selected_pages, total_pages)
+    pages_key = pages_key_for_cache(selected_pages or [], total_pages or 0)
     digest = md5_file_digest(source_path)
-    paddleocr_api_mode = _use_paddleocr_api_mode()
-    mineru_mode = _use_mineru_api_mode()
-    openai_ocr_mode = _use_openai_ocr_mode()
 
     # Cache signature only needed for local OCR mode
     sig = ""
@@ -1474,8 +1487,6 @@ def parse_pdf_with_paddleocrvl(state: KnowMatState) -> dict:
         )
     # For API modes, skip _ocr_cache — figures are saved to images/ during extraction,
     # and the .md/.json files themselves serve as the cache.
-    use_api_mode = paddleocr_api_mode or mineru_mode or openai_ocr_mode
-
     if not use_api_mode:
         cache_bucket = ocr_cache_bucket(Path(output_dir), sig)
         skip_cache_read = bool(state.get("ocr_skip_cached", False)) or _env_truthy(
