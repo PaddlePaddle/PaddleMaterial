@@ -21,12 +21,14 @@ from ppmat.models.chemeleon2.ldm_module.ldm import LDMModule
 from ppmat.models.chemeleon2.ldm_module.dit import DiT
 from ppmat.models.chemeleon2.ldm_module.condition import ConditionModule, ConditionType
 from ppmat.models.chemeleon2.common.schema import CrystalBatch, create_empty_batch
-from ppmat.models.chemeleon2.common import (
-    DiagonalGaussianDistribution, scatter_mean, to_dense_batch,
-    get_index_embedding, apply_augmentation, apply_noise,
-    lattice_params_to_matrix, LoRALayer, apply_lora_to_linear, merge_lora_weights,
-)
+from ppmat.utils.scatter import scatter_mean
+from ppmat.utils.crystal import lattice_params_to_matrix_paddle as lattice_params_to_matrix
 from ppmat.models.chemeleon2.common.utils import lattice_vector_to_volume
+from ppmat.models.chemeleon2.common import (
+    DiagonalGaussianDistribution, to_dense_batch,
+    get_index_embedding, apply_augmentation, apply_noise,
+    LoRALayer, apply_lora_to_linear, merge_lora_weights,
+)
 
 SMALL = dict(d_model=64, nhead=2, dim_feedforward=256, num_layers=2)
 

@@ -14,19 +14,10 @@
 
 import math
 import paddle
-from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-from ppmat.utils.scatter import scatter_sum as _base_scatter_sum
-from ppmat.utils.scatter import scatter_mean as _base_scatter_mean
 
 __all__ = [
     "get_index_embedding",
     "to_dense_batch",
-    "scatter_sum",
-    "scatter_mean",
-    "lattice_params_to_matrix",
-    "frac_to_cart_coords",
-    "cart_to_frac_coords",
-    "get_pbc_distances",
     "lattice_vector_to_volume",
     "apply_augmentation",
     "apply_noise",
@@ -45,6 +36,13 @@ def get_index_embedding(indices, emb_dim, max_len=2048):
     )
     pos_embedding = paddle.concat([pos_embedding_sin, pos_embedding_cos], axis=-1)
     return pos_embedding
+
+
+def lattice_vector_to_volume(lattice):
+    if lattice.ndim == 2:
+        lattice = lattice.unsqueeze(0)
+    a, b, c = lattice[:, 0, :], lattice[:, 1, :], lattice[:, 2, :]
+    return paddle.abs(paddle.sum(a * paddle.cross(b, c), axis=-1))
 
 
 def to_dense_batch(x, batch_idx, max_num_nodes=None):
@@ -66,57 +64,6 @@ def to_dense_batch(x, batch_idx, max_num_nodes=None):
         x_dense[i, :n] = x[start:end]
         mask[i, :n] = True
     return x_dense, mask
-
-
-def scatter_sum(src, index, dim=-1, out=None, dim_size=None):
-    return _base_scatter_sum(src, index, dim, out, dim_size)
-
-
-def scatter_mean(src, index, dim=-1, out=None, dim_size=None):
-    return _base_scatter_mean(src, index, dim, out, dim_size)
-
-
-def lattice_params_to_matrix(lengths, angles):
-    return lattice_params_to_matrix_paddle(lengths, angles)
-
-
-def frac_to_cart_coords(frac_coords, lattice):
-    if lattice.ndim == 2:
-        lattice = lattice.unsqueeze(0)
-    if lattice.ndim == 3 and lattice.shape[0] == 1:
-        lattice = lattice.squeeze(0)
-    return paddle.einsum('ij,jk->ik', frac_coords, lattice)
-
-
-def cart_to_frac_coords(cart_coords, lattice):
-    if lattice.ndim == 2:
-        lattice = lattice.unsqueeze(0)
-    if lattice.ndim == 3 and lattice.shape[0] == 1:
-        lattice = lattice.squeeze(0)
-    inv_lattice = paddle.linalg.pinv(lattice)
-    return paddle.einsum('ij,jk->ik', cart_coords, inv_lattice)
-
-
-def get_pbc_distances(coords1, coords2, lattice, num_atoms=None, return_offsets=False):
-    if lattice.ndim == 2:
-        lattice = lattice.unsqueeze(0)
-    if coords1.shape != coords2.shape:
-        raise ValueError("coords1 and coords2 must have the same shape")
-    diff = coords2 - coords1
-    diff_frac = cart_to_frac_coords(diff, lattice)
-    diff_frac = diff_frac - paddle.round(diff_frac)
-    diff_cart = frac_to_cart_coords(diff_frac, lattice)
-    distances = paddle.norm(diff_cart, axis=-1)
-    if return_offsets:
-        return distances, paddle.round(cart_to_frac_coords(coords2 - coords1, lattice))
-    return distances
-
-
-def lattice_vector_to_volume(lattice):
-    if lattice.ndim == 2:
-        lattice = lattice.unsqueeze(0)
-    a, b, c = lattice[:, 0, :], lattice[:, 1, :], lattice[:, 2, :]
-    return paddle.abs(paddle.sum(a * paddle.cross(b, c), axis=-1))
 
 
 def apply_augmentation(batch, translate=False, rotate=False):
@@ -188,7 +135,7 @@ def make_attn_mask(token_mask):
 
 
 def _random_rotation_matrix():
-    q = paddle.rand([4])
+    q = paddle.randn([4])
     q = q / paddle.norm(q)
     rot_mat = paddle.to_tensor([
         [1 - 2 * q[2] ** 2 - 2 * q[3] ** 2, 2 * q[1] * q[2] - 2 * q[0] * q[3], 2 * q[1] * q[3] + 2 * q[0] * q[2]],

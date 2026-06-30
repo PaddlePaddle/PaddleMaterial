@@ -18,7 +18,7 @@ import paddle.nn.functional as F
 
 from ppmat.models.chemeleon2.common import apply_augmentation, apply_noise
 from ppmat.models.chemeleon2.common import DiagonalGaussianDistribution
-from ppmat.models.chemeleon2.common.schema import CrystalBatch, _build_structure_array
+from ppmat.models.chemeleon2.common.schema import CrystalBatch, build_structure_array
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
@@ -115,7 +115,7 @@ class VAEModule(nn.Layer):
 
     def _convert_train_batch(self, batch):
         structure_array = batch["structure_array"]
-        crystal_batch = _build_structure_array(CrystalBatch(), structure_array)
+        crystal_batch = build_structure_array(CrystalBatch(), structure_array)
         crystal_batch.lengths = structure_array["lengths"]
         crystal_batch.angles = structure_array["angles"]
         crystal_batch.angles_radians = paddle.deg2rad(structure_array["angles"])

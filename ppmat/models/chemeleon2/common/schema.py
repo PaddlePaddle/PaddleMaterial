@@ -103,7 +103,7 @@ class CrystalBatch(Data):
         return structure_list
 
 
-def _build_structure_array(batch, structure_array):
+def build_structure_array(batch, structure_array):
     num_atoms = structure_array["num_atoms"]
     batch_size = num_atoms.shape[0]
     total_atoms = num_atoms.sum().item()

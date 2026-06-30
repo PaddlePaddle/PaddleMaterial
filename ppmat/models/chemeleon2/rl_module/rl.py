@@ -76,6 +76,17 @@ class RLModule(nn.Layer):
             trajectory = result
         return result, trajectory
 
+    def forward(self, batch):
+        result, trajectory = self.rollout(batch)
+        rewards, rewards_norm = self.compute_rewards(batch_gen=result)
+        zs = trajectory.get('zs', [])
+        log_probs = trajectory.get('log_probs', [])
+        mask = trajectory.get('mask', None)
+        y = trajectory.get('y', None)
+        loss_dict = self.calculate_loss(zs, log_probs, rewards_norm, mask, y)
+        loss_dict["loss"] = loss_dict.pop("total_scaled_loss")
+        return {"loss_dict": loss_dict}
+
     def compute_rewards(self, batch_gen):
         num_samples = batch_gen.num_graphs
         rewards = self.reward_fn(batch_gen)
@@ -104,6 +115,7 @@ class RLModule(nn.Layer):
             y.stop_gradient = True
         
         res = defaultdict(int)
+        total_scaled_loss = paddle.to_tensor(0.0)
         for i, t in enumerate(indices):
             z = zs[i]
             old_log_probs = log_probs[i]
@@ -168,9 +180,8 @@ class RLModule(nn.Layer):
             )
             loss = policy_loss.mean()
             scaled_loss = loss / len(indices)
-            
-            scaled_loss.backward()
-            
+
+            total_scaled_loss = total_scaled_loss + scaled_loss
             res['scaled_loss'] += scaled_loss.detach().item()
             res['loss'] += loss.detach().item()
             res['surrogate_objective'] += surrogate_objective.mean().detach().item()
@@ -178,7 +189,8 @@ class RLModule(nn.Layer):
             res['entropy'] += entropy.mean().detach().item()
             res['log_ratio'] = log_ratio.mean().detach().item()
             res['ratio'] = ratio.mean().detach().item()
-        
+
+        res["total_scaled_loss"] = total_scaled_loss
         return res
 
     def get_config(self):

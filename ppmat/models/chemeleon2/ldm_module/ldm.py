@@ -25,7 +25,7 @@ from ppmat.models.chemeleon2.common import merge_lora_weights
 from ppmat.models.chemeleon2.common import to_dense_batch
 from ppmat.models.chemeleon2.ldm_module.diffusion import create_diffusion
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
-from ppmat.models.chemeleon2.common.schema import CrystalBatch, _build_structure_array
+from ppmat.models.chemeleon2.common.schema import CrystalBatch, build_structure_array
 
 
 class LDMModule(nn.Layer):
@@ -128,7 +128,7 @@ class LDMModule(nn.Layer):
         num_atoms = structure_array["num_atoms"]
         batch_size = num_atoms.shape[0]
 
-        crystal_batch = _build_structure_array(CrystalBatch(), structure_array)
+        crystal_batch = build_structure_array(CrystalBatch(), structure_array)
 
         # Generate random lattice parameters if not provided (sampling path)
         if not hasattr(crystal_batch, 'lattices') or crystal_batch.lattices is None:
@@ -299,13 +299,16 @@ class LDMModule(nn.Layer):
             print("No LoRA weights to merge")
 
     def get_config(self):
-        return {
+        config = {
             'normalize_latent': self.normalize_latent,
             'diffusion_configs': self.diffusion_configs,
             'augmentation': self.augmentation,
             'lora_configs': self.lora_configs,
             'use_cfg': self.use_cfg,
         }
+        if hasattr(self, 'vae') and self.vae is not None:
+            config['vae'] = self.vae.get_config()
+        return config
 
     def predict(self, data, sampling_steps=50, sampler="ddim"):
         from ppmat.models.chemeleon2.common.schema import create_empty_batch

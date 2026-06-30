@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import paddle
 import paddle.nn as nn
 
-from ..common import scatter_mean
+from ppmat.utils.scatter import scatter_mean
 from ..common import to_dense_batch
 from ..common import get_index_embedding
 from ..common import make_attn_mask

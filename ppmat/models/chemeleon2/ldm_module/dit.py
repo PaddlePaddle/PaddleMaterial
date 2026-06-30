@@ -16,6 +16,7 @@ import paddle
 import paddle.nn as nn
 
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
+from ..common import get_index_embedding as get_pos_embedding
 
 
 def modulate(x, shift, scale):
@@ -34,9 +35,6 @@ class TimestepEmbedder(nn.Layer):
 
     def forward(self, t):
         return self.mlp(self.sin_embed(t))
-
-
-from ..common import get_index_embedding as get_pos_embedding
 
 
 class _MLP(nn.Layer):

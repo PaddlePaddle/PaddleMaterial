@@ -14,7 +14,7 @@
 
 import paddle
 
-from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
+from ppmat.schedulers import build_scheduler
 
 
 class GaussianDiffusion:
@@ -26,7 +26,10 @@ class GaussianDiffusion:
         sched_kwargs.setdefault("variance_type", "fixed_small")
         sched_kwargs.setdefault("prediction_type", "epsilon")
         sched_kwargs.setdefault("beta_schedule", "linear")
-        self.scheduler = DDPMScheduler(**sched_kwargs)
+        self.scheduler = build_scheduler({
+            "__class_name__": "DDPMScheduler",
+            "__init_params__": sched_kwargs,
+        })
         self.num_timesteps = self.scheduler.num_train_timesteps
 
     def q_sample(self, x_start, t, noise=None):
