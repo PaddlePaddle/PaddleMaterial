@@ -130,7 +130,21 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
 
         # ---- 1. Download + split data ----
-        raw_path = self._download_raw(path, name)
+        raw_dir = osp.join(path, "raw")
+        raw_path = osp.join(raw_dir, f"{name}_dft.npz")
+        if not osp.exists(raw_path):
+            logger.message("The dataset is not found. Will download it now.")
+            root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            src = osp.join(root_path, _BUNDLE_NPZ_MAP[name])
+            if not osp.exists(src):
+                src = osp.join(root_path, "md17", _BUNDLE_NPZ_MAP[name])
+                if not osp.exists(src):
+                    raise FileNotFoundError(
+                        f"MD17/{name} not found in {root_path}"
+                    )
+            import shutil
+            os.makedirs(raw_dir, exist_ok=True)
+            shutil.copy2(src, raw_path)
         self._ensure_splits(raw_path, name)
         self._data = dict(zip(
             ("z", "pos", "energy", "force"),
@@ -197,24 +211,6 @@ class MD17Dataset(Dataset):
                 dist.barrier()
 
         return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
-
-    def _download_raw(self, path, name):
-        raw_dir = osp.join(path, "raw")
-        raw_path = osp.join(raw_dir, f"{name}_dft.npz")
-        if not osp.exists(raw_path):
-            logger.message("The dataset is not found. Will download it now.")
-            root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            src = osp.join(root_path, _BUNDLE_NPZ_MAP[name])
-            if not osp.exists(src):
-                src = osp.join(root_path, "md17", _BUNDLE_NPZ_MAP[name])
-                if not osp.exists(src):
-                    raise FileNotFoundError(
-                        f"MD17/{name} not found in {root_path}"
-                    )
-            import shutil
-            os.makedirs(raw_dir, exist_ok=True)
-            shutil.copy2(src, raw_path)
-        return raw_path
 
     def _ensure_splits(self, raw_path, name):
         """Create pre-split npz files (seed 42, 1000/1000 train/val)."""
