@@ -137,11 +137,7 @@ class MD17Dataset(Dataset):
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
             raw_path = osp.join(root_path, self.name, osp.basename(raw_path))
         self._ensure_splits(raw_path, name)
-        self._data = dict(zip(
-            ("z", "pos", "energy", "force"),
-            self.read_data(path, name, split),
-        ))
-        total = self._data["pos"].shape[0]
+        self.row_data, self.num_samples = self.read_data(path, name, split)
 
         # ---- 2. Cache path ----
         if cache_path is not None:
@@ -157,13 +153,12 @@ class MD17Dataset(Dataset):
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
             self.graph_cache = self._build_graph_cache(
-                build_graph_cfg, graph_cache_path, total, overwrite,
+                build_graph_cfg, graph_cache_path, overwrite,
             )
 
-        self.num_samples = total
         logger.info(f"Load {self.num_samples} samples, split={split}")
 
-    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, total, overwrite):
+    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, overwrite):
         """Pre-build and cache edge_index + triplet indices."""
         cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
         cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
@@ -183,6 +178,7 @@ class MD17Dataset(Dataset):
             if dist.get_rank() == 0:
                 os.makedirs(graph_cache_path, exist_ok=True)
                 self.save_to_cache(cfg_pkl, build_graph_cfg)
+                total = self.num_samples
                 logger.info(
                     f"Pre‑building graphs for {self.mol_name} ({total} frames) "
                     f"with 24 threads ..."
@@ -191,7 +187,7 @@ class MD17Dataset(Dataset):
                     futures = {
                         executor.submit(
                             _build_md17_graph_thread,
-                            i, self._data["z"], self._data["pos"],
+                            i, self.row_data["z"], self.row_data["pos"],
                             build_graph_cfg, graph_cache_path,
                         ): i for i in range(total)
                     }
@@ -200,7 +196,7 @@ class MD17Dataset(Dataset):
             if dist.is_initialized():
                 dist.barrier()
 
-        return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
+        return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(self.num_samples)]
 
     def _ensure_splits(self, raw_path, name):
         """Create pre-split npz files (seed 42, 1000/1000 train/val)."""
@@ -234,7 +230,8 @@ class MD17Dataset(Dataset):
         if split is None:
             split_npz = osp.join(split_dir, f"{name}_all.npz")
         data = np.load(split_npz)
-        return data["z"], data["R"], data["E"], data["F"]
+        row_data = {"z": data["z"], "pos": data["R"], "energy": data["E"], "force": data["F"]}
+        return row_data, row_data["pos"].shape[0]
 
     def save_to_cache(self, cache_path: str, obj):
         with open(cache_path, "wb") as f:
@@ -248,12 +245,12 @@ class MD17Dataset(Dataset):
 
     def __getitem__(self, idx):
         sample = {
-            "z": self._data["z"],
-            "pos": self._data["pos"][idx],
+            "z": self.row_data["z"],
+            "pos": self.row_data["pos"][idx],
             "energy": np.array(
-                [float(self._data["energy"][idx])], dtype=np.float32
+                [float(self.row_data["energy"][idx])], dtype=np.float32
             ),
-            self.force_key: self._data["force"][idx],
+            self.force_key: self.row_data["force"][idx],
         }
         if self.graph_cache is not None:
             gpath = self.graph_cache[idx]
