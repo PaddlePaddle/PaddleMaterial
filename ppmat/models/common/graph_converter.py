@@ -35,7 +35,7 @@ from rdkit.Chem.rdchem import BondType as BT
 
 from ppmat.utils import logger
 from ppmat.utils.crystal import lattice_params_to_matrix
-from ppmat.models.common.radius_graph import radius_graph as _radius_graph_func
+from ppmat.datasets.graph_utils.spherenet_graph_utils import radius_graph as _radius_graph_func
 
 
 class FindPointsInSpheres:

@@ -437,7 +437,7 @@ class SphereNet(paddle.nn.Layer):
             extra_node_feature = None
 
         if edge_index is None:
-            from ppmat.models.common.radius_graph import radius_graph as _build_edges
+            from ppmat.datasets.graph_utils.spherenet_graph_utils import radius_graph as _build_edges
 
             if self.energy_and_force:
                 edge_index = _build_edges(pos, batch, self.cutoff)

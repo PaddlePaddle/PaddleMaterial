@@ -30,7 +30,7 @@ from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
 from ppmat.models.common.graph_converter import RadiusGraph
-from ppmat.models.common.radius_graph import radius_graph
+from ppmat.datasets.graph_utils.spherenet_graph_utils import radius_graph
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
