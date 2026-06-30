@@ -1,93 +1,114 @@
 # OMatG
 
-## Overview
+[Open Materials Generation with Stochastic Interpolants](https://openreview.net/forum?id=gHGrzxFujU) (ICML 2025) /
+[All that structure matches does not glitter](https://openreview.net/forum?id=ig9ujp50D4) (NeurIPS 2025)
 
-A generative framework for crystal structure prediction and *de novo* generation of inorganic crystals. 
-This open-source framework accompanies the [ICML 2025 paper](https://openreview.net/forum?id=gHGrzxFujU) about the 
-generative OMatG model itself, the 
-[NeurIPS 2025 paper](https://openreview.net/forum?id=ig9ujp50D4) about newly introduced benchmark metrics and datasets, 
-and the OMatG-IRL [preprint](https://arxiv.org/abs/2602.00424) about reinforcement learning for pretrained OMatG 
-models. 
-These papers should be cited when using OMatG, the newly introduced benchmark metrics and datasets, 
-or OMatG-IRL. 
+## Abstract
 
-Paper: Stochastic Interpolants for Crystal Structure Prediction (ICML 2025, NeurIPS 2025).
+A state-of-the-art generative model for crystal structure prediction and *de novo* generation of inorganic crystals.
+OMatG implements the [stochastic interpolants (SIs) framework](https://arxiv.org/abs/2303.08797) that bridges samples
+from a base distribution to the target data distribution. A stochastic interpolant
+$x_t = \alpha(t)\,x_0 + \beta(t)\,x_1 + \gamma(t)\,z$ evolves base samples $x_0$ into data samples $x_1$ over time
+$t\in[0,1]$. The time-dependent density is realized via deterministic (ODE) or stochastic (SDE) sampling, requiring
+only a learned velocity field $b^\theta(t, x)$ (and optionally a denoiser $z^\theta(t, x)$ for SDE).
+
+OMatG defines a crystalline material by its unit cell ($\mathbf{L}\in\mathbb{R}^{3\times3}$), fractional coordinates
+($\mathbf{X}\in[0,1)^{3\times N}$ with periodic boundary conditions), and discrete atomic species
+($\mathbf{A}\in\mathbb{Z}^N_{>0}$). The SI framework handles the continuous variables $\{\mathbf{X}, \mathbf{L}\}$
+while discrete species $\mathbf{A}$ are treated with [discrete flow matching](https://arxiv.org/abs/2402.04997).
+
+Two crystal generation modes are supported:
+1. **CSP** (crystal structure prediction): atomic species are fixed; only coordinates and lattice vectors evolve.
+2. **DNG** (*de novo* generation): all species are masked at start and evolve together with structure.
 
 ## Model Architecture
 
 OMatG consists of the following core components:
 
-- **CSPNet**: Crystal structure prediction network using message-passing GNN architecture, supporting fully-connected (fc) or k-NN (knn) edge construction
-- **Stochastic Interpolants**: SI framework supporting ODE/SDE integration, with multiple interpolant types (Linear/Trigonometric/EncDec/VESBD/VPSBD)
-- **IndependentSampler**: Independent distribution sampler for position/lattice/species base distributions
+- **CSPNet**: Crystal structure prediction network using message-passing GNN architecture, supporting fully-connected (fc) or k-NN (knn) edge construction.
+- **Stochastic Interpolants**: SI framework supporting ODE/SDE integration, with multiple interpolant types (Linear/Trigonometric/EncDec/VESBD/VPSBD).
+- **IndependentSampler**: Independent distribution sampler for position/lattice/species base distributions.
+
+## Datasets
+
+### Included Datasets
+
+Several standard material datasets are included as LMDB files:
+
+| Dataset | Structures | Max Atoms | Description |
+|---------|-----------:|:---------:|-------------|
+| MP-20 | 45,229 | 20 | [Materials Project](https://pubs.aip.org/aip/apm/article/1/1/011002/119685) structures |
+| MPTS-52 | 40,476 | 52 | [Chronological MP split](https://joss.theoj.org/papers/10.21105/joss.05618) |
+| Perov-5 | 18,928 | 5 | [Perovskite dataset](https://pubs.rsc.org/en/content/articlelanding/2012/ee/c2ee22341d) |
+| Alex-MP-20 | 675,204 | — | Consolidated [Alexandria](https://arxiv.org/abs/2210.00579) + MP-20 |
 
 
 ### Supported Datasets
 
-| Dataset | Description | Pretrained Variants |
-|---------|-------------|---------------------|
-| mp_20_csp | Materials Project 20 (CSP mode) | 11 |
-| mp_20_dng | Materials Project 20 (DNG mode, with masked species) | 11 |
-| perov_5_csp | Perovskite 5 elements (CSP mode) | 11 |
-| mpts_52_csp | MPTS 52 elements (CSP mode) | 8 |
-| alex_mp_20_csp | Alex-MP20 (CSP mode) | 11 |
+Pretrained weights are available for 5 dataset × mode combinations.
+Training configs are provided for `mp_20` (CSP + DNG); other datasets
+(`perov_5_csp`, `mpts_52_csp`, `alex_mp_20_csp`) can be used by changing
+the `file_path` in the dataset section of the config.
 
-## Requirements
+| Dataset | Mode | Variants | Weight Index |
+|---------|:----:|:--------:|--------------|
+| mp_20_csp | CSP | 11 | `build_omatg_model("mp_20_csp", variant)` |
+| mp_20_dng | DNG | 11 | `build_omatg_model("mp_20_dng", variant)` |
+| perov_5_csp | CSP | 11 | `build_omatg_model("perov_5_csp", variant)` |
+| mpts_52_csp | CSP | 8 | `build_omatg_model("mpts_52_csp", variant)` |
+| alex_mp_20_csp | CSP | 11 | `build_omatg_model("alex_mp_20_csp", variant)` |
 
-- PaddlePaddle >= 3.1
-- paddle_scatter
-- ase >= 3.23.0
-- pymatgen >= 2024.10.29
-- omegaconf >= 2.3.0
+See `ppmat/models/omatg/__init__.py` (`OMATG_WEIGHTS` dict) for all weight URLs.
 
 ## Configuration Files
 
-| File | Mode | Description |
-|------|------|-------------|
-| `omatg_mp20_csp.yaml` | CSP | MP-20 CSP main training config (fc edges, simplified MSE loss) |
-| `omatg_mp20_csp_linear_ode.yaml` | CSP | Linear-ODE variant training config (with Cosine LR) |
-| `omatg_mp20_dng_linear_sde.yaml` | DNG | Linear-SDE variant training config (with species prediction + WeightDecay) |
-| `omatg_mp20_csp_sample.yaml` | CSP | Sampling config (by number of atoms, NumAtomsCrystalDataset) |
+| File | Mode | Dataset | Description |
+|------|:----:|---------|-------------|
+| `omatg_mp20_csp.yaml` | CSP | MP-20 | Simplified MSE (fixed lr) |
+| `omatg_mp20_csp_linear_ode.yaml` | CSP | MP-20 | Linear-ODE (Cosine LR) |
+| `omatg_mp20_dng_linear_sde.yaml` | DNG | MP-20 | Linear-SDE (species prediction + WeightDecay) |
+| `omatg_mp20_csp_sample.yaml` | CSP | MP-20 | Sampling by number of atoms |
+| `omatg_mp20_dng_sample.yaml` | DNG | MP-20 | DNG sampling (species prediction) |
 
-## Quick Start (Three Standard Paths)
+## Results
 
-### Path 1: Python API via build_model
+<table>
+    <tr>
+        <th nowrap>Model</th>
+        <th nowrap>Dataset</th>
+        <th nowrap>Mode</th>
+        <th nowrap>Interpolant</th>
+        <th nowrap>Config (Train / Sample)</th>
+        <th nowrap>Weight</th>
+    </tr>
+    <tr>
+        <td nowrap>mp_20_csp</td><td nowrap>MP-20</td><td nowrap>CSP</td><td nowrap>Linear-ODE</td>
+        <td nowrap><a href="omatg_mp20_csp_linear_ode.yaml">train</a> / <a href="omatg_mp20_csp_sample.yaml">sample</a></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Linear-ODE.pdparams">weight</a></td>
+    </tr>
+    <tr>
+        <td nowrap>mp_20_dng</td><td nowrap>MP-20</td><td nowrap>DNG</td><td nowrap>Linear-SDE</td>
+        <td nowrap><a href="omatg_mp20_dng_linear_sde.yaml">train</a> / <a href="omatg_mp20_dng_sample.yaml">sample</a></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-SDE.pdparams">weight</a></td>
+    </tr>
+    <tr>
+        <td nowrap>perov_5_csp</td><td nowrap>Perov-5</td><td nowrap>CSP</td><td nowrap>EncDec-ODE-Gamma</td>
+        <td nowrap>use mp_20 CSP config, change <code>file_path</code> to <code>./data/perov_5/</code></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/EncDec-ODE-Gamma.pdparams">weight</a></td>
+    </tr>
+    <tr>
+        <td nowrap>mpts_52_csp</td><td nowrap>MPTS-52</td><td nowrap>CSP</td><td nowrap>EncDec-ODE-Gamma</td>
+        <td nowrap>use mp_20 CSP config, change <code>file_path</code> to <code>./data/mpts_52/</code></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/EncDec-ODE-Gamma.pdparams">weight</a></td>
+    </tr>
+    <tr>
+        <td nowrap>alex_mp_20_csp</td><td nowrap>Alex-MP-20</td><td nowrap>CSP</td><td nowrap>EncDec-ODE-Gamma</td>
+        <td nowrap>use mp_20 CSP config, change <code>file_path</code> to <code>./data/alex_mp_20/</code></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/EncDec-ODE-Gamma.pdparams">weight</a></td>
+    </tr>
+</table>
 
-```python
-import paddle
-from ppmat.models import build_model
-
-# Minimal config to build the model (random init)
-cfg = {
-    "__class_name__": "OMATGCSPNetFull",
-    "__init_params__": {
-        "hidden_dim": 512, "num_layers": 6, "max_atoms": 100,
-        "act_fn": "silu", "dis_emb": "sin", "num_freqs": 128,
-        "edge_style": "fc", "cutoff": 7.0, "max_neighbors": 20,
-        "ln": True, "ip": True, "time_embed_dim": 256,
-    }
-}
-model = build_model(cfg)
-
-# Build batch data (CSP mode, 2 structures, 3+2=5 atoms)
-data = {
-    "atom_types": paddle.randint(1, 10, [5], dtype="int64"),
-    "frac_coords": paddle.rand([5, 3]),
-    "lattices": paddle.eye(3).unsqueeze(0).expand([2, 3, 3]) * 5.0,
-    "num_atoms": paddle.to_tensor([3, 2], dtype="int64"),
-    "node2graph": paddle.to_tensor([0, 0, 0, 1, 1], dtype="int64"),
-}
-
-# Forward pass and loss (simplified MSE path)
-output = model(data)
-print(output["loss_dict"].keys())  # keys: loss, loss_lattice, loss_coord
-
-# Sample crystal structures
-result = model.sample(data, num_inference_steps=100)
-print(len(result["result"]))       # 2 structures (matching batch size)
-```
-
-### Path 2: Training Entry (train.py)
+## Training
 
 ```bash
 # Smoke training (1 epoch, small batch, no eval)
@@ -105,10 +126,33 @@ python structure_generation/train.py \
     Trainer.output_dir=./output/omatg_mp20_csp
 ```
 
-### Path 3: Sampling Entry (sample.py)
+## Validation
 
 ```bash
-# Sample by number of atoms (requires a trained checkpoint)
+# Evaluate on the validation split using a saved checkpoint
+python structure_generation/train.py \
+    -c structure_generation/configs/omatg/omatg_mp20_csp_linear_ode.yaml \
+    Global.do_train=False \
+    Global.do_eval=True \
+    Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
+```
+
+## Testing
+
+```bash
+# Evaluate on the test split
+python structure_generation/train.py \
+    -c structure_generation/configs/omatg/omatg_mp20_csp_linear_ode.yaml \
+    Global.do_train=False \
+    Global.do_test=True \
+    Global.do_eval=False \
+    Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
+```
+
+## Sample
+
+```bash
+# Sample by number of atoms
 python structure_generation/sample.py \
     --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
@@ -132,147 +176,39 @@ python structure_generation/sample.py \
     --save_path ./results/omatg_samples
 ```
 
-## Pretrained Model Loading
 
-OMatG ships 52 pretrained weights covering 5 datasets and 11 variants. Use the Python API:
 
-```python
-from ppmat.models.omatg import build_omatg_model
+## Citation
 
-# Build model and auto-download weights
-model, config = build_omatg_model("mp_20_csp", "linear_ode")
-
-# Sample
-data = {"structure_array": {"num_atoms": paddle.to_tensor([8], dtype="int64")}}
-result = model.sample(data, num_inference_steps=100)
-
-# Get weight URL
-from ppmat.models.omatg import get_omatg_model_url
-url = get_omatg_model_url("mp_20_csp", "trig_ode_gamma")
+```bibtex
+@inproceedings{
+    hoellmer2025,
+    title={Open Materials Generation with Stochastic Interpolants},
+    author={Philipp H{\"o}llmer and Thomas Egg and Maya Martirossyan and Eric
+    Fuemmeler and Zeren Shui and Amit Gupta and Pawan Prakash and Adrian
+    Roitberg and Mingjie Liu and George Karypis and Mark Transtrum and Richard
+    Hennig and Ellad B. Tadmor and Stefano Martiniani},
+    booktitle={Forty-second International Conference on Machine Learning},
+    year={2025},
+    url={https://openreview.net/forum?id=gHGrzxFujU},
+    archivePrefix={arXiv},
+    eprint={2502.02582},
+    primaryClass={cs.LG},
+}
 ```
 
-## SI Training Path (Velocity Matching Loss)
-
-Switch from `use_si=False` (default, simplified MSE) to `use_si=True` (full SI velocity matching):
-
-```python
-import paddle
-from ppmat.models.omatg import OMATGCSPNetFull
-from ppmat.models.omatg.si import (
-    StochasticInterpolants, SingleStochasticInterpolant,
-    SingleStochasticInterpolantIdentity,
-    PeriodicLinearInterpolant, LinearInterpolant,
-)
-from ppmat.models.omatg.model import IndependentSampler
-
-# Build SI instance (Linear-ODE)
-si = StochasticInterpolants(
-    stochastic_interpolants=[
-        SingleStochasticInterpolantIdentity(),
-        SingleStochasticInterpolant(
-            interpolant=PeriodicLinearInterpolant(), gamma=None,
-            epsilon=None, differential_equation_type="ODE",
-            velocity_annealing_factor=10.18,
-            correct_center_of_mass_motion=True,
-        ),
-        SingleStochasticInterpolant(
-            interpolant=LinearInterpolant(), gamma=None,
-            epsilon=None, differential_equation_type="ODE",
-            velocity_annealing_factor=1.82,
-        ),
-    ],
-    data_fields=["species", "pos", "cell"],
-    integration_time_steps=210,
-)
-sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
-costs = {"species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006}
-
-model = OMATGCSPNetFull(hidden_dim=512, num_layers=6, max_atoms=100,
-                        time_embed_dim=256, pred_type=False, use_si=False)
-model._si = si
-model._sampler = sampler
-model._relative_si_costs = costs
-model.use_si = True
-
-data = {
-    "atom_types": paddle.randint(1, 10, [5], dtype="int64"),
-    "frac_coords": paddle.rand([5, 3]),
-    "lattices": paddle.eye(3).unsqueeze(0).expand([2, 3, 3]) * 5.0,
-    "num_atoms": paddle.to_tensor([3, 2], dtype="int64"),
-    "node2graph": paddle.to_tensor([0, 0, 0, 1, 1], dtype="int64"),
+```bibtex
+@inproceedings{
+    martirossyan2025,
+    title={All that structure matches does not glitter},
+    author={Maya Martirossyan and Thomas Egg and Philipp H{\"o}llmer 
+    and George Karypis and Mark Transtrum and Adrian Roitberg 
+    and Mingjie Liu and Richard Hennig and Ellad B. Tadmor and Stefano Martiniani},
+    booktitle={Thirty-Ninth Annual Conference on Neural Information Processing Systems},
+    year={2025},
+    url={https://openreview.net/forum?id=ig9ujp50D4},
+    archivePrefix={arXiv},
+    eprint={2509.12178},
+    primaryClass={cs.LG},
 }
-output = model(data)
-print(output["loss_dict"].keys())
-# CSP mode keys: species_loss, pos_loss_b, cell_loss_b, loss
-# DNG SDE mode additional: pos_loss_z
-```
-
-You can also use the config-driven factory functions:
-
-```python
-from ppmat.models.omatg.si import build_si_from_cfg, build_sampler_from_cfg
-
-si_cfg = {
-    "stochastic_interpolants": [
-        {"__class_name__": "SingleStochasticInterpolantIdentity"},
-        {"__class_name__": "SingleStochasticInterpolant",
-         "__init_params__": {
-             "interpolant": {"__class_name__": "PeriodicLinearInterpolant"},
-             "gamma": None, "epsilon": None,
-             "differential_equation_type": "ODE",
-             "velocity_annealing_factor": 10.18,
-             "correct_center_of_mass_motion": True,
-         }},
-        {"__class_name__": "SingleStochasticInterpolant",
-         "__init_params__": {
-             "interpolant": {"__class_name__": "LinearInterpolant"},
-             "differential_equation_type": "ODE",
-             "velocity_annealing_factor": 1.82,
-         }},
-    ],
-    "data_fields": ["species", "pos", "cell"],
-    "integration_time_steps": 210,
-    "relative_si_costs": {"species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006},
-}
-sampler_cfg = {
-    "dataset_name": "mp_20",
-    "mirror_species": True,
-    "mask_species": False,
-}
-model = OMATGCSPNetFull(hidden_dim=512, num_layers=6, max_atoms=100,
-                        time_embed_dim=256, pred_type=False,
-                        use_si=True, si_cfg=si_cfg, sampler_cfg=sampler_cfg)
-```
-
-## Key Configuration Parameters
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `hidden_dim` | Hidden dimension | 128 |
-| `num_layers` | Number of message-passing layers | 4 |
-| `max_atoms` | Maximum number of atoms | 100 |
-| `edge_style` | Edge construction method (fc/knn) | fc |
-| `cutoff` | Distance cutoff radius for k-NN mode | 6.0 |
-| `max_neighbors` | Maximum number of neighbors | 20 |
-| `time_embed_dim` | Time embedding dimension | 256 |
-| `pred_type` | Whether to predict atom types (True for DNG mode) | False |
-| `use_si` | Whether to use SI velocity-matching loss (default: simplified MSE) | False |
-
-## Supported Model Variants
-
-| Interpolant | Equation Type | ODE | SDE |
-|-------------|---------------|-----|-----|
-| Linear | Linear | Supported | Supported |
-| Trigonometric | Trigonometric | Supported | Supported |
-| EncDec | Encoder-decoder | Supported | Supported |
-| VPSBD | Variance-preserving | Supported | Supported |
-| VESBD | Variance-exploding | Supported | - |
-
-Note: Variants with `_gamma` suffix use latent gamma noise (available for both ODE and SDE). `VESBD/VPSBD` variants use a pure-Paddle fixed-step Euler solver.
-
-## Unit Tests
-
-```bash
-source ~/miniconda3/etc/profile.d/conda.sh && conda activate ppmat
-python -m pytest test/omatg/test_omatg.py -v
 ```

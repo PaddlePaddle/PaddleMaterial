@@ -1128,9 +1128,7 @@ _SUB_MODULES = [
 
 
 def _resolve_class(class_name: str, default_module: str):
-    """Resolve a class from a dotted path or a short name in default_module.
-    Falls back to searching submodules when not found directly in default_module.
-    """
+    """Resolve a class by name using importlib resolution."""
     if "." in class_name:
         module_path, cls_name = class_name.rsplit(".", 1)
         module = importlib.import_module(module_path)
@@ -1311,12 +1309,11 @@ class DiscreteFlowMatchingMask(StochasticInterpolantSpecies):
             rate_db *= self._noise
         rate = rate + rate_db
         step_probs = (rate * time_step).clip(max=1.0)
-        step_probs.scatter_(-1, shifted_x_t[:, None], 0.0)
-        step_probs.scatter_(
-            -1,
-            shifted_x_t[:, None],
-            (1.0 - step_probs.sum(axis=-1, keepdim=True)).clip(min=0.0),
-        )
+        step_probs = (rate * time_step).clip(max=1.0)
+        step_probs[paddle.arange(len(shifted_x_t)), shifted_x_t] = 0.0
+        step_probs[paddle.arange(len(shifted_x_t)), shifted_x_t] = (
+            (1.0 - step_probs.sum(axis=-1, keepdim=True)).clip(min=0.0)
+        ).squeeze(-1)
         x_t = paddle.multinomial(
             step_probs, num_samples=1, replacement=True
         ).squeeze(-1) + 1
