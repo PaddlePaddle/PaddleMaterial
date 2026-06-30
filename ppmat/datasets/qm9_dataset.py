@@ -170,7 +170,7 @@ class QM9Dataset(Dataset):
         raw_dir = osp.join(path, "raw_qm9")
         os.makedirs(raw_dir, exist_ok=True)
 
-        # ---- 1. Inline download (MP20 pattern) ----
+        # ---- 1. Download merged xyz ----
         merged_xyz = osp.join(raw_dir, "dsgdb9nsd.xyz")
         if not osp.exists(merged_xyz):
             logger.info(f"Downloading QM9 from {self.url} ...")
