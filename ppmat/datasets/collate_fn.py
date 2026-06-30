@@ -93,11 +93,11 @@ class SphereNetCollator:
         num_nodes_list = [b["z"].shape[0] for b in batch]
 
         result = {
-            "z": paddle.to_tensor(np.concatenate([b["z"] for b in batch])),
-            "pos": paddle.to_tensor(np.concatenate([b["pos"] for b in batch])),
-            "batch": paddle.concat(
+            "z": np.concatenate([b["z"] for b in batch]),
+            "pos": np.concatenate([b["pos"] for b in batch]),
+            "batch": np.concatenate(
                 [
-                    paddle.full([n], i, dtype=paddle.int64)
+                    np.full(n, i, dtype=np.int64)
                     for i, n in enumerate(num_nodes_list)
                 ]
             ),
@@ -106,16 +106,13 @@ class SphereNetCollator:
         # Stack scalar properties
         for k in batch[0]:
             if k not in ("z", "pos", "edge_index", "triplet_indices"):
-                result[k] = paddle.to_tensor(np.stack([b[k] for b in batch]))
+                result[k] = np.stack([b[k] for b in batch])
 
         # Edge index with per-graph node offset
         if "edge_index" in batch[0]:
             offsets = np.cumsum([0] + num_nodes_list[:-1])
-            result["edge_index"] = paddle.to_tensor(
-                np.concatenate(
-                    [b["edge_index"] + offsets[i] for i, b in enumerate(batch)], axis=1
-                ),
-                dtype=paddle.int64,
+            result["edge_index"] = np.concatenate(
+                [b["edge_index"] + offsets[i] for i, b in enumerate(batch)], axis=1
             )
 
         # Triplet indices with node/edge/triplet offsets
@@ -136,8 +133,7 @@ class SphereNetCollator:
                 fields["idx_lk"].append(ti["idx_lk"] + e_offsets[i])
                 fields["idx_triplet"].append(ti["idx_triplet"] + t_offsets[i])
             result["triplet_indices"] = {
-                k: paddle.to_tensor(np.concatenate(v), dtype=paddle.int64)
-                for k, v in fields.items()
+                k: np.concatenate(v) for k, v in fields.items()
             }
 
         return result
