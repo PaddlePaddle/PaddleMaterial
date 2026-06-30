@@ -123,12 +123,9 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
 
         # ---- 1. Download + split data ----
-        raw_path = osp.join(path, f"{name}_dft.npz")
-        if not osp.exists(raw_path):
-            logger.message("The dataset is not found. Will download it now.")
-            root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            raw_path = osp.join(root_path, self.name, osp.basename(raw_path))
-        self._ensure_splits(raw_path, name)
+        root_path = download.get_datasets_path_from_url(self.url, self.md5)
+        npz_path = osp.join(root_path, self.name, f"{name}_dft.npz")
+        self._ensure_splits(npz_path, name)
         self.row_data, self.num_samples = self.read_data(path, name, split)
 
         # ---- 2. Cache path ----
