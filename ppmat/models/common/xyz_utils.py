@@ -78,15 +78,20 @@ def compute_triplet_indices(edge_index, num_nodes):
         in_idx[j_np[e]].append(e)
         out_idx[i_np[e]].append(e)
 
-    # Triplets
+    # Triplets — exclude loopback (k == i) where the path i->j->i
+    # forms an in-and-out through the same neighbor with no physical angle.
     idx_kj_list, idx_ji_list = [], []
     for n in range(num_nodes):
         kj_list = in_idx[n]
         ji_list = out_idx[n]
         if kj_list and ji_list:
-            n_kj, n_ji = len(kj_list), len(ji_list)
-            idx_kj_list.extend(kj_list * n_ji)
-            idx_ji_list.extend(ji_list * n_kj)
+            for kj_e in kj_list:
+                k_atom = i_np[kj_e]
+                for ji_e in ji_list:
+                    i_atom = j_np[ji_e]
+                    if k_atom != i_atom:
+                        idx_kj_list.append(kj_e)
+                        idx_ji_list.append(ji_e)
 
     idx_kj = paddle.to_tensor(idx_kj_list, dtype='int64')
     idx_ji = paddle.to_tensor(idx_ji_list, dtype='int64')
