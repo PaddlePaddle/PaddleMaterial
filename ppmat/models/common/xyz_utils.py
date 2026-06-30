@@ -14,14 +14,12 @@
 """
 3D geometry utilities for spherical message-passing models.
 
-Moved from ``ppmat.utils.xyz_utils`` to ``ppmat.models.common`` per
-reviewer feedback — this module is model-specific (used by SphereNet),
-not a general-purpose utility.
+SphereNet-specific — computes distance, angle, and torsion from 3D
+atomic coordinates for spherical message passing.
 """
 
 import numpy as np
 import paddle
-from ppmat.utils.scatter import _scatter_min
 
 
 def compute_triplet_indices(edge_index, num_nodes):
@@ -104,7 +102,9 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices
 
     When ``precomputed_indices`` (from :func:`compute_triplet_indices`) is
     provided, the O(∑ deg×deg) Python loop is skipped — use this for
-    cached/offline graph datasets to accelerate training.
+    cached/offline graph datasets to accelerate training.  ``edge_index``
+    and ``num_nodes`` are only used in the fallback path (when
+    ``precomputed_indices`` is None).
 
     Args:
         pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
@@ -112,21 +112,19 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices
         num_nodes: Number of atoms.
         use_torsion: Whether to compute torsion angles. Defaults to True.
         precomputed_indices: Optional dict from ``compute_triplet_indices``.
-            When provided, ``edge_index`` and ``num_nodes`` are still used
-            for validation but the structural indices are taken from here.
+            When provided, structural indices are taken from here and
+            ``edge_index`` / ``num_nodes`` are ignored.
 
     Returns:
         dist: Edge distances  [num_edges].
         angle: Bond angles  [num_triplets] (indexed by idx_kj).
         torsion: Torsion angles  [num_triplets] (indexed by idx_kj),
-            or None when use_torsion=False.
+            always a tensor (zeros when use_torsion=False).
         i: Source node indices  [num_edges].
         j: Target node indices  [num_edges].
         idx_kj: Mapping from triplets back to edges.
         idx_ji: Mapping from triplets back to the central edge.
     """
-    pos = paddle.cast(pos, paddle.get_default_dtype())
-
     if precomputed_indices is not None:
         i = precomputed_indices['i']
         j = precomputed_indices['j']
@@ -184,7 +182,7 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices
     angle = paddle.atan2(angle_sin, angle_cos).detach()
 
     torsion = paddle.zeros_like(angle)
-    if use_torsion and idx_kj.shape[0] > 0:
+    if use_torsion and idx_lk.shape[0] > 0:
         k_idx_from_edge_lk = j[idx_lk]
         v1 = pos[k_idx_from_edge_lk] - pos[i[idx_lk]]
         v2 = vec_kj[idx_triplet]
