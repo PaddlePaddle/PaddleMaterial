@@ -316,7 +316,7 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--cif_file_path",
         type=str,
-        default=None,
+        default="./property_prediction/example_data/cifs/",
         help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
