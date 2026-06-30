@@ -100,6 +100,8 @@ class MD17Dataset(Dataset):
             ``None`` (all). Defaults to ``None``.
         force_key (Optional[str]): Key name for forces in the output dict.
             Defaults to ``'force'``.
+        energy_key (Optional[str]): Key name for energy in the output dict.
+            Defaults to ``'energy'``.
         build_graph_cfg (Optional[Dict]): Configuration dict for graph
             converter. Defaults to ``None``.
         transforms (Optional[Callable]): Per-sample transform callable.
@@ -123,6 +125,7 @@ class MD17Dataset(Dataset):
         split=None,
         *,
         force_key="force",
+        energy_key="energy",
         build_graph_cfg: Optional[Dict] = None,
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
@@ -134,6 +137,7 @@ class MD17Dataset(Dataset):
 
         self.mol_name = name
         self.force_key = force_key
+        self.energy_key = energy_key
         self.transforms = transforms
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
@@ -257,7 +261,7 @@ class MD17Dataset(Dataset):
         sample = {
             "z": self.row_data["z"],
             "pos": self.row_data["pos"][idx],
-            "energy": np.array(
+            self.energy_key: np.array(
                 [float(self.row_data["energy"][idx])], dtype=np.float32
             ),
             self.force_key: self.row_data["force"][idx],
