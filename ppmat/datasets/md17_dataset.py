@@ -196,26 +196,9 @@ class MD17Dataset(Dataset):
 
         return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
 
-    def read_data(self, path, name, split):
-        """Load pre-split MD17 data.
-
-        Downloads the raw ``.npz`` file from bcebos bundle on first access,
-        creates pre-split ``{name}_{split}.npz`` files (seed 42, 1000/1000
-        train/val split per MD17 convention).  Subsequent calls load the
-        appropriate pre-split file directly — no on-the-fly shuffling.
-
-        Args:
-            path: Root data directory.
-            name: Molecule name.
-            split: ``"train"``, ``"val"``, ``"test"``, or ``None`` (all).
-
-        Returns:
-            Tuple of (z, positions, energies, forces) for the split.
-        """
+    def _download_raw(self, path, name):
+        """Download raw npz from bcebos bundle, return raw_path."""
         raw_dir = osp.join(path, "raw")
-        os.makedirs(raw_dir, exist_ok=True)
-
-        # --- Download raw npz from bcebos bundle ---
         raw_path = osp.join(raw_dir, f"{name}_dft.npz")
         if not osp.exists(raw_path):
             extract_dir = get_datasets_path_from_url(self.url, self.md5)
@@ -233,20 +216,20 @@ class MD17Dataset(Dataset):
                 raise FileNotFoundError(
                     f"MD17/{name} not found in bcebos bundle at {extract_dir}"
                 )
+        return raw_path
 
-        # --- Pre-split npz files (created once, rank 0) ---
-        split_dir = osp.join(raw_dir, "splits")
-        split_npz = osp.join(split_dir, f"{name}_{split}.npz")
+    def _ensure_splits(self, raw_path, name):
+        """Create pre-split npz files (seed 42, 1000/1000 train/val)."""
+        split_dir = osp.join(osp.dirname(raw_path), "splits")
         full_npz = osp.join(split_dir, f"{name}_all.npz")
-
-        if not osp.exists(split_npz) and not osp.exists(full_npz):
+        if not osp.exists(full_npz):
             if dist.get_rank() == 0:
                 os.makedirs(split_dir, exist_ok=True)
                 raw = np.load(raw_path)
                 total = raw["R"].shape[0]
                 rng = np.random.RandomState(42)
                 perm = rng.permutation(total)
-                ts, vs = 1000, 1000  # MD17 standard split
+                ts, vs = 1000, 1000
                 np.savez(osp.join(split_dir, f"{name}_train.npz"),
                          z=raw["z"], R=raw["R"][perm[:ts]],
                          E=raw["E"][perm[:ts]], F=raw["F"][perm[:ts]])
@@ -256,14 +239,28 @@ class MD17Dataset(Dataset):
                 np.savez(osp.join(split_dir, f"{name}_test.npz"),
                          z=raw["z"], R=raw["R"][perm[ts + vs:]],
                          E=raw["E"][perm[ts + vs:]], F=raw["F"][perm[ts + vs:]])
-                if split is None:
-                    np.savez(osp.join(split_dir, f"{name}_all.npz"),
-                             z=raw["z"], R=raw["R"], E=raw["E"], F=raw["F"])
+                np.savez(full_npz,
+                         z=raw["z"], R=raw["R"], E=raw["E"], F=raw["F"])
             if dist.is_initialized():
                 dist.barrier()
 
-        if split is None and osp.exists(full_npz):
-            split_npz = full_npz
+    def read_data(self, path, name, split):
+        """Load pre-split MD17 data.
+
+        Args:
+            path: Root data directory.
+            name: Molecule name.
+            split: ``"train"``, ``"val"``, ``"test"``, or ``None`` (all).
+
+        Returns:
+            Tuple of (z, positions, energies, forces) for the split.
+        """
+        raw_path = self._download_raw(path, name)
+        self._ensure_splits(raw_path, name)
+        split_dir = osp.join(osp.dirname(raw_path), "splits")
+        split_npz = osp.join(split_dir, f"{name}_{split}.npz")
+        if split is None:
+            split_npz = osp.join(split_dir, f"{name}_all.npz")
         data = np.load(split_npz)
         return data["z"], data["R"], data["E"], data["F"]
 
