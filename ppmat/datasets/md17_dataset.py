@@ -147,8 +147,8 @@ class MD17Dataset(Dataset):
             cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
             if self.cache_exists and not overwrite:
                 try:
-                    cfg_cached = self.load_from_cache(cfg_pkl)
-                    if not is_equal(cfg_cached, build_graph_cfg):
+                    build_graph_cfg_cache = self.load_from_cache(cfg_pkl)
+                    if not is_equal(build_graph_cfg_cache, build_graph_cfg):
                         logger.warning(
                             "build_graph_cfg differs from cache. Rebuilding."
                         )
