@@ -131,8 +131,6 @@ class MD17Dataset(Dataset):
         path: str,
         name: str = "benzene_old",
         split=None,
-        train_size=None,
-        val_size=None,
         *,
         force_key="force",
         build_graph_cfg: Optional[Dict] = None,
@@ -153,61 +151,15 @@ class MD17Dataset(Dataset):
         self.transforms = transforms
 
         os.makedirs(path, exist_ok=True)
-        raw_dir = osp.join(path, "raw")
-        os.makedirs(raw_dir, exist_ok=True)
 
-        # ---- 1. Inline download (MP20 pattern) ----
-        individual_path = osp.join(raw_dir, f"{name}_dft.npz")
-        if osp.exists(individual_path):
-            raw_path = individual_path
-        else:
-            raw_path = None
-            try:
-                extract_dir = get_datasets_path_from_url(self.url, self.md5)
-                bundle_rel = _BUNDLE_NPZ_MAP[name]
-                for sub in ["", "md17/"]:
-                    candidate = osp.join(extract_dir, sub, bundle_rel)
-                    if osp.exists(candidate):
-                        raw_path = candidate
-                        break
-            except Exception as e:
-                logger.warning(f"bcebos download failed: {e}")
-            if raw_path is None:
-                import urllib.request
-
-                url = _MOLECULE_URLS[name]
-                logger.info(f"Downloading MD17/{name} from {url} ...")
-                urllib.request.urlretrieve(url, individual_path)
-                raw_path = individual_path
-
-        # ---- 2. Load npz data ----
-        data = np.load(raw_path)
-        all_z = data["z"]
-        all_pos = data["R"]
-        all_energy = data["E"]
-        all_forces = data["F"]
-        total = all_pos.shape[0]
-
-        # ---- 3. Split indices (DIG convention) ----
-        ts = train_size or _DEFAULT_SPLITS[name][0]
-        vs = val_size or _DEFAULT_SPLITS[name][1]
-        rng = np.random.RandomState(42)
-        indices = rng.permutation(total)
-        if split == "train":
-            self._indices = indices[:ts]
-        elif split == "val":
-            self._indices = indices[ts : ts + vs]
-        elif split == "test":
-            self._indices = indices[ts + vs :]
-        else:
-            self._indices = indices
-
+        # ---- 1. Load pre-split data via read_data ----
+        all_z, self._pos_np, self._energy_np, self._forces_np = self.read_data(
+            path, name, split
+        )
+        total = self._pos_np.shape[0]
         self._z_tensor = paddle.to_tensor(all_z, dtype=paddle.int64)
-        self._pos_np = all_pos
-        self._energy_np = all_energy
-        self._forces_np = all_forces
 
-        # ---- 4. Cache path (MP20 pattern) ----
+        # ---- 2. Cache path (MP20 pattern) ----
         if cache_path is not None:
             self.cache_path = cache_path
         else:
@@ -216,7 +168,7 @@ class MD17Dataset(Dataset):
             self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
         logger.info(f"Cache path: {self.cache_path}")
 
-        # ---- 5. Pre‑build edge_index + triplet indices (MP20 pattern) ----
+        # ---- 3. Pre‑build edge_index + triplet indices (MP20 pattern) ----
         self.graph_cache = None
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -257,7 +209,7 @@ class MD17Dataset(Dataset):
                                 _build_md17_graph_thread,
                                 i,
                                 all_z,
-                                all_pos,
+                                self._pos_np,
                                 build_graph_cfg,
                                 graph_cache_path,
                             ): i
@@ -273,8 +225,87 @@ class MD17Dataset(Dataset):
                 osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)
             ]
 
-        self.num_samples = len(self._indices)
+        self.num_samples = total
         logger.info(f"Load {self.num_samples} samples, split={split}")
+
+    def read_data(self, path, name, split):
+        """Load pre-split MD17 data.
+
+        Downloads the raw ``.npz`` file on first access, creates
+        deterministic pre-split files (seed 42, rank 0), then returns
+        arrays for the requested ``split``.
+
+        Args:
+            path: Root data directory.
+            name: Molecule name.
+            split: ``"train"``, ``"val"``, ``"test"``, or ``None`` (all).
+
+        Returns:
+            Tuple of (z, positions, energies, forces) for the split.
+        """
+        raw_dir = osp.join(path, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
+
+        # --- Download raw npz ---
+        individual_path = osp.join(raw_dir, f"{name}_dft.npz")
+        if osp.exists(individual_path):
+            raw_path = individual_path
+        else:
+            raw_path = None
+            try:
+                extract_dir = get_datasets_path_from_url(self.url, self.md5)
+                bundle_rel = _BUNDLE_NPZ_MAP[name]
+                for sub in ["", "md17/"]:
+                    candidate = osp.join(extract_dir, sub, bundle_rel)
+                    if osp.exists(candidate):
+                        raw_path = candidate
+                        break
+            except Exception as e:
+                logger.warning(f"bcebos download failed: {e}")
+            if raw_path is None:
+                import urllib.request
+
+                url = _MOLECULE_URLS[name]
+                logger.info(f"Downloading MD17/{name} from {url} ...")
+                urllib.request.urlretrieve(url, individual_path)
+                raw_path = individual_path
+
+        # --- Raw data ---
+        raw = np.load(raw_path)
+        all_z = raw["z"]
+        total = raw["R"].shape[0]
+
+        # --- Deterministic pre-split (created once, rank 0) ---
+        split_dir = osp.join(raw_dir, "splits")
+        indices_file = osp.join(split_dir, f"{name}_indices.npy")
+        if not osp.exists(indices_file):
+            if dist.get_rank() == 0:
+                os.makedirs(split_dir, exist_ok=True)
+                rng = np.random.RandomState(42)
+                perm = rng.permutation(total)
+                np.save(indices_file, perm)
+            if dist.is_initialized():
+                dist.barrier()
+        # All ranks: now the file exists
+        perm = np.load(indices_file)
+
+        # --- Select split ---
+        ts, vs = _DEFAULT_SPLITS[name][0], _DEFAULT_SPLITS[name][1]
+        if split == "train":
+            sel = perm[:ts]
+        elif split == "val":
+            sel = perm[ts : ts + vs]
+        elif split == "test":
+            sel = perm[ts + vs :]
+        else:
+            sel = perm
+
+        return (
+            all_z,
+            raw["R"][sel],
+            raw["E"][sel],
+            raw["F"][sel],
+        )
 
     def save_to_cache(self, cache_path: str, obj):
         with open(cache_path, "wb") as f:
@@ -287,15 +318,14 @@ class MD17Dataset(Dataset):
         raise FileNotFoundError(f"No such file or directory: {cache_path}")
 
     def __getitem__(self, idx):
-        real_idx = self._indices[idx]
         sample = {
             "z": self._z_tensor.numpy(),
-            "pos": self._pos_np[real_idx],
-            "energy": np.array([float(self._energy_np[real_idx])], dtype=np.float32),
-            self.force_key: self._forces_np[real_idx],
+            "pos": self._pos_np[idx],
+            "energy": np.array([float(self._energy_np[idx])], dtype=np.float32),
+            self.force_key: self._forces_np[idx],
         }
         if self.graph_cache is not None:
-            gpath = self.graph_cache[real_idx]
+            gpath = self.graph_cache[idx]
             graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
             if isinstance(graph, dict):
                 sample["edge_index"] = graph["edge_index"]
