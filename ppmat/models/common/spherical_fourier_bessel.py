@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Spherical Fourier-Bessel basis functions for 3D geometric deep learning.
+SphereNet-specific spherical Fourier-Bessel embeddings.
 
 Provides three levels of geometric embeddings:
     - DistEmbedding (RBF): radial basis with smooth envelope
@@ -162,13 +162,13 @@ class DistEmbedding(paddle.nn.Layer):
             default_initializer=paddle.nn.initializer.Assign(
                 paddle.arange(
                     1, num_radial + 1, dtype=paddle.get_default_dtype()
-                ).multiply(paddle.to_tensor(3.141592653589793))
+                ).multiply(paddle.to_tensor(math.pi))
             ),
         )
 
     def reset_parameters(self):
         with paddle.no_grad():
-            pi_t = paddle.to_tensor(3.141592653589793)
+            pi_t = paddle.to_tensor(math.pi)
             self.freq.set_value(
                 paddle.arange(
                     1, self.freq.shape[0] + 1, dtype=paddle.get_default_dtype()
