@@ -180,13 +180,3 @@ electronic_structure/configs/qm9_data_split.json
 electronic_structure/configs/qm9.json
 electronic_structure/configs/crystal_data_split.json
 electronic_structure/configs/crystal.json
-
-# ignore export test data
-*.npz
-# ignore cif  crystal texture
-*.cif
-# ingore paddle weight file.
-*.pdparams
-.claude/
-
-*.pkl
