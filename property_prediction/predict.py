@@ -24,6 +24,7 @@ from omegaconf import OmegaConf
 from pymatgen.core import Structure
 from tqdm import tqdm
 
+from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
@@ -197,7 +198,6 @@ class PropertyPredictor:
         Returns:
             Prediction dict.
         """
-        from ppmat.datasets.build_molecule import BuildMolecule
         mol = BuildMolecule(format=molecule_format)(molecule_data)
 
         # Extract atomic numbers and 3-D coordinates from RDKit Mol.
