@@ -6,6 +6,8 @@
 
 MatInvent is a general and efficient reinforcement learning workflow that optimizes diffusion models for goal-directed crystal generation. MatInvent enables robust optimization for inverse material design tasks with single or multiple target properties. Compatible with diverse diffusion model architectures and property constraints, MatInvent could offer broad applicability in materials discovery.
 
+---
+
 ## Model Description
 
 ### Overview
@@ -18,73 +20,147 @@ The framework operates in three alternating phases:
 
 After each iteration, high-reward structures are stored in a replay buffer and a long-term memory for diversity filtering.
 
+### Supported Backbones
+
+| Backbone | Description | Config |
+|----------|-------------|--------|
+| **MatterGen** | E(3)-equivariant GNN denoiser with joint A/X/L diffusion | `matinvent_mattergen.yaml` |
+| **DiffCSP** | EGNN-based CSP denoiser with lattice + coordinate diffusion | `matinvent_diffcsp.yaml` |
+
+### Supported Property Calculators
+
+| Calculator | Tasks | Description |
+|------------|-------|-------------|
+| **PyMatGen** | `density`, `hhi`, `price`, `abundance`, `log_abundance`, `mcia`, `num_atoms`, `num_elements`, `volume` | On-the-fly property computation via pymatgen |
+| **SynScore** | `synthesizability` | ML-based synthesizability prediction |
+| **DFTCalc** | (external VASP) | DFT property calculator interface (exports CIFs for external computation) |
+| **FairChem** | `bulk_modulus`, `heat_capacity` | ML potential-based property calculator interface |
+
+Reward configuration files are located in `configs/reward/` (see original [MatInvent](https://github.com/jwchen25/MatInvent) repository for full reward configurations).
+
 ---
 
 ## Dataset Description
 
-### Dataset contents
+### Atom count sampling
 
-#### 1) Atom count sampling (DiffCSP backbone)
-When using the **DiffCSP** backbone, MatInvent samples random atom counts uniformly between 1 and 50 atoms per unit cell.
+MatInvent samples random atom counts uniformly from a configurable range:
 
-#### 2) Atom count sampling (MatterGen backbone)
-When using the **MatterGen** backbone, MatInvent samples random atom counts uniformly between 2 and 50 atoms per unit cell.
+| Backbone | Min atoms | Max atoms |
+|----------|-----------|-----------|
+| DiffCSP  | 1         | 50        |
+| MatterGen | 2        | 50        |
 
-#### 3) Reference dataset for novelty and stability evaluation
-Novelty and stability of generated structures are assessed against a reference convex-hull dataset (`reference_MP2020correction.gz`) downloaded automatically from [Hugging Face (jwchen25/MatInvent)](https://huggingface.co/jwchen25/MatInvent). This reference is based on the MP2020 energy correction scheme and is used during both RL training and post-hoc evaluation.
+### Reference dataset
 
-#### 4) Reward computation (no additional labeled dataset required)
-For property-conditioned RL, rewards are computed **on-the-fly** by property calculators (PyMatGen). Each generated structure is scored immediately after sampling, so the RL loop is self-contained and requires no pre-labeled training set.
+Novelty and stability of generated structures are assessed against a reference convex-hull dataset (`reference_MP2020correction.gz`) available from [Hugging Face (jwchen25/MatInvent)](https://huggingface.co/jwchen25/MatInvent).
 
-### Data format
-Each structure sample produced by the diffusion backbone provides:
-- `atom_types` / `atomic_numbers`: length-$N$ array of atomic numbers
-- `frac_coords` / `pos`: $N \times 3$ fractional coordinates in $[0, 1)$
-- `lengths` + `angles` or `cell`: lattice parameters / $3 \times 3$ lattice matrix
+### Reward computation
 
-Optional fields used during RL: `reward` (scalar), `num_atoms`, `structure_id`.
+For property-conditioned RL, rewards are computed **on-the-fly** by property calculators. No pre-labeled training set is required.
+
+---
+
+## Checkpoints
+
+Pretrained checkpoints are available from:
+
+| Model | Source | URL |
+|-------|--------|-----|
+| MatInvent (MatterGen backbone) | PaddleMaterials BCE | `matinvent_mattergen_mp20` |
+| MatInvent (DiffCSP backbone) | PaddleMaterials BCE | `matinvent_diffcsp_mp20` |
+| Original PyTorch checkpoints | Hugging Face | [jwchen25/MatInvent](https://huggingface.co/jwchen25/MatInvent) |
 
 ---
 
 ## Results
 
-Key RL metrics tracked during training include **reward mean**, **burden** (computational cost per high-reward candidate), and **diversity ratio** (unique compositions / total evaluations). Post-hoc generation quality is reported as the **SUN ratio** (Stable, Unique, Novel fraction). Refer to the [paper](https://arxiv.org/abs/2511.03112) for full quantitative results.
+Key RL metrics tracked during training include **reward mean**, **burden** (computational cost per high-reward candidate), and **diversity ratio** (unique compositions / total evaluations). Post-hoc generation quality is reported as the **SUN ratio** (Stable, Unique, Novel fraction).
 
-Pretrained checkpoints are available on [HuggingFace (jwchen25/MatInvent)](https://huggingface.co/jwchen25/MatInvent).
+<table>
+    <thead>
+        <tr>
+            <th nowrap="nowrap">Model Name</th>
+            <th nowrap="nowrap">Backbone</th>
+            <th nowrap="nowrap">Reward Target</th>
+            <th nowrap="nowrap">Config</th>
+            <th nowrap="nowrap">Checkpoint | Log</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td nowrap="nowrap">matinvent_mattergen_mp20</td>
+            <td nowrap="nowrap">MatterGen</td>
+            <td nowrap="nowrap">density</td>
+            <td nowrap="nowrap"><a href="matinvent_mattergen.yaml">matinvent_mattergen</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/MatInvert/matinvent_mattergen_mp20.zip">checkpoint | log</a></td>
+        </tr>
+        <tr>
+            <td nowrap="nowrap">matinvent_diffcsp_mp20</td>
+            <td nowrap="nowrap">DiffCSP</td>
+            <td nowrap="nowrap">density</td>
+            <td nowrap="nowrap"><a href="matinvent_diffcsp.yaml">matinvent_diffcsp</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/MatInvert/matinvent_diffcsp_mp20.zip">checkpoint | log</a></td>
+        </tr>
+    </tbody>
+</table>
+
+Refer to the [paper](https://arxiv.org/abs/2511.03112) for full quantitative results across multiple property targets.
 
 ---
 
 ## Command
 
-### Training
+### Training (RL Fine-tuning)
 
 ```bash
 # MatterGen backbone
-python structure_generation/train.py -c structure_generation/configs/matinvent/matinvent_mattergen.yaml
+python structure_generation/train.py \
+    -c structure_generation/configs/matinvent/matinvent_mattergen.yaml
 
 # DiffCSP backbone
-python structure_generation/train.py -c structure_generation/configs/matinvent/matinvent_diffcsp.yaml
+python structure_generation/train.py \
+    -c structure_generation/configs/matinvent/matinvent_diffcsp.yaml
 ```
+
+RL training hyperparameters (epochs, reward targets, etc.) are configured in the `RL:` section of the YAML config. Modify the `reward_cfg.prop_cfg` list to change optimization targets.
 
 ### Sample
 
-```bash
-# Mode 1: with RL-fine-tuned checkpoint
-python structure_generation/sample.py --config_path='structure_generation/configs/matinvent/matinvent_mattergen.yaml' --checkpoint_path='./output/matinvent_mattergen/models/final/model.pdparams' --save_path='result_matinvent_mattergen/' --mode='by_dataloader'
+Generate structures using an RL-fine-tuned checkpoint.
 
-# Mode 2: with DiffCSP backbone
-python structure_generation/sample.py --config_path='structure_generation/configs/matinvent/matinvent_diffcsp.yaml' --checkpoint_path='./output/matinvent_diffcsp/models/final/model.pdparams' --save_path='result_matinvent_diffcsp/' --mode='by_dataloader'
+```bash
+# Mode 1: Use a pre-trained model (downloads automatically)
+python structure_generation/sample.py \
+    --model_name='matinvent_mattergen_mp20' \
+    --weights_name='matinvent_mattergen_mp20.pdparams' \
+    --save_path='result_matinvent_mattergen/' \
+    --mode='by_dataloader'
+
+# Mode 2: Use a custom configuration and checkpoint
+python structure_generation/sample.py \
+    --config_path='structure_generation/configs/matinvent/matinvent_mattergen.yaml' \
+    --checkpoint_path='./output/matinvent_mattergen/models/final/model.pdparams' \
+    --save_path='result_matinvent_mattergen/' \
+    --mode='by_dataloader'
+
+# DiffCSP backbone
+python structure_generation/sample.py \
+    --config_path='structure_generation/configs/matinvent/matinvent_diffcsp.yaml' \
+    --checkpoint_path='./output/matinvent_diffcsp/models/final/model.pdparams' \
+    --save_path='result_matinvent_diffcsp/' \
+    --mode='by_dataloader'
 ```
 
 ---
 
 ## Citation
 
-```
+```bibtex
 @article{matinvent,
   title={Accelerating inverse materials design using generative diffusion models with reinforcement learning},
   author={Chen, Junwu and Guo, Jeff and Fako, Edvin and Schwaller, Philippe},
   journal={arXiv preprint arXiv:2511.03112},
   year={2025}
 }
-```**
+```

@@ -43,7 +43,7 @@ from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
-from ppmat.models.matinvent import MatinventRL # noqa
+from ppmat.models.matinvent import MatinventRL
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -58,6 +58,7 @@ __all__ = [
     "MatterGen",
     "MatterGenWithCondition",
     "MatinventMatterGen",
+    "MatinventRL",
     "DimeNetPlusPlus",
     "CrystalNN",
     "CHGNetGraphConverter",

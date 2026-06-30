@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import os
 
 EMB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "element_emb.json"))
-MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "model_pt"))
+MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "model"))
 
 from ppmat.models.matinvent.rewards.calculators.syn_score.calc import SynScore
 from ppmat.models.matinvent.rewards.calculators.syn_score.model import Net

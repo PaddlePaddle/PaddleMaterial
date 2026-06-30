@@ -39,13 +39,13 @@ def _predict(struc_list, model_dir=MODEL_PATH, emb_path=EMB_PATH):
         batch_size=64, shuffle=False, num_workers=0)
     preds = []
     for i in range(1, 101):
-        mp = os.path.join(model_dir, f"checkpoint_bag_{i}.pth.tar")
+        mp = os.path.join(model_dir, f"checkpoint_bag_{i}.pdparams")
         if not os.path.isfile(mp):
             continue
         ckpt = paddle.load(mp)
-        model = Net(atom_fea_len=ckpt["args"].atom_fea_len,
-                    h_fea_len=ckpt["args"].h_fea_len,
-                    n_h=ckpt["args"].n_h)
+        model = Net(atom_fea_len=ckpt["atom_fea_len"],
+                    h_fea_len=ckpt["h_fea_len"],
+                    n_h=ckpt["n_h"])
         model.set_state_dict(ckpt["state_dict"])
         model.eval()
         bp = []
