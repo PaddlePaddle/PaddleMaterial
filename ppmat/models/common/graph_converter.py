@@ -35,6 +35,7 @@ from rdkit.Chem.rdchem import BondType as BT
 
 from ppmat.utils import logger
 from ppmat.utils.crystal import lattice_params_to_matrix
+from ppmat.models.common.radius_graph import radius_graph as _radius_graph_func
 
 
 class FindPointsInSpheres:
@@ -588,9 +589,7 @@ class RadiusGraph:
         self.cutoff = cutoff
 
     def __call__(self, pos, batch, loop=False):
-        from ppmat.models.common.radius_graph import radius_graph as _func
-
-        return _func(pos, batch, self.cutoff, loop=loop)
+        return _radius_graph_func(pos, batch, self.cutoff, loop=loop)
 
 
 def subgraph(
