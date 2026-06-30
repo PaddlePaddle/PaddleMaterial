@@ -12,20 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """MD17 molecular dynamics dataset for energy and force prediction.
-
-**STATS:**
-+----------------+----------+--------+-------+----------+-------+
-| Molecule       | #samples | #atoms | #tasks| #targets | Split |
-+================+==========+========+=======+==========+=======+
-| Aspirin        | 211,762  | 21     | 2     | E + F    | 1k/1k/R |
-| Benzene (old)  | 627,983  | 12     | 2     | E + F    | 1k/1k/R |
-| Ethanol        | 555,092  | 9      | 2     | E + F    | 1k/1k/R |
-| Malonaldehyde  | 993,237  | 9      | 2     | E + F    | 1k/1k/R |
-| Naphthalene    | 326,250  | 10     | 2     | E + F    | 1k/1k/R |
-| Salicylic      | 320,231  | 16     | 2     | E + F    | 1k/1k/R |
-| Toluene        | 442,790  | 15     | 2     | E + F    | 1k/1k/R |
-| Uracil         | 133,770  | 12     | 2     | E + F    | 1k/1k/R |
-+----------------+----------+--------+-------+----------+-------+
 """
 
 import os
@@ -98,6 +84,20 @@ def _build_md17_graph_thread(idx, all_z, all_pos, build_graph_cfg, cache_dir):
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
 
+    **STATS:**
+    +----------------+----------+--------+-------+----------+-------+
+    | Molecule       | #samples | #atoms | #tasks| #targets | Split |
+    +================+==========+========+=======+==========+=======+
+    | Aspirin        | 211,762  | 21     | 2     | E + F    | 1k/1k/R |
+    | Benzene (old)  | 627,983  | 12     | 2     | E + F    | 1k/1k/R |
+    | Ethanol        | 555,092  | 9      | 2     | E + F    | 1k/1k/R |
+    | Malonaldehyde  | 993,237  | 9      | 2     | E + F    | 1k/1k/R |
+    | Naphthalene    | 326,250  | 10     | 2     | E + F    | 1k/1k/R |
+    | Salicylic      | 320,231  | 16     | 2     | E + F    | 1k/1k/R |
+    | Toluene        | 442,790  | 15     | 2     | E + F    | 1k/1k/R |
+    | Uracil         | 133,770  | 12     | 2     | E + F    | 1k/1k/R |
+    +----------------+----------+--------+-------+----------+-------+
+
     Downloads raw ``.npz`` data from bcebos bundle (or individual URL as
     fallback), then creates pre-split files on first access (seed 42,
     rank 0).  Each split (train/val/test) is stored as a separate npz file
@@ -112,7 +112,7 @@ class MD17Dataset(Dataset):
         path: Root directory for storing raw and cached data.
         name: Molecule name from the supported list.
         split: ``'train'``, ``'val'``, ``'test'``, or ``None`` (all).
-        force_key: Key name for forces in the output dict (default ``'force'``).
+        force_key: Key name for forces (default ``'force'``).
         build_graph_cfg: Configuration dict for graph converter.
         transforms: Optional transform callable.
         cache_path: Explicit cache path (auto-generated when None).
@@ -138,11 +138,6 @@ class MD17Dataset(Dataset):
     ):
         super().__init__()
 
-        if name not in _MOLECULE_URLS:
-            raise ValueError(
-                f"Unknown MD17 molecule '{name}'. "
-                f"Supported: {list(_MOLECULE_URLS.keys())}"
-            )
         self.mol_name = name
         self.force_key = force_key
         self.transforms = transforms
@@ -150,11 +145,12 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
 
         # ---- 1. Load pre-split data via read_data ----
-        all_z, self._pos_np, self._energy_np, self._forces_np = self.read_data(
-            path, name, split
-        )
-        total = self._pos_np.shape[0]
-        self._z_tensor = paddle.to_tensor(all_z, dtype=paddle.int64)
+        self._data = dict(zip(
+            ("z", "pos", "energy", "force"),
+            self.read_data(path, name, split),
+        ))
+        total = self._data["pos"].shape[0]
+        self._z_tensor = paddle.to_tensor(self._data["z"], dtype=paddle.int64)
 
         # ---- 2. Cache path (MP20 pattern) ----
         if cache_path is not None:
@@ -165,65 +161,55 @@ class MD17Dataset(Dataset):
             self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
         logger.info(f"Cache path: {self.cache_path}")
 
-        # ---- 3. Pre‑build edge_index + triplet indices (MP20 pattern) ----
+        # ---- 3. Pre‑build edge_index + triplet indices (MP20 rebuild) ----
         self.graph_cache = None
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
-            cfg_pkl = osp.join(self.cache_path, "build_graph_cfg.pkl")
-            cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
-
-            need_rebuild = overwrite or not cache_exists
-            if cache_exists and not overwrite:
-                try:
-                    cfg_cached = self.load_from_cache(
-                        osp.join(self.cache_path, "build_graph_cfg.pkl")
-                    )
-                    if is_equal(cfg_cached, build_graph_cfg):
-                        logger.info("build_graph_cfg matches cache. Reusing.")
-                    else:
-                        logger.warning(
-                            "build_graph_cfg differs from cache. Rebuilding."
-                        )
-                        need_rebuild = True
-                except Exception as e:
-                    logger.warning(f"Cache check failed ({e}). Rebuilding.")
-                    need_rebuild = True
-
-            if need_rebuild:
-                if dist.get_rank() == 0:
-                    os.makedirs(graph_cache_path, exist_ok=True)
-                    self.save_to_cache(
-                        osp.join(self.cache_path, "build_graph_cfg.pkl"),
-                        build_graph_cfg,
-                    )
-                    logger.info(
-                        f"Pre‑building graphs for MD17/{name} ({total} frames) "
-                        f"with 24 threads ..."
-                    )
-                    with ThreadPoolExecutor(max_workers=24) as executor:
-                        futures = {
-                            executor.submit(
-                                _build_md17_graph_thread,
-                                i,
-                                all_z,
-                                self._pos_np,
-                                build_graph_cfg,
-                                graph_cache_path,
-                            ): i
-                            for i in range(total)
-                        }
-                        for _ in tqdm(
-                            as_completed(futures), total=total, desc="Build graphs"
-                        ):
-                            pass
-                if dist.is_initialized():
-                    dist.barrier()
-            self.graph_cache = [
-                osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)
-            ]
+            self.graph_cache = self._build_graph_cache(
+                build_graph_cfg, graph_cache_path, total, overwrite,
+            )
 
         self.num_samples = total
         logger.info(f"Load {self.num_samples} samples, split={split}")
+
+    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, total, overwrite):
+        """Pre-build and cache edge_index + triplet indices (MP20 pattern)."""
+        cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
+        cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
+
+        need_rebuild = overwrite or not cache_exists
+        if cache_exists and not overwrite:
+            try:
+                cfg_cached = self.load_from_cache(cfg_pkl)
+                if not is_equal(cfg_cached, build_graph_cfg):
+                    logger.warning("build_graph_cfg differs from cache. Rebuilding.")
+                    need_rebuild = True
+            except Exception as e:
+                logger.warning(f"Cache check failed ({e}). Rebuilding.")
+                need_rebuild = True
+
+        if need_rebuild:
+            if dist.get_rank() == 0:
+                os.makedirs(graph_cache_path, exist_ok=True)
+                self.save_to_cache(cfg_pkl, build_graph_cfg)
+                logger.info(
+                    f"Pre‑building graphs for {self.mol_name} ({total} frames) "
+                    f"with 24 threads ..."
+                )
+                with ThreadPoolExecutor(max_workers=24) as executor:
+                    futures = {
+                        executor.submit(
+                            _build_md17_graph_thread,
+                            i, self._data["z"], self._data["pos"],
+                            build_graph_cfg, graph_cache_path,
+                        ): i for i in range(total)
+                    }
+                    for _ in tqdm(as_completed(futures), total=total, desc="Build graphs"):
+                        pass
+            if dist.is_initialized():
+                dist.barrier()
+
+        return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
 
     def read_data(self, path, name, split):
         """Load pre-split MD17 data.
@@ -262,7 +248,6 @@ class MD17Dataset(Dataset):
                 logger.warning(f"bcebos download failed: {e}")
             if raw_path is None:
                 import urllib.request
-
                 url = _MOLECULE_URLS[name]
                 logger.info(f"Downloading MD17/{name} from {url} ...")
                 urllib.request.urlretrieve(url, individual_path)
@@ -314,9 +299,11 @@ class MD17Dataset(Dataset):
     def __getitem__(self, idx):
         sample = {
             "z": self._z_tensor.numpy(),
-            "pos": self._pos_np[idx],
-            "energy": np.array([float(self._energy_np[idx])], dtype=np.float32),
-            self.force_key: self._forces_np[idx],
+            "pos": self._data["pos"][idx],
+            "energy": np.array(
+                [float(self._data["energy"][idx])], dtype=np.float32
+            ),
+            self.force_key: self._data["force"][idx],
         }
         if self.graph_cache is not None:
             gpath = self.graph_cache[idx]
