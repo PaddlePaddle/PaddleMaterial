@@ -165,9 +165,7 @@ class DensityCollator:
         self.sampling_mode = sampling_mode.lower()
         self.uniform_random_offset = bool(uniform_random_offset)
         self.sampling_seed = sampling_seed
-        self._rng = (
-            np.random.default_rng(sampling_seed) if sampling_seed is not None else None
-        )
+        self._rng = np.random.default_rng(sampling_seed) if sampling_seed is not None else None
         self.clip_max = clip_max
         self.importance_sampling = bool(importance_sampling)
         self.importance_threshold = importance_threshold
@@ -262,11 +260,7 @@ class DensityCollator:
                             if self._rng is None:
                                 self._rng = np.random.default_rng()
                             step = (total - 1) / max(target_samples - 1, 1)
-                            offset = (
-                                float(self._rng.uniform(0, max(step, 1.0)))
-                                if step > 0
-                                else 0.0
-                            )
+                            offset = float(self._rng.uniform(0, max(step, 1.0))) if step > 0 else 0.0
                             idx = offset + step * np.arange(target_samples)
                             indices = np.clip(np.round(idx).astype(int), 0, total - 1)
                         else:
