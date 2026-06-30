@@ -81,6 +81,9 @@ where $w$ is the guidance scale (default 2.0). LoRA (Low-Rank Adaptation) is sup
 
 #### 3) Stage 3: Reinforcement Learning (RL) with GRPO
 
+> **Note**: The RL module is currently experimental. The rollout pipeline and several reward components (`StructureDiversityReward`, `CompositionDiversityReward`, `PredictorReward`) raise `NotImplementedError`. Only `CreativityReward` and `EnergyReward` are functional. End-to-end RL training has not been fully validated.
+
+
 The RL module fine-tunes the LDM denoiser using Group Relative Policy Optimization (GRPO) to maximize expected rewards from a modular reward system. The VAE and condition module remain frozen throughout.
 
 **Policy**: The LDM denoiser $\pi_\theta$ defines a Gaussian policy over latent transitions. Log-probabilities of trajectories $\{z_T, z_{T-1}, \ldots, z_0\}$ are computed as:
@@ -112,19 +115,11 @@ Custom reward components can be defined by subclassing `RewardComponent` and con
 
 ### Dataset Contents
 
-#### 1) MP-20
+- **MP-20**: A benchmark subset of Materials Project structures containing **up to 20 atoms per unit cell**. It is widely used for fair comparison across crystal generative models. The dataset includes property labels and is split into train/val/test sets.
 
-MP-20 is a benchmark subset of Materials Project structures containing **up to 20 atoms per unit cell**. It is widely used for fair comparison across crystal generative models. The dataset includes property labels (band gap, energy above hull) and is split into train/val/test sets.
-
-#### 2) Alex-MP-20
-
-Alex-MP-20 is a larger-scale dataset combining Materials Project and Alexandria structures, filtered to **≤ 20 atoms per unit cell**. It provides a broader chemical space for pretraining and is used for the primary Chemeleon2 models. Stability is assessed using energy above hull after DFT relaxation.
-
-#### 3) Labeled Datasets for Conditional Generation (Optional)
-
-For CSP or property-conditioned generation, labeled datasets are required. Each sample contains $(A, X, L)$ plus a condition label $c$ such as:
-- Scalar property targets (e.g., band gap, bulk modulus)
-- Chemical formula constraints (CSP)
+| Dataset | Train | Val | Test |
+| :---: | :---: | :---: | :---: |
+| MP-20 | 23,974 | 3,078 | 3,089 |
 
 ### Data Format
 
@@ -140,23 +135,28 @@ Optional fields include `num_atoms`, `band_gap`, `e_above_hull`, and other prope
 
 ## Results
 
-Pre-trained model checkpoints are available via [HuggingFace Hub](https://huggingface.co/hspark1212/chemeleon2-checkpoints) and can be loaded automatically using the `${hub:...}` resolver.
+### PaddleMaterials Pretrained Models
+
+| Model | Dataset | Stage | GPUs | Training Time | Config | Checkpoint / Log |
+| --- | --- | --- | --- | --- | --- | --- |
+| chemeleon2_vae | MP-20 | VAE | 1 | - | [chemeleon2_mp20_vae.yaml](chemeleon2_mp20_vae.yaml) | [checkpoint](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/Chemeleon2/chemeleon2_vae.zip) |
+| chemeleon2_ldm | MP-20 | LDM | 1 | - | [chemeleon2_mp20_ldm.yaml](chemeleon2_mp20_ldm.yaml) | [checkpoint](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/Chemeleon2/chemeleon2_ldm.zip) |
+
+### Original PyTorch Checkpoints
+
+Pre-trained model checkpoints are available via [HuggingFace Hub](https://huggingface.co/hspark1212/chemeleon2-checkpoints).
 
 | Model Name | Dataset | Stage | Config |
 |---|---|---|---|
 | `mp_20_vae` | MP-20 | VAE | `experiment=mp_20/vae_dng` |
-| `alex_mp_20_vae` | Alex-MP-20 | VAE | `experiment=alex_mp_20/vae_dng` |
 | `mp_20_ldm_base` | MP-20 | LDM | `experiment=mp_20/ldm_base` |
-| `alex_mp_20_ldm_base` | Alex-MP-20 | LDM | `experiment=alex_mp_20/ldm_base` |
 | `mp_20_ldm_rl` | MP-20 | RL (DNG) | `custom_reward=rl_dng` |
-| `alex_mp_20_ldm_rl` | Alex-MP-20 | RL (DNG) | `custom_reward=rl_dng` |
 
 Pre-computed benchmark structures (10,000 generated structures per model) for de novo generation are available in `benchmarks/dng/`:
 
 | Benchmark File | Model | Dataset |
 |---|---|---|
 | `chemeleon2_rl_dng_mp_20.json.gz` | RL-DNG | MP-20 |
-| `chemeleon2_rl_dng_alex_mp_20.json.gz` | RL-DNG | Alex-MP-20 |
 
 Evaluation metrics (computed against MP-20 reference via `src/evaluate.py`):
 
@@ -170,6 +170,8 @@ Evaluation metrics (computed against MP-20 reference via `src/evaluate.py`):
 ---
 
 ## Command
+
+> **Prerequisite**: Training and evaluation require the MP-20 dataset placed at `./data/mp_20/` containing `train.csv`, `val.csv`, `test.csv` with CIF structure strings and property labels.
 
 ### Training
 
