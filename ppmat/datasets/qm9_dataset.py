@@ -208,17 +208,30 @@ class QM9Dataset(Dataset):
 
         raw_props = self._parse_all_properties(merged_xyz, self._offsets, self.property_names)
 
-        # ---- 3. Split indices ----
-        rng = np.random.default_rng(42)
-        indices = rng.permutation(total)
-        if split == "train":
-            self._indices = np.sort(indices[:self._TRAIN_SIZE])
-        elif split == "val":
-            self._indices = np.sort(indices[self._TRAIN_SIZE:self._TRAIN_SIZE + self._VAL_SIZE])
-        elif split == "test":
-            self._indices = np.sort(indices[self._TRAIN_SIZE + self._VAL_SIZE:])
+        # ---- 3. Pre-computed split indices (saved once on rank 0) ----
+        split_dir = osp.join(raw_dir, "splits")
+        indices_file = osp.join(split_dir, f"split_{split}.npy")
+        indices_all_file = osp.join(split_dir, "split_all.npy")
+
+        if not osp.exists(indices_file) and not osp.exists(indices_all_file):
+            if dist.get_rank() == 0:
+                os.makedirs(split_dir, exist_ok=True)
+                rng = np.random.default_rng(42)
+                perm = rng.permutation(total)
+                ts, vs = self._TRAIN_SIZE, self._VAL_SIZE
+                np.save(osp.join(split_dir, "split_train.npy"), np.sort(perm[:ts]))
+                np.save(osp.join(split_dir, "split_val.npy"),
+                        np.sort(perm[ts:ts + vs]))
+                np.save(osp.join(split_dir, "split_test.npy"),
+                        np.sort(perm[ts + vs:]))
+                np.save(osp.join(split_dir, "split_all.npy"), np.sort(perm))
+            if dist.is_initialized():
+                dist.barrier()
+
+        if split is not None:
+            self._indices = np.load(indices_file)
         else:
-            self._indices = np.sort(indices)
+            self._indices = np.load(indices_all_file)
 
         # ---- 4. Cache graph cache path ----
         if build_graph_cfg is not None:

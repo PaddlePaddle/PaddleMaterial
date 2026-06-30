@@ -41,19 +41,13 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.io import Dataset
+from tqdm import tqdm
 
 from ppmat.models import build_graph_converter
 from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
 from ppmat.utils.misc import is_equal
-
-try:
-    from tqdm import tqdm
-except ImportError:
-
-    def tqdm(iterable, **kwargs):
-        return iterable
 
 
 _MOLECULE_URLS = {
@@ -66,8 +60,6 @@ _MOLECULE_URLS = {
     "toluene": "http://quantum-machine.org/gdml/data/npz/toluene_dft.npz",
     "uracil": "http://quantum-machine.org/gdml/data/npz/uracil_dft.npz",
 }
-
-_DEFAULT_SPLITS = {name: (1000, 1000) for name in _MOLECULE_URLS}
 
 _BUNDLE_NPZ_MAP = {
     "aspirin": "md17_aspirin.npz",
@@ -106,20 +98,25 @@ def _build_md17_graph_thread(idx, all_z, all_pos, build_graph_cfg, cache_dir):
 class MD17Dataset(Dataset):
     """MD17 molecular dynamics dataset for energy and force prediction.
 
-    Single `.npz` file downloaded via bcebos bundle or individual URL.
-    Pre‑computed ``edge_index`` when ``build_graph_cfg`` is provided,
-    with pickle cache (rank‑0 build, barrier sync).
+    Downloads raw ``.npz`` data from bcebos bundle (or individual URL as
+    fallback), then creates pre-split files on first access (seed 42,
+    rank 0).  Each split (train/val/test) is stored as a separate npz file
+    and loaded directly on subsequent runs — no on-the-fly shuffling in
+    the dataset.
+
+    Pre‑computed ``edge_index`` and triplet indices are cached per split
+    when ``build_graph_cfg`` is provided (pickle cache, rank‑0 build,
+    barrier sync).
 
     Args:
         path: Root directory for storing raw and cached data.
         name: Molecule name from the supported list.
         split: ``'train'``, ``'val'``, ``'test'``, or ``None`` (all).
-        train_size: Number of training samples (default 1000).
-        val_size: Number of validation samples (default 1000).
         force_key: Key name for forces in the output dict (default ``'force'``).
-        build_graph_cfg: Configuration dict for graph converter. Defaults to None.
+        build_graph_cfg: Configuration dict for graph converter.
         transforms: Optional transform callable.
-        **kwargs: Compatibility.
+        cache_path: Explicit cache path (auto-generated when None).
+        overwrite: Force cache rebuild.
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
@@ -231,9 +228,10 @@ class MD17Dataset(Dataset):
     def read_data(self, path, name, split):
         """Load pre-split MD17 data.
 
-        Downloads the raw ``.npz`` file on first access, creates
-        deterministic pre-split files (seed 42, rank 0), then returns
-        arrays for the requested ``split``.
+        On first access (rank 0), downloads the raw ``.npz`` file and
+        creates pre-split ``{name}_{split}.npz`` files (seed 42, 1000/1000
+        train/val split per MD17 convention).  Subsequent calls load the
+        appropriate pre-split file directly — no on-the-fly shuffling.
 
         Args:
             path: Root data directory.
@@ -270,42 +268,38 @@ class MD17Dataset(Dataset):
                 urllib.request.urlretrieve(url, individual_path)
                 raw_path = individual_path
 
-        # --- Raw data ---
-        raw = np.load(raw_path)
-        all_z = raw["z"]
-        total = raw["R"].shape[0]
-
-        # --- Deterministic pre-split (created once, rank 0) ---
+        # --- Pre-split npz files (created once, rank 0) ---
         split_dir = osp.join(raw_dir, "splits")
-        indices_file = osp.join(split_dir, f"{name}_indices.npy")
-        if not osp.exists(indices_file):
+        split_npz = osp.join(split_dir, f"{name}_{split}.npz")
+        full_npz = osp.join(split_dir, f"{name}_all.npz")
+
+        if not osp.exists(split_npz) and not osp.exists(full_npz):
             if dist.get_rank() == 0:
                 os.makedirs(split_dir, exist_ok=True)
+                raw = np.load(raw_path)
+                total = raw["R"].shape[0]
                 rng = np.random.RandomState(42)
                 perm = rng.permutation(total)
-                np.save(indices_file, perm)
+                ts, vs = 1000, 1000  # MD17 standard split
+                np.savez(osp.join(split_dir, f"{name}_train.npz"),
+                         z=raw["z"], R=raw["R"][perm[:ts]],
+                         E=raw["E"][perm[:ts]], F=raw["F"][perm[:ts]])
+                np.savez(osp.join(split_dir, f"{name}_val.npz"),
+                         z=raw["z"], R=raw["R"][perm[ts:ts + vs]],
+                         E=raw["E"][perm[ts:ts + vs]], F=raw["F"][perm[ts:ts + vs]])
+                np.savez(osp.join(split_dir, f"{name}_test.npz"),
+                         z=raw["z"], R=raw["R"][perm[ts + vs:]],
+                         E=raw["E"][perm[ts + vs:]], F=raw["F"][perm[ts + vs:]])
+                if split is None:
+                    np.savez(osp.join(split_dir, f"{name}_all.npz"),
+                             z=raw["z"], R=raw["R"], E=raw["E"], F=raw["F"])
             if dist.is_initialized():
                 dist.barrier()
-        # All ranks: now the file exists
-        perm = np.load(indices_file)
 
-        # --- Select split ---
-        ts, vs = _DEFAULT_SPLITS[name][0], _DEFAULT_SPLITS[name][1]
-        if split == "train":
-            sel = perm[:ts]
-        elif split == "val":
-            sel = perm[ts : ts + vs]
-        elif split == "test":
-            sel = perm[ts + vs :]
-        else:
-            sel = perm
-
-        return (
-            all_z,
-            raw["R"][sel],
-            raw["E"][sel],
-            raw["F"][sel],
-        )
+        if split is None and osp.exists(full_npz):
+            split_npz = full_npz
+        data = np.load(split_npz)
+        return data["z"], data["R"], data["E"], data["F"]
 
     def save_to_cache(self, cache_path: str, obj):
         with open(cache_path, "wb") as f:
