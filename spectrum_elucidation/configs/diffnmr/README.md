@@ -147,7 +147,7 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 # Results are saved to the folder specified by --save_path (default: results).
 
 python spectrum_elucidation/sample.py --model_name='diffnmr_msdnmr_nless15' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
-python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --checkpoint_path='./output/DiffNMR/DiffNMR/checkpoints' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
+python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --checkpoint_path='./checkpoints' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
 ```
 
 ---

@@ -51,7 +51,7 @@ Trainer:
   # Evaluation frequency [epoch], for example, eval_freq=1 means evaluate every 1 epoch
   eval_freq: 1 # set 0 to disable evaluation during training
   # Pretrained model path, if null, no pretrained model will be loaded
-  pretrained_model_path: ./pretrained/DiffNMR_DiffGraphFormer_nless15_init.pdparams # please set your pretrained model path here when run trainer.test
+  pretrained_model_path: ./checkpoints/DiffNMR_DiffGraphFormer_nless15_init.pdparams # please set your pretrained model path here when run trainer.test
   # Resume from checkpoint path, useful for resuming training
   resume_from_checkpoint: null
   # whether use automatic mixed precision
@@ -104,7 +104,7 @@ Sampler:
   flag_retrival_initilization: False
   num_candidates: 1
   retrival_database_path: ./spectrum_elucidation/retrival_database/mol_rep_15.csv
-  pretrained_model_path: ./pretrained/DiffNMR_DiffGraphFormer_nless15_best.pdparams
+  pretrained_model_path: ./checkpoints/DiffNMR_DiffGraphFormer_nless15_best.pdparams
   output_dir: ./output/DiffNMR/DiffGraphFormer/sample
   out_dict: {"Accuracy"}
   data:
@@ -178,7 +178,7 @@ CLIP:
     __class_name__: NMRNetCLIP
     __init_params__:
       spectrum_encoder:
-        pretrained_model_path: "./pretrained/DiffNMR_NMRNet_nless15_best.pdparams"
+        pretrained_model_path: "./checkpoints/DiffNMR_NMRNet_nless15_best.pdparams"
         dim_enc_H: 1024
         dimff_enc_H: 2048
         dim_enc_C: 256
@@ -192,7 +192,7 @@ CLIP:
         peakwidthemb_num: 70
         integralemb_num: 26
       graph_encoder:
-        pretrained_model_path: "./pretrained/DiffNMR_DiffGraphFormer_nless15_best.pdparams"
+        pretrained_model_path: "./checkpoints/DiffNMR_DiffGraphFormer_nless15_best.pdparams"
         n_layers_GT: 5
         hidden_mlp_dims: {
           "X": 256,

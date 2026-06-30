@@ -14,6 +14,7 @@
 
 import copy
 import os
+import os.path as osp
 import time
 from contextlib import contextmanager
 from typing import Dict
@@ -101,11 +102,22 @@ class MolecularSampler:
 
             logger.info(f"Loading model from {config_path} and {checkpoint_path}.")
 
+            config_base_dir = os.path.dirname(os.path.abspath(config_path))
+            checkpoint_dir = (
+                checkpoint_path
+                if checkpoint_path and os.path.isdir(checkpoint_path)
+                else None
+            )
             config = OmegaConf.load(config_path)
             if config_overrides:
                 cli_config = OmegaConf.from_dotlist(config_overrides)
                 config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
+            self._resolve_pretrained_paths(
+                config,
+                config_base_dir=config_base_dir,
+                checkpoint_dir=checkpoint_dir,
+            )
         else:
             logger.info(f"Loading registered model: {model_name}")
             checkpoint_path = download.get_weights_path_from_url(
@@ -124,6 +136,11 @@ class MolecularSampler:
                 cli_config = OmegaConf.from_dotlist(config_overrides)
                 config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
+            self._resolve_pretrained_paths(
+                config,
+                config_base_dir=package_config_dir,
+                checkpoint_dir=None,
+            )
 
         model_config = config.get("Model", None)
         assert model_config is not None, "Model config must be provided."
@@ -290,6 +307,45 @@ class MolecularSampler:
             yield
         finally:
             os.chdir(cwd)
+
+    @staticmethod
+    def _resolve_pretrained_paths(
+        config: Dict,
+        config_base_dir: Optional[str],
+        checkpoint_dir: Optional[str] = None,
+    ):
+        def resolve_path(path):
+            if path is None or osp.isabs(path) or path.startswith("http"):
+                return path
+
+            if checkpoint_dir is not None:
+                candidate = osp.join(checkpoint_dir, osp.basename(path))
+                if osp.exists(candidate):
+                    return candidate
+
+            if config_base_dir is not None:
+                candidate = osp.join(config_base_dir, "checkpoints", osp.basename(path))
+                if osp.exists(candidate):
+                    return candidate
+                return osp.normpath(osp.join(config_base_dir, path))
+
+            return path
+
+        def visit(obj):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if key in {
+                        "pretrained_path",
+                        "pretrained_model_path",
+                    } and isinstance(value, str):
+                        obj[key] = resolve_path(value)
+                    else:
+                        visit(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    visit(item)
+
+        visit(config)
 
     def compute_metric(
         self,
@@ -661,10 +717,15 @@ class MolecularSampler:
         )
         X_t, E_t, y_t = z_T.X, z_T.E, z_T.y
 
-        chain_X = paddle.zeros([number_chain_steps, keep_chain, n_max], dtype="int64")
-        chain_E = paddle.zeros(
-            [number_chain_steps, keep_chain, n_max, n_max], dtype="int64"
-        )
+        if keep_chain > 0:
+            chain_X = paddle.zeros(
+                [number_chain_steps, keep_chain, n_max], dtype="int64"
+            )
+            chain_E = paddle.zeros(
+                [number_chain_steps, keep_chain, n_max, n_max], dtype="int64"
+            )
+        else:
+            chain_X = chain_E = None
 
         # 3. Retrieval Initialization(Optional)
         if retrival_initilization and batch_condition is not None:
@@ -745,9 +806,10 @@ class MolecularSampler:
                 X_t = batch_X
 
             # save intermediate frames for the first `keep_chain` graphs
-            write_index = (s_int * number_chain_steps) // model.T
-            chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
-            chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
+            if keep_chain > 0:
+                write_index = (s_int * number_chain_steps) // model.T
+                chain_X[write_index] = discrete_sampled_s.X[:keep_chain]
+                chain_E[write_index] = discrete_sampled_s.E[:keep_chain]
 
         # 5. Collapse padding → obtain discrete indices; optionally keep one‑hot
         # Make a *clone* of `sampled_s` so that collapsing will not overwrite the
@@ -822,15 +884,15 @@ class MolecularSampler:
                 )
                 assert chain_X.shape[0] == (number_chain_steps + 10)
 
-            # 7.b use visulize tools
-            num_mols = chain_X.shape[1]
-            # draw animation of diffusion process of generated molecules
-            for i in range(num_mols):
-                chain_X_np = chain_X[:, i, :].numpy()
-                chain_E_np = chain_E[:, i, :, :].numpy()
-                self.visualization_tools.visualize_chain(
-                    batch_id, i, chain_X_np, chain_E_np
-                )
+                # 7.b use visulize tools
+                num_mols = chain_X.shape[1]
+                # draw animation of diffusion process of generated molecules
+                for i in range(num_mols):
+                    chain_X_np = chain_X[:, i, :].numpy()
+                    chain_E_np = chain_E[:, i, :, :].numpy()
+                    self.visualization_tools.visualize_chain(
+                        batch_id, i, chain_X_np, chain_E_np
+                    )
             # draw picture of predicted and true molecules
             self.visualization_tools.visualizeNmr(
                 batch_id,

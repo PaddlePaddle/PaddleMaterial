@@ -97,6 +97,29 @@ def test_model_package_helpers_live_in_io_module():
     assert not (ROOT / "ppmat/utils/model_package.py").exists()
 
 
+def test_diffnmr_train_smiles_uses_existing_datadir_cache(tmp_path):
+    import numpy as np
+
+    from ppmat.datasets.msd_nmr_dataset import get_train_smiles
+
+    cache_dir = tmp_path / "msd_nmr_nless15_cache" / "train"
+    cache_dir.mkdir(parents=True)
+    smiles_path = cache_dir / "train_smiles_no_h.npy"
+    expected_smiles = np.array(["CCO", "CO"])
+    np.save(smiles_path, expected_smiles)
+
+    cfg = {
+        "datadir": str(tmp_path),
+        "data_flag": "n<15",
+        "build_graph_cfg": {"__init_params__": {"remove_h": True}},
+    }
+    dataset_infos = SimpleNamespace(atom_decoder=["C", "N", "O", "F"])
+
+    train_smiles = get_train_smiles(cfg, dataloader=[], dataset_infos=dataset_infos)
+
+    np.testing.assert_array_equal(train_smiles, expected_smiles)
+
+
 def test_build_model_from_name_uses_package_config_discovery():
     import ppmat.models as models
 
@@ -334,9 +357,166 @@ def test_diffnmr_sample_readme_documents_one_click_sample_command():
     assert "### Sampling Sample" not in readme
     assert "Sampler.sample_batch_iters=1" not in readme
     assert "Sampler.data.sampler.__init_params__.batch_size=1" not in readme
-    assert "--checkpoint_path='./output/DiffNMR/DiffNMR/checkpoints'" in readme
+    assert "--checkpoint_path='./checkpoints'" in readme
     assert sample_csv.exists()
     assert sample_csv.read_text().splitlines()[0] == "smiles,tokenized_input,atom_count"
+
+
+def test_diffnmr_config_uses_standard_checkpoint_paths():
+    config_path = ROOT / "spectrum_elucidation/configs/diffnmr/DiffNMR.yaml"
+    source = config_path.read_text()
+    cfg = OmegaConf.to_container(OmegaConf.load(config_path), resolve=True)
+
+    assert "./pretrained/" not in source
+    assert cfg["Sampler"]["pretrained_model_path"].startswith("./checkpoints/")
+    assert cfg["Model"]["__init_params__"]["encoder_cfg"]["pretrained_path"].startswith(
+        "./checkpoints/"
+    )
+    assert cfg["Model"]["__init_params__"]["decoder_cfg"]["pretrained_path"].startswith(
+        "./checkpoints/"
+    )
+    assert cfg["CLIP"]["__init_params__"]["spectrum_encoder"][
+        "pretrained_model_path"
+    ].startswith("./checkpoints/")
+    assert cfg["CLIP"]["__init_params__"]["graph_encoder"][
+        "pretrained_model_path"
+    ].startswith("./checkpoints/")
+
+
+def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
+    from ppmat.sample.molecular_sampler import MolecularSampler
+
+    package_dir = tmp_path / "diffnmr_msdnmr_nless15"
+    package_ckpt_dir = package_dir / "checkpoints"
+    package_ckpt_dir.mkdir(parents=True)
+    package_weight = package_ckpt_dir / "DiffNMR_NMRNet_nless15_best.pdparams"
+    package_weight.write_bytes(b"fake")
+
+    package_config = {
+        "Model": {
+            "__init_params__": {
+                "encoder_cfg": {
+                    "pretrained_path": (
+                        "./checkpoints/DiffNMR_NMRNet_nless15_best.pdparams"
+                    )
+                }
+            }
+        }
+    }
+
+    MolecularSampler._resolve_pretrained_paths(
+        package_config,
+        config_base_dir=str(package_dir),
+        checkpoint_dir=None,
+    )
+
+    assert package_config["Model"]["__init_params__"]["encoder_cfg"][
+        "pretrained_path"
+    ] == str(package_weight)
+
+    custom_ckpt_dir = tmp_path / "custom_checkpoints"
+    custom_ckpt_dir.mkdir()
+    custom_weight = custom_ckpt_dir / "DiffNMR_DiffGraphFormer_nless15_best.pdparams"
+    custom_weight.write_bytes(b"fake")
+    custom_config = {
+        "CLIP": {
+            "__init_params__": {
+                "graph_encoder": {
+                    "pretrained_model_path": (
+                        "./checkpoints/DiffNMR_DiffGraphFormer_nless15_best.pdparams"
+                    )
+                }
+            }
+        }
+    }
+
+    MolecularSampler._resolve_pretrained_paths(
+        custom_config,
+        config_base_dir=str(tmp_path / "config_dir"),
+        checkpoint_dir=str(custom_ckpt_dir),
+    )
+
+    assert custom_config["CLIP"]["__init_params__"]["graph_encoder"][
+        "pretrained_model_path"
+    ] == str(custom_weight)
+
+
+def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
+    import paddle
+
+    import ppmat.sample.molecular_sampler as molecular_sampler
+    from ppmat.sample.molecular_sampler import MolecularSampler
+
+    class FakeData:
+        def __init__(self, X, E, y=None):
+            self.X = X
+            self.E = E
+            self.y = y
+
+        def mask(self, node_mask, collapse=False):
+            if collapse:
+                return FakeData(
+                    paddle.argmax(self.X, axis=-1),
+                    paddle.argmax(self.E, axis=-1),
+                    self.y,
+                )
+            return self
+
+    class FakeModel:
+        T = 1
+        limit_dist = None
+
+    def fake_noise(limit_dist, node_mask):
+        del limit_dist
+        batch_size, n_max = node_mask.shape
+        return FakeData(
+            paddle.ones([batch_size, n_max, 1], dtype="float32"),
+            paddle.ones([batch_size, n_max, n_max, 1], dtype="float32"),
+            paddle.zeros([batch_size, 1], dtype="float32"),
+        )
+
+    def fake_step(model, **kwargs):
+        del model
+        batch_size = kwargs["X_t"].shape[0]
+        n_max = kwargs["X_t"].shape[1]
+        sampled = FakeData(
+            paddle.ones([batch_size, n_max, 1], dtype="float32"),
+            paddle.ones([batch_size, n_max, n_max, 1], dtype="float32"),
+            paddle.zeros([batch_size, 1], dtype="float32"),
+        )
+        discrete = FakeData(
+            paddle.zeros([batch_size, n_max], dtype="int64"),
+            paddle.zeros([batch_size, n_max, n_max], dtype="int64"),
+        )
+        return sampled, discrete
+
+    monkeypatch.setattr(
+        molecular_sampler.scheduling_diffnmr,
+        "sample_discrete_feature_noise",
+        fake_noise,
+    )
+    monkeypatch.setattr(molecular_sampler.scheduling_diffnmr, "step", fake_step)
+
+    sampler = object.__new__(MolecularSampler)
+    sampler.visualization_tools = None
+
+    mol_list, mol_true = sampler.sample_batch(
+        model=FakeModel(),
+        batch_id=0,
+        batch_size=1,
+        batch_condition=[],
+        number_chain_steps=1,
+        keep_chain=0,
+        visual_num=0,
+        batch_X=paddle.ones([1, 1, 1], dtype="float32"),
+        batch_E=paddle.ones([1, 1, 1, 1], dtype="float32"),
+        batch_y=paddle.zeros([1, 1], dtype="float32"),
+        iter_idx=0,
+        num_nodes=paddle.to_tensor([1], dtype="int64"),
+    )
+
+    assert len(mol_list) == 1
+    assert len(mol_true) == 1
 
 
 def test_diffnmr_sample_entrypoint_supports_config_overrides():

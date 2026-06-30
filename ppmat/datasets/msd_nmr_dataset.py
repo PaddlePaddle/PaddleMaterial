@@ -1341,39 +1341,50 @@ class MSDnmrinfos:
         }
 
 
-def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
-    if evaluate_dataset:
-        assert (
-            dataset_infos is not None
-        ), "If wanting to evaluate dataset, need to pass dataset_infos"
-    if not osp.exists(cfg["datadir"]):
+def _get_msd_nmr_subdataset_name(data_flag: str):
+    if data_flag == "n<15":
+        return "msd_nmr_nless15"
+    if data_flag == "n<20":
+        return "msd_nmr_nless20"
+    if data_flag == "n<30":
+        return "msd_nmr_nless30"
+    if data_flag == "n<35":
+        return "msd_nmr_nless35"
+    raise ValueError(
+        f"Unknown data_flag: {data_flag}. Expected one of "
+        f"{'n<15', 'n<20', 'n<30', 'n<35'}."
+    )
+
+
+def _resolve_msd_nmr_subset_dir(datadir: str, data_flag: str):
+    subdataset_name = _get_msd_nmr_subdataset_name(data_flag)
+    if not osp.exists(datadir):
         logger.message(
             "The dataset directory is not found. Will save it to default path now."
         )
         root_path = download.get_datasets_path_from_url(
             MSDnmrDataset.url, MSDnmrDataset.md5
         )
-        path = osp.join(root_path, MSDnmrDataset.name, osp.basename(cfg["datadir"]))
-        if cfg["data_flag"] == "n<15":
-            subdataset_name = "msd_nmr_nless15"
-        elif cfg["data_flag"] == "n<20":
-            subdataset_name = "msd_nmr_nless20"
-        elif cfg["data_flag"] == "n<30":
-            subdataset_name = "msd_nmr_nless30"
-        elif cfg["data_flag"] == "n<35":
-            subdataset_name = "msd_nmr_nless35"
-        else:
-            raise ValueError(
-                f"Unknown data_flag: {cfg['data_flag']}. Expected one of "
-                f"{'n<15', 'n<20', 'n<30', 'n<35'}."
-            )
-        path = osp.join(root_path, MSDnmrDataset.name, subdataset_name)
+        return osp.join(root_path, MSDnmrDataset.name, subdataset_name)
+
+    if osp.exists(osp.join(datadir, "train.csv")):
+        return datadir
+
+    return osp.join(datadir, subdataset_name)
+
+
+def get_train_smiles(cfg, dataloader, dataset_infos, evaluate_dataset=False):
+    if evaluate_dataset:
+        assert (
+            dataset_infos is not None
+        ), "If wanting to evaluate dataset, need to pass dataset_infos"
 
     remove_h = cfg["build_graph_cfg"]["__init_params__"]["remove_h"]
     atom_decoder = dataset_infos.atom_decoder
 
     smiles_file_name = "train_smiles_no_h.npy" if remove_h else "train_smiles_h.npy"
-    smiles_path = os.path.join(path + "_cache", "train", smiles_file_name)
+    dataset_dir = _resolve_msd_nmr_subset_dir(cfg["datadir"], cfg["data_flag"])
+    smiles_path = os.path.join(dataset_dir + "_cache", "train", smiles_file_name)
     if os.path.exists(smiles_path):
         logger.message("Dataset smiles were found")
         train_smiles = np.load(smiles_path)
