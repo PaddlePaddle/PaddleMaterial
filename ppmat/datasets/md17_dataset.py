@@ -94,15 +94,20 @@ class MD17Dataset(Dataset):
     Data source: https://www.quantum-machine.org/datasets/
 
     Args:
-        path: Root directory for storing raw and cached data.
-        name: Molecule name from the supported list.
-        split: ``'train'``, ``'val'``, ``'test'``, or ``None`` (all).
-        force_key: Key name for forces in the output dict (default ``'force'``).
-            Allows downstream models to override (e.g. ``'forces'``).
-        build_graph_cfg: Configuration dict for graph converter.
-        transforms: Optional transform callable.
-        cache_path: Explicit cache path (auto-generated when None).
-        overwrite: Force cache rebuild.
+        path (str): Root directory for storing raw and cached data.
+        name (str): Molecule name from the supported list. Defaults to ``'benzene_old'``.
+        split (Optional[str]): One of ``'train'``, ``'val'``, ``'test'``, or
+            ``None`` (all). Defaults to ``None``.
+        force_key (Optional[str]): Key name for forces in the output dict.
+            Defaults to ``'force'``.
+        build_graph_cfg (Optional[Dict]): Configuration dict for graph
+            converter. Defaults to ``None``.
+        transforms (Optional[Callable]): Per-sample transform callable.
+            Defaults to ``None``.
+        cache_path (Optional[str]): Explicit cache path. Auto-generated
+            when ``None``. Defaults to ``None``.
+        overwrite (bool): Whether to overwrite existing cached graphs.
+            Defaults to ``False``.
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
