@@ -108,6 +108,8 @@ class MD17Dataset(Dataset):
             when ``None``. Defaults to ``None``.
         overwrite (bool): Whether to overwrite existing cached graphs.
             Defaults to ``False``.
+        filter_unvalid (bool): Whether to filter out invalid samples.
+            Defaults to ``True``.
     """
 
     url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/MD17/md17.tar.gz"
@@ -125,6 +127,7 @@ class MD17Dataset(Dataset):
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
+        filter_unvalid: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -132,6 +135,8 @@ class MD17Dataset(Dataset):
         self.mol_name = name
         self.force_key = force_key
         self.transforms = transforms
+        self.overwrite = overwrite
+        self.filter_unvalid = filter_unvalid
 
         os.makedirs(path, exist_ok=True)
 
