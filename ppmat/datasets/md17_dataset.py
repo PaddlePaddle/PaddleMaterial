@@ -31,7 +31,8 @@
 import os
 import os.path as osp
 import pickle
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 from typing import Callable
 from typing import Dict
 from typing import Optional
@@ -45,10 +46,12 @@ from ppmat.models import build_graph_converter
 from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import logger
 from ppmat.utils.download import get_datasets_path_from_url
+from ppmat.utils.misc import is_equal
 
 try:
     from tqdm import tqdm
 except ImportError:
+
     def tqdm(iterable, **kwargs):
         return iterable
 
@@ -86,16 +89,16 @@ def _build_md17_graph_thread(idx, all_z, all_pos, build_graph_cfg, cache_dir):
     ei = converter(paddle.to_tensor(pos_i), paddle.to_tensor(batch_t))
     ti = compute_triplet_indices(ei, all_z.shape[0])
     cache_data = {
-        'edge_index': ei.numpy(),
-        'ti_i': ti['i'].numpy(),
-        'ti_j': ti['j'].numpy(),
-        'ti_idx_kj': ti['idx_kj'].numpy(),
-        'ti_idx_ji': ti['idx_ji'].numpy(),
-        'ti_idx_lk': ti['idx_lk'].numpy(),
-        'ti_idx_triplet': ti['idx_triplet'].numpy(),
+        "edge_index": ei.numpy(),
+        "ti_i": ti["i"].numpy(),
+        "ti_j": ti["j"].numpy(),
+        "ti_idx_kj": ti["idx_kj"].numpy(),
+        "ti_idx_ji": ti["idx_ji"].numpy(),
+        "ti_idx_lk": ti["idx_lk"].numpy(),
+        "ti_idx_triplet": ti["idx_triplet"].numpy(),
     }
     save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
-    with open(save_path, 'wb') as f:
+    with open(save_path, "wb") as f:
         pickle.dump(cache_data, f)
     return idx
 
@@ -134,6 +137,8 @@ class MD17Dataset(Dataset):
         force_key="force",
         build_graph_cfg: Optional[Dict] = None,
         transforms: Optional[Callable] = None,
+        cache_path: Optional[str] = None,
+        overwrite: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -169,6 +174,7 @@ class MD17Dataset(Dataset):
                 logger.warning(f"bcebos download failed: {e}")
             if raw_path is None:
                 import urllib.request
+
                 url = _MOLECULE_URLS[name]
                 logger.info(f"Downloading MD17/{name} from {url} ...")
                 urllib.request.urlretrieve(url, individual_path)
@@ -190,9 +196,9 @@ class MD17Dataset(Dataset):
         if split == "train":
             self._indices = indices[:ts]
         elif split == "val":
-            self._indices = indices[ts:ts + vs]
+            self._indices = indices[ts : ts + vs]
         elif split == "test":
-            self._indices = indices[ts + vs:]
+            self._indices = indices[ts + vs :]
         else:
             self._indices = indices
 
@@ -201,20 +207,46 @@ class MD17Dataset(Dataset):
         self._energy_np = all_energy
         self._forces_np = all_forces
 
-        # ---- 4. Pre‑build edge_index + triplet indices (rank 0 + barrier, parallel) ----
+        # ---- 4. Cache path (MP20 pattern) ----
+        if cache_path is not None:
+            self.cache_path = cache_path
+        else:
+            base = path.rstrip("/").rstrip("\\")
+            split_suffix = split if split is not None else "all"
+            self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
+        logger.info(f"Cache path: {self.cache_path}")
+
+        # ---- 5. Pre‑build edge_index + triplet indices (MP20 pattern) ----
         self.graph_cache = None
         if build_graph_cfg is not None:
-            gc_name = build_graph_cfg.get("__class_name__", "custom")
-            cutoff = build_graph_cfg.get("__init_params__", {}).get("cutoff", 5)
-            graph_cache_dir = osp.join(
-                path, f"md17_graphs_{name}_{gc_name}_cutoff{cutoff}"
-            )
-            cfg_pkl = osp.join(graph_cache_dir, "build_graph_cfg.pkl")
-            cache_ready = osp.exists(graph_cache_dir) and osp.exists(cfg_pkl)
-            if not cache_ready:
+            graph_cache_path = osp.join(self.cache_path, "graphs")
+            cfg_pkl = osp.join(self.cache_path, "build_graph_cfg.pkl")
+            cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
+
+            need_rebuild = overwrite or not cache_exists
+            if cache_exists and not overwrite:
+                try:
+                    cfg_cached = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
+                    if is_equal(cfg_cached, build_graph_cfg):
+                        logger.info("build_graph_cfg matches cache. Reusing.")
+                    else:
+                        logger.warning(
+                            "build_graph_cfg differs from cache. Rebuilding."
+                        )
+                        need_rebuild = True
+                except Exception as e:
+                    logger.warning(f"Cache check failed ({e}). Rebuilding.")
+                    need_rebuild = True
+
+            if need_rebuild:
                 if dist.get_rank() == 0:
-                    os.makedirs(graph_cache_dir, exist_ok=True)
-                    self._save_pickle(cfg_pkl, build_graph_cfg)
+                    os.makedirs(graph_cache_path, exist_ok=True)
+                    self.save_to_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl"),
+                        build_graph_cfg,
+                    )
                     logger.info(
                         f"Pre‑building graphs for MD17/{name} ({total} frames) "
                         f"with 24 threads ..."
@@ -223,9 +255,13 @@ class MD17Dataset(Dataset):
                         futures = {
                             executor.submit(
                                 _build_md17_graph_thread,
-                                i, all_z, all_pos,
-                                build_graph_cfg, graph_cache_dir,
-                            ): i for i in range(total)
+                                i,
+                                all_z,
+                                all_pos,
+                                build_graph_cfg,
+                                graph_cache_path,
+                            ): i
+                            for i in range(total)
                         }
                         for _ in tqdm(
                             as_completed(futures), total=total, desc="Build graphs"
@@ -234,21 +270,21 @@ class MD17Dataset(Dataset):
                 if dist.is_initialized():
                     dist.barrier()
             self.graph_cache = [
-                osp.join(graph_cache_dir, f"{i:010d}.pkl") for i in range(total)
+                osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)
             ]
 
         self.num_samples = len(self._indices)
         logger.info(f"Load {self.num_samples} samples, split={split}")
 
-    @staticmethod
-    def _save_pickle(path, obj):
-        with open(path, "wb") as f:
+    def save_to_cache(self, cache_path: str, obj):
+        with open(cache_path, "wb") as f:
             pickle.dump(obj, f)
 
-    @staticmethod
-    def _load_pickle(path):
-        with open(path, "rb") as f:
-            return pickle.load(f)
+    def load_from_cache(self, cache_path: str):
+        if osp.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                return pickle.load(f)
+        raise FileNotFoundError(f"No such file or directory: {cache_path}")
 
     def __getitem__(self, idx):
         real_idx = self._indices[idx]
@@ -260,19 +296,19 @@ class MD17Dataset(Dataset):
         }
         if self.graph_cache is not None:
             gpath = self.graph_cache[real_idx]
-            loaded = self._load_pickle(gpath) if isinstance(gpath, str) else gpath
-            if isinstance(loaded, dict):
-                sample["edge_index"] = loaded["edge_index"]
+            graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
+            if isinstance(graph, dict):
+                sample["edge_index"] = graph["edge_index"]
                 sample["triplet_indices"] = {
-                    'i': loaded['ti_i'],
-                    'j': loaded['ti_j'],
-                    'idx_kj': loaded['ti_idx_kj'],
-                    'idx_ji': loaded['ti_idx_ji'],
-                    'idx_lk': loaded['ti_idx_lk'],
-                    'idx_triplet': loaded['ti_idx_triplet'],
+                    "i": graph["ti_i"],
+                    "j": graph["ti_j"],
+                    "idx_kj": graph["ti_idx_kj"],
+                    "idx_ji": graph["ti_idx_ji"],
+                    "idx_lk": graph["ti_idx_lk"],
+                    "idx_triplet": graph["ti_idx_triplet"],
                 }
             else:
-                sample["edge_index"] = loaded
+                sample["edge_index"] = graph
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample
