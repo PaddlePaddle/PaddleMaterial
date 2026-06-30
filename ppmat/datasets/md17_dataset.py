@@ -139,56 +139,52 @@ class MD17Dataset(Dataset):
             self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
         logger.info(f"Cache path: {self.cache_path}")
 
-        # ---- 3. Pre‑build edge_index + triplet indices ----
-        self.graph_cache = None
+        # ---- 3. Pre‑build edge_index + triplet indices (MP20 pattern) ----
+        self.cache_exists = True if osp.exists(self.cache_path) else False
+        self.graphs = None
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
-            self.graph_cache = self._build_graph_cache(
-                build_graph_cfg, graph_cache_path, total, overwrite,
-            )
+            cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
+            if self.cache_exists and not overwrite:
+                try:
+                    cfg_cached = self.load_from_cache(cfg_pkl)
+                    if not is_equal(cfg_cached, build_graph_cfg):
+                        logger.warning(
+                            "build_graph_cfg differs from cache. Rebuilding."
+                        )
+                        overwrite = True
+                except Exception as e:
+                    logger.warning(f"Cache check failed ({e}). Rebuilding.")
+                    overwrite = True
+
+            if overwrite or not self.cache_exists:
+                if dist.get_rank() == 0:
+                    os.makedirs(graph_cache_path, exist_ok=True)
+                    self.save_to_cache(cfg_pkl, build_graph_cfg)
+                    converter = build_graph_converter(build_graph_cfg)
+                    logger.info(
+                        f"Pre‑building graphs for {self.mol_name} ({total} frames) "
+                        f"with 24 threads ..."
+                    )
+                    with ThreadPoolExecutor(max_workers=24) as executor:
+                        futures = {
+                            executor.submit(
+                                build_md17_graph,
+                                i, self.row_data["z"], self.row_data["pos"][i],
+                                converter, graph_cache_path,
+                            ): i for i in range(total)
+                        }
+                        for _ in tqdm(as_completed(futures), total=total, desc="Build graphs"):
+                            pass
+                if dist.is_initialized():
+                    dist.barrier()
+            self.graphs = [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
+
+        assert (
+            self.graphs is None or len(self.graphs) == total
+        ), "The number of graphs must be equal to the number of samples."
 
         logger.info(f"Load {self.num_samples} samples, split={split}")
-
-    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, total, overwrite):
-        """Pre-build and cache edge_index + triplet indices."""
-        cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
-        cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
-
-        need_rebuild = overwrite or not cache_exists
-        if cache_exists and not overwrite:
-            try:
-                cfg_cached = self.load_from_cache(cfg_pkl)
-                if not is_equal(cfg_cached, build_graph_cfg):
-                    logger.warning("build_graph_cfg differs from cache. Rebuilding.")
-                    need_rebuild = True
-            except Exception as e:
-                logger.warning(f"Cache check failed ({e}). Rebuilding.")
-                need_rebuild = True
-
-        if need_rebuild:
-            if dist.get_rank() == 0:
-                os.makedirs(graph_cache_path, exist_ok=True)
-                self.save_to_cache(cfg_pkl, build_graph_cfg)
-                converter = build_graph_converter(build_graph_cfg)
-                logger.info(
-                    f"Pre‑building graphs for {self.mol_name} ({total} frames) "
-                    f"with 24 threads ..."
-                )
-                with ThreadPoolExecutor(max_workers=24) as executor:
-                    futures = {
-                        executor.submit(
-                            build_md17_graph,
-                            i, self.row_data["z"], self.row_data["pos"][i],
-                            converter, graph_cache_path,
-                        ): i for i in range(total)
-                    }
-                    for _ in tqdm(as_completed(futures), total=total, desc="Build graphs"):
-                        pass
-            if dist.is_initialized():
-                dist.barrier()
-
-        # Map from frame index to cache path
-        return {i: osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)}
 
     def _ensure_splits(self, raw_path, name):
         """Create pre-split npz files and index arrays (seed 42, 1000/1000 train/val)."""
@@ -262,8 +258,8 @@ class MD17Dataset(Dataset):
             ),
             self.force_key: self.row_data["force"][frame],
         }
-        if self.graph_cache is not None:
-            gpath = self.graph_cache[frame]
+        if self.graphs is not None:
+            gpath = self.graphs[frame]
             graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
             if isinstance(graph, dict):
                 sample["edge_index"] = graph["edge_index"]
