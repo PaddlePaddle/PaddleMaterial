@@ -131,7 +131,7 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
 
         # ---- 1. Download + split data ----
-        raw_path = osp.join(path, "raw", f"{name}_dft.npz")
+        raw_path = osp.join(path, f"{name}_dft.npz")
         if not osp.exists(raw_path):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
@@ -229,7 +229,7 @@ class MD17Dataset(Dataset):
                 dist.barrier()
 
     def read_data(self, path, name, split):
-        split_dir = osp.join(path, "raw", "splits")
+        split_dir = osp.join(path, "splits")
         split_npz = osp.join(split_dir, f"{name}_{split}.npz")
         if split is None:
             split_npz = osp.join(split_dir, f"{name}_all.npz")
