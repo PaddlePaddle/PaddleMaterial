@@ -342,11 +342,16 @@ python property_prediction/train.py \
 python property_prediction/predict.py \
   --model_name spherenet_qm9_mu
 
+# Molecular prediction (QM9 / MD17 models)
+python property_prediction/predict.py \
+  --model_name spherenet_md17_aspirin \
+  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
+
 # Using a local checkpoint
 python property_prediction/predict.py \
   --config_path ./output/spherenet_qm9_mu_t_*/spherenet_qm9_mu.yaml \
   --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
-  --cif_file_path ./property_prediction/example_data/cifs/
+  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
 ```
 
 ## Citation
