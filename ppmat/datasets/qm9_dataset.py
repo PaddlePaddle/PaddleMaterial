@@ -42,12 +42,7 @@ from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils.misc import is_equal
 from ppmat.utils.download import get_datasets_path_from_url
-
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable, **kwargs):
-        return iterable
+from tqdm import tqdm
 
 # Symbol-to-atomic-number mapping (elements present in QM9)
 _SYMBOL_TO_Z = {
