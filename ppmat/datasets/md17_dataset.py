@@ -86,14 +86,11 @@ class MD17Dataset(Dataset):
     | Uracil         | 133,770  | 12     | 2     | E + F    | 1k/1k/R |
     +----------------+----------+--------+-------+----------+-------+
 
-    Downloads raw ``.npz`` data from bcebos bundle, then creates pre-split
-    files on first access (seed 42, rank 0).  Each split (train/val/test) is
-    stored as a separate npz file and loaded directly on subsequent runs —
-    no on-the-fly shuffling in the dataset.
+    Contains ab-initio molecular dynamics trajectories for eight small
+    organic molecules.  Each frame provides atomic numbers, 3D positions,
+    total energy, and per-atom forces.
 
-    Pre‑computed ``edge_index`` and triplet indices are cached per split
-    when ``build_graph_cfg`` is provided (pickle cache, rank‑0 build,
-    barrier sync).
+    Data source: https://www.quantum-machine.org/datasets/
 
     Args:
         path: Root directory for storing raw and cached data.
