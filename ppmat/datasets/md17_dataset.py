@@ -99,7 +99,8 @@ class MD17Dataset(Dataset):
         path: Root directory for storing raw and cached data.
         name: Molecule name from the supported list.
         split: ``'train'``, ``'val'``, ``'test'``, or ``None`` (all).
-        force_key: Key name for forces (default ``'force'``).
+        force_key: Key name for forces in the output dict (default ``'force'``).
+            Allows downstream models to override (e.g. ``'forces'``).
         build_graph_cfg: Configuration dict for graph converter.
         transforms: Optional transform callable.
         cache_path: Explicit cache path (auto-generated when None).
