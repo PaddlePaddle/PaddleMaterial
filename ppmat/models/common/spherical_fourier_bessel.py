@@ -187,7 +187,7 @@ class AngleEmbedding(paddle.nn.Layer):
     (Legendre polynomials) to encode pairwise distances and angles.
     """
 
-    def __init__(self, num_spherical, num_radial, cutoff=5.0, envelope_exponent=5):
+    def __init__(self, num_spherical, num_radial, cutoff=5.0):
         super().__init__()
         assert num_radial <= 64
         self.num_spherical = num_spherical
@@ -233,7 +233,7 @@ class TorsionEmbedding(paddle.nn.Layer):
     configuration (radial distance + polar angle + azimuthal angle).
     """
 
-    def __init__(self, num_spherical, num_radial, cutoff=5.0, envelope_exponent=5):
+    def __init__(self, num_spherical, num_radial, cutoff=5.0):
         super().__init__()
         assert num_radial <= 64
         self.num_spherical = num_spherical

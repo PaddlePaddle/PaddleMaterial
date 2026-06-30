@@ -34,10 +34,10 @@ class SphereNetEmbedding(paddle.nn.Layer):
         super().__init__()
         self.dist_emb = DistEmbedding(num_radial, cutoff, envelope_exponent)
         self.angle_emb = AngleEmbedding(
-            num_spherical, num_radial, cutoff, envelope_exponent
+            num_spherical, num_radial, cutoff
         )
         self.torsion_emb = TorsionEmbedding(
-            num_spherical, num_radial, cutoff, envelope_exponent
+            num_spherical, num_radial, cutoff
         )
         self.reset_parameters()
 
