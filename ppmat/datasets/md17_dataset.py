@@ -25,6 +25,7 @@ from typing import Optional
 import numpy as np
 import paddle
 import paddle.distributed as dist
+import shutil
 from paddle.io import Dataset
 from tqdm import tqdm
 
@@ -130,21 +131,11 @@ class MD17Dataset(Dataset):
         os.makedirs(path, exist_ok=True)
 
         # ---- 1. Download + split data ----
-        raw_dir = osp.join(path, "raw")
-        raw_path = osp.join(raw_dir, f"{name}_dft.npz")
+        raw_path = osp.join(path, "raw", f"{name}_dft.npz")
         if not osp.exists(raw_path):
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
-            src = osp.join(root_path, _BUNDLE_NPZ_MAP[name])
-            if not osp.exists(src):
-                src = osp.join(root_path, "md17", _BUNDLE_NPZ_MAP[name])
-                if not osp.exists(src):
-                    raise FileNotFoundError(
-                        f"MD17/{name} not found in {root_path}"
-                    )
-            import shutil
-            os.makedirs(raw_dir, exist_ok=True)
-            shutil.copy2(src, raw_path)
+            raw_path = osp.join(root_path, self.name, osp.basename(raw_path))
         self._ensure_splits(raw_path, name)
         self._data = dict(zip(
             ("z", "pos", "energy", "force"),
