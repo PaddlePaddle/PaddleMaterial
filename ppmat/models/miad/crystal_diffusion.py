@@ -19,8 +19,7 @@ from paddle_scatter import scatter_mean
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.miad.type_diffusion import D3PM
 from ppmat.models.miad.type_diffusion import DDPMOnehot
-from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
-from ppmat.schedulers.scheduling_sde_ve import ScoreSdeVeSchedulerWrapped
+from ppmat.schedulers import build_scheduler
 from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
@@ -63,50 +62,56 @@ class CrystalGen:
     def __init__(self, diffusion_config, logger):
         self.config = diffusion_config
         self.logger = logger
-        self.cont_time = self.config.cont_time
-        self.num_steps = self.config.num_steps
+        self.cont_time = self.config["cont_time"]
+        self.num_steps = self.config["num_steps"]
         self.eps = 1e-3
         self.time_embedding = SinusoidalTimeEmbeddings(
-            getattr(self.config, "time_embed_dim", 256)
+            self.config.get("time_embed_dim", 256)
         )
-        self.gen_type = "gen" in self.config.task
+        self.gen_type = "gen" in self.config["task"]
 
         # Lattice diffusion
-        self.lat_method = self.config.lat_diffusion.method
-        if self.lat_method == "ddpm":
-            self.lat_scheduler = DDPMScheduler(
-                num_train_timesteps=self.num_steps,
-                beta_schedule="squaredcos_cap_v2",
-            )
-        elif self.lat_method == "fm_lenang":
+        lat_cfg = self.config["lat_diffusion"]
+        self.lat_method = lat_cfg["method"]
+        self.lat_scheduler = build_scheduler(lat_cfg.get("scheduler_cfg", {
+            "__class_name__": "DDPMScheduler",
+            "__init_params__": {
+                "num_train_timesteps": self.num_steps,
+                "beta_schedule": "squaredcos_cap_v2",
+            },
+        }))
+        if self.lat_method == "fm_lenang":
             self._lenang2lat = None
             self.gamma_alpha, self.gamma_theta = 1.3, 0.25
             self.angle_difference_bound = 20
 
         # Frac diffusion
-        self.frac_method = self.config.frac_diffusion.method
-        if self.frac_method == "wrapped_normal":
-            self.frac_scheduler = ScoreSdeVeSchedulerWrapped(
-                num_train_timesteps=self.num_steps,
-                sigma_min=0.005, sigma_max=0.5,
-                sampling_eps=1e-3,
-            )
-            self.step_lr = getattr(self.config.frac_diffusion, "step_lr", None)
-            if self.step_lr is None:
-                self.step_lr = _DEFAULT_GAMMA.get(diffusion_config.task, 1e-5)
-            self.sigmas_t = self.frac_scheduler.discrete_sigmas[:, None]
-            self.sigmas_norm_t = self.frac_scheduler.discrete_sigmas_norm[:, None]
-            self.sb = 0.005
+        frac_cfg = self.config["frac_diffusion"]
+        self.frac_method = frac_cfg["method"]
+        self.frac_scheduler = build_scheduler(frac_cfg.get("scheduler_cfg", {
+            "__class_name__": "ScoreSdeVeSchedulerWrapped",
+            "__init_params__": {
+                "num_train_timesteps": self.num_steps,
+                "sigma_min": 0.005,
+                "sigma_max": 0.5,
+                "sampling_eps": 1e-3,
+            },
+        }))
+        self.step_lr = frac_cfg.get("step_lr", None)
+        if self.step_lr is None:
+            self.step_lr = _DEFAULT_GAMMA.get(self.config["task"], 1e-5)
+        self.sigmas_t = self.frac_scheduler.discrete_sigmas[:, None]
+        self.sigmas_norm_t = self.frac_scheduler.discrete_sigmas_norm[:, None]
+        self.sb = 0.005
 
         # Type diffusion
         if self.gen_type:
+            type_cfg = self.config["type_diffusion"]
             switch_type = {
                 "ddpm_onehot": DDPMOnehot,
                 "d3pm": D3PM,
             }
-            self.type_diffusion = switch_type[self.config.type_diffusion.method](
-                self.config
-            )
+            self.type_diffusion = switch_type[type_cfg["method"]](self.config)
         else:
             self.type_diffusion = None
 
@@ -179,7 +184,7 @@ class CrystalGen:
     def reverse_step_sample(self, xt, t, model, batch):
         lt, ft, at = xt
 
-        if self.config.method == "DiffCSP":
+        if self.config["method"] == "DiffCSP":
             _, f_pred, _ = self.model_prediction(xt, t, model, batch)
             ft_05 = self.frac_reverse_part1(f_pred, ft, t[1])
             xt_05 = [lt, ft_05, at]

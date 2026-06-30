@@ -17,18 +17,23 @@ import math
 import paddle
 import paddle.nn.functional as F
 
-from ppmat.schedulers.scheduling_ddpm import DDPMScheduler
+from ppmat.schedulers import build_scheduler
 
 
 class DDPMOnehot:
     """DDPM for atom types with one-hot encoding."""
 
     def __init__(self, diffusion_config):
-        self.num_steps = diffusion_config.num_steps
+        self.num_steps = diffusion_config["num_steps"]
         self.num_types = 100
-        self.scheduler = DDPMScheduler(
-            num_train_timesteps=self.num_steps,
-            beta_schedule="squaredcos_cap_v2",
+        self.scheduler = build_scheduler(
+            diffusion_config["type_diffusion"].get("scheduler_cfg", {
+                "__class_name__": "DDPMScheduler",
+                "__init_params__": {
+                    "num_train_timesteps": self.num_steps,
+                    "beta_schedule": "squaredcos_cap_v2",
+                },
+            })
         )
         self.to_domain = lambda types: F.one_hot(types - 1, num_classes=self.num_types).cast("float32")
         self.from_domain = lambda onehot: onehot.argmax(axis=-1) + 1
@@ -58,26 +63,32 @@ class DDPMOnehot:
         return ((eps_pred - self.randn_x) ** 2).reshape([eps_pred.shape[0], -1]).mean(axis=1)
 
 
-class D3PM:
-    """Discrete Denoising Diffusion Probabilistic Model for atom types."""
+class D3PMUniformScheduler:
+    """D3PM scheduler with uniform transition matrices (model-internal).
 
-    @staticmethod
-    def _uniform_transition_mat(vocab_size, beta_t):
-        mat = paddle.full((vocab_size, vocab_size), beta_t / float(vocab_size))
-        diag_val = 1 - beta_t * (vocab_size - 1) / vocab_size
-        for i in range(vocab_size):
-            mat[i, i] = diag_val.cast("float32")
-        return mat
+    Pre-computes Q_t, cumprod_Q_t, Q_{t-1}, cumprod_Q_{t-1} for all timesteps
+    using a cosine schedule. This is the uniform-transition variant used by MiAD,
+    as opposed to the absorbing-state D3PMScheduler in ppmat.schedulers.
+    """
 
-    def __init__(self, diffusion_config):
-        self.config = diffusion_config.type_diffusion
-        self.num_steps = diffusion_config.num_steps
-        self.num_types = 100
+    def __init__(
+        self,
+        num_train_timesteps: int = 1000,
+        num_types: int = 100,
+        s: float = 0.008,
+    ):
+        self.num_types = num_types
 
-        s = 0.008
-        discretization = paddle.arange(1, self.num_steps + 1, dtype="float64")
-        f_t = paddle.cos((discretization / (self.num_steps + 1) + s) / (1 + s) * math.pi / 2)
-        a_t = f_t / paddle.cos((paddle.to_tensor(0.0, dtype="float64") + s) / (1 + s) * math.pi / 2)
+        discretization = paddle.arange(
+            1, num_train_timesteps + 1, dtype="float64"
+        )
+        f_t = paddle.cos(
+            (discretization / (num_train_timesteps + 1) + s) / (1 + s) * math.pi / 2
+        )
+        f_0 = paddle.cos(
+            (paddle.to_tensor(0.0, dtype="float64") + s) / (1 + s) * math.pi / 2
+        )
+        a_t = f_t / f_0
         cumprod_alphas_t = a_t
         cumprod_alphas_t_1 = paddle.concat(
             [paddle.to_tensor([1.0], dtype="float64"), cumprod_alphas_t[:-1]]
@@ -85,25 +96,57 @@ class D3PM:
         betas_t = 1 - cumprod_alphas_t / cumprod_alphas_t_1
 
         Q_t_list = []
-        for t_idx in range(self.num_steps):
-            Q_t_list.append(self._uniform_transition_mat(self.num_types, betas_t[t_idx]))
+        for t_idx in range(num_train_timesteps):
+            mat = paddle.full(
+                (num_types, num_types), betas_t[t_idx] / float(num_types)
+            )
+            diag_val = 1 - betas_t[t_idx] * (num_types - 1) / num_types
+            for i in range(num_types):
+                mat[i, i] = diag_val.cast("float32")
+            Q_t_list.append(mat)
         Q_t = paddle.stack(Q_t_list, axis=0)
 
         cumprod_Q_t_list = [Q_t[0]]
-        for t_idx in range(1, self.num_steps):
-            cumprod_Q_t_list.append(paddle.matmul(cumprod_Q_t_list[-1], Q_t[t_idx]))
+        for t_idx in range(1, num_train_timesteps):
+            cumprod_Q_t_list.append(
+                paddle.matmul(cumprod_Q_t_list[-1], Q_t[t_idx])
+            )
         cumprod_Q_t = paddle.stack(cumprod_Q_t_list, axis=0)
 
         Q_t_1 = paddle.concat(
-            [paddle.eye(Q_t.shape[1], dtype="float32").unsqueeze(0), Q_t[:-1]], axis=0,
+            [paddle.eye(num_types, dtype="float32").unsqueeze(0), Q_t[:-1]],
+            axis=0,
         )
-        self.Q_t = Q_t.reshape([-1, self.num_types, self.num_types])
-        self.Q_t_1 = Q_t_1.reshape([-1, self.num_types, self.num_types])
+
         cumprod_Q_t_1 = paddle.concat(
-            [paddle.eye(cumprod_Q_t.shape[1], dtype="float32").unsqueeze(0), cumprod_Q_t[:-1]], axis=0,
+            [
+                paddle.eye(num_types, dtype="float32").unsqueeze(0),
+                cumprod_Q_t[:-1],
+            ],
+            axis=0,
         )
-        self.cumprod_Q_t = cumprod_Q_t.reshape([-1, self.num_types, self.num_types])
-        self.cumprod_Q_t_1 = cumprod_Q_t_1.reshape([-1, self.num_types, self.num_types])
+
+        self.Q_t = Q_t.reshape([-1, num_types, num_types])
+        self.Q_t_1 = Q_t_1.reshape([-1, num_types, num_types])
+        self.cumprod_Q_t = cumprod_Q_t.reshape([-1, num_types, num_types])
+        self.cumprod_Q_t_1 = cumprod_Q_t_1.reshape([-1, num_types, num_types])
+
+
+class D3PM:
+    """Discrete Denoising Diffusion Probabilistic Model for atom types."""
+
+    def __init__(self, diffusion_config):
+        self.config = diffusion_config["type_diffusion"]
+        self.num_steps = diffusion_config["num_steps"]
+        self.scheduler = D3PMUniformScheduler(
+            num_train_timesteps=self.num_steps,
+            num_types=100,
+        )
+        self.num_types = self.scheduler.num_types
+        self.Q_t = self.scheduler.Q_t
+        self.Q_t_1 = self.scheduler.Q_t_1
+        self.cumprod_Q_t = self.scheduler.cumprod_Q_t
+        self.cumprod_Q_t_1 = self.scheduler.cumprod_Q_t_1
 
         self.to_domain = lambda types: F.one_hot(types, num_classes=self.num_types).cast("float32")
         self.from_domain = lambda onehot: onehot.argmax(axis=-1)

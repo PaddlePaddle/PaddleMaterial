@@ -44,9 +44,29 @@ TINY_DIFFUSION_CFG = {
     "cont_time": False,
     "num_steps": 10,
     "time_embed_dim": 32,
-    "lat_diffusion": {"method": "ddpm", "scheduler": "diffcsp_cosine"},
-    "frac_diffusion": {"method": "wrapped_normal", "scheduler": "default_wrapped_normal"},
-    "type_diffusion": {"method": "d3pm", "scheduler": "default_d3pm"},
+    "lat_diffusion": {
+        "method": "ddpm",
+        "scheduler_cfg": {
+            "__class_name__": "DDPMScheduler",
+            "__init_params__": {
+                "num_train_timesteps": 10,
+                "beta_schedule": "squaredcos_cap_v2",
+            },
+        },
+    },
+    "frac_diffusion": {
+        "method": "wrapped_normal",
+        "scheduler_cfg": {
+            "__class_name__": "ScoreSdeVeSchedulerWrapped",
+            "__init_params__": {
+                "num_train_timesteps": 10,
+                "sigma_min": 0.005,
+                "sigma_max": 0.5,
+                "sampling_eps": 0.001,
+            },
+        },
+    },
+    "type_diffusion": {"method": "d3pm"},
 }
 
 

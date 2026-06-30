@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import SimpleNamespace
-
 import numpy as np
 import paddle
 import paddle.nn as nn
@@ -69,13 +67,6 @@ def _extract_x0(batch):
     return batch
 
 
-def _dict_to_sns(d):
-    """Recursively convert dict to SimpleNamespace for attribute access."""
-    if not isinstance(d, dict):
-        return d
-    return SimpleNamespace(**{k: _dict_to_sns(v) for k, v in d.items()})
-
-
 class MiAD(nn.Layer):
     """Mirage Atom Diffusion model."""
 
@@ -94,8 +85,6 @@ class MiAD(nn.Layer):
         }
         cspnet_kwargs = {k: v for k, v in model_cfg.items() if k in _cspnet_keys}
         self.decoder = MiADCSPNet(**cspnet_kwargs)
-        if isinstance(diffusion_cfg, dict):
-            diffusion_cfg = _dict_to_sns(diffusion_cfg)
         self.diffusion = CrystalGen(diffusion_cfg, logger=None)
 
     def set_state_dict(self, state_dict, use_structured_name=True):
