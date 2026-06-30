@@ -6,8 +6,6 @@
 
 Crystal structures are governed by space group symmetry, which constrains the positions of atoms within the unit cell and determines the repeating patterns throughout three-dimensional space. Existing generative models for crystals often ignore these fundamental symmetry constraints, producing structures that violate crystallographic rules or fail to explore the full diversity of symmetry-distinct configurations. In this paper, we introduce SGEquiDiff, a hierarchical generative model that explicitly incorporates space group equivariance at every stage of crystal generation. Our approach sequentially samples space groups, lattice parameters subject to Bravais lattice constraints, elements and Wyckoff positions via an autoregressive transformer, and finally fractional coordinates using a score-based diffusion process on the asymmetric unit. Equivariance of the coordinate diffusion model is achieved through symmetrization: averaging inverse-transformed predictions over all space group operations. Experimental results on the MP-20 and MPTS-52 benchmarks demonstrate that SGEquiDiff generates structurally valid, diverse, and novel crystal structures while faithfully reproducing the space group and Wyckoff position distributions of the training data.
 
-![SGEquiDiff Overview](assets/fig_overview.png)
-
 ---
 
 ## Model Description
@@ -151,21 +149,29 @@ Evaluation metrics include structural validity (`struct_valid`), compositional v
 
 | Model | Dataset | Config | Checkpoint |
 | --- | --- | --- | --- |
-| sgequidiff | mp_20 | [default.yaml](configurations/model/default.yaml) | [checkpoint](https://drive.google.com/drive/folders/1ONwO53i6oG1_yBqP0zPQ-IV_zLoIWyQR?usp=sharing) |
-| sgequidiff | mpts_52 | [default.yaml](configurations/model/default.yaml) | [checkpoint](https://drive.google.com/drive/folders/1ONwO53i6oG1_yBqP0zPQ-IV_zLoIWyQR?usp=sharing) |
+| sgequidiff | mp_20 | [sgequidiff_mp20.yaml](sgequidiff_mp20.yaml) | [sgequidiff_mp20.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mp20.zip) |
+| sgequidiff | mpts_52 | [sgequidiff_mp20.yaml](sgequidiff_mp20.yaml) | [sgequidiff_mpts_52.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mpts_52.zip) |
 
 ---
 
 ## Command
 
 ### Setup
+
+NPZ data is auto-discovered in this order: `$SGEQUI_DATA_DIR` > `data/data/` > `~/.sgequidiff_data/`. Place `train.npz / val.npz / test.npz` under `<root>/mp_20/`. Set the env var only if data lives elsewhere:
+
 ```bash
-export SGEQUIFF_DATA_DIR=/path/to/data
+export SGEQUI_DATA_DIR=/path/to/data
 ```
 
 ### Training
 ```bash
 python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml
+```
+
+### Evaluation
+```bash
+python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml Global.do_train=False Global.do_eval=True Trainer.pretrained_model_path=/path/to/checkpoint
 ```
 
 ### Generation

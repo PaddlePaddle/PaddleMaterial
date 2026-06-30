@@ -63,6 +63,7 @@ class AsymmetricUnitDataset(Dataset):
                 data_directory = Path(env)
             else:
                 candidates = [
+                    Path(__file__).resolve().parents[2] / "data" / "data",
                     Path(__file__).resolve().parents[3] / "data",
                     Path("~").expanduser() / ".sgequidiff_data",
                 ]
@@ -72,7 +73,7 @@ class AsymmetricUnitDataset(Dataset):
                         break
                 if data_directory is None:
                     raise FileNotFoundError(
-                        "Cannot find data directory. Set SGEQUIDIFF_DATA_DIR or ensure data/ exists."
+                        "Cannot find data directory. Set SGEQUI_DATA_DIR or ensure data/ exists."
                     )
 
         npz = np.load(Path(data_directory) / name / f"{split}.npz")
