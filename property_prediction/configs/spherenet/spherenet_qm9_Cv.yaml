@@ -140,3 +140,9 @@ Dataset:
         batch_size: 8
         shuffle: false
         drop_last: false
+
+Predict:
+  graph_converter:
+    __class_name__: RadiusGraph
+    __init_params__:
+      cutoff: 5.0

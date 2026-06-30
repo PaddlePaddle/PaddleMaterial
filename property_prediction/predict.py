@@ -106,16 +106,10 @@ class PropertyPredictor:
         self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True) if predict_config is not None else True
 
         self.graph_converter_fn = None
-        graph_converter_config = None
         if self.predict_config is not None:
             graph_converter_config = predict_config.get("graph_converter", None)
-        if graph_converter_config is None:
-            # Fallback to training config's build_graph_cfg
-            dataset_cfg = self.config.get("Model", {}).get("dataset", None)
-            if dataset_cfg is not None:
-                graph_converter_config = dataset_cfg.get("build_graph_cfg", None)
-        if graph_converter_config is not None:
-            self.graph_converter_fn = build_graph_converter(graph_converter_config)
+            if graph_converter_config is not None:
+                self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
         self.post_transforms_cfg = predict_config.get("post_transforms", None) if predict_config is not None else None
         if self.post_transforms_cfg is not None:
