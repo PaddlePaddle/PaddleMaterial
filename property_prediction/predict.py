@@ -316,20 +316,14 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--cif_file_path",
         type=str,
-        default="./property_prediction/example_data/cifs/",
+        default=None,
         help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
-        "--molecule",
+        "--xyz_file_path",
         type=str,
         default=None,
-        help="Molecular input (SMILES string, file path, etc.). Requires --format.",
-    )
-    argparse.add_argument(
-        "--format",
-        type=str,
-        default=None,
-        help="Input format: xyz, smiles, sdf_file, mol_file, rdmol, inchi, ...",
+        help="Path to the XYZ file whose molecular properties you want to predict.",
     )
     argparse.add_argument(
         "--save_path",
@@ -346,18 +340,13 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    if args.molecule is not None:
-        if args.format is None:
-            raise ValueError("--format is required when --molecule is provided.")
-        if args.format == "xyz":
-            results = predictor.from_xyz_file(args.molecule, args.save_path)
-        else:
-            results = predictor.from_molecule(args.molecule, args.format)
+    if args.xyz_file_path is not None:
+        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
     elif args.cif_file_path is not None:
         results = predictor.from_cif_file(args.cif_file_path, args.save_path)
     else:
         raise ValueError(
-            "Provide --molecule + --format for molecular prediction, "
+            "Provide --xyz_file_path for molecular prediction, "
             "or --cif_file_path for crystal prediction."
         )
     print(results)
