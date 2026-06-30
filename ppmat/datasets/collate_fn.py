@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import numbers
+import warnings
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -24,7 +25,6 @@ from typing import List
 import numpy as np
 import paddle
 import pgl
-import warnings
 
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
@@ -87,99 +87,59 @@ class DefaultCollator(object):
             f"dict, list, number, None, pgl.Graph, but got {type(sample)}"
         )
 
+
 class SphereNetCollator:
-    """Collator for SphereNet batch processing of variable-length molecule tensors.
-
-    Handles dicts where some values are node-level arrays (variable per molecule)
-    and others are scalar properties. Node arrays are concatenated along axis 0
-    with a ``batch`` index tensor; scalar arrays are stacked.
-
-    Special handling for ``edge_index`` (shape ``[2, E]`` per sample): edge
-    indices are offset by the cumulative number of nodes and concatenated
-    along axis 1.
-    """
+    """Collator for SphereNet."""
 
     def __call__(self, batch):
-        sample = batch[0]
-        # node_keys: per-atom arrays, but NOT edge_index / triplet_indices
-        skip_keys = {"edge_index", "triplet_indices"}
-        node_keys = [
-            k for k, v in sample.items()
-            if isinstance(v, np.ndarray) and k not in skip_keys
-            and (v.ndim >= 2 or v.shape[0] > 1)
-        ]
-        target_keys = [
-            k for k in sample.keys()
-            if k not in node_keys and k not in skip_keys and k != "edge_index"
-        ]
-        has_edge_index = "edge_index" in sample
-        has_triplet = "triplet_indices" in sample
+        num_nodes_list = [b["z"].shape[0] for b in batch]
 
-        node_tensors = {
-            k: paddle.to_tensor(np.concatenate([b[k] for b in batch]))
-            for k in node_keys
-        }
-        num_nodes_list = [b[node_keys[0]].shape[0] for b in batch]
-        batch_idx = paddle.concat(
-            [
-                paddle.full([n], i, dtype=paddle.int64)
-                for i, n in enumerate(num_nodes_list)
-            ]
-        )
-        target_tensors = {
-            k: paddle.to_tensor(np.stack([b[k] for b in batch]))
-            for k in target_keys
+        result = {
+            "z": paddle.to_tensor(np.concatenate([b["z"] for b in batch])),
+            "pos": paddle.to_tensor(np.concatenate([b["pos"] for b in batch])),
+            "batch": paddle.concat(
+                [
+                    paddle.full([n], i, dtype=paddle.int64)
+                    for i, n in enumerate(num_nodes_list)
+                ]
+            ),
         }
 
-        result = {**node_tensors, "batch": batch_idx, **target_tensors}
+        # Stack scalar properties (mu, alpha, id, etc.)
+        for k in batch[0]:
+            if k not in ("z", "pos", "edge_index", "triplet_indices"):
+                result[k] = paddle.to_tensor(np.stack([b[k] for b in batch]))
 
-        if has_edge_index:
-            # Offset edge indices by cumulative node counts
+        # Edge index with per-graph node offset
+        if "edge_index" in batch[0]:
             offsets = np.cumsum([0] + num_nodes_list[:-1])
-            edge_list = []
-            for i, b in enumerate(batch):
-                ei = b["edge_index"]
-                if isinstance(ei, np.ndarray):
-                    pass
-                elif isinstance(ei, paddle.Tensor):
-                    ei = ei.numpy()
-                edge_list.append(ei + offsets[i])
             result["edge_index"] = paddle.to_tensor(
-                np.concatenate(edge_list, axis=1), dtype=paddle.int64
+                np.concatenate(
+                    [b["edge_index"] + offsets[i] for i, b in enumerate(batch)], axis=1
+                ),
+                dtype=paddle.int64,
             )
 
-        if has_triplet:
-            # Precomputed triplet/quadruplet indices also need batch offsets.
-            #   i, j: node indices — offset by cumulative node count.
-            #   idx_kj, idx_ji, idx_lk: edge indices — offset by cumulative
-            #     edge count.
-            #   idx_triplet: triplet indices — offset by cumulative triplet
-            #     count.
-            n_offsets = np.cumsum(
-                [0] + num_nodes_list[:-1]
-            )
-            e_offsets = np.cumsum(
-                [0] + [b["edge_index"].shape[1] for b in batch[:-1]]
-            )
+        # Triplet indices with node/edge/triplet offsets
+        if "triplet_indices" in batch[0]:
+            e_offsets = np.cumsum([0] + [b["edge_index"].shape[1] for b in batch[:-1]])
             t_offsets = np.cumsum(
                 [0] + [b["triplet_indices"]["idx_kj"].shape[0] for b in batch[:-1]]
             )
-            concat = {k: [] for k in ["i", "j", "idx_kj", "idx_ji", "idx_lk",
-                                       "idx_triplet"]}
+            fields = {
+                k: [] for k in ("i", "j", "idx_kj", "idx_ji", "idx_lk", "idx_triplet")
+            }
             for i, b in enumerate(batch):
                 ti = b["triplet_indices"]
-                for k in ["i", "j"]:
-                    arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
-                    concat[k].append(arr + n_offsets[i])
-                for k in ["idx_kj", "idx_ji", "idx_lk"]:
-                    arr = ti[k] if isinstance(ti[k], np.ndarray) else np.array(ti[k])
-                    concat[k].append(arr + e_offsets[i])
-                arr_t = (ti["idx_triplet"] if isinstance(ti["idx_triplet"], np.ndarray)
-                         else np.array(ti["idx_triplet"]))
-                concat["idx_triplet"].append(arr_t + t_offsets[i])
+                fields["i"].append(ti["i"] + num_nodes_list[i])
+                fields["j"].append(ti["j"] + num_nodes_list[i])
+                fields["idx_kj"].append(ti["idx_kj"] + e_offsets[i])
+                fields["idx_ji"].append(ti["idx_ji"] + e_offsets[i])
+                fields["idx_lk"].append(ti["idx_lk"] + e_offsets[i])
+                fields["idx_triplet"].append(ti["idx_triplet"] + t_offsets[i])
             result["triplet_indices"] = {
                 k: paddle.to_tensor(np.concatenate(v), dtype=paddle.int64)
-                for k, v in concat.items()
+                for k, v in fields.items()
             }
 
         return result
@@ -205,7 +165,9 @@ class DensityCollator:
         self.sampling_mode = sampling_mode.lower()
         self.uniform_random_offset = bool(uniform_random_offset)
         self.sampling_seed = sampling_seed
-        self._rng = np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        self._rng = (
+            np.random.default_rng(sampling_seed) if sampling_seed is not None else None
+        )
         self.clip_max = clip_max
         self.importance_sampling = bool(importance_sampling)
         self.importance_threshold = importance_threshold
@@ -251,11 +213,18 @@ class DensityCollator:
                         extreme_mask = dense_vals >= self.extreme_threshold
                         extreme_idx = total_idx[extreme_mask]
                         # ensure extreme is subset of high
-                        extreme_idx = np.intersect1d(extreme_idx, high_idx, assume_unique=True)
+                        extreme_idx = np.intersect1d(
+                            extreme_idx, high_idx, assume_unique=True
+                        )
                     mid_idx = np.setdiff1d(high_idx, extreme_idx, assume_unique=True)
 
-                    high_quota = min(target_samples, max(0, int(target_samples * self.importance_ratio)))
-                    extreme_quota = min(target_samples, max(0, int(target_samples * self.extreme_ratio)))
+                    high_quota = min(
+                        target_samples,
+                        max(0, int(target_samples * self.importance_ratio)),
+                    )
+                    extreme_quota = min(
+                        target_samples, max(0, int(target_samples * self.extreme_ratio))
+                    )
 
                     extreme_take = min(len(extreme_idx), extreme_quota)
                     indices_extreme = (
@@ -275,11 +244,15 @@ class DensityCollator:
                     selected = np.concatenate([indices_extreme, indices_mid])
                     remaining = target_samples - len(selected)
                     if remaining > 0:
-                        low_candidates = np.setdiff1d(total_idx, selected, assume_unique=False)
+                        low_candidates = np.setdiff1d(
+                            total_idx, selected, assume_unique=False
+                        )
                         if len(low_candidates) == 0:
                             low_candidates = total_idx
                         replace_low = remaining > len(low_candidates)
-                        indices_low = np.random.choice(low_candidates, remaining, replace=replace_low)
+                        indices_low = np.random.choice(
+                            low_candidates, remaining, replace=replace_low
+                        )
                         indices = np.concatenate([selected, indices_low])
                     else:
                         indices = selected
@@ -289,14 +262,22 @@ class DensityCollator:
                             if self._rng is None:
                                 self._rng = np.random.default_rng()
                             step = (total - 1) / max(target_samples - 1, 1)
-                            offset = float(self._rng.uniform(0, max(step, 1.0))) if step > 0 else 0.0
+                            offset = (
+                                float(self._rng.uniform(0, max(step, 1.0)))
+                                if step > 0
+                                else 0.0
+                            )
                             idx = offset + step * np.arange(target_samples)
                             indices = np.clip(np.round(idx).astype(int), 0, total - 1)
                         else:
-                            indices = np.linspace(0, total - 1, num=target_samples, dtype=int)
+                            indices = np.linspace(
+                                0, total - 1, num=target_samples, dtype=int
+                            )
                     elif self.sampling_mode == "random":
                         replace = target_samples > total
-                        indices = np.random.choice(total, target_samples, replace=replace)
+                        indices = np.random.choice(
+                            total, target_samples, replace=replace
+                        )
                     else:
                         raise ValueError(
                             f"Unsupported sampling_mode '{self.sampling_mode}'. "
@@ -305,16 +286,16 @@ class DensityCollator:
                 indices.sort()
                 sampled_density.append(d[indices])
                 sampled_grid.append(coord[indices])
-                mask.append(
-                    paddle.ones_like(x=sampled_density[-1], dtype="float32")
-                )
+                mask.append(paddle.ones_like(x=sampled_density[-1], dtype="float32"))
             densities = paddle.stack(x=sampled_density, axis=0)
             grid_coord = paddle.stack(x=sampled_grid, axis=0)
             mask = paddle.stack(x=mask, axis=0)
 
         densities = densities * mask
         if self.clip_max is not None:
-            densities = paddle.clip(densities, min=self.padding_value, max=self.clip_max)
+            densities = paddle.clip(
+                densities, min=self.padding_value, max=self.clip_max
+            )
         return {
             "density": densities,
             "density_mask": mask,
@@ -378,6 +359,7 @@ class DensityVoxelCollator:
             "graph": g,
             "infos": list(infos),
         }
+
 
 # utils DensityCollator
 def pad_sequence(sequences, batch_first=False, padding_value=0):
