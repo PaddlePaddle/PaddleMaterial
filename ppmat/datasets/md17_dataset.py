@@ -142,7 +142,6 @@ class MD17Dataset(Dataset):
             self.read_data(path, name, split),
         ))
         total = self._data["pos"].shape[0]
-        self._z_tensor = paddle.to_tensor(self._data["z"], dtype=paddle.int64)
 
         # ---- 2. Cache path ----
         if cache_path is not None:
@@ -249,7 +248,7 @@ class MD17Dataset(Dataset):
 
     def __getitem__(self, idx):
         sample = {
-            "z": self._z_tensor.numpy(),
+            "z": self._data["z"],
             "pos": self._data["pos"][idx],
             "energy": np.array(
                 [float(self._data["energy"][idx])], dtype=np.float32
