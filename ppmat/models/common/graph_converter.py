@@ -574,12 +574,17 @@ class MolecularGraphConverter:
 
 
 class RadiusGraph:
-    """Build radius graph from raw 3D coordinates.
+    """Build radius graph from raw 3D coordinates or RDKit Mol.
 
     Thin wrapper around :func:`ppmat.models.common.radius_graph.radius_graph`
     for compatibility with the config-driven ``build_graph_converter``
     pipeline.  The actual computation is delegated to the standalone function
     so that datasets can pre-build edges without instantiating a converter.
+
+    When given a :class:`Chem.Mol`, extracts 3-D coordinates from its
+    conformer and delegates to the same radius-graph routine.  This allows
+    the ``predict.py`` pipeline to pass an RDKit Mol object directly,
+    consistent with the crystal convention of passing a ``Structure``.
 
     Args:
         cutoff: Neighbor cutoff distance in Ångström.
@@ -588,8 +593,22 @@ class RadiusGraph:
     def __init__(self, cutoff: float = 5.0):
         self.cutoff = cutoff
 
-    def __call__(self, pos, batch, loop=False):
-        return _radius_graph_func(pos, batch, self.cutoff, loop=loop)
+    def __call__(self, pos_or_mol, batch=None, loop=False):
+        from rdkit import Chem
+
+        if isinstance(pos_or_mol, Chem.Mol):
+            return self._from_mol(pos_or_mol, loop)
+        return _radius_graph_func(pos_or_mol, batch, self.cutoff, loop=loop)
+
+    def _from_mol(self, mol, loop=False):
+        """Build radius graph from an RDKit Mol object."""
+        num_atoms = mol.GetNumAtoms()
+        conf = mol.GetConformer()
+        pos = [[conf.GetAtomPosition(i).x, conf.GetAtomPosition(i).y, conf.GetAtomPosition(i).z]
+               for i in range(num_atoms)]
+        pos_t = paddle.to_tensor(pos, dtype=paddle.get_default_dtype())
+        batch_t = paddle.zeros([num_atoms], dtype=paddle.int64)
+        return _radius_graph_func(pos_t, batch_t, self.cutoff, loop=loop)
 
 
 def subgraph(
