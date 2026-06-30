@@ -126,7 +126,9 @@ class MD17Dataset(Dataset):
         root_path = download.get_datasets_path_from_url(self.url, self.md5)
         npz_path = osp.join(root_path, self.name, f"{name}_dft.npz")
         self._ensure_splits(npz_path, name)
-        self.row_data, self.num_samples = self.read_data(path, name, split)
+        self.row_data, total = self.read_data(path, name)
+        self._indices = self._load_split_indices(path, name, split)
+        self.num_samples = len(self._indices)
 
         # ---- 2. Cache path ----
         if cache_path is not None:
@@ -142,12 +144,12 @@ class MD17Dataset(Dataset):
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
             self.graph_cache = self._build_graph_cache(
-                build_graph_cfg, graph_cache_path, overwrite,
+                build_graph_cfg, graph_cache_path, total, overwrite,
             )
 
         logger.info(f"Load {self.num_samples} samples, split={split}")
 
-    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, overwrite):
+    def _build_graph_cache(self, build_graph_cfg, graph_cache_path, total, overwrite):
         """Pre-build and cache edge_index + triplet indices."""
         cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
         cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
@@ -168,7 +170,6 @@ class MD17Dataset(Dataset):
                 os.makedirs(graph_cache_path, exist_ok=True)
                 self.save_to_cache(cfg_pkl, build_graph_cfg)
                 converter = build_graph_converter(build_graph_cfg)
-                total = self.num_samples
                 logger.info(
                     f"Pre‑building graphs for {self.mol_name} ({total} frames) "
                     f"with 24 threads ..."
@@ -186,10 +187,11 @@ class MD17Dataset(Dataset):
             if dist.is_initialized():
                 dist.barrier()
 
-        return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(self.num_samples)]
+        # Map from frame index to cache path
+        return {i: osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)}
 
     def _ensure_splits(self, raw_path, name):
-        """Create pre-split npz files (seed 42, 1000/1000 train/val)."""
+        """Create pre-split npz files and index arrays (seed 42, 1000/1000 train/val)."""
         split_dir = osp.join(osp.dirname(raw_path), "splits")
         full_npz = osp.join(split_dir, f"{name}_all.npz")
         if not osp.exists(full_npz):
@@ -211,17 +213,34 @@ class MD17Dataset(Dataset):
                          E=raw["E"][perm[ts + vs:]], F=raw["F"][perm[ts + vs:]])
                 np.savez(full_npz,
                          z=raw["z"], R=raw["R"], E=raw["E"], F=raw["F"])
+                # Save split indices for MP20-style index-based access
+                np.save(osp.join(split_dir, f"{name}_train_idx.npy"), perm[:ts])
+                np.save(osp.join(split_dir, f"{name}_val_idx.npy"),
+                        perm[ts:ts + vs])
+                np.save(osp.join(split_dir, f"{name}_test_idx.npy"),
+                        perm[ts + vs:])
+                np.save(osp.join(split_dir, f"{name}_all_idx.npy"),
+                        np.arange(total, dtype=np.int64))
             if dist.is_initialized():
                 dist.barrier()
 
-    def read_data(self, path, name, split: str = None):
+    def read_data(self, path, name):
+        """Load all trajectory frames from the merged npz file."""
         split_dir = osp.join(path, "splits")
-        split_npz = osp.join(split_dir, f"{name}_{split}.npz")
-        if split is None:
-            split_npz = osp.join(split_dir, f"{name}_all.npz")
-        data = np.load(split_npz)
-        row_data = {"z": data["z"], "pos": data["R"], "energy": data["E"], "force": data["F"]}
-        return row_data, row_data["pos"].shape[0]
+        data = np.load(osp.join(split_dir, f"{name}_all.npz"))
+        row_data = {
+            "z": data["z"],
+            "pos": data["R"],
+            "energy": data["E"],
+            "force": data["F"],
+        }
+        return row_data, data["R"].shape[0]
+
+    def _load_split_indices(self, path, name, split):
+        """Load frame indices for the requested split."""
+        split_dir = osp.join(path, "splits")
+        key = split if split is not None else "all"
+        return np.load(osp.join(split_dir, f"{name}_{key}_idx.npy"))
 
     def save_to_cache(self, cache_path: str, obj):
         with open(cache_path, "wb") as f:
@@ -234,16 +253,17 @@ class MD17Dataset(Dataset):
         raise FileNotFoundError(f"No such file or directory: {cache_path}")
 
     def __getitem__(self, idx):
+        frame = self._indices[idx]
         sample = {
             "z": self.row_data["z"],
-            "pos": self.row_data["pos"][idx],
+            "pos": self.row_data["pos"][frame],
             self.energy_key: np.array(
-                [float(self.row_data["energy"][idx])], dtype=np.float32
+                [float(self.row_data["energy"][frame])], dtype=np.float32
             ),
-            self.force_key: self.row_data["force"][idx],
+            self.force_key: self.row_data["force"][frame],
         }
         if self.graph_cache is not None:
-            gpath = self.graph_cache[idx]
+            gpath = self.graph_cache[frame]
             graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
             if isinstance(graph, dict):
                 sample["edge_index"] = graph["edge_index"]
