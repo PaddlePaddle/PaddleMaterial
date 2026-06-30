@@ -122,83 +122,30 @@ def compute_triplet_indices(edge_index, num_nodes):
     }
 
 
-def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices=None):
+def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True):
     """Compute distance, angle, and torsion from 3D positions.
 
-    Given atomic positions and a neighbor edge index, computes:
-        - Pairwise distances for each edge
-        - Bond angles for each triplet (k -> j -> i)
-        - Torsion (dihedral) angles for each quadruplet (l -> k -> j -> i)
-
-    When ``precomputed_indices`` (from :func:`compute_triplet_indices`) is
-    provided, the O(∑ deg×deg) Python loop is skipped — use this for
-    cached/offline graph datasets to accelerate training.  ``edge_index``
-    and ``num_nodes`` are only used in the fallback path (when
-    ``precomputed_indices`` is None).
-
     Args:
-        pos: Tensor of shape [num_nodes, 3] — atomic coordinates.
-        edge_index: Tensor of shape [2, num_edges] — (source, target) indices.
+        pos: Tensor of shape [num_nodes, 3].
+        edge_index: Tensor of shape [2, num_edges].
         num_nodes: Number of atoms.
         use_torsion: Whether to compute torsion angles. Defaults to True.
-        precomputed_indices: Optional dict from ``compute_triplet_indices``.
-            When provided, structural indices are taken from here and
-            ``edge_index`` / ``num_nodes`` are ignored.
 
     Returns:
         dist: Edge distances  [num_edges].
-        angle: Bond angles  [num_triplets] (indexed by idx_kj).
-        torsion: Torsion angles  [num_triplets] (indexed by idx_kj),
-            always a tensor (zeros when use_torsion=False).
+        angle: Bond angles  [num_triplets].
+        torsion: Torsion angles  [num_triplets].
         i: Source node indices  [num_edges].
         j: Target node indices  [num_edges].
-        idx_kj: Mapping from triplets back to edges.
-        idx_ji: Mapping from triplets back to the central edge.
+        idx_kj: Triplet → edge index map.
+        idx_ji: Triplet → central edge map.
     """
-    if precomputed_indices is not None:
-        i = precomputed_indices['i']
-        j = precomputed_indices['j']
-        idx_kj = precomputed_indices['idx_kj']
-        idx_ji = precomputed_indices['idx_ji']
-        idx_lk = precomputed_indices['idx_lk']
-        idx_triplet = precomputed_indices['idx_triplet']
-    else:
-        i, j = edge_index[0], edge_index[1]
-
-        num_edges = j.shape[0]
-        in_idx = [[] for _ in range(num_nodes)]
-        out_idx = [[] for _ in range(num_nodes)]
-        for e in range(num_edges):
-            in_idx[int(j[e])].append(e)
-            out_idx[int(i[e])].append(e)
-
-        idx_kj_list, idx_ji_list = [], []
-        for n in range(num_nodes):
-            kj_list = in_idx[n]
-            ji_list = out_idx[n]
-            if kj_list and ji_list:
-                n_kj, n_ji = len(kj_list), len(ji_list)
-                idx_kj_list.extend(kj_list * n_ji)
-                idx_ji_list.extend(ji_list * n_kj)
-
-        idx_kj = paddle.to_tensor(idx_kj_list)
-        idx_ji = paddle.to_tensor(idx_ji_list)
-
-        k_nodes = i[idx_kj]
-        in_idx_edges = [[] for _ in range(num_nodes)]
-        for e in range(num_edges):
-            in_idx_edges[int(j[e])].append(e)
-
-        idx_lk_list, idx_triplet_list = [], []
-        for t in range(idx_kj.shape[0]):
-            k_node = int(k_nodes[t])
-            lk_list = in_idx_edges[k_node]
-            if lk_list:
-                idx_lk_list.extend(lk_list)
-                idx_triplet_list.extend([t] * len(lk_list))
-
-        idx_lk = paddle.to_tensor(idx_lk_list) if idx_lk_list else paddle.empty([0], dtype='int64')
-        idx_triplet = paddle.to_tensor(idx_triplet_list) if idx_triplet_list else paddle.empty([0], dtype='int64')
+    indices = compute_triplet_indices(edge_index, num_nodes)
+    i, j = indices['i'], indices['j']
+    idx_kj = indices['idx_kj']
+    idx_ji = indices['idx_ji']
+    idx_lk = indices['idx_lk']
+    idx_triplet = indices['idx_triplet']
 
     vec = pos[j] - pos[i]
     dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)

@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import numbers
-import warnings
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -25,6 +24,7 @@ from typing import List
 import numpy as np
 import paddle
 import pgl
+import warnings
 
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
@@ -89,8 +89,6 @@ class DefaultCollator(object):
 
 
 class SphereNetCollator:
-    """Collator for SphereNet."""
-
     def __call__(self, batch):
         num_nodes_list = [b["z"].shape[0] for b in batch]
 
@@ -105,7 +103,7 @@ class SphereNetCollator:
             ),
         }
 
-        # Stack scalar properties (mu, alpha, id, etc.)
+        # Stack scalar properties
         for k in batch[0]:
             if k not in ("z", "pos", "edge_index", "triplet_indices"):
                 result[k] = paddle.to_tensor(np.stack([b[k] for b in batch]))
@@ -211,18 +209,11 @@ class DensityCollator:
                         extreme_mask = dense_vals >= self.extreme_threshold
                         extreme_idx = total_idx[extreme_mask]
                         # ensure extreme is subset of high
-                        extreme_idx = np.intersect1d(
-                            extreme_idx, high_idx, assume_unique=True
-                        )
+                        extreme_idx = np.intersect1d(extreme_idx, high_idx, assume_unique=True)
                     mid_idx = np.setdiff1d(high_idx, extreme_idx, assume_unique=True)
 
-                    high_quota = min(
-                        target_samples,
-                        max(0, int(target_samples * self.importance_ratio)),
-                    )
-                    extreme_quota = min(
-                        target_samples, max(0, int(target_samples * self.extreme_ratio))
-                    )
+                    high_quota = min(target_samples, max(0, int(target_samples * self.importance_ratio)))
+                    extreme_quota = min(target_samples, max(0, int(target_samples * self.extreme_ratio)))
 
                     extreme_take = min(len(extreme_idx), extreme_quota)
                     indices_extreme = (
@@ -242,15 +233,11 @@ class DensityCollator:
                     selected = np.concatenate([indices_extreme, indices_mid])
                     remaining = target_samples - len(selected)
                     if remaining > 0:
-                        low_candidates = np.setdiff1d(
-                            total_idx, selected, assume_unique=False
-                        )
+                        low_candidates = np.setdiff1d(total_idx, selected, assume_unique=False)
                         if len(low_candidates) == 0:
                             low_candidates = total_idx
                         replace_low = remaining > len(low_candidates)
-                        indices_low = np.random.choice(
-                            low_candidates, remaining, replace=replace_low
-                        )
+                        indices_low = np.random.choice(low_candidates, remaining, replace=replace_low)
                         indices = np.concatenate([selected, indices_low])
                     else:
                         indices = selected
@@ -264,14 +251,10 @@ class DensityCollator:
                             idx = offset + step * np.arange(target_samples)
                             indices = np.clip(np.round(idx).astype(int), 0, total - 1)
                         else:
-                            indices = np.linspace(
-                                0, total - 1, num=target_samples, dtype=int
-                            )
+                            indices = np.linspace(0, total - 1, num=target_samples, dtype=int)
                     elif self.sampling_mode == "random":
                         replace = target_samples > total
-                        indices = np.random.choice(
-                            total, target_samples, replace=replace
-                        )
+                        indices = np.random.choice(total, target_samples, replace=replace)
                     else:
                         raise ValueError(
                             f"Unsupported sampling_mode '{self.sampling_mode}'. "
@@ -280,16 +263,16 @@ class DensityCollator:
                 indices.sort()
                 sampled_density.append(d[indices])
                 sampled_grid.append(coord[indices])
-                mask.append(paddle.ones_like(x=sampled_density[-1], dtype="float32"))
+                mask.append(
+                    paddle.ones_like(x=sampled_density[-1], dtype="float32")
+                )
             densities = paddle.stack(x=sampled_density, axis=0)
             grid_coord = paddle.stack(x=sampled_grid, axis=0)
             mask = paddle.stack(x=mask, axis=0)
 
         densities = densities * mask
         if self.clip_max is not None:
-            densities = paddle.clip(
-                densities, min=self.padding_value, max=self.clip_max
-            )
+            densities = paddle.clip(densities, min=self.padding_value, max=self.clip_max)
         return {
             "density": densities,
             "density_mask": mask,
@@ -353,7 +336,6 @@ class DensityVoxelCollator:
             "graph": g,
             "infos": list(infos),
         }
-
 
 # utils DensityCollator
 def pad_sequence(sequences, batch_first=False, padding_value=0):
