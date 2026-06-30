@@ -88,10 +88,19 @@ class DefaultCollator(object):
         )
 
 
-class SphereNetCollator:
+class MolecularGraphCollator:
+    """Collates molecule batches for geometric GNN models.
+
+    Groups fields by semantics:
+        node-level: concatenated along node dimension (z, pos, force, etc.)
+        graph-level: stacked along batch dimension (energy, mu, alpha, etc.)
+        edge-level: concatenated with per-graph node offset (edge_index)
+        triplet-level: concatenated with node/edge/triplet offsets
+    """
     def __call__(self, batch):
         num_nodes_list = [b["z"].shape[0] for b in batch]
 
+        # --- Node-level fields: concatenate ---
         result = {
             "z": np.concatenate([b["z"] for b in batch]),
             "pos": np.concatenate([b["pos"] for b in batch]),
@@ -103,19 +112,19 @@ class SphereNetCollator:
             ),
         }
 
-        # Stack scalar properties
+        # --- Graph-level fields: stack ---
         for k in batch[0]:
             if k not in ("z", "pos", "edge_index", "triplet_indices"):
                 result[k] = np.stack([b[k] for b in batch])
 
-        # Edge index with per-graph node offset
+        # --- Edge-level fields: concatenate + node offset ---
         if "edge_index" in batch[0]:
             offsets = np.cumsum([0] + num_nodes_list[:-1])
             result["edge_index"] = np.concatenate(
                 [b["edge_index"] + offsets[i] for i, b in enumerate(batch)], axis=1
             )
 
-        # Triplet indices with node/edge/triplet offsets
+        # --- Triplet-level fields: node/edge/triplet offsets ---
         if "triplet_indices" in batch[0]:
             e_offsets = np.cumsum([0] + [b["edge_index"].shape[1] for b in batch[:-1]])
             t_offsets = np.cumsum(

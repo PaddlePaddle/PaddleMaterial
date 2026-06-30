@@ -91,7 +91,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: SphereNetCollator
+      collate_fn: MolecularGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -112,7 +112,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: SphereNetCollator
+      collate_fn: MolecularGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -133,7 +133,7 @@ Dataset:
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: SphereNetCollator
+      collate_fn: MolecularGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
