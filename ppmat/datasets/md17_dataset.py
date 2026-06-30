@@ -139,7 +139,7 @@ class MD17Dataset(Dataset):
         total = self._data["pos"].shape[0]
         self._z_tensor = paddle.to_tensor(self._data["z"], dtype=paddle.int64)
 
-        # ---- 2. Cache path (MP20 pattern) ----
+        # ---- 2. Cache path ----
         if cache_path is not None:
             self.cache_path = cache_path
         else:
@@ -148,7 +148,7 @@ class MD17Dataset(Dataset):
             self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
         logger.info(f"Cache path: {self.cache_path}")
 
-        # ---- 3. Pre‑build edge_index + triplet indices (MP20 rebuild) ----
+        # ---- 3. Pre‑build edge_index + triplet indices ----
         self.graph_cache = None
         if build_graph_cfg is not None:
             graph_cache_path = osp.join(self.cache_path, "graphs")
@@ -160,7 +160,7 @@ class MD17Dataset(Dataset):
         logger.info(f"Load {self.num_samples} samples, split={split}")
 
     def _build_graph_cache(self, build_graph_cfg, graph_cache_path, total, overwrite):
-        """Pre-build and cache edge_index + triplet indices (MP20 pattern)."""
+        """Pre-build and cache edge_index + triplet indices."""
         cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
         cache_exists = osp.exists(graph_cache_path) and osp.exists(cfg_pkl)
 
