@@ -4,7 +4,7 @@
 
 ## Abstract
 
-The discovery of novel crystalline materials with targeted properties remains a central challenge in computational materials science. Generative models offer a promising route to accelerate this process, yet existing approaches often struggle to simultaneously achieve high novelty, thermodynamic stability, and compositional diversity. Here, we present **Chemeleon2**, a reinforcement learning framework built on latent diffusion models for crystal structure generation. Chemeleon2 implements a three-stage sequential pipeline—Variational Autoencoder (VAE), Latent Diffusion Model (LDM), and Reinforcement Learning (RL)—where each stage builds upon the learned representations of the previous. The RL stage employs Group Relative Policy Optimization (GRPO) with a modular, multi-objective reward system to steer generation toward desired material properties. Chemeleon2 supports de novo generation (DNG), composition-specified prediction (CSP), and text-to-structure prediction (TSP), and provides a simple Python interface for defining custom reward functions targeting arbitrary material properties such as band gap, density, or thermodynamic stability.
+The discovery of novel crystalline materials with targeted properties remains a central challenge in computational materials science. Generative models offer a promising route to accelerate this process, yet existing approaches often struggle to simultaneously achieve high novelty, thermodynamic stability, and compositional diversity. Here, we present **Chemeleon2**, a reinforcement learning framework built on latent diffusion models for crystal structure generation. Chemeleon2 implements a three-stage sequential pipeline—Variational Autoencoder (VAE), Latent Diffusion Model (LDM), and Reinforcement Learning (RL)—where each stage builds upon the learned representations of the previous. The RL stage employs Group Relative Policy Optimization (GRPO) with a modular, multi-objective reward system to steer generation toward desired material properties. Chemeleon2 supports de novo generation (DNG) and composition-specified prediction (CSP), and provides a simple Python interface for defining custom reward functions targeting arbitrary material properties such as band gap, density, or thermodynamic stability.
 
 ---
 
@@ -71,7 +71,7 @@ $$
 
 **Sampling**: Both DDPM and DDIM samplers are supported. DDIM with 50 steps is the default for efficient generation. The final latent $z_0$ is decoded by the frozen VAE decoder to recover the crystal structure.
 
-**Conditional generation**: A `ConditionModule` embeds composition (CSP) or scalar property (TSP) conditions into a vector $y \in \mathbb{R}^{L_y}$. Classifier-Free Guidance (CFG) is applied at sampling time:
+**Conditional generation**: A `ConditionModule` embeds composition (CSP) or scalar property conditions into a vector $y \in \mathbb{R}^{L_y}$. Classifier-Free Guidance (CFG) is applied at sampling time:
 
 $$
 \epsilon_\text{cfg} = \epsilon_\theta(\cdot \mid \varnothing) + w \cdot \bigl(\epsilon_\theta(\cdot \mid y) - \epsilon_\theta(\cdot \mid \varnothing)\bigr)
@@ -97,15 +97,12 @@ $$
 
 where $r_t(\theta) = \pi_\theta / \pi_{\theta_\text{old}}$ is the probability ratio, $\epsilon$ is the clipping parameter, $\beta$ controls KL penalty, and $\gamma$ controls entropy bonus.
 
-**Reward system**: A modular `ReinforceReward` aggregates multiple `RewardComponent` objects with configurable weights:
+**Reward system**: Multiple `RewardComponent` objects can be configured with weights:
 
 | Component | Purpose |
 |-----------|---------|
 | `CreativityReward` | Reward unique (AMD-based) and novel structures |
 | `EnergyReward` | Penalize high energy above convex hull (MACE-Torch) |
-| `StructureDiversityReward` | Maximize MMD between generated and reference structure embeddings |
-| `CompositionDiversityReward` | Maximize MMD between generated and reference composition embeddings |
-| `PredictorReward` | Optimize toward a target property value using a trained ML predictor |
 
 Custom reward components can be defined by subclassing `RewardComponent` and configuring them via YAML.
 
@@ -128,7 +125,6 @@ Alex-MP-20 is a larger-scale dataset combining Materials Project and Alexandria 
 For CSP or property-conditioned generation, labeled datasets are required. Each sample contains $(A, X, L)$ plus a condition label $c$ such as:
 - Scalar property targets (e.g., band gap, bulk modulus)
 - Chemical formula constraints (CSP)
-- Text descriptions (TSP)
 
 ### Data Format
 
@@ -179,16 +175,10 @@ Evaluation metrics (computed against MP-20 reference via `src/evaluate.py`):
 
 ```bash
 # Stage 1: VAE training (mp20 dataset)
-# multi-gpu training (example with 8 GPUs)
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/chemeleon2/chemeleon2_mp20_vae.yaml
-# single-gpu training
 python structure_generation/train.py -c structure_generation/configs/chemeleon2/chemeleon2_mp20_vae.yaml
 
 # Stage 2: LDM training (mp20 dataset, requires pre-trained VAE)
 # Before training, set vae_ckpt_path in the yaml to the VAE checkpoint path.
-# multi-gpu training (example with 8 GPUs)
-python -m paddle.distributed.launch --gpus="0,1,2,3,4,5,6,7" structure_generation/train.py -c structure_generation/configs/chemeleon2/chemeleon2_mp20_ldm.yaml
-# single-gpu training
 python structure_generation/train.py -c structure_generation/configs/chemeleon2/chemeleon2_mp20_ldm.yaml
 ```
 

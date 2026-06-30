@@ -63,7 +63,13 @@ class GaussianDiffusion:
         model_output = model(x, t, **(model_kwargs or {}))
         if model_output.shape[-1] == x.shape[-1] * 2:
             model_output, _ = paddle.split(model_output, 2, axis=-1)
+            _saved_type = self.scheduler.variance_type
+            self.scheduler.variance_type = "fixed_small"
+        else:
+            _saved_type = None
         out = self.scheduler.step(model_output, int(t[0].item()), x)
+        if _saved_type is not None:
+            self.scheduler.variance_type = _saved_type
         return {"sample": out.prev_sample, "pred_xstart": out.pred_original_sample}
 
     def _loop(self, model, shape, noise, model_kwargs, sampler_fn, progress, clip_denoised, eta=0.0):
@@ -133,9 +139,12 @@ class SpacedDiffusion(GaussianDiffusion):
         self._map_tensor = paddle.to_tensor(self.timestep_map)
 
     def _wrap_model(self, model):
+        if getattr(model, "_spaced_wrapped", False):
+            return model
         map_t = self._map_tensor
         def wrapped(x, ts, **kw):
             return model(x, map_t[ts], **kw)
+        wrapped._spaced_wrapped = True
         return wrapped
 
     def p_sample(self, model, *args, **kwargs):
