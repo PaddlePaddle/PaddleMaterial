@@ -227,7 +227,7 @@ class PropertyPredictor:
         data = {"z": z_t, "pos": pos_t, "batch": batch}
 
         if self.graph_converter_fn is not None:
-            data["edge_index"] = self.graph_converter_fn(pos_t, batch)
+            data["edge_index"] = self.graph_converter_fn(mol)
 
         if self.eval_with_no_grad:
             with paddle.no_grad():
