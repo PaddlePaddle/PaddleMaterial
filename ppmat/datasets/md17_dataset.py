@@ -74,8 +74,8 @@ class MD17Dataset(Dataset):
     Args:
         path (str): Root directory for storing raw and cached data.
         name (str): Molecule name from the supported list. Defaults to ``'benzene_old'``.
-        split (Optional[str]): One of ``'train'``, ``'val'``, ``'test'``, or
-            ``None`` (all). Defaults to ``None``.
+        split (Optional[str]): Split identifier ``'train'``, ``'val'``,
+            ``'test'``, or ``None`` (all). Defaults to ``None``.
         force_key (Optional[str]): Key name for forces in the output dict.
             Defaults to ``'force'``.
         energy_key (Optional[str]): Key name for energy in the output dict.
@@ -100,7 +100,7 @@ class MD17Dataset(Dataset):
         self,
         path: str,
         name: str = "benzene_old",
-        split=None,
+        split: str = None,
         *,
         force_key="force",
         energy_key="energy",
@@ -214,7 +214,7 @@ class MD17Dataset(Dataset):
             if dist.is_initialized():
                 dist.barrier()
 
-    def read_data(self, path, name, split):
+    def read_data(self, path, name, split: str = None):
         split_dir = osp.join(path, "splits")
         split_npz = osp.join(split_dir, f"{name}_{split}.npz")
         if split is None:
