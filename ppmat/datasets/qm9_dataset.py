@@ -40,6 +40,7 @@ from ppmat.models import build_graph_converter
 from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import download
 from ppmat.utils import logger
+from ppmat.utils.misc import is_equal
 from ppmat.utils.download import get_datasets_path_from_url
 
 try:
@@ -231,14 +232,29 @@ class QM9Dataset(Dataset):
         # ---- 5. Pre‑build edge_index + triplet indices (rank 0 + barrier, parallel) ----
         if build_graph_cfg is not None:
             self.graph_paths = [None] * total  # placeholder for all samples
-            cache_ready = osp.exists(graph_cache_dir) and not overwrite
-            if not cache_ready:
+            if not osp.exists(graph_cache_dir):
+                os.makedirs(graph_cache_dir, exist_ok=True)
+            cfg_pkl = osp.join(graph_cache_dir, "build_graph_cfg.pkl")
+            cache_ready = osp.exists(cfg_pkl) and not overwrite
+
+            need_rebuild = not cache_ready
+            if cache_ready:
+                try:
+                    cfg_cached = self.load_from_cache(cfg_pkl)
+                    if is_equal(cfg_cached, build_graph_cfg):
+                        logger.info("build_graph_cfg matches cache. Reusing.")
+                    else:
+                        logger.warning(
+                            "build_graph_cfg differs from cache. Rebuilding."
+                        )
+                        need_rebuild = True
+                except Exception as e:
+                    logger.warning(f"Cache check failed ({e}). Rebuilding.")
+                    need_rebuild = True
+
+            if need_rebuild:
                 if dist.get_rank() == 0:
-                    os.makedirs(graph_cache_dir, exist_ok=True)
-                    self._save_pickle(
-                        osp.join(graph_cache_dir, "build_graph_cfg.pkl"),
-                        build_graph_cfg,
-                    )
+                    self.save_to_cache(cfg_pkl, build_graph_cfg)
                     logger.info(
                         f"Pre‑building graphs for QM9 ({total} molecules) "
                         f"with 24 threads ..."
@@ -344,10 +360,13 @@ class QM9Dataset(Dataset):
                 keep.append(idx)
         return np.array(keep, dtype=np.int64)
 
-    @staticmethod
-    def _save_pickle(path, obj):
+    def save_to_cache(self, path, obj):
         with open(path, "wb") as f:
             pickle.dump(obj, f)
+
+    def load_from_cache(self, path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     # --- public API ---
 
@@ -357,21 +376,21 @@ class QM9Dataset(Dataset):
         data = {"z": z, "pos": pos}
         if self.graph_paths is not None:
             gpath = self.graph_paths[real_idx]
-            loaded = self._load_pickle(gpath) if isinstance(gpath, str) else gpath
-            if isinstance(loaded, dict):
+            graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
+            if isinstance(graph, dict):
                 # New format: dict with edge_index + precomputed triplet indices
-                data["edge_index"] = loaded["edge_index"]
+                data["edge_index"] = graph["edge_index"]
                 data["triplet_indices"] = {
-                    'i': loaded['ti_i'],
-                    'j': loaded['ti_j'],
-                    'idx_kj': loaded['ti_idx_kj'],
-                    'idx_ji': loaded['ti_idx_ji'],
-                    'idx_lk': loaded['ti_idx_lk'],
-                    'idx_triplet': loaded['ti_idx_triplet'],
+                    'i': graph['ti_i'],
+                    'j': graph['ti_j'],
+                    'idx_kj': graph['ti_idx_kj'],
+                    'idx_ji': graph['ti_idx_ji'],
+                    'idx_lk': graph['ti_idx_lk'],
+                    'idx_triplet': graph['ti_idx_triplet'],
                 }
             else:
                 # Old format: plain numpy array (edge_index only, no triplet cache)
-                data["edge_index"] = loaded
+                data["edge_index"] = graph
         for name in self.property_names:
             data[name] = np.array([self._raw_properties[name][real_idx]], dtype=np.float32)
         data["id"] = int(real_idx)
@@ -381,8 +400,3 @@ class QM9Dataset(Dataset):
 
     def __len__(self):
         return self.num_samples
-
-    @staticmethod
-    def _load_pickle(path):
-        with open(path, "rb") as f:
-            return pickle.load(f)
