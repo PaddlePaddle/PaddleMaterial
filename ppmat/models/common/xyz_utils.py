@@ -22,6 +22,31 @@ import numpy as np
 import paddle
 
 
+def _select_min_abs_torsion(torsion_angle, idx_triplet, num_triplets):
+    """For each triplet, select the quadruplet candidate with smallest |torsion|.
+
+    Each triplet may have multiple quadruplet candidates (different l nodes).
+    The canonical torsion for a triplet is the one with the smallest absolute
+    value (closest to 0°).
+
+    Implements a grouped-argmin pattern: sorts by (triplet_id * scale + |val|),
+    then keeps the first element per unique triplet_id.
+    """
+    out = paddle.zeros([num_triplets], dtype=torsion_angle.dtype)
+    if idx_triplet.shape[0] == 0:
+        return out
+    # Group quadruplets by triplet index, then within each group sort by |torsion|
+    abs_a = paddle.abs(torsion_angle)
+    inv = paddle.unique(idx_triplet, return_inverse=True)[1]
+    scale = abs_a.max() + 1.0
+    order = paddle.argsort(inv.to(abs_a.dtype) * scale + abs_a)
+    _, first = paddle.unique(inv[order], return_index=True)
+    keep = order[first]
+    sel = inv[keep]
+    out = paddle.scatter(out, sel, torsion_angle[keep], overwrite=True)
+    return out
+
+
 def compute_triplet_indices(edge_index, num_nodes):
     """Precompute triplet/quadruplet selection indices from graph structure.
 
@@ -198,20 +223,8 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True, precomputed_indices
             v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
         ).detach()
 
-        if idx_triplet.shape[0] > 0:
-            with paddle.no_grad():
-                abs_a = paddle.abs(torsion_angle)
-                inv = paddle.unique(idx_triplet, return_inverse=True)[1]
-                scale = abs_a.max() + 1.0
-                order = paddle.argsort(inv.to(abs_a.dtype) * scale + abs_a)
-                _, first = paddle.unique(inv[order], return_index=True)
-                keep = order[first]
-                sel = inv[keep]
-            torsion = paddle.scatter(
-                paddle.zeros([idx_kj.shape[0]], dtype=torsion_angle.dtype),
-                sel,
-                torsion_angle[keep],
-                overwrite=True,
-            )
+        torsion = _select_min_abs_torsion(
+            torsion_angle, idx_triplet, idx_kj.shape[0]
+        )
 
     return dist, angle, torsion, i, j, idx_kj, idx_ji
