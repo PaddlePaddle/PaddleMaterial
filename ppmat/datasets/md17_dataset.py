@@ -29,8 +29,8 @@ import shutil
 from paddle.io import Dataset
 from tqdm import tqdm
 
+from ppmat.datasets.graph_utils.spherenet_graph_utils import build_md17_graph
 from ppmat.models import build_graph_converter
-from ppmat.models.common.xyz_utils import compute_triplet_indices
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils.misc import is_equal
@@ -46,28 +46,6 @@ _BUNDLE_NPZ_MAP = {
     "toluene": "md17_toluene.npz",
     "uracil": "md17_uracil.npz",
 }
-
-
-def _build_md17_graph_thread(idx, all_z, all_pos, build_graph_cfg, cache_dir):
-    """Thread worker: build graph + triplet indices for one MD17 frame."""
-    converter = build_graph_converter(build_graph_cfg)
-    pos_i = all_pos[idx]
-    batch_t = np.zeros(all_z.shape[0], dtype=np.int64)
-    ei = converter(paddle.to_tensor(pos_i), paddle.to_tensor(batch_t))
-    ti = compute_triplet_indices(ei, all_z.shape[0])
-    cache_data = {
-        "edge_index": ei.numpy(),
-        "ti_i": ti["i"].numpy(),
-        "ti_j": ti["j"].numpy(),
-        "ti_idx_kj": ti["idx_kj"].numpy(),
-        "ti_idx_ji": ti["idx_ji"].numpy(),
-        "ti_idx_lk": ti["idx_lk"].numpy(),
-        "ti_idx_triplet": ti["idx_triplet"].numpy(),
-    }
-    save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
-    with open(save_path, "wb") as f:
-        pickle.dump(cache_data, f)
-    return idx
 
 
 class MD17Dataset(Dataset):
@@ -192,6 +170,7 @@ class MD17Dataset(Dataset):
             if dist.get_rank() == 0:
                 os.makedirs(graph_cache_path, exist_ok=True)
                 self.save_to_cache(cfg_pkl, build_graph_cfg)
+                converter = build_graph_converter(build_graph_cfg)
                 total = self.num_samples
                 logger.info(
                     f"Pre‑building graphs for {self.mol_name} ({total} frames) "
@@ -200,9 +179,9 @@ class MD17Dataset(Dataset):
                 with ThreadPoolExecutor(max_workers=24) as executor:
                     futures = {
                         executor.submit(
-                            _build_md17_graph_thread,
-                            i, self.row_data["z"], self.row_data["pos"],
-                            build_graph_cfg, graph_cache_path,
+                            build_md17_graph,
+                            i, self.row_data["z"], self.row_data["pos"][i],
+                            converter, graph_cache_path,
                         ): i for i in range(total)
                     }
                     for _ in tqdm(as_completed(futures), total=total, desc="Build graphs"):

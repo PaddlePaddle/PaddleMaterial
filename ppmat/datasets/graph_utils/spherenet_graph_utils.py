@@ -13,6 +13,11 @@
 # limitations under the License.
 """SphereNet-specific graph utilities."""
 
+import os
+import os.path as osp
+import pickle
+
+import numpy as np
 import paddle
 
 
@@ -55,4 +60,41 @@ def radius_graph(pos, batch, cutoff, loop=False):
         start += n
 
     return paddle.concat(edge_list, axis=1)
+
+
+def build_md17_graph(idx, z, pos, converter, cache_dir):
+    """Build and cache graph + triplet indices for one MD17 frame.
+
+    Used by :class:`~ppmat.datasets.md17_dataset.MD17Dataset` for parallel
+    graph pre-computation.  Each worker builds a radius graph and computes
+    triplet indices, then pickles the result.
+
+    Args:
+        idx: Frame index.
+        z: Atomic numbers of a single molecule (``[num_atoms]``).
+        pos: 3-D coordinates of the current frame (``[num_atoms, 3]``).
+        converter: Graph converter instance (e.g. ``RadiusGraph``).
+        cache_dir: Directory for pickle output.
+
+    Returns:
+        Frame index (for progress tracking).
+    """
+    from ppmat.models.common.xyz_utils import compute_triplet_indices
+
+    batch_t = np.zeros(z.shape[0], dtype=np.int64)
+    ei = converter(paddle.to_tensor(pos), paddle.to_tensor(batch_t))
+    ti = compute_triplet_indices(ei, z.shape[0])
+    cache_data = {
+        "edge_index": ei.numpy(),
+        "ti_i": ti["i"].numpy(),
+        "ti_j": ti["j"].numpy(),
+        "ti_idx_kj": ti["idx_kj"].numpy(),
+        "ti_idx_ji": ti["idx_ji"].numpy(),
+        "ti_idx_lk": ti["idx_lk"].numpy(),
+        "ti_idx_triplet": ti["idx_triplet"].numpy(),
+    }
+    save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
+    with open(save_path, "wb") as f:
+        pickle.dump(cache_data, f)
+    return idx
 
