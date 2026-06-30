@@ -30,8 +30,8 @@ from tqdm import tqdm
 
 from ppmat.models import build_graph_converter
 from ppmat.models.common.xyz_utils import compute_triplet_indices
+from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils.download import get_datasets_path_from_url
 from ppmat.utils.misc import is_equal
 
 
@@ -129,7 +129,9 @@ class MD17Dataset(Dataset):
 
         os.makedirs(path, exist_ok=True)
 
-        # ---- 1. Load pre-split data via read_data ----
+        # ---- 1. Download + split data ----
+        raw_path = self._download_raw(path, name)
+        self._ensure_splits(raw_path, name)
         self._data = dict(zip(
             ("z", "pos", "energy", "force"),
             self.read_data(path, name, split),
@@ -197,25 +199,21 @@ class MD17Dataset(Dataset):
         return [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
 
     def _download_raw(self, path, name):
-        """Download raw npz from bcebos bundle, return raw_path."""
         raw_dir = osp.join(path, "raw")
         raw_path = osp.join(raw_dir, f"{name}_dft.npz")
         if not osp.exists(raw_path):
-            extract_dir = get_datasets_path_from_url(self.url, self.md5)
-            bundle_rel = _BUNDLE_NPZ_MAP[name]
-            found = False
-            for sub in ["", "md17/"]:
-                candidate = osp.join(extract_dir, sub, bundle_rel)
-                if osp.exists(candidate):
-                    import shutil
-                    os.makedirs(raw_dir, exist_ok=True)
-                    shutil.copy2(candidate, raw_path)
-                    found = True
-                    break
-            if not found:
-                raise FileNotFoundError(
-                    f"MD17/{name} not found in bcebos bundle at {extract_dir}"
-                )
+            logger.message("The dataset is not found. Will download it now.")
+            root_path = download.get_datasets_path_from_url(self.url, self.md5)
+            src = osp.join(root_path, _BUNDLE_NPZ_MAP[name])
+            if not osp.exists(src):
+                src = osp.join(root_path, "md17", _BUNDLE_NPZ_MAP[name])
+                if not osp.exists(src):
+                    raise FileNotFoundError(
+                        f"MD17/{name} not found in {root_path}"
+                    )
+            import shutil
+            os.makedirs(raw_dir, exist_ok=True)
+            shutil.copy2(src, raw_path)
         return raw_path
 
     def _ensure_splits(self, raw_path, name):
@@ -245,19 +243,7 @@ class MD17Dataset(Dataset):
                 dist.barrier()
 
     def read_data(self, path, name, split):
-        """Load pre-split MD17 data.
-
-        Args:
-            path: Root data directory.
-            name: Molecule name.
-            split: ``"train"``, ``"val"``, ``"test"``, or ``None`` (all).
-
-        Returns:
-            Tuple of (z, positions, energies, forces) for the split.
-        """
-        raw_path = self._download_raw(path, name)
-        self._ensure_splits(raw_path, name)
-        split_dir = osp.join(osp.dirname(raw_path), "splits")
+        split_dir = osp.join(path, "raw", "splits")
         split_npz = osp.join(split_dir, f"{name}_{split}.npz")
         if split is None:
             split_npz = osp.join(split_dir, f"{name}_all.npz")
