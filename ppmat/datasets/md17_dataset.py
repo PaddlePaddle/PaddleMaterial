@@ -35,17 +35,6 @@ from ppmat.utils.download import get_datasets_path_from_url
 from ppmat.utils.misc import is_equal
 
 
-_MOLECULE_URLS = {
-    "aspirin": "http://quantum-machine.org/gdml/data/npz/aspirin_dft.npz",
-    "benzene_old": "http://quantum-machine.org/gdml/data/npz/benzene_old_dft.npz",
-    "ethanol": "http://quantum-machine.org/gdml/data/npz/ethanol_dft.npz",
-    "malonaldehyde": "http://quantum-machine.org/gdml/data/npz/malonaldehyde_dft.npz",
-    "naphthalene": "http://quantum-machine.org/gdml/data/npz/naphthalene_dft.npz",
-    "salicylic": "http://quantum-machine.org/gdml/data/npz/salicylic_dft.npz",
-    "toluene": "http://quantum-machine.org/gdml/data/npz/toluene_dft.npz",
-    "uracil": "http://quantum-machine.org/gdml/data/npz/uracil_dft.npz",
-}
-
 _BUNDLE_NPZ_MAP = {
     "aspirin": "md17_aspirin.npz",
     "benzene_old": "md17_benzene2017.npz",
@@ -97,11 +86,10 @@ class MD17Dataset(Dataset):
     | Uracil         | 133,770  | 12     | 2     | E + F    | 1k/1k/R |
     +----------------+----------+--------+-------+----------+-------+
 
-    Downloads raw ``.npz`` data from bcebos bundle (or individual URL as
-    fallback), then creates pre-split files on first access (seed 42,
-    rank 0).  Each split (train/val/test) is stored as a separate npz file
-    and loaded directly on subsequent runs — no on-the-fly shuffling in
-    the dataset.
+    Downloads raw ``.npz`` data from bcebos bundle, then creates pre-split
+    files on first access (seed 42, rank 0).  Each split (train/val/test) is
+    stored as a separate npz file and loaded directly on subsequent runs —
+    no on-the-fly shuffling in the dataset.
 
     Pre‑computed ``edge_index`` and triplet indices are cached per split
     when ``build_graph_cfg`` is provided (pickle cache, rank‑0 build,
@@ -213,7 +201,7 @@ class MD17Dataset(Dataset):
     def read_data(self, path, name, split):
         """Load pre-split MD17 data.
 
-        On first access (rank 0), downloads the raw ``.npz`` file and
+        Downloads the raw ``.npz`` file from bcebos bundle on first access,
         creates pre-split ``{name}_{split}.npz`` files (seed 42, 1000/1000
         train/val split per MD17 convention).  Subsequent calls load the
         appropriate pre-split file directly — no on-the-fly shuffling.
@@ -229,28 +217,24 @@ class MD17Dataset(Dataset):
         raw_dir = osp.join(path, "raw")
         os.makedirs(raw_dir, exist_ok=True)
 
-        # --- Download raw npz ---
-        individual_path = osp.join(raw_dir, f"{name}_dft.npz")
-        if osp.exists(individual_path):
-            raw_path = individual_path
-        else:
-            raw_path = None
-            try:
-                extract_dir = get_datasets_path_from_url(self.url, self.md5)
-                bundle_rel = _BUNDLE_NPZ_MAP[name]
-                for sub in ["", "md17/"]:
-                    candidate = osp.join(extract_dir, sub, bundle_rel)
-                    if osp.exists(candidate):
-                        raw_path = candidate
-                        break
-            except Exception as e:
-                logger.warning(f"bcebos download failed: {e}")
-            if raw_path is None:
-                import urllib.request
-                url = _MOLECULE_URLS[name]
-                logger.info(f"Downloading MD17/{name} from {url} ...")
-                urllib.request.urlretrieve(url, individual_path)
-                raw_path = individual_path
+        # --- Download raw npz from bcebos bundle ---
+        raw_path = osp.join(raw_dir, f"{name}_dft.npz")
+        if not osp.exists(raw_path):
+            extract_dir = get_datasets_path_from_url(self.url, self.md5)
+            bundle_rel = _BUNDLE_NPZ_MAP[name]
+            found = False
+            for sub in ["", "md17/"]:
+                candidate = osp.join(extract_dir, sub, bundle_rel)
+                if osp.exists(candidate):
+                    import shutil
+                    os.makedirs(raw_dir, exist_ok=True)
+                    shutil.copy2(candidate, raw_path)
+                    found = True
+                    break
+            if not found:
+                raise FileNotFoundError(
+                    f"MD17/{name} not found in bcebos bundle at {extract_dir}"
+                )
 
         # --- Pre-split npz files (created once, rank 0) ---
         split_dir = osp.join(raw_dir, "splits")
