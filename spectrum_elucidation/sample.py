@@ -14,7 +14,7 @@
 
 import argparse
 
-from ppmat.sample import MolecularSampler
+from ppmat.sampler import MolecularSampler
 from ppmat.utils import logger
 
 if __name__ == "__main__":

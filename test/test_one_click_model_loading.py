@@ -411,7 +411,7 @@ def test_diffnmr_package_sample_defaults_to_bundled_example():
 
 
 def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_path):
-    from ppmat.sample.molecular_sampler import MolecularSampler
+    from ppmat.sampler.molecular_sampler import MolecularSampler
 
     sampler = object.__new__(MolecularSampler)
     sampler.sample_config = {"data": {}}
@@ -436,7 +436,7 @@ def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_pa
 
 
 def test_molecular_sampler_compute_metric_reuses_sample_metrics(tmp_path):
-    from ppmat.sample.molecular_sampler import MolecularSampler
+    from ppmat.sampler.molecular_sampler import MolecularSampler
 
     sampler = object.__new__(MolecularSampler)
     sampler.sample_config = {}
@@ -451,7 +451,7 @@ def test_molecular_sampler_compute_metric_reuses_sample_metrics(tmp_path):
 def test_molecular_sampler_clamps_keep_chain_to_batch_size():
     import paddle
 
-    from ppmat.sample.molecular_sampler import MolecularSampler
+    from ppmat.sampler.molecular_sampler import MolecularSampler
 
     sampler = object.__new__(MolecularSampler)
     assert sampler._clamp_keep_chain(5, 1) == 1
@@ -481,7 +481,7 @@ def test_diffnmr_config_uses_standard_checkpoint_paths():
 
 
 def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
-    from ppmat.sample.molecular_sampler import MolecularSampler
+    from ppmat.sampler.molecular_sampler import MolecularSampler
 
     package_dir = tmp_path / "diffnmr_msdnmr_nless15"
     package_ckpt_dir = package_dir / "checkpoints"
@@ -559,8 +559,8 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
 def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
     import paddle
 
-    import ppmat.sample.molecular_sampler as molecular_sampler
-    from ppmat.sample.molecular_sampler import MolecularSampler
+    import ppmat.sampler.molecular_sampler as molecular_sampler
+    from ppmat.sampler.molecular_sampler import MolecularSampler
 
     class FakeData:
         def __init__(self, X, E, y=None):
@@ -636,7 +636,7 @@ def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
 
 def test_diffnmr_sample_entrypoint_supports_config_overrides():
     source = (ROOT / "spectrum_elucidation/sample.py").read_text()
-    sampler_source = (ROOT / "ppmat/sample/molecular_sampler.py").read_text()
+    sampler_source = (ROOT / "ppmat/sampler/molecular_sampler.py").read_text()
 
     assert "parse_known_args()" in source
     assert "config_overrides=dynamic_args" in source
@@ -646,12 +646,12 @@ def test_diffnmr_sample_entrypoint_supports_config_overrides():
     assert "_replace_with_package_file" not in sampler_source
 
 
-def test_diffnmr_uses_molecular_sampler_from_sample_package():
+def test_diffnmr_uses_molecular_sampler_from_sampler_package():
     source = (ROOT / "spectrum_elucidation/sample.py").read_text()
-    sampler_path = ROOT / "ppmat/sample/molecular_sampler.py"
-    legacy_source = (ROOT / "ppmat/sampler/base_sampler.py").read_text()
+    sampler_path = ROOT / "ppmat/sampler/molecular_sampler.py"
+    legacy_sample_dir = ROOT / "ppmat/sample"
 
     assert sampler_path.exists()
-    assert "from ppmat.sample import MolecularSampler" in source
+    assert not legacy_sample_dir.exists()
+    assert "from ppmat.sampler import MolecularSampler" in source
     assert "class MolecularSampler" in sampler_path.read_text()
-    assert "class MolecularSampler" not in legacy_source
