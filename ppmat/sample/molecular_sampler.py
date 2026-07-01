@@ -33,10 +33,8 @@ from tqdm import tqdm
 from ppmat.datasets import build_dataloader
 from ppmat.datasets import build_dataset_infos
 from ppmat.datasets import set_signal_handlers
-from ppmat.datasets.msd_nmr_dataset import DataLoaderCollection
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.metrics import DiffNMRStreamingAdapter
-from ppmat.metrics import build_metric
 from ppmat.models import MODEL_REGISTRY
 from ppmat.models import build_model
 from ppmat.models.diffnmr.extra_features_graph import DummyExtraFeatures
@@ -113,7 +111,7 @@ class MolecularSampler:
                 cli_config = OmegaConf.from_dotlist(config_overrides)
                 config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
-            self._resolve_pretrained_paths(
+            self._resolve_package_paths(
                 config,
                 config_base_dir=config_base_dir,
                 checkpoint_dir=checkpoint_dir,
@@ -136,7 +134,7 @@ class MolecularSampler:
                 cli_config = OmegaConf.from_dotlist(config_overrides)
                 config = OmegaConf.merge(config, cli_config)
             config = OmegaConf.to_container(config, resolve=True)
-            self._resolve_pretrained_paths(
+            self._resolve_package_paths(
                 config,
                 config_base_dir=package_config_dir,
                 checkpoint_dir=None,
@@ -145,21 +143,16 @@ class MolecularSampler:
         model_config = config.get("Model", None)
         assert model_config is not None, "Model config must be provided."
 
-        # TODO: optimize in the future
         set_signal_handlers()
-        train_data_cfg = config["Dataset"].get("train")
-        train_loader = build_dataloader(train_data_cfg)
+        sample_loader = build_dataloader(config["Sampler"]["data"])
 
-        val_data_cfg = config["Dataset"].get("val")
-        val_loader = build_dataloader(val_data_cfg)
-
-        test_data_cfg = config["Dataset"].get("test")
-        test_loader = build_dataloader(test_data_cfg)
-
-        # build datasetinfo
-        dataloaders = DataLoaderCollection(train_loader, val_loader, test_loader)
+        # Build dataset infos without constructing full train/val/test dataloaders.
+        dataset_info_config = copy.deepcopy(config)
+        dataset_info_config["Dataset"]["train"]["dataset"]["__init_params__"][
+            "load_train_smiles"
+        ] = False
         dataset_infos = build_dataset_infos(
-            dataloaders=dataloaders, cfg=config, recompute_statistics=False
+            dataloaders=None, cfg=dataset_info_config, recompute_statistics=False
         )
         train_smiles = dataset_infos.train_smiles
 
@@ -178,9 +171,8 @@ class MolecularSampler:
         else:
             extra_features = DummyExtraFeatures()
             domain_features = DummyExtraFeatures()
-        fallback_loader = train_loader or val_loader or test_loader
         dataset_infos.compute_input_output_dims(
-            dataloader=fallback_loader,
+            dataloader=sample_loader,
             extra_features=extra_features,
             domain_features=domain_features,
             conditionDim=config["Model"]["__init_params__"]["diffmodel_cfg"][
@@ -240,6 +232,7 @@ class MolecularSampler:
 
         self.model = model
         self.config = config
+        self._sample_loader = sample_loader
 
         self.model.eval()
 
@@ -272,7 +265,7 @@ class MolecularSampler:
             else 0
         )
         self.output_dir = self.config.get("Sampler", {}).get("output_dir", "./outputs")
-        os.makedirs(self.output_dir, exist_ok=True)
+        self._set_output_dir(self.output_dir)
 
         if self.clip is not None:
             setattr(self.model, "clip", self.clip)
@@ -314,6 +307,14 @@ class MolecularSampler:
         config_base_dir: Optional[str],
         checkpoint_dir: Optional[str] = None,
     ):
+        MolecularSampler._resolve_package_paths(config, config_base_dir, checkpoint_dir)
+
+    @staticmethod
+    def _resolve_package_paths(
+        config: Dict,
+        config_base_dir: Optional[str],
+        checkpoint_dir: Optional[str] = None,
+    ):
         def resolve_path(path):
             if path is None or osp.isabs(path) or path.startswith("http"):
                 return path
@@ -324,10 +325,15 @@ class MolecularSampler:
                     return candidate
 
             if config_base_dir is not None:
-                candidate = osp.join(config_base_dir, "checkpoints", osp.basename(path))
+                if path.startswith("./checkpoints/") or path.startswith("checkpoints/"):
+                    candidate = osp.join(
+                        config_base_dir, "checkpoints", osp.basename(path)
+                    )
+                    if osp.exists(candidate):
+                        return candidate
+                candidate = osp.normpath(osp.join(config_base_dir, path))
                 if osp.exists(candidate):
                     return candidate
-                return osp.normpath(osp.join(config_base_dir, path))
 
             return path
 
@@ -337,6 +343,11 @@ class MolecularSampler:
                     if key in {
                         "pretrained_path",
                         "pretrained_model_path",
+                        "vocab_peakwidth_path",
+                        "vocab_split_path",
+                        "retrival_database_path",
+                        "path",
+                        "datadir",
                     } and isinstance(value, str):
                         obj[key] = resolve_path(value)
                     else:
@@ -347,26 +358,34 @@ class MolecularSampler:
 
         visit(config)
 
+    def _set_output_dir(self, output_dir: str):
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
+        if self.visualization_tools is not None:
+            self.visualization_tools.result_path = osp.join(self.output_dir, "graph")
+
     def compute_metric(
         self,
         save_path=None,
     ):
-        self.output_dir = save_path if save_path is not None else self.output_dir
-        metrics_cfg = self.sample_config.get("metrics")
-        assert metrics_cfg is not None, "metrics config must be provided."
-        metrics_fn = build_metric(metrics_cfg)
-
-        total_results = self.sample_by_dataloader(
+        if save_path is not None:
+            self._set_output_dir(save_path)
+        return self.sample_by_dataloader(
             self.output_dir,
         )
-
-        metric = metrics_fn(total_results)
-        return metric
 
     def post_process(self, data):
         if self.post_transforms is None:
             return data
         return self.post_transforms(data)
+
+    @staticmethod
+    def _clamp_keep_chain(keep_chain: int, n_nodes: Union[int, paddle.Tensor]):
+        if keep_chain <= 0:
+            return 0
+        if isinstance(n_nodes, int):
+            return min(keep_chain, n_nodes)
+        return min(keep_chain, int(n_nodes.shape[0]))
 
     def sample(self, data, sample_params=None):
         if sample_params is None:
@@ -379,10 +398,14 @@ class MolecularSampler:
     def sample_by_dataloader(
         self,
         save_path=None,
+        data_loader=None,
     ):
-        self.output_dir = save_path if save_path is not None else self.output_dir
-        dataset_cfg = self.sample_config["data"]
-        data_loader = build_dataloader(dataset_cfg)
+        if save_path is not None:
+            self._set_output_dir(save_path)
+        if data_loader is None:
+            data_loader = getattr(self, "_sample_loader", None)
+        if data_loader is None:
+            data_loader = build_dataloader(self.sample_config["data"])
 
         # build_molecule_cfg = self.sample_config["build_molecule_cfg"]
         # molecule_converter = BuildMolecule(**build_molecule_cfg)
@@ -419,6 +442,7 @@ class MolecularSampler:
                         else f" | {k}(metric): {v:.5f}"
                     )
             logger.info(msg)
+        return metric_dict
 
     @paddle.no_grad()
     def sample_epoch(
@@ -704,6 +728,7 @@ class MolecularSampler:
         else:
             n_nodes = paddle.to_tensor(num_nodes)  # assume Tensor
 
+        keep_chain = self._clamp_keep_chain(keep_chain, n_nodes)
         n_max: int = int(paddle.max(n_nodes).item())  # ***largest graph size***
 
         # `node_mask[b, i] == True` if node *i* is real for graph *b*

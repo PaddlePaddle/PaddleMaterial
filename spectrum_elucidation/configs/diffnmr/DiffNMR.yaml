@@ -96,10 +96,10 @@ Trainer:
 
 Sampler:
   sample_every_val: 500
-  visual_num: 10 # number of visualize molecules in the sample
-  chains_to_save: 5 # less sample batch size, select representative sample in sample batch for visualize
+  visual_num: 1 # number of visualize molecules in the sample
+  chains_to_save: 0 # less sample batch size, select representative sample in sample batch for visualize
   number_chain_steps: 10 # Number of frames in each gif
-  sample_batch_iters: 100 # Number of sample batches
+  sample_batch_iters: 1 # Number of sample batches
   flag_retrival_sampling: False
   flag_use_formula: False
   flag_retrival_initilization: False
@@ -112,10 +112,12 @@ Sampler:
     dataset:
       __class_name__: MSDnmrDataset
       __init_params__:
-        path: "./data/MSD_nmr/test.csv"
+        path: "./example/sample.csv"
         vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
         vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
         cache: True
+        cache_path: "./output/diffnmr_example_cache"
+        overwrite: True
         data_flag: "n<15"
         max_atoms: 15
         build_molecule_cfg: ${Global.molecule_converter}
@@ -126,7 +128,7 @@ Sampler:
       __init_params__:
         shuffle: True
         drop_last: False
-        batch_size: 256
+        batch_size: 1
 
 
 Model:

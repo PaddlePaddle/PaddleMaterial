@@ -120,6 +120,24 @@ def test_diffnmr_train_smiles_uses_existing_datadir_cache(tmp_path):
     np.testing.assert_array_equal(train_smiles, expected_smiles)
 
 
+def test_diffnmr_dataset_infos_can_skip_train_smiles():
+    from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
+
+    cfg = {
+        "data_flag": "n<15",
+        "build_graph_cfg": {"__init_params__": {"remove_h": True}},
+        "load_train_smiles": False,
+    }
+
+    dataset_infos = MSDnmrinfos(
+        dataloaders=SimpleNamespace(train_dataloader=None),
+        cfg=cfg,
+    )
+
+    assert dataset_infos.train_smiles is None
+    assert dataset_infos.atom_decoder == ["C", "N", "O", "F", "P", "S", "Cl", "Br", "I"]
+
+
 def test_build_model_from_name_uses_package_config_discovery():
     import ppmat.models as models
 
@@ -349,17 +367,96 @@ def test_infgcn_readme_commands_and_config_links_are_clean():
 
 def test_diffnmr_sample_readme_documents_one_click_sample_command():
     readme = (ROOT / "spectrum_elucidation/configs/diffnmr/README.md").read_text()
-    sample_csv = ROOT / "spectrum_elucidation/configs/diffnmr/sample.csv"
+    sample_csv = ROOT / "spectrum_elucidation/configs/diffnmr/example/sample.csv"
 
     assert "--model_name='diffnmr_msdnmr_nless15'" in readme
     assert "--weights_name='DiffNMR_nless15_best.pdparams'" in readme
-    assert "data/MSD_nmr/test.csv" in readme
+    assert "bundled one-row validation example" in readme
+    assert "Sampler.data.dataset.__init_params__.path" in readme
+    assert (
+        "Sampler.data.dataset.__init_params__.path='./data/MSD_nmr/test.csv'" in readme
+    )
     assert "### Sampling Sample" not in readme
-    assert "Sampler.sample_batch_iters=1" not in readme
-    assert "Sampler.data.sampler.__init_params__.batch_size=1" not in readme
     assert "--checkpoint_path='./checkpoints'" in readme
     assert sample_csv.exists()
     assert sample_csv.read_text().splitlines()[0] == "smiles,tokenized_input,atom_count"
+    assert (
+        sample_csv.read_text()
+        .splitlines()[1]
+        .startswith('CSc1ccc(C(C)C(=O)O)cc1F,"{""1HNMR"":')
+    )
+    vocab_dir = (
+        ROOT
+        / "spectrum_elucidation/configs/diffnmr"
+        / "spectrum_elucidation/vocab/nless15/H1_statistic"
+    )
+    assert (vocab_dir / "delta_distribution.csv").exists()
+    assert (vocab_dir / "split_type_distribution.csv").exists()
+
+
+def test_diffnmr_package_sample_defaults_to_bundled_example():
+    config = OmegaConf.to_container(
+        OmegaConf.load(ROOT / "spectrum_elucidation/configs/diffnmr/DiffNMR.yaml"),
+        resolve=False,
+    )
+
+    sampler_params = config["Sampler"]["data"]["dataset"]["__init_params__"]
+    assert sampler_params["path"] == "./example/sample.csv"
+    assert sampler_params["cache_path"] == "./output/diffnmr_example_cache"
+    assert sampler_params["overwrite"] is True
+    assert config["Sampler"]["data"]["sampler"]["__init_params__"]["batch_size"] == 1
+    assert config["Sampler"]["sample_batch_iters"] == 1
+    assert config["Sampler"]["visual_num"] == 1
+    assert config["Sampler"]["chains_to_save"] == 0
+
+
+def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_path):
+    from ppmat.sample.molecular_sampler import MolecularSampler
+
+    sampler = object.__new__(MolecularSampler)
+    sampler.sample_config = {"data": {}}
+    sampler.output_dir = "old_output"
+    sampler.visualization_tools = SimpleNamespace(result_path="old_output/graph/")
+    sampler.model = SimpleNamespace(eval=lambda: None)
+    sampler.flag_retrival_sampling = False
+    sampler.num_candidates = 1
+    sampler.metric_dict_sample = {"Accuracy"}
+
+    save_path = tmp_path / "sample_output"
+    sampler.sample_epoch = lambda *args, **kwargs: {"Accuracy": 1.0}
+
+    result = sampler.sample_by_dataloader(
+        save_path=str(save_path),
+        data_loader=[],
+    )
+
+    assert result == {"Accuracy": 1.0}
+    assert sampler.output_dir == str(save_path)
+    assert sampler.visualization_tools.result_path == str(save_path / "graph")
+
+
+def test_molecular_sampler_compute_metric_reuses_sample_metrics(tmp_path):
+    from ppmat.sample.molecular_sampler import MolecularSampler
+
+    sampler = object.__new__(MolecularSampler)
+    sampler.sample_config = {}
+    sampler.output_dir = "old_output"
+    sampler.visualization_tools = None
+    sampler.sample_by_dataloader = lambda save_path: {"Accuracy": 0.5}
+
+    assert sampler.compute_metric(save_path=str(tmp_path)) == {"Accuracy": 0.5}
+    assert sampler.output_dir == str(tmp_path)
+
+
+def test_molecular_sampler_clamps_keep_chain_to_batch_size():
+    import paddle
+
+    from ppmat.sample.molecular_sampler import MolecularSampler
+
+    sampler = object.__new__(MolecularSampler)
+    assert sampler._clamp_keep_chain(5, 1) == 1
+    assert sampler._clamp_keep_chain(0, 1) == 0
+    assert sampler._clamp_keep_chain(3, paddle.to_tensor([2, 2], dtype="int64")) == 2
 
 
 def test_diffnmr_config_uses_standard_checkpoint_paths():
@@ -388,9 +485,13 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
 
     package_dir = tmp_path / "diffnmr_msdnmr_nless15"
     package_ckpt_dir = package_dir / "checkpoints"
+    package_vocab_dir = package_dir / "spectrum_elucidation/vocab"
     package_ckpt_dir.mkdir(parents=True)
+    package_vocab_dir.mkdir(parents=True)
     package_weight = package_ckpt_dir / "DiffNMR_NMRNet_nless15_best.pdparams"
+    package_vocab = package_vocab_dir / "delta_distribution.csv"
     package_weight.write_bytes(b"fake")
+    package_vocab.write_text("Value,Count\n0.03,1\n")
 
     package_config = {
         "Model": {
@@ -401,10 +502,21 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
                     )
                 }
             }
-        }
+        },
+        "Dataset": {
+            "train": {
+                "dataset": {
+                    "__init_params__": {
+                        "vocab_peakwidth_path": (
+                            "./spectrum_elucidation/vocab/delta_distribution.csv"
+                        )
+                    }
+                }
+            }
+        },
     }
 
-    MolecularSampler._resolve_pretrained_paths(
+    MolecularSampler._resolve_package_paths(
         package_config,
         config_base_dir=str(package_dir),
         checkpoint_dir=None,
@@ -413,6 +525,9 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
     assert package_config["Model"]["__init_params__"]["encoder_cfg"][
         "pretrained_path"
     ] == str(package_weight)
+    assert package_config["Dataset"]["train"]["dataset"]["__init_params__"][
+        "vocab_peakwidth_path"
+    ] == str(package_vocab)
 
     custom_ckpt_dir = tmp_path / "custom_checkpoints"
     custom_ckpt_dir.mkdir()
@@ -430,7 +545,7 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
         }
     }
 
-    MolecularSampler._resolve_pretrained_paths(
+    MolecularSampler._resolve_package_paths(
         custom_config,
         config_base_dir=str(tmp_path / "config_dir"),
         checkpoint_dir=str(custom_ckpt_dir),

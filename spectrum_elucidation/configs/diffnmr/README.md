@@ -88,13 +88,8 @@ spectrum_elucidation/vocab/nless15/
 spectrum_elucidation/retrival_database/
 ```
 
-For a quick sampling smoke test, the bundled one-row CSV can be used as the
-default test split:
-
-```bash
-mkdir -p data/MSD_nmr
-cp spectrum_elucidation/configs/diffnmr/sample.csv data/MSD_nmr/test.csv
-```
+For a quick sampling smoke test, a bundled one-row sample from the MSD-NMR n<15
+validation split is provided at `example/sample.csv`.
 
 ---
 
@@ -148,6 +143,10 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 
 python spectrum_elucidation/sample.py --model_name='diffnmr_msdnmr_nless15' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
 python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --checkpoint_path='./checkpoints' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'
+
+# By default, sampling uses the bundled one-row validation example.
+# To sample the full test split, override:
+# Sampler.data.dataset.__init_params__.path='./data/MSD_nmr/test.csv'
 ```
 
 ---

@@ -1286,9 +1286,12 @@ class MSDnmrinfos:
             self.edge_types = dataloaders.edge_counts()
             self.valency_distribution = dataloaders.valency_count(self.max_n_nodes)
 
-        self.train_smiles = get_train_smiles(
-            cfg, dataloaders.train_dataloader, self, evaluate_dataset=False
-        )
+        if cfg.get("load_train_smiles", True):
+            self.train_smiles = get_train_smiles(
+                cfg, dataloaders.train_dataloader, self, evaluate_dataset=False
+            )
+        else:
+            self.train_smiles = None
 
     def complete_infos(self, n_nodes, node_types):
         self.input_dims = None
