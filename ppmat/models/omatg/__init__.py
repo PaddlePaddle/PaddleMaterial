@@ -16,6 +16,9 @@
 Based on Stochastic Interpolants (ICML 2025, NeurIPS 2025).
 """
 
+import os
+import os.path as osp
+
 from ppmat.models.omatg.model import OMATGCSPNetFull
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -140,8 +143,14 @@ def build_omatg_model(dataset: str, variant: str, weights_name: str = None):
     logger.info(f"Building OMatG model: {dataset} / {variant}")
     logger.info(f"Weight URL: {weight_url}")
 
-    # Download weight automatically (uses same mechanism as build_model_from_name)
-    weight_path = download.get_weights_path_from_url(weight_url)
+    # Download weight to dataset-specific cache dir to avoid filename collision.
+    weight_path = osp.join(download.WEIGHTS_HOME, f"omatg_{dataset}",
+                           weight_url.split("/")[-1])
+    if not osp.exists(weight_path):
+        os.makedirs(osp.dirname(weight_path), exist_ok=True)
+        weight_path = download._download(weight_url, osp.dirname(weight_path))
+    else:
+        logger.message(f"Found {weight_path} exists, skip downloading.")
     logger.info(f"Weight saved to: {weight_path}")
 
     # If custom weights_name is specified, use it; otherwise use the variant name

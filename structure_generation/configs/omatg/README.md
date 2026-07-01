@@ -58,7 +58,6 @@ the `file_path` in the dataset section of the config.
 | mpts_52_csp | CSP | 8 | `build_omatg_model("mpts_52_csp", variant)` |
 | alex_mp_20_csp | CSP | 11 | `build_omatg_model("alex_mp_20_csp", variant)` |
 
-See `ppmat/models/omatg/__init__.py` (`OMATG_WEIGHTS` dict) for all weight URLs.
 
 ## Configuration Files
 
@@ -108,14 +107,104 @@ See `ppmat/models/omatg/__init__.py` (`OMATG_WEIGHTS` dict) for all weight URLs.
     </tr>
 </table>
 
-## Training
+## Pretrained Weights
+
+Pre-trained weights hosted on Baidu BOS (50 files). Use `build_omatg_model(dataset, variant)`
+for automatic download. Cached to `~/.paddlemat/weights/omatg_{dataset}/` after first download.
+
+```python
+from ppmat.models.omatg import build_omatg_model
+model, meta = build_omatg_model("mp_20_csp", "encdec_ode_gamma")  # CSP
+model, meta = build_omatg_model("mp_20_dng", "encdec_ode_gamma")  # DNG
+```
+
+### Perov-5
+
+| Variant | Weight |
+|---------|--------|
+| encdec_ode_gamma | [EncDec-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/EncDec-ODE-Gamma.pdparams) |
+| encdec_sde_gamma | [EncDec-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/EncDec-SDE-Gamma.pdparams) |
+| linear_ode | [Linear-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Linear-ODE.pdparams) |
+| linear_ode_gamma | [Linear-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Linear-ODE-Gamma.pdparams) |
+| linear_sde_gamma | [Linear-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Linear-SDE-Gamma.pdparams) |
+| trig_ode | [Trig-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Trig-ODE.pdparams) |
+| trig_ode_gamma | [Trig-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Trig-ODE-Gamma.pdparams) |
+| trig_sde_gamma | [Trig-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/Trig-SDE-Gamma.pdparams) |
+| vesbd_ode | [VESBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/VESBD-ODE.pdparams) |
+| vpsbd_ode | [VPSBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/VPSBD-ODE.pdparams) |
+| vpsbd_sde | [VPSBD-SDE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_perov_5_csp/VPSBD-SDE.pdparams) |
+
+### MPTS-52
+
+| Variant | Weight |
+|---------|--------|
+| encdec_ode_gamma | [EncDec-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/EncDec-ODE-Gamma.pdparams) |
+| encdec_sde_gamma | [EncDec-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/EncDec-SDE-Gamma.pdparams) |
+| linear_ode | [Linear-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Linear-ODE.pdparams) |
+| linear_ode_gamma | [Linear-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Linear-ODE-Gamma.pdparams) |
+| linear_sde_gamma | [Linear-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Linear-SDE-Gamma.pdparams) |
+| trig_ode | [Trig-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Trig-ODE.pdparams) |
+| trig_ode_gamma | [Trig-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Trig-ODE-Gamma.pdparams) |
+| trig_sde_gamma | [Trig-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mpts_52_csp/Trig-SDE-Gamma.pdparams) |
+
+### MP-20 (DNG)
+
+| Variant | Weight |
+|---------|--------|
+| encdec_ode_gamma | [EncDec-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/EncDec-ODE-Gamma.pdparams) |
+| encdec_sde_gamma | [EncDec-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/EncDec-SDE-Gamma.pdparams) |
+| linear_ode | [Linear-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-ODE.pdparams) |
+| linear_ode_gamma | [Linear-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-ODE-Gamma.pdparams) |
+| linear_sde_gamma | [Linear-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-SDE-Gamma.pdparams) |
+| trig_ode | [Trig-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Trig-ODE.pdparams) |
+| trig_ode_gamma | [Trig-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Trig-ODE-Gamma.pdparams) |
+| trig_sde_gamma | [Trig-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Trig-SDE-Gamma.pdparams) |
+| vesbd_ode | [VESBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/VESBD-ODE.pdparams) |
+| vpsbd_ode | [VPSBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/VPSBD-ODE.pdparams) |
+| vpsbd_sde | [VPSBD-SDE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/VPSBD-SDE.pdparams) |
+
+### MP-20 (CSP)
+
+| Variant | Weight |
+|---------|--------|
+| encdec_ode_gamma | [EncDec-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/EncDec-ODE-Gamma.pdparams) |
+| encdec_sde_gamma | [EncDec-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/EncDec-SDE-Gamma.pdparams) |
+| linear_ode | [Linear-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Linear-ODE.pdparams) |
+| linear_ode_gamma | [Linear-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Linear-ODE-Gamma.pdparams) |
+| linear_sde_gamma | [Linear-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Linear-SDE-Gamma.pdparams) |
+| trig_ode | [Trig-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Trig-ODE.pdparams) |
+| trig_ode_gamma | [Trig-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Trig-ODE-Gamma.pdparams) |
+| trig_sde_gamma | [Trig-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Trig-SDE-Gamma.pdparams) |
+| vesbd_ode | [VESBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/VESBD-ODE.pdparams) |
+| vpsbd_ode | [VPSBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/VPSBD-ODE.pdparams) |
+| vpsbd_sde | [VPSBD-SDE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/VPSBD-SDE.pdparams) |
+
+### Alex-MP-20
+
+| Variant | Weight |
+|---------|--------|
+| encdec_ode_gamma | [EncDec-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/EncDec-ODE-Gamma.pdparams) |
+| encdec_sde_gamma | [EncDec-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/EncDec-SDE-Gamma.pdparams) |
+| linear_ode | [Linear-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Linear-ODE.pdparams) |
+| linear_ode_gamma | [Linear-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Linear-ODE-Gamma.pdparams) |
+| linear_sde_gamma | [Linear-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Linear-SDE-Gamma.pdparams) |
+| trig_ode | [Trig-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Trig-ODE.pdparams) |
+| trig_ode_gamma | [Trig-ODE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Trig-ODE-Gamma.pdparams) |
+| trig_sde_gamma | [Trig-SDE-Gamma.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/Trig-SDE-Gamma.pdparams) |
+| vesbd_ode | [VESBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/VESBD-ODE.pdparams) |
+| vpsbd_ode | [VPSBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/VPSBD-ODE.pdparams) |
+| vpsbd_sde | [VPSBD-SDE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/VPSBD-SDE.pdparams) |
+
+## Commands
+
+### Training
 
 ```bash
 # Smoke training (1 epoch, small batch, no eval)
 python structure_generation/train.py \
     -c structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     Trainer.max_epochs=1 \
-    Trainer.do_eval=False \
+    Global.do_eval=False \
     Dataset.train.sampler.__init_params__.batch_size=32 \
     Dataset.val.sampler.__init_params__.batch_size=32
 
@@ -126,7 +215,7 @@ python structure_generation/train.py \
     Trainer.output_dir=./output/omatg_mp20_csp
 ```
 
-## Validation
+### Validation
 
 ```bash
 # Evaluate on the validation split using a saved checkpoint
@@ -137,7 +226,7 @@ python structure_generation/train.py \
     Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
 ```
 
-## Testing
+### Testing
 
 ```bash
 # Evaluate on the test split
@@ -149,10 +238,10 @@ python structure_generation/train.py \
     Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
 ```
 
-## Sample
+### Sampling
 
 ```bash
-# Sample by number of atoms
+# Sample by number of atoms (with local checkpoint)
 python structure_generation/sample.py \
     --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
@@ -160,7 +249,7 @@ python structure_generation/sample.py \
     --num_atoms 8 \
     --save_path ./results/omatg_samples
 
-# Sample by chemical formula
+# Sample by chemical formula (with local checkpoint)
 python structure_generation/sample.py \
     --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
@@ -168,9 +257,12 @@ python structure_generation/sample.py \
     --chemical_formula LiMnO2 \
     --save_path ./results/omatg_samples
 
-# Batch sample by dataloader
+# Sample using pre-trained weights (HTTP auto-download)
+# Use build_omatg_model() in a Python script, then pass the model to the sampler.
+
+# Batch sample by dataloader (with local checkpoint)
 python structure_generation/sample.py \
-    --config_path structure_generation/configs/omatg/omatg_mp20_csp.yaml \
+    --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
     --mode by_dataloader \
     --save_path ./results/omatg_samples
