@@ -61,18 +61,6 @@ For property-conditioned RL, rewards are computed **on-the-fly** by property cal
 
 ---
 
-## Checkpoints
-
-Pretrained checkpoints are available from:
-
-| Model | Source | URL |
-|-------|--------|-----|
-| MatInvent (MatterGen backbone) | PaddleMaterials BCE | `matinvent_mattergen_mp20` |
-| MatInvent (DiffCSP backbone) | PaddleMaterials BCE | `matinvent_diffcsp_mp20` |
-| Original PyTorch checkpoints | Hugging Face | [jwchen25/MatInvent](https://huggingface.co/jwchen25/MatInvent) |
-
----
-
 ## Results
 
 Key RL metrics tracked during training include **reward mean**, **burden** (computational cost per high-reward candidate), and **diversity ratio** (unique compositions / total evaluations). Post-hoc generation quality is reported as the **SUN ratio** (Stable, Unique, Novel fraction).
