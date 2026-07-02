@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import inspect
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -151,7 +153,7 @@ def test_build_model_from_name_uses_package_config_discovery():
 
 def test_infgcn_predict_uses_config_defaults_for_cli_options():
     source = (ROOT / "electronic_structure/predict.py").read_text()
-    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
+    field_source = (ROOT / "ppmat/predictor/field_predictor.py").read_text()
     cfg = OmegaConf.to_container(
         OmegaConf.load(INFGCN_CONFIG_DIR / "infgcn_qm9.yaml"),
         resolve=True,
@@ -219,23 +221,29 @@ def test_infgcn_predict_cli_accepts_one_click_model_arguments():
 def test_field_predictor_is_shared_predictor_entrypoint():
     import ppmat.predictor as predictor
 
-    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
+    field_source = (ROOT / "ppmat/predictor/field_predictor.py").read_text()
     entry_source = (ROOT / "electronic_structure/predict.py").read_text()
 
+    assert not (ROOT / "ppmat/predictor/field.py").exists()
     assert hasattr(predictor, "FieldPredictor")
     assert "class FieldPredictor" in field_source
     assert "from ppmat.predictor import FieldPredictor" in entry_source
+    assert "from ppmat.predictor.field_predictor import apply_predict_config" in (
+        entry_source
+    )
     assert "from ppmat.models import MODEL_REGISTRY" not in entry_source
     assert "from ppmat.datasets import DensityDataset" not in entry_source
 
 
 def test_field_predictor_reuses_base_and_keeps_helpers_outside_predictor():
-    field_source = (ROOT / "ppmat/predictor/field.py").read_text()
+    field_source = (ROOT / "ppmat/predictor/field_predictor.py").read_text()
     io_source = (ROOT / "ppmat/utils/io.py").read_text()
     visualization_source = (ROOT / "ppmat/utils/visualization.py").read_text()
 
     assert "from ppmat.predictor.base import BasePredictor" in field_source
     assert "class FieldPredictor(BasePredictor):" in field_source
+    assert "self._load_model()" in field_source
+    assert "def _load_model(self):" in field_source
     assert not (ROOT / "ppmat/utils/field_io.py").exists()
     assert not (ROOT / "ppmat/utils/field_visualization.py").exists()
 
@@ -255,15 +263,20 @@ def test_field_predictor_reuses_base_and_keeps_helpers_outside_predictor():
     for helper_name in ["draw_volume", "safe_write_image", "maybe_downsample_volume"]:
         assert f"def {helper_name}" in visualization_source
 
-    top_level_vis_imports = "\n".join(
+    top_level_imports = "\n".join(
         line
         for line in visualization_source.splitlines()
         if line.startswith("import ") or line.startswith("from ")
     )
-    assert "import matplotlib.pyplot as plt" not in top_level_vis_imports
-    assert "import imageio" not in top_level_vis_imports
-    assert "import rdkit" not in top_level_vis_imports
-    assert "from rdkit" not in top_level_vis_imports
+    assert "import imageio" in top_level_imports
+    assert "import matplotlib.pyplot as plt" in top_level_imports
+    assert "import networkx as nx" in top_level_imports
+    assert "import plotly.graph_objects as go" in top_level_imports
+    assert "import rdkit" in top_level_imports
+    assert "def _rdkit_modules" not in visualization_source
+    assert "def _matplotlib_pyplot" not in visualization_source
+    assert "def _networkx" not in visualization_source
+    assert "def _imageio" not in visualization_source
 
     assert "def _save_cubes" in field_source
     assert "def _save_visualizations" in field_source
@@ -385,13 +398,6 @@ def test_diffnmr_sample_readme_documents_one_click_sample_command():
         .splitlines()[1]
         .startswith('CSc1ccc(C(C)C(=O)O)cc1F,"{""1HNMR"":')
     )
-    vocab_dir = (
-        ROOT
-        / "spectrum_elucidation/configs/diffnmr"
-        / "spectrum_elucidation/vocab/nless15/H1_statistic"
-    )
-    assert (vocab_dir / "delta_distribution.csv").exists()
-    assert (vocab_dir / "split_type_distribution.csv").exists()
 
 
 def test_diffnmr_package_sample_defaults_to_bundled_example():
@@ -400,8 +406,19 @@ def test_diffnmr_package_sample_defaults_to_bundled_example():
         resolve=False,
     )
 
+    assert config["Sampler"]["name"] == "diffnmr"
+    assert config["Sampler"]["retrival_database_path"] == (
+        "./assets/retrival_database/"
+        "msd_nmr_nless15_retrieval_molecular_representations.csv"
+    )
     sampler_params = config["Sampler"]["data"]["dataset"]["__init_params__"]
     assert sampler_params["path"] == "./example/sample.csv"
+    assert sampler_params["vocab_peakwidth_path"] == (
+        "./assets/vocab/nless15/H1_statistic/delta_distribution.csv"
+    )
+    assert sampler_params["vocab_split_path"] == (
+        "./assets/vocab/nless15/H1_statistic/split_type_distribution.csv"
+    )
     assert sampler_params["cache_path"] == "./output/diffnmr_example_cache"
     assert sampler_params["overwrite"] is True
     assert config["Sampler"]["data"]["sampler"]["__init_params__"]["batch_size"] == 1
@@ -410,10 +427,111 @@ def test_diffnmr_package_sample_defaults_to_bundled_example():
     assert config["Sampler"]["chains_to_save"] == 0
 
 
-def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_path):
-    from ppmat.sampler.molecular_sampler import MolecularSampler
+def test_molecular_sampler_entrypoint_keeps_diffnmr_imports_lazy():
+    source = (ROOT / "ppmat/sampler/molecular_sampler.py").read_text()
 
-    sampler = object.__new__(MolecularSampler)
+    forbidden_snippets = [
+        "import paddle",
+        "from ppmat.datasets",
+        "from ppmat.metrics",
+        "from ppmat.models.diffnmr",
+        "from ppmat.schedulers",
+        "DiffNMRStreamingAdapter",
+        "ExtraMolecularFeatures",
+        "MolecularVisualization",
+        "scheduling_diffnmr",
+        "graphs_from_mol",
+    ]
+    for snippet in forbidden_snippets:
+        assert snippet not in source
+    assert "importlib.import_module" in source
+    assert "diffnmr_sampler:DiffNMRSampler" in source
+    assert "MODEL_NAME_TO_SAMPLER" in source
+
+
+def test_molecular_sampler_module_source_load_does_not_load_diffnmr():
+    sys.modules.pop("ppmat.models.diffnmr.diffnmr", None)
+    sys.modules.pop("ppmat.sampler.diffnmr_sampler", None)
+
+    module_path = ROOT / "ppmat/sampler/molecular_sampler.py"
+    spec = importlib.util.spec_from_file_location(
+        "molecular_sampler_under_test", module_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.SAMPLER_REGISTRY["diffnmr"].endswith("diffnmr_sampler:DiffNMRSampler")
+    assert "ppmat.models.diffnmr.diffnmr" not in sys.modules
+    assert "ppmat.sampler.diffnmr_sampler" not in sys.modules
+
+
+def test_molecular_sampler_dispatches_diffnmr_config(tmp_path, monkeypatch):
+    import ppmat.sampler.molecular_sampler as molecular_sampler
+
+    class FakeSampler:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    def fake_import_module(module_name):
+        assert module_name == "fake_sampler_module"
+        return SimpleNamespace(FakeSampler=FakeSampler)
+
+    monkeypatch.setattr(
+        molecular_sampler,
+        "SAMPLER_REGISTRY",
+        {"diffnmr": "fake_sampler_module:FakeSampler"},
+    )
+    monkeypatch.setattr(
+        molecular_sampler.importlib, "import_module", fake_import_module
+    )
+
+    config_path = tmp_path / "DiffNMR.yaml"
+    checkpoint_path = tmp_path / "checkpoints"
+    checkpoint_path.mkdir()
+    config_path.write_text(
+        "Model:\n" "  __class_name__: DiffNMR\n" "Sampler:\n" "  name: diffnmr\n"
+    )
+
+    sampler = molecular_sampler.MolecularSampler(
+        config_path=str(config_path),
+        checkpoint_path=str(checkpoint_path),
+        config_overrides=["Sampler.name=diffnmr"],
+    )
+
+    assert isinstance(sampler, FakeSampler)
+    assert sampler.kwargs["config_path"] == str(config_path)
+    assert sampler.kwargs["checkpoint_path"] == str(checkpoint_path)
+    assert sampler.kwargs["config_overrides"] == ["Sampler.name=diffnmr"]
+
+
+def test_molecular_sampler_dispatches_registered_diffnmr_name(monkeypatch):
+    import ppmat.sampler.molecular_sampler as molecular_sampler
+
+    class FakeSampler:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(
+        molecular_sampler,
+        "SAMPLER_REGISTRY",
+        {"diffnmr": "fake_sampler_module:FakeSampler"},
+    )
+    monkeypatch.setattr(
+        molecular_sampler.importlib,
+        "import_module",
+        lambda module_name: SimpleNamespace(FakeSampler=FakeSampler),
+    )
+
+    sampler = molecular_sampler.MolecularSampler(model_name="diffnmr_msdnmr_nless15")
+
+    assert isinstance(sampler, FakeSampler)
+    assert sampler.kwargs["model_name"] == "diffnmr_msdnmr_nless15"
+
+
+def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_path):
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
+
+    sampler = object.__new__(DiffNMRSampler)
     sampler.sample_config = {"data": {}}
     sampler.output_dir = "old_output"
     sampler.visualization_tools = SimpleNamespace(result_path="old_output/graph/")
@@ -436,9 +554,9 @@ def test_molecular_sampler_updates_visualization_output_dir_for_save_path(tmp_pa
 
 
 def test_molecular_sampler_compute_metric_reuses_sample_metrics(tmp_path):
-    from ppmat.sampler.molecular_sampler import MolecularSampler
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
 
-    sampler = object.__new__(MolecularSampler)
+    sampler = object.__new__(DiffNMRSampler)
     sampler.sample_config = {}
     sampler.output_dir = "old_output"
     sampler.visualization_tools = None
@@ -451,9 +569,9 @@ def test_molecular_sampler_compute_metric_reuses_sample_metrics(tmp_path):
 def test_molecular_sampler_clamps_keep_chain_to_batch_size():
     import paddle
 
-    from ppmat.sampler.molecular_sampler import MolecularSampler
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
 
-    sampler = object.__new__(MolecularSampler)
+    sampler = object.__new__(DiffNMRSampler)
     assert sampler._clamp_keep_chain(5, 1) == 1
     assert sampler._clamp_keep_chain(0, 1) == 0
     assert sampler._clamp_keep_chain(3, paddle.to_tensor([2, 2], dtype="int64")) == 2
@@ -481,17 +599,25 @@ def test_diffnmr_config_uses_standard_checkpoint_paths():
 
 
 def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
-    from ppmat.sampler.molecular_sampler import MolecularSampler
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
 
     package_dir = tmp_path / "diffnmr_msdnmr_nless15"
     package_ckpt_dir = package_dir / "checkpoints"
-    package_vocab_dir = package_dir / "spectrum_elucidation/vocab"
+    package_assets_dir = package_dir / "assets"
+    package_vocab_dir = package_assets_dir / "vocab/nless15/H1_statistic"
+    package_retrieval_dir = package_assets_dir / "retrival_database"
     package_ckpt_dir.mkdir(parents=True)
     package_vocab_dir.mkdir(parents=True)
+    package_retrieval_dir.mkdir(parents=True)
     package_weight = package_ckpt_dir / "DiffNMR_NMRNet_nless15_best.pdparams"
     package_vocab = package_vocab_dir / "delta_distribution.csv"
+    package_retrieval = (
+        package_retrieval_dir
+        / "msd_nmr_nless15_retrieval_molecular_representations.csv"
+    )
     package_weight.write_bytes(b"fake")
     package_vocab.write_text("Value,Count\n0.03,1\n")
+    package_retrieval.write_text("smiles,mol_rep\n")
 
     package_config = {
         "Model": {
@@ -508,15 +634,22 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
                 "dataset": {
                     "__init_params__": {
                         "vocab_peakwidth_path": (
-                            "./spectrum_elucidation/vocab/delta_distribution.csv"
-                        )
+                            "./assets/vocab/nless15/H1_statistic/"
+                            "delta_distribution.csv"
+                        ),
                     }
                 }
             }
         },
+        "Sampler": {
+            "retrival_database_path": (
+                "./assets/retrival_database/"
+                "msd_nmr_nless15_retrieval_molecular_representations.csv"
+            )
+        },
     }
 
-    MolecularSampler._resolve_package_paths(
+    DiffNMRSampler._resolve_package_paths(
         package_config,
         config_base_dir=str(package_dir),
         checkpoint_dir=None,
@@ -528,6 +661,7 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
     assert package_config["Dataset"]["train"]["dataset"]["__init_params__"][
         "vocab_peakwidth_path"
     ] == str(package_vocab)
+    assert package_config["Sampler"]["retrival_database_path"] == str(package_retrieval)
 
     custom_ckpt_dir = tmp_path / "custom_checkpoints"
     custom_ckpt_dir.mkdir()
@@ -545,7 +679,7 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
         }
     }
 
-    MolecularSampler._resolve_package_paths(
+    DiffNMRSampler._resolve_package_paths(
         custom_config,
         config_base_dir=str(tmp_path / "config_dir"),
         checkpoint_dir=str(custom_ckpt_dir),
@@ -556,11 +690,115 @@ def test_molecular_sampler_resolves_diffnmr_checkpoint_paths(tmp_path):
     ] == str(custom_weight)
 
 
+def test_molecular_sampler_downloads_diffnmr_vocab_asset_when_package_missing(
+    tmp_path, monkeypatch
+):
+    import ppmat.sampler.diffnmr_sampler as diffnmr_sampler
+    from ppmat.sampler.diffnmr_sampler import DIFFNMR_VOCAB_URL
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
+
+    package_dir = tmp_path / "diffnmr_msdnmr_nless15"
+    package_dir.mkdir()
+    vocab_root = tmp_path / "downloaded_vocab"
+    vocab_dir = vocab_root / "nless15/H1_statistic"
+    vocab_dir.mkdir(parents=True)
+    delta_path = vocab_dir / "delta_distribution.csv"
+    split_path = vocab_dir / "split_type_distribution.csv"
+    delta_path.write_text("Value,Count\n0.03,1\n")
+    split_path.write_text("Type,Count\nt,1\n")
+    calls = []
+
+    def fake_get_assets_path_from_url(url):
+        calls.append(url)
+        return str(vocab_root)
+
+    monkeypatch.setattr(
+        diffnmr_sampler.download,
+        "get_assets_path_from_url",
+        fake_get_assets_path_from_url,
+    )
+    config = {
+        "Sampler": {
+            "data": {
+                "dataset": {
+                    "__init_params__": {
+                        "vocab_peakwidth_path": (
+                            "./assets/vocab/nless15/H1_statistic/"
+                            "delta_distribution.csv"
+                        ),
+                        "vocab_split_path": (
+                            "./assets/vocab/nless15/H1_statistic/"
+                            "split_type_distribution.csv"
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    DiffNMRSampler._resolve_package_paths(
+        config,
+        config_base_dir=str(package_dir),
+        checkpoint_dir=None,
+    )
+
+    params = config["Sampler"]["data"]["dataset"]["__init_params__"]
+    assert params["vocab_peakwidth_path"] == str(delta_path)
+    assert params["vocab_split_path"] == str(split_path)
+    assert calls == [DIFFNMR_VOCAB_URL]
+
+
+def test_molecular_sampler_downloads_diffnmr_retrieval_asset_when_package_missing(
+    tmp_path, monkeypatch
+):
+    import ppmat.sampler.diffnmr_sampler as diffnmr_sampler
+    from ppmat.sampler.diffnmr_sampler import DIFFNMR_RETRIEVAL_URLS
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
+
+    package_dir = tmp_path / "diffnmr_msdnmr_nless15"
+    package_dir.mkdir()
+    retrieval_root = tmp_path / "downloaded_retrieval"
+    retrieval_dir = retrieval_root / "retrival_database"
+    retrieval_dir.mkdir(parents=True)
+    retrieval_path = (
+        retrieval_dir / "msd_nmr_nless15_retrieval_molecular_representations.csv"
+    )
+    retrieval_path.write_text("smiles,molecularRep\nC,[0.0 1.0]\n")
+    calls = []
+
+    def fake_get_assets_path_from_url(url):
+        calls.append(url)
+        return str(retrieval_root)
+
+    monkeypatch.setattr(
+        diffnmr_sampler.download,
+        "get_assets_path_from_url",
+        fake_get_assets_path_from_url,
+    )
+    config = {
+        "Sampler": {
+            "retrival_database_path": (
+                "./assets/retrival_database/"
+                "msd_nmr_nless15_retrieval_molecular_representations.csv"
+            )
+        }
+    }
+
+    DiffNMRSampler._resolve_package_paths(
+        config,
+        config_base_dir=str(package_dir),
+        checkpoint_dir=None,
+    )
+
+    assert config["Sampler"]["retrival_database_path"] == str(retrieval_path)
+    assert calls == [DIFFNMR_RETRIEVAL_URLS[retrieval_path.name]]
+
+
 def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
     import paddle
 
-    import ppmat.sampler.molecular_sampler as molecular_sampler
-    from ppmat.sampler.molecular_sampler import MolecularSampler
+    import ppmat.sampler.diffnmr_sampler as diffnmr_sampler
+    from ppmat.sampler.diffnmr_sampler import DiffNMRSampler
 
     class FakeData:
         def __init__(self, X, E, y=None):
@@ -606,13 +844,13 @@ def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
         return sampled, discrete
 
     monkeypatch.setattr(
-        molecular_sampler.scheduling_diffnmr,
+        diffnmr_sampler.scheduling_diffnmr,
         "sample_discrete_feature_noise",
         fake_noise,
     )
-    monkeypatch.setattr(molecular_sampler.scheduling_diffnmr, "step", fake_step)
+    monkeypatch.setattr(diffnmr_sampler.scheduling_diffnmr, "step", fake_step)
 
-    sampler = object.__new__(MolecularSampler)
+    sampler = object.__new__(DiffNMRSampler)
     sampler.visualization_tools = None
 
     mol_list, mol_true = sampler.sample_batch(
@@ -636,7 +874,7 @@ def test_molecular_sampler_allows_zero_saved_chains(monkeypatch):
 
 def test_diffnmr_sample_entrypoint_supports_config_overrides():
     source = (ROOT / "spectrum_elucidation/sample.py").read_text()
-    sampler_source = (ROOT / "ppmat/sampler/molecular_sampler.py").read_text()
+    sampler_source = (ROOT / "ppmat/sampler/diffnmr_sampler.py").read_text()
 
     assert "parse_known_args()" in source
     assert "config_overrides=dynamic_args" in source
@@ -649,9 +887,12 @@ def test_diffnmr_sample_entrypoint_supports_config_overrides():
 def test_diffnmr_uses_molecular_sampler_from_sampler_package():
     source = (ROOT / "spectrum_elucidation/sample.py").read_text()
     sampler_path = ROOT / "ppmat/sampler/molecular_sampler.py"
+    diffnmr_sampler_path = ROOT / "ppmat/sampler/diffnmr_sampler.py"
     legacy_sample_dir = ROOT / "ppmat/sample"
 
     assert sampler_path.exists()
+    assert diffnmr_sampler_path.exists()
     assert not legacy_sample_dir.exists()
     assert "from ppmat.sampler import MolecularSampler" in source
     assert "class MolecularSampler" in sampler_path.read_text()
+    assert "class DiffNMRSampler" in diffnmr_sampler_path.read_text()

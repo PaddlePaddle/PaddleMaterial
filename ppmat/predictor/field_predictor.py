@@ -496,7 +496,11 @@ class FieldPredictor(BasePredictor):
             device=None,
         )
         set_random_seed(seed)
+        self._load_model()
+        self.model.eval()
+        logger.info("Model loaded successfully.")
 
+    def _load_model(self):
         if self.model_name is not None:
             logger.info(f"Loading registered model: {self.model_name}")
             self.model, self.config = build_model_from_name(
@@ -511,9 +515,6 @@ class FieldPredictor(BasePredictor):
             cfg = OmegaConf.load(self.config_path)
             self.config = OmegaConf.to_container(cfg, resolve=True)
             self.model = get_pretrained_model(self.config_path, self.checkpoint_path)
-
-        self.model.eval()
-        logger.info("Model loaded successfully.")
 
     def predict(self, args):
         return run_prediction(args, self.model, self.config)

@@ -66,16 +66,17 @@ columns:
 Download the dataset and support files:
 
 - [MSD-NMR dataset](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/msd/msd_nmr.zip)
-- [Vocabulary files](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/vocab.tar.gz)
-- [Retrieval database](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_elucidation/diffnmr/retrival_database.zip)
+- [Vocabulary files](https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/msd_nmr_vocab.zip)
+- [MSD-NMR n<15 retrieval database](https://paddle-org.bj.bcebos.com/paddlematerials/assets/databases/msd_nmr_nless15_retrieval_molecular_representations.zip)
+- [MSD-NMR n<20 retrieval database](https://paddle-org.bj.bcebos.com/paddlematerials/assets/databases/msd_nmr_nless20_retrieval_molecular_representations.zip)
 
 Place the files under the repository root and extract them:
 
 ```bash
 mkdir -p data spectrum_elucidation
 unzip msd_nmr.zip -d data
-tar -xvzf vocab.tar.gz -C spectrum_elucidation
-unzip retrival_database.zip -d spectrum_elucidation
+unzip msd_nmr_vocab.zip -d spectrum_elucidation
+unzip msd_nmr_nless15_retrieval_molecular_representations.zip -d spectrum_elucidation
 ```
 
 The default configs expect:
@@ -137,8 +138,8 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 
 ```bash
 # This command is used to sample molecular structures conditioned on NMR spectra.
-# Mode 1: Use a pre-trained model (downloads automatically).
-# Mode 2: Use a custom configuration file and checkpoint.
+# Mode 1: Use a pre-trained model package (downloads checkpoints and assets automatically).
+# Mode 2: Use a custom configuration file with local checkpoints/assets.
 # Results are saved to the folder specified by --save_path (default: results).
 
 python spectrum_elucidation/sample.py --model_name='diffnmr_msdnmr_nless15' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_sample/'

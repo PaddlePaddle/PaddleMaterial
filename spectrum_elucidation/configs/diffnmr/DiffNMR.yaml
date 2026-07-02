@@ -95,6 +95,7 @@ Trainer:
       sample: ["Accuracy"]
 
 Sampler:
+  name: diffnmr
   sample_every_val: 500
   visual_num: 1 # number of visualize molecules in the sample
   chains_to_save: 0 # less sample batch size, select representative sample in sample batch for visualize
@@ -104,7 +105,7 @@ Sampler:
   flag_use_formula: False
   flag_retrival_initilization: False
   num_candidates: 1
-  retrival_database_path: ./spectrum_elucidation/retrival_database/mol_rep_15.csv
+  retrival_database_path: ./assets/retrival_database/msd_nmr_nless15_retrieval_molecular_representations.csv
   pretrained_model_path: ./checkpoints/DiffNMR_nless15_best.pdparams
   output_dir: ./output/DiffNMR/DiffNMR/sample
   out_dict: {"Accuracy"}
@@ -113,8 +114,8 @@ Sampler:
       __class_name__: MSDnmrDataset
       __init_params__:
         path: "./example/sample.csv"
-        vocab_peakwidth_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/delta_distribution.csv"
-        vocab_split_path: "./spectrum_elucidation/vocab/nless15/H1_statistic/split_type_distribution.csv"
+        vocab_peakwidth_path: "./assets/vocab/nless15/H1_statistic/delta_distribution.csv"
+        vocab_split_path: "./assets/vocab/nless15/H1_statistic/split_type_distribution.csv"
         cache: True
         cache_path: "./output/diffnmr_example_cache"
         overwrite: True

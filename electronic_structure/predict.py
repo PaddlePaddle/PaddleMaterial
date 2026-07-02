@@ -15,7 +15,7 @@
 import argparse
 
 from ppmat.predictor import FieldPredictor
-from ppmat.predictor.field import apply_predict_config
+from ppmat.predictor.field_predictor import apply_predict_config
 
 __all__ = ["FieldPredictor", "apply_predict_config", "build_parser", "main"]
 

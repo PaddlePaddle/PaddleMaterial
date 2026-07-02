@@ -28,10 +28,11 @@ import tqdm
 from ppmat.utils import logger
 from ppmat.utils import misc
 
-__all__ = ["get_weights_path_from_url"]
+__all__ = ["get_assets_path_from_url", "get_weights_path_from_url"]
 
 WEIGHTS_HOME = osp.expanduser("~/.paddlemat/weights")
 DATASETS_HOME = osp.expanduser("~/.paddlemat/datasets")
+ASSETS_HOME = osp.expanduser("~/.paddlemat/assets")
 
 DOWNLOAD_RETRY_LIMIT = 3
 
@@ -73,6 +74,12 @@ def get_datasets_path_from_url(url, md5sum=None):
         str: a local path to save downloaded weights.
     """
     path = get_path_from_url(url, DATASETS_HOME, md5sum)
+    return path
+
+
+def get_assets_path_from_url(url, md5sum=None):
+    """Get assets path from ASSETS_HOME, downloading it when needed."""
+    path = get_path_from_url(url, ASSETS_HOME, md5sum)
     return path
 
 

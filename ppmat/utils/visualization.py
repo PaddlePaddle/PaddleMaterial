@@ -15,38 +15,26 @@
 import math
 import os
 
+import imageio
+import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
+import plotly.graph_objects as go
+import rdkit
+from rdkit import Chem
+from rdkit import RDLogger
+from rdkit.Chem import AllChem
+from rdkit.Chem import Draw
+from rdkit.Geometry import Point3D
 
 from ppmat.utils import logger
 
-
-def _rdkit_modules():
-    import rdkit
-    from rdkit import Chem
-    from rdkit import RDLogger
-    from rdkit.Chem import AllChem
-    from rdkit.Chem import Draw
-    from rdkit.Geometry import Point3D
-
-    return rdkit, Chem, RDLogger, AllChem, Draw, Point3D
-
-
-def _matplotlib_pyplot():
-    import matplotlib.pyplot as plt
-
-    return plt
-
-
-def _networkx():
-    import networkx as nx
-
-    return nx
-
-
-def _imageio():
-    import imageio
-
-    return imageio
+try:
+    from IPython.display import Image
+    from IPython.display import display
+except ImportError:
+    Image = None
+    display = None
 
 
 class MolecularVisualization:
@@ -60,7 +48,6 @@ class MolecularVisualization:
         node_list: the nodes of a batch of nodes (bs x n)
         adjacency_matrix: the adjacency_matrix of the molecule (bs x n x n)
         """
-        rdkit, Chem, _, _, _, _ = _rdkit_modules()
         atom_decoder = self.dataset_infos.atom_decoder
         mol = Chem.RWMol()
         node_to_idx = {}
@@ -102,7 +89,6 @@ class MolecularVisualization:
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, "molecule_{}.png".format(i))
             mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
-            rdkit, _, _, _, Draw, _ = _rdkit_modules()
             try:
                 Draw.MolToFile(mol, file_path)
             except rdkit.Chem.KekulizeException:
@@ -129,7 +115,6 @@ class MolecularVisualization:
             file_path_true = os.path.join(path_true, "molecule_{}.png".format(i))
             mol = self.mol_from_graphs(molecules[i][0], molecules[i][1])
             mol_true = self.mol_from_graphs(molecules_true[i][0], molecules_true[i][1])
-            rdkit, _, _, _, Draw, _ = _rdkit_modules()
             try:
                 Draw.MolToFile(mol, file_path)
                 Draw.MolToFile(mol_true, file_path_true)
@@ -137,8 +122,6 @@ class MolecularVisualization:
                 logger.info("Can't kekulize molecule")
 
     def visualize_chain(self, batch_id, i, nodes_list, adjacency_matrix):
-        rdkit, Chem, RDLogger, AllChem, Draw, Point3D = _rdkit_modules()
-        imageio = _imageio()
         path = os.path.join(self.result_path, f"chain/molecule_{batch_id}_{i}")
         os.makedirs(path, exist_ok=True)
         RDLogger.DisableLog("rdApp.*")
@@ -189,7 +172,6 @@ class NonMolecularVisualization:
         node_list: the nodes of a batch of nodes (bs x n)
         adjacency_matrix: the adjacency_matrix of the molecule (bs x n x n)
         """
-        nx = _networkx()
         graph = nx.Graph()
         for i in range(len(node_list)):
             if node_list[i] == -1:
@@ -207,8 +189,6 @@ class NonMolecularVisualization:
     def visualize_non_molecule(
         self, graph, pos, path, iterations=100, node_size=100, largest_component=False
     ):
-        nx = _networkx()
-        plt = _matplotlib_pyplot()
         if largest_component:
             CGs = [graph.subgraph(c) for c in nx.connected_components(graph)]
             CGs = sorted(CGs, key=lambda x: x.number_of_nodes(), reverse=True)
@@ -243,7 +223,6 @@ class NonMolecularVisualization:
             file_path = os.path.join(path, "graph_{}.png".format(i))
             graph = self.to_networkx(graphs[i][0].numpy(), graphs[i][1].numpy())
             self.visualize_non_molecule(graph=graph, pos=None, path=file_path)
-            plt = _matplotlib_pyplot()
             im = plt.imread(file_path)  # noqa
 
     def visualize_chain(self, path, nodes_list, adjacency_matrix):
@@ -251,8 +230,6 @@ class NonMolecularVisualization:
             self.to_networkx(nodes_list[i], adjacency_matrix[i])
             for i in range(nodes_list.shape[0])
         ]
-        nx = _networkx()
-        imageio = _imageio()
         final_graph = graphs[-1]
         final_pos = nx.spring_layout(final_graph, seed=0)
         save_paths = []
@@ -282,7 +259,6 @@ def draw_volume(
     title=None,
 ):
     atom_colorscale = ["grey", "white", "red", "blue", "green"]
-    import plotly.graph_objects as go
 
     fig = go.Figure()
     fig.add_trace(
@@ -360,9 +336,8 @@ def safe_write_image(fig, path, show_plot=False):
 
     if show_plot:
         try:
-            from IPython.display import Image
-            from IPython.display import display
-
+            if Image is None or display is None:
+                raise ImportError("IPython is required to display image.")
             img_bytes = fig.to_image(format="png", scale=2)
             display(Image(img_bytes))
         except Exception as e:
