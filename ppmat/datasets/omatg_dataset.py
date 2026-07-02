@@ -186,7 +186,8 @@ class OMATGData(Data):
             self._from_structure(structure)
 
     def _from_structure(self, structure: Structure) -> None:
-        self.n_atoms = paddle.to_tensor([len(structure.atomic_numbers)], dtype="int64")
+        n = len(structure.atomic_numbers)
+        self.n_atoms = paddle.to_tensor([n], dtype="int64")
         self.species = structure.atomic_numbers
         self.cell = structure.cell.unsqueeze(0)
         self.pos = structure.pos
@@ -194,6 +195,8 @@ class OMATGData(Data):
             [structure.pos_is_fractional], dtype="bool"
         )
         self.property_dict = [structure.property_dict]
+        self.batch = paddle.zeros([n], dtype="int64")
+        self.ptr = paddle.to_tensor([0, n], dtype="int64")
 
     @classmethod
     def from_batch(
