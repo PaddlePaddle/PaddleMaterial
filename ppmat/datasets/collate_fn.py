@@ -88,6 +88,66 @@ class DefaultCollator(object):
         )
 
 
+class MolecularGraphCollator:
+    """Collates molecule batches for geometric GNN models.
+
+    Groups fields by semantics:
+        node-level: concatenated along node dimension (z, pos, force, etc.)
+        graph-level: stacked along batch dimension (energy, mu, alpha, etc.)
+        edge-level: concatenated with per-graph node offset (edge_index)
+        triplet-level: concatenated with node/edge/triplet offsets
+    """
+    def __call__(self, batch):
+        num_nodes_list = [b["z"].shape[0] for b in batch]
+
+        # --- Node-level fields: concatenate ---
+        result = {
+            "z": np.concatenate([b["z"] for b in batch]),
+            "pos": np.concatenate([b["pos"] for b in batch]),
+            "batch": np.concatenate(
+                [
+                    np.full(n, i, dtype=np.int64)
+                    for i, n in enumerate(num_nodes_list)
+                ]
+            ),
+        }
+
+        # --- Graph-level fields: stack ---
+        for k in batch[0]:
+            if k not in ("z", "pos", "edge_index", "triplet_indices"):
+                result[k] = np.stack([b[k] for b in batch])
+
+        # --- Edge-level fields: concatenate + node offset ---
+        if "edge_index" in batch[0]:
+            offsets = np.cumsum([0] + num_nodes_list[:-1])
+            result["edge_index"] = np.concatenate(
+                [b["edge_index"] + offsets[i] for i, b in enumerate(batch)], axis=1
+            )
+
+        # --- Triplet-level fields: node/edge/triplet offsets ---
+        if "triplet_indices" in batch[0]:
+            e_offsets = np.cumsum([0] + [b["edge_index"].shape[1] for b in batch[:-1]])
+            t_offsets = np.cumsum(
+                [0] + [b["triplet_indices"]["idx_kj"].shape[0] for b in batch[:-1]]
+            )
+            fields = {
+                k: [] for k in ("i", "j", "idx_kj", "idx_ji", "idx_lk", "idx_triplet")
+            }
+            for i, b in enumerate(batch):
+                ti = b["triplet_indices"]
+                fields["i"].append(ti["i"] + num_nodes_list[i])
+                fields["j"].append(ti["j"] + num_nodes_list[i])
+                fields["idx_kj"].append(ti["idx_kj"] + e_offsets[i])
+                fields["idx_ji"].append(ti["idx_ji"] + e_offsets[i])
+                fields["idx_lk"].append(ti["idx_lk"] + e_offsets[i])
+                fields["idx_triplet"].append(ti["idx_triplet"] + t_offsets[i])
+            result["triplet_indices"] = {
+                k: np.concatenate(v) for k, v in fields.items()
+            }
+
+        return result
+
+
 class DensityCollator:
     def __init__(
         self,

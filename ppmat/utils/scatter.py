@@ -48,9 +48,18 @@ def _scatter_sum(
         else:
             size[dim] = int(index.max()) + 1
         out = paddle.zeros(size, dtype=src.dtype)
-    return paddle.put_along_axis(
-        arr=out, indices=index, values=src, axis=dim, reduce="add"
-    )
+    # FIXME: Paddle's put_along_axis backward (PutAlongAxisGradNode) crashes
+    # for dim=0; use one-hot + matmul as drop-in replacement.
+    if dim == 0:
+        # _broadcast expanded index to src.shape; collapse back to 1D via first column
+        idx_1d = index.reshape([-1, src.shape[1]])[:, 0] if index.ndim > 1 else index
+        one_hot = paddle.nn.functional.one_hot(idx_1d, out.shape[0]).cast(src.dtype)
+        # one_hot: [N, out_dim] -> [out_dim, N] @ [N, C] = [out_dim, C]
+        return paddle.mm(one_hot.t(), src)
+    else:
+        return paddle.put_along_axis(
+            arr=out, indices=index, values=src, axis=dim, reduce="add"
+        )
 
 
 def _scatter_mean(
@@ -80,6 +89,28 @@ def _scatter_mean(
     return out
 
 
+def _scatter_min(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim: int = -1,
+    out: Optional[paddle.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
+    index = _broadcast(index, src, dim)
+    if out is None:
+        size = list(src.shape)
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        out = paddle.full(size, float("inf"), dtype=src.dtype)
+    return paddle.put_along_axis(
+        arr=out, indices=index, values=src, axis=dim, reduce="amin"
+    )
+
+
 def scatter(
     src: paddle.Tensor,
     index: paddle.Tensor,
@@ -95,8 +126,10 @@ def scatter(
         return _scatter_sum(src, index, dim, out, dim_size)
     elif reduce == "mean":
         return _scatter_mean(src, index, dim, out, dim_size)
+    elif reduce == "min":
+        return _scatter_min(src, index, dim, out, dim_size)
     else:
-        raise ValueError("Only support add or mean")
+        raise ValueError("Only support add, mean, or min")
 
 
 def scatter_mean(
