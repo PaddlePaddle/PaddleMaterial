@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 import paddle
 import paddle.nn as nn
 
@@ -26,7 +28,7 @@ def modulate(x, shift, scale):
 class TimestepEmbedder(nn.Layer):
     def __init__(self, hidden_dim, frequency_embedding_dim=256):
         super().__init__()
-        self.sin_embed = SinusoidalTimeEmbeddings(frequency_embedding_dim)
+        self.frequency_embedding_dim = frequency_embedding_dim
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_dim, hidden_dim, bias_attr=True),
             nn.Silu(),
@@ -34,7 +36,22 @@ class TimestepEmbedder(nn.Layer):
         )
 
     def forward(self, t):
-        return self.mlp(self.sin_embed(t))
+        return self.mlp(self._timestep_embedding(t, self.frequency_embedding_dim))
+
+    def _timestep_embedding(self, t, dim, max_period=10000):
+        half = dim // 2
+        freqs = paddle.exp(
+            -math.log(max_period)
+            * paddle.arange(start=0, end=half, dtype=paddle.get_default_dtype())
+            / half
+        )
+        args = t.astype(paddle.get_default_dtype())[:, None] * freqs[None]
+        embedding = paddle.concat([paddle.cos(args), paddle.sin(args)], axis=-1)
+        if dim % 2:
+            embedding = paddle.concat(
+                [embedding, paddle.zeros_like(embedding[:, :1])], axis=-1
+            )
+        return embedding
 
 
 class _MLP(nn.Layer):
@@ -144,7 +161,7 @@ class DiT(nn.Layer):
         out_dim = input_dim * 2 if learn_sigma else input_dim
         self.final_layer = FinalLayer(hidden_dim, out_dim)
 
-    def forward(self, x, t, mask=None, y=None):
+    def forward(self, x, t, mask=None, y=None, apply_mask=True):
         if mask is not None:
             token_indices = paddle.cumsum(mask.astype('int64'), axis=-1) - 1
             pos_emb = get_pos_embedding(token_indices, self.hidden_dim)
@@ -167,7 +184,7 @@ class DiT(nn.Layer):
         
         x = self.final_layer(x, c)
         
-        if mask is not None:
+        if mask is not None and apply_mask:
             x = x * mask.unsqueeze(-1).astype(x.dtype)
         
         return x

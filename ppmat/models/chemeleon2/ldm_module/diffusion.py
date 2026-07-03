@@ -41,14 +41,21 @@ class GaussianDiffusion:
         if noise is None:
             noise = paddle.randn_like(x_start)
         x_t = self.q_sample(x_start, t, noise)
-        model_output = model(x_t, t, **(model_kwargs or {}))
+        mask = (model_kwargs or {}).get("mask")
+        model_kwargs_no_mask = dict(model_kwargs or {})
+        model_kwargs_no_mask["apply_mask"] = False
+        model_output = model(x_t, t, **model_kwargs_no_mask)
 
-        # Model may output 2x channels when learn_sigma=True (noise + variance)
         if model_output.shape[-1] == x_start.shape[-1] * 2:
-            model_output, _ = paddle.split(model_output, 2, axis=-1)
+            model_output = model_output.reshape([model_output.shape[0], 2 * model_output.shape[1], model_output.shape[2] // 2])
+
+        if mask is not None:
+            model_output = model_output * paddle.tile(mask.unsqueeze(-1), [1, 2, 1]).astype(model_output.dtype)
+
+        if model_output.shape[1] == x_start.shape[1] * 2:
+            model_output, _ = paddle.split(model_output, 2, axis=1)
 
         target = noise
-        mask = (model_kwargs or {}).get("mask")
 
         if mask is not None:
             while mask.ndim < target.ndim:
