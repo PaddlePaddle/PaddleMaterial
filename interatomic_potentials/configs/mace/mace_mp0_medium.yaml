@@ -19,6 +19,7 @@ Trainer:
   start_eval_epoch: 1
   eval_freq: 5
   pretrained_model_path: null
+  pretrained_weight_name: null
   resume_from_checkpoint: null
   use_amp: False
   amp_level: 'O1'
@@ -76,7 +77,7 @@ Dataset:
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
-      num_workers: 4
+      num_workers: 0
       use_shared_memory: False
     sampler:
       __class_name__: BatchSampler
@@ -95,7 +96,7 @@ Dataset:
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
-      num_workers: 4
+      num_workers: 0
       use_shared_memory: False
     sampler:
       __class_name__: BatchSampler
@@ -114,7 +115,7 @@ Dataset:
           num_cpus: 10
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
-      num_workers: 4
+      num_workers: 0
       use_shared_memory: False
     sampler:
       __class_name__: BatchSampler

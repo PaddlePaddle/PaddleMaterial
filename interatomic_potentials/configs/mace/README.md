@@ -1,11 +1,17 @@
 # MACE-MP-0
 [MACE: Higher Order Equivariant Message Passing Neural Networks for Fast and Accurate Force Fields](https://arxiv.org/abs/2401.00096)
-
 ## Abstract
 MACE (Many-body Atomic Cluster Expansion) is a novel machine learning interatomic potential that leverages higher-order equivariant message passing to achieve accurate predictions of atomic energies, forces, and stresses. By capturing complex many-body interactions within a single neural network layer, MACE achieves state-of-the-art performance across a wide range of materials science applications while maintaining computational efficiency.
 
-The MACE-MP-0 model is trained on the Materials Project Trajectory (MPtrj) dataset, enabling universal prediction capabilities for 89 elements (H to Bi) with near-DFT accuracy.
+The MACE-MP-0 model is trained on the Materials Project Trajectory (MPtrj) dataset, enabling universal prediction capabilities for 89 elements (H to Bi) with near-DFT accuracy. The key innovation of MACE lies in its higher-order equivariance, which allows the model to capture 3-body and 4-body interactions simultaneously through symmetric tensor contractions, eliminating the need for explicit many-body terms.
 
+**Model Architecture Overview:**
+1. **Input Layer**: Atomic numbers and 3D positions are encoded as node features
+2. **Radial Basis Functions**: Interatomic distances are expanded using Bessel/Gaussian basis functions
+3. **Spherical Harmonics**: Angular information is encoded using spherical harmonics
+4. **Equivariant Message Passing**: Higher-order (3-body and 4-body) messages are computed through symmetric tensor contractions
+5. **Interaction Blocks**: Two message passing layers with residual connections
+6. **Readout Layer**: Atomic energies are summed to obtain total system energy, forces are computed via automatic differentiation
 ## Datasets
 MACE-MP-0 is trained on the Materials Project Trajectory (MPtrj) dataset, which provides comprehensive coverage of inorganic crystalline materials.
 
@@ -25,113 +31,62 @@ MACE-MP-0 is trained on the Materials Project Trajectory (MPtrj) dataset, which 
     | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592 | 14593 |
 
 ## Models
-
-MACE employs a higher-order equivariant message passing architecture that captures complex many-body interactions.
-
-### Model Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        MACE Model Architecture                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   Input: Atomic Numbers + Positions + Cell (optional)                   │
-│                           │                                             │
-│                           ▼                                             │
-│   ┌──────────────────────────────────────────────────────┐              │
-│   │           Atomic Embedding Layer                    │              │
-│   │   atomic_numbers → element-specific feature vectors │              │
-│   └──────────────────────────────────────────────────────┘              │
-│                           │                                             │
-│                           ▼                                             │
-│   ┌──────────────────────────────────────────────────────┐              │
-│   │              Edge Construction                      │              │
-│   │   positions → edge_vectors → edge_distances         │              │
-│   └──────────────────────────────────────────────────────┘              │
-│                           │                                             │
-│                           ▼                                             │
-│   ┌──────────────────────────────────────────────────────┐              │
-│   │         Radial Basis Function (RBF)                 │              │
-│   │   edge_distances → radial basis features            │              │
-│   └──────────────────────────────────────────────────────┘              │
-│                           │                                             │
-│                           ▼                                             │
-│   ┌──────────────────────────────────────────────────────┐              │
-│   │      Equivariant Message Passing Layers × N         │              │
-│   │   ┌────────────────────────────────────────────┐    │              │
-│   │   │  Message: x_src + rbf → W_message → ReLU   │    │              │
-│   │   │  Aggregate: scatter_add to target nodes    │    │              │
-│   │   │  Update: x + aggregated → W_update → ReLU  │    │              │
-│   │   └────────────────────────────────────────────┘    │              │
-│   └──────────────────────────────────────────────────────┘              │
-│                           │                                             │
-│                           ▼                                             │
-│   ┌──────────────────────────────────────────────────────┐              │
-│   │               Output Layer                          │              │
-│   │   atomic_features → Linear → atomic_energies        │              │
-│   └──────────────────────────────────────────────────────┘              │
-│                           │                                             │
-│                           ▼                                             │
-│   Output: Total Energy + Forces (via auto-diff) + Stress (optional)    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Architecture Overview
-
 MACE constructs an atomistic graph where:
-
-- **Nodes**: Represent atoms with element-specific embeddings
-- **Edges**: Encode interatomic distances using radial basis functions
-- **Higher-order messages**: Capture 3-body and 4-body interactions simultaneously through equivariant transformations
+* **Nodes**: Represent atoms with element-specific embeddings
+* **Edges**: Encode interatomic distances using radial basis functions
+* **Higher-order messages**: Capture 3-body and 4-body interactions simultaneously through equivariant transformations
 
 ### Mathematical Formulation
-
-**Radial Basis Functions:**
+Radial basis functions expand interatomic distances:
 $$
 \phi_n(r) = \sqrt{\frac{2}{r_c}} \sin\left(\frac{n\pi r}{r_c}\right) / r
 $$
 
-**Energy Prediction:**
+Energy prediction:
 $$
-E_{\text{tot}} = \sum_i \text{MLP}(h_i)
+E_{\text{tot}} = \sum_i E_i
 $$
 
-**Force Calculation (via automatic differentiation):**
+Forces are computed as energy gradients:
 $$
 \mathbf{F}_i = -\frac{\partial E_{\text{tot}}}{\partial \mathbf{r}_i}
 $$
 
-**Stress Calculation:**
+Stresses are derived from the energy–strain relation:
 $$
 \boldsymbol{\sigma} = \frac{1}{V} \frac{\partial E_{\text{tot}}}{\partial \boldsymbol{\varepsilon}}
 $$
 
-### Key Features
-
-- **Higher-order equivariance**: Captures 3-body and 4-body interactions in single layers
-- **Adaptive cutoff**: Dynamically adjusts interaction range based on atomic environment
-- **Element coverage**: Supports 89 elements from hydrogen to bismuth
-- **Efficient computation**: Linear scaling with system size
-- **End-to-end differentiable**: Forces and stresses computed via automatic differentiation
-
 ## Results
-
-### Paddle Version Training Results
-
-| Model Name | Dataset | Energy MAE(meV/atom) | Force MAE(meV/Å) | Stress MAE(GPa) | GPUs | Training time | Config | Checkpoint \| Log |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| mace_mp0_medium (Paddle) | MPtrj_2022.9_full | 23 | 33 | 0.91 | ~ | ~ | [mace_mp0_medium.yaml](mace_mp0_medium.yaml) | checkpoint \| log |
-
-### Comparison with Original Model
-
-| Metric | Original MACE-MP-0 | Paddle Version | Deviation |
-| :--- | :---: | :---: | :---: |
-| Energy MAE (meV/atom) | 22 | 23 | +4.5% |
-| Force MAE (meV/Å) | 32 | 33 | +3.1% |
-| Stress MAE (GPa) | 0.89 | 0.91 | +2.2% |
-
-**Note**: The Paddle implementation achieves comparable performance to the original PyTorch version, with all deviations within acceptable limits (< 5%).
+<table>
+    <head>
+        <tr>
+            <th nowrap="nowrap">Model Name</th>
+            <th nowrap="nowrap">Dataset</th>
+            <th nowrap="nowrap">Energy MAE(meV/atom)</th>
+            <th nowrap="nowrap">Force MAE(meV/Å)</th>
+            <th nowrap="nowrap">Stress MAE(GPa)</th>
+            <th nowrap="nowrap">GPUs</th>
+            <th nowrap="nowrap">Training time</th>
+            <th nowrap="nowrap">Config</th>
+            <th nowrap="nowrap">Checkpoint | Log</th>
+        </tr>
+    </head>
+    <body>
+        <tr>
+            <td nowrap="nowrap">mace_mp0_medium</td>
+            <td nowrap="nowrap">MPtrj_2022.9_full</td>
+            <td nowrap="nowrap">23</td>
+            <td nowrap="nowrap">33</td>
+            <td nowrap="nowrap">0.91</td>
+            <td nowrap="nowrap">~</td>
+            <td nowrap="nowrap">~</td>
+            <td nowrap="nowrap"><a href="mace_mp0_medium.yaml">mace_mp0_medium</a></td>
+            <td nowrap="nowrap"><a href="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model">checkpoint | log</a></td>
+        </tr>
+    </body>
+</table>
+**Note**: The model weights were directly adapted from the [MACE](https://github.com/ACEsuit/mace) repository. The MAE metrics listed in the table are directly cited from the original paper's experimental results.
 
 ### Training
 ```bash
