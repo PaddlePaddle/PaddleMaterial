@@ -160,3 +160,12 @@ class TransPolymerRegressor(nn.Layer):
             pred_dict[self.property_name] = self.unnormalize(pred)
 
         return {"loss_dict": loss_dict, "pred_dict": pred_dict}
+
+    def predict(self, data):
+        if isinstance(data, str):
+            data = {self.smiles_key: [data]}
+        elif isinstance(data, (list, tuple)):
+            data = {self.smiles_key: list(data)}
+
+        output = self.forward(data, return_loss=False, return_prediction=True)
+        return output["pred_dict"]
