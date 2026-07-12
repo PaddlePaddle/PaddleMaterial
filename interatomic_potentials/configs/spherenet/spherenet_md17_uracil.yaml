@@ -5,10 +5,25 @@ Global:
   do_eval: true
   do_test: true
 
+  build_molecule_cfg:
+    format: dict
+    sanitize: false
+    add_hs: false
+    remove_hs: false
+    kekulize: false
+    num_cpus: 10
+
+  graph_converter:
+    __class_name__: RadiusGraphConverter
+    __init_params__:
+      cutoff: 5.0
+      return_triplet_indices: true
+      num_cpus: 10
+
 Trainer:
   max_epochs: 500
   seed: 42
-  output_dir: ./output/spherenet_toluene
+  output_dir: ./output/spherenet_uracil
   save_freq: 50
   log_freq: 10
   start_eval_epoch: 1
@@ -23,7 +38,7 @@ Trainer:
   metric_strategy_during_eval: step
   pretrained_model_path:
 Model:
-  __class_name__: SphereNetPP
+  __class_name__: SphereNet
   __init_params__:
     energy_and_force: true
     cutoff: 5.0
@@ -69,17 +84,16 @@ Dataset:
       __class_name__: MD17Dataset
       __init_params__:
         path: ./data/md17
-        name: toluene
+        name: uracil
         split: train
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        split_file: ./data/md17/splits/uracil_train_idx.npy
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -91,17 +105,16 @@ Dataset:
       __class_name__: MD17Dataset
       __init_params__:
         path: ./data/md17
-        name: toluene
+        name: uracil
         split: val
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        split_file: ./data/md17/splits/uracil_val_idx.npy
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -113,17 +126,16 @@ Dataset:
       __class_name__: MD17Dataset
       __init_params__:
         path: ./data/md17
-        name: toluene
+        name: uracil
         split: test
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        split_file: ./data/md17/splits/uracil_test_idx.npy
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -132,7 +144,5 @@ Dataset:
         drop_last: false
 
 Predict:
-  graph_converter:
-    __class_name__: RadiusGraph
-    __init_params__:
-      cutoff: 5.0
+  eval_with_no_grad: false
+  graph_converter: ${Global.graph_converter}

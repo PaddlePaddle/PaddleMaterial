@@ -186,48 +186,43 @@ class PropertyPredictor:
     def from_molecule(self, molecule_data, molecule_format):
         """Predict properties from molecular data.
 
-        Follows the standard PaddleMaterials pipeline:
-        ``BuildMolecule → graph_converter → predict``.
-
-        Args:
-            molecule_data: Input for ``BuildMolecule`` — a SMILES string,
-                RDKit Mol object, Mol/SDF file path, etc.
-            molecule_format: Format string, e.g. ``"smiles"``, ``"rdmol"``,
-                ``"mol_file"``, ``"sdf_file"``, ``"inchi"``.
-
-        Returns:
-            Prediction dict.
+        Follows the standard PaddleMaterials molecular pipeline:
+        ``BuildMolecule -> graph_converter -> predict``.
         """
         mol = BuildMolecule(format=molecule_format)(molecule_data)
 
-        # Extract atomic numbers and 3-D coordinates from RDKit Mol.
-        num_atoms = mol.GetNumAtoms()
-        z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
-        # If no 3-D conformer (e.g. from SMILES), generate one.
         try:
             conf = mol.GetConformer()
         except ValueError:
             conf = None
         if conf is None or not conf.Is3D():
-            from rdkit.Chem import AllChem
             from rdkit import Chem as RDChem
+            from rdkit.Chem import AllChem
+
             if molecule_format == "smiles":
                 mol = RDChem.AddHs(mol)
             AllChem.EmbedMolecule(mol, randomSeed=42)
             AllChem.MMFFOptimizeMolecule(mol)
-            conf = mol.GetConformer()
-        pos = [
-            [conf.GetAtomPosition(i).x, conf.GetAtomPosition(i).y, conf.GetAtomPosition(i).z]
-            for i in range(num_atoms)
-        ]
-
-        z_t = paddle.to_tensor(z, dtype=paddle.int64)
-        pos_t = paddle.to_tensor(pos, dtype=paddle.get_default_dtype())
-        batch = paddle.zeros([num_atoms], dtype=paddle.int64)
-        data = {"z": z_t, "pos": pos_t, "batch": batch}
 
         if self.graph_converter_fn is not None:
-            data["edge_index"] = self.graph_converter_fn(mol)
+            data = self.graph_converter_fn(mol)
+        else:
+            conf = mol.GetConformer()
+            num_atoms = mol.GetNumAtoms()
+            z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+            pos = [
+                [
+                    conf.GetAtomPosition(i).x,
+                    conf.GetAtomPosition(i).y,
+                    conf.GetAtomPosition(i).z,
+                ]
+                for i in range(num_atoms)
+            ]
+            data = {
+                "z": paddle.to_tensor(z, dtype=paddle.int64),
+                "pos": paddle.to_tensor(pos, dtype=paddle.get_default_dtype()),
+                "batch": paddle.zeros([num_atoms], dtype=paddle.int64),
+            }
 
         if self.eval_with_no_grad:
             with paddle.no_grad():

@@ -21,25 +21,6 @@ state-of-the-art results on the QM9 and MD17 benchmarks.
 
 ## Datasets
 
-### QM9
-
-The QM9 dataset contains 130,831 small organic molecules (up to 9 heavy
-atoms: C, O, N, F) with 12 quantum-chemical properties computed at the
-B3LYP/6-31G(2df,p) level of theory.
-
-| Split   | Size   |
-|---------|--------|
-| Train   | 110,831 |
-| Val     | 10,000  |
-| Test    | 10,000  |
-| **Total** | **130,831** |
-
-**Data format**: Each molecule contains atomic numbers (`z`), 3D positions
-(`pos`), and 12 property labels. The raw dataset is available at
-[figshare](https://figshare.com/ndownloader/files/3195389).
-
-**Reference**: [Quantum-chemical insights from deep learning](https://arxiv.org/abs/1708.04444) (Gaussian, 2017)
-
 ### MD17
 
 The MD17 dataset contains DFT molecular dynamics trajectories for 8 small
@@ -102,126 +83,6 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
         </tr>
     </head>
     <body>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_mu</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\mu$ (D)</td>
-            <td nowrap="nowrap">0.032</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~18 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_mu.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_alpha</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\alpha$ (Bohr³)</td>
-            <td nowrap="nowrap">0.24</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~24 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_alpha.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_homo</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\varepsilon_{\text{HOMO}}$ (meV)</td>
-            <td nowrap="nowrap">42</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_homo.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_lumo</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\varepsilon_{\text{LUMO}}$ (meV)</td>
-            <td nowrap="nowrap">43</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_lumo.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_gap</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\Delta\varepsilon$ (meV)</td>
-            <td nowrap="nowrap">62</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_gap.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_r2</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$\langle R^2 \rangle$ (Bohr²)</td>
-            <td nowrap="nowrap">0.30</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~12 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_r2.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_zpve</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">ZPVE (meV)</td>
-            <td nowrap="nowrap">1.4</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~14 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_zpve.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_U0</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$U_0$ (meV)</td>
-            <td nowrap="nowrap">22</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_U0.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_U</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$U$ (meV)</td>
-            <td nowrap="nowrap">22</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_U.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_H</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$H$ (meV)</td>
-            <td nowrap="nowrap">22</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_H.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_G</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$G$ (meV)</td>
-            <td nowrap="nowrap">22</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_G.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_qm9_Cv</td>
-            <td nowrap="nowrap">QM9</td>
-            <td nowrap="nowrap">$C_v$ (cal/(mol·K))</td>
-            <td nowrap="nowrap">0.052</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~18 h</td>
-            <td nowrap="nowrap"><a href="spherenet_qm9_Cv.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_aspirin</td>
             <td nowrap="nowrap">MD17</td>
@@ -308,10 +169,6 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
 ### Training
 
 ```bash
-# Single-GPU training — QM9 mu property
-python property_prediction/train.py \
-  -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml
-
 # Single-GPU training — MD17 aspirin (energy + force)
 python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml
@@ -321,7 +178,7 @@ python interatomic_potentials/train.py \
 
 ```bash
 python property_prediction/train.py \
-  -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
+  -c property_prediction/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_eval=True Global.do_train=False Global.do_test=False \
   Trainer.pretrained_model_path='your_model.pdparams'
 ```
@@ -330,7 +187,7 @@ python property_prediction/train.py \
 
 ```bash
 python property_prediction/train.py \
-  -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
+  -c property_prediction/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_test=True Global.do_train=False Global.do_eval=False \
   Trainer.pretrained_model_path='your_model.pdparams'
 ```
@@ -338,18 +195,14 @@ python property_prediction/train.py \
 ### Prediction
 
 ```bash
-# Using a registered model (check MODEL_REGISTRY in ppmat/models/__init__.py)
-python property_prediction/predict.py \
-  --model_name spherenet_qm9_mu
-
-# Molecular prediction (QM9 / MD17 models)
+# Molecular prediction
 python property_prediction/predict.py \
   --model_name spherenet_md17_aspirin \
   --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
 
 # Using a local checkpoint
 python property_prediction/predict.py \
-  --config_path ./output/spherenet_qm9_mu_t_*/spherenet_qm9_mu.yaml \
+  --config_path ./output/spherenet_spherenet_md17_aspirin.yaml.yaml \
   --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
   --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
 ```

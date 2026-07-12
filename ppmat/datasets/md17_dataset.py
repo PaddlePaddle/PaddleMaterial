@@ -18,18 +18,19 @@ import os.path as osp
 import pickle
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
+from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Optional
 
 import numpy as np
-import paddle
 import paddle.distributed as dist
-import shutil
 from paddle.io import Dataset
 from tqdm import tqdm
 
-from ppmat.datasets.graph_utils.spherenet_graph_utils import build_md17_graph
+from ppmat.datasets.build_molecule import BuildMolecule
+from ppmat.datasets.custom_data_type import ConcatData
+from ppmat.datasets.graph_utils.spherenet_graph_utils import build_molecule_graph
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -76,6 +77,10 @@ class MD17Dataset(Dataset):
         name (str): Molecule name from the supported list. Defaults to ``'benzene_old'``.
         split (Optional[str]): Split identifier ``'train'``, ``'val'``,
             ``'test'``, or ``None`` (all). Defaults to ``None``.
+        split_file (Optional[str]): Preprocessed numpy index file for the
+            selected split. Defaults to ``None``.
+        build_molecule_cfg (Optional[Dict]): Configuration dict for molecule
+            converter. Defaults to ``None``.
         force_key (Optional[str]): Key name for forces in the output dict.
             Defaults to ``'force'``.
         energy_key (Optional[str]): Key name for energy in the output dict.
@@ -102,6 +107,8 @@ class MD17Dataset(Dataset):
         name: str = "benzene_old",
         split: str = None,
         *,
+        split_file: Optional[str] = None,
+        build_molecule_cfg: Optional[Dict] = None,
         force_key="force",
         energy_key="energy",
         build_graph_cfg: Optional[Dict] = None,
@@ -119,111 +126,202 @@ class MD17Dataset(Dataset):
         self.transforms = transforms
         self.overwrite = overwrite
         self.filter_unvalid = filter_unvalid
+        if build_molecule_cfg is None:
+            build_molecule_cfg = {
+                "format": "dict",
+                "sanitize": False,
+                "add_hs": False,
+                "remove_hs": False,
+                "kekulize": False,
+                "num_cpus": 1,
+            }
+            logger.message(
+                "The build_molecule_cfg is not set, will use the default "
+                f"configs: {build_molecule_cfg}"
+            )
+        self.build_molecule_cfg = build_molecule_cfg
 
-        os.makedirs(path, exist_ok=True)
-
-        # ---- 1. Download + split data ----
-        root_path = download.get_datasets_path_from_url(self.url, self.md5)
-        npz_path = osp.join(root_path, self.name, f"{name}_dft.npz")
-        self._ensure_splits(npz_path, name)
-        self.row_data, total = self.read_data(path, name)
-        self._indices = self._load_split_indices(path, name, split)
+        # ---- 1. Read full trajectory and selected frame indices ----
+        npz_path = self._resolve_data_path(path, name)
+        self.path = npz_path
+        self.row_data, total = self.read_data(npz_path)
+        self._indices = self._load_split_indices(
+            npz_path, name, split, split_file, total
+        )
         self.num_samples = len(self._indices)
 
         # ---- 2. Cache path ----
         if cache_path is not None:
             self.cache_path = cache_path
         else:
-            base = path.rstrip("/").rstrip("\\")
+            base_dir = osp.split(npz_path)[0]
+            base_name = osp.splitext(osp.basename(npz_path))[0]
             split_suffix = split if split is not None else "all"
-            self.cache_path = osp.join(f"{base}_cache", f"{name}_{split_suffix}")
+            self.cache_path = osp.join(
+                f"{base_dir}_cache", f"{base_name}_{split_suffix}"
+            )
         logger.info(f"Cache path: {self.cache_path}")
 
-        # ---- 3. Pre‑build edge_index + triplet indices (MP20 pattern) ----
+        # ---- 3. Pre-build molecules and graphs (MPtrj-style cache) ----
         self.cache_exists = True if osp.exists(self.cache_path) else False
-        self.graphs = None
-        if build_graph_cfg is not None:
-            graph_cache_path = osp.join(self.cache_path, "graphs")
-            cfg_pkl = osp.join(graph_cache_path, "build_graph_cfg.pkl")
-            if self.cache_exists and not overwrite:
+        if self.cache_exists and not overwrite:
+            logger.warning(
+                "Cache enabled. If a cache file exists, it will be automatically "
+                "read and current settings will be ignored. Please ensure that the "
+                "settings used in match your current settings."
+            )
+            try:
+                build_molecule_cfg_cache = self.load_from_cache(
+                    osp.join(self.cache_path, "build_molecule_cfg.pkl")
+                )
+                if not is_equal(build_molecule_cfg_cache, build_molecule_cfg):
+                    logger.warning(
+                        "build_molecule_cfg differs from cache. Rebuilding."
+                    )
+                    overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                logger.warning(
+                    "Failed to load build_molecule_cfg.pkl from cache. "
+                    "Will rebuild the molecules and graphs(if need)."
+                )
+                overwrite = True
+
+            if build_graph_cfg is not None and not overwrite:
                 try:
-                    build_graph_cfg_cache = self.load_from_cache(cfg_pkl)
+                    build_graph_cfg_cache = self.load_from_cache(
+                        osp.join(self.cache_path, "build_graph_cfg.pkl")
+                    )
                     if not is_equal(build_graph_cfg_cache, build_graph_cfg):
                         logger.warning(
                             "build_graph_cfg differs from cache. Rebuilding."
                         )
                         overwrite = True
                 except Exception as e:
-                    logger.warning(f"Cache check failed ({e}). Rebuilding.")
+                    logger.warning(e)
+                    logger.warning(
+                        "Failed to load build_graph_cfg.pkl from cache. "
+                        "Will rebuild the graphs."
+                    )
                     overwrite = True
 
-            if overwrite or not self.cache_exists:
-                if dist.get_rank() == 0:
+        molecule_cache_path = osp.join(self.cache_path, "molecules")
+        graph_cache_path = osp.join(self.cache_path, "graphs")
+        if overwrite or not self.cache_exists:
+            if dist.get_rank() == 0:
+                os.makedirs(self.cache_path, exist_ok=True)
+                self.save_to_cache(
+                    osp.join(self.cache_path, "build_molecule_cfg.pkl"),
+                    build_molecule_cfg,
+                )
+                self.save_to_cache(
+                    osp.join(self.cache_path, "build_graph_cfg.pkl"), build_graph_cfg
+                )
+
+                molecule_data = [
+                    {
+                        "atomic_numbers": self.row_data["z"],
+                        "positions": self.row_data["pos"][frame],
+                    }
+                    for frame in self._indices
+                ]
+                molecules = BuildMolecule(**build_molecule_cfg)(molecule_data)
+                os.makedirs(molecule_cache_path, exist_ok=True)
+                for i, mol in enumerate(molecules):
+                    self.save_to_cache(
+                        osp.join(molecule_cache_path, f"{i:010d}.pkl"), mol
+                    )
+                logger.info(
+                    f"Save {self.num_samples} molecules to {molecule_cache_path}"
+                )
+
+                if build_graph_cfg is not None:
                     os.makedirs(graph_cache_path, exist_ok=True)
-                    self.save_to_cache(cfg_pkl, build_graph_cfg)
                     converter = build_graph_converter(build_graph_cfg)
                     logger.info(
-                        f"Pre‑building graphs for {self.mol_name} ({total} frames) "
-                        f"with 24 threads ..."
+                        f"Pre-building graphs for {self.mol_name} "
+                        f"({self.num_samples} frames) with 24 threads ..."
                     )
                     with ThreadPoolExecutor(max_workers=24) as executor:
                         futures = {
                             executor.submit(
-                                build_md17_graph,
-                                i, self.row_data["z"], self.row_data["pos"][i],
-                                converter, graph_cache_path,
-                            ): i for i in range(total)
+                                build_molecule_graph,
+                                i,
+                                molecules[i],
+                                converter,
+                                graph_cache_path,
+                            ): i
+                            for i in range(self.num_samples)
                         }
-                        for _ in tqdm(as_completed(futures), total=total, desc="Build graphs"):
-                            pass
-                if dist.is_initialized():
-                    dist.barrier()
-            self.graphs = [osp.join(graph_cache_path, f"{i:010d}.pkl") for i in range(total)]
+                        for future in tqdm(
+                            as_completed(futures),
+                            total=self.num_samples,
+                            desc="Build graphs",
+                        ):
+                            future.result()
+            if dist.is_initialized():
+                dist.barrier()
 
+        self.molecules = [
+            osp.join(molecule_cache_path, f"{i:010d}.pkl")
+            for i in range(self.num_samples)
+        ]
+        if build_graph_cfg is not None:
+            self.graphs = [
+                osp.join(graph_cache_path, f"{i:010d}.pkl")
+                for i in range(self.num_samples)
+            ]
+        else:
+            self.graphs = None
         assert (
-            self.graphs is None or len(self.graphs) == total
+            len(self.molecules) == self.num_samples
+        ), "The number of molecules must be equal to the number of samples."
+        assert (
+            self.graphs is None or len(self.graphs) == self.num_samples
         ), "The number of graphs must be equal to the number of samples."
 
         logger.info(f"Load {self.num_samples} samples, split={split}")
 
-    def _ensure_splits(self, raw_path, name):
-        """Create pre-split npz files and index arrays (seed 42, 1000/1000 train/val)."""
-        split_dir = osp.join(osp.dirname(raw_path), "splits")
-        full_npz = osp.join(split_dir, f"{name}_all.npz")
-        if not osp.exists(full_npz):
-            if dist.get_rank() == 0:
-                os.makedirs(split_dir, exist_ok=True)
-                raw = np.load(raw_path)
-                total = raw["R"].shape[0]
-                rng = np.random.RandomState(42)
-                perm = rng.permutation(total)
-                ts, vs = 1000, 1000
-                np.savez(osp.join(split_dir, f"{name}_train.npz"),
-                         z=raw["z"], R=raw["R"][perm[:ts]],
-                         E=raw["E"][perm[:ts]], F=raw["F"][perm[:ts]])
-                np.savez(osp.join(split_dir, f"{name}_val.npz"),
-                         z=raw["z"], R=raw["R"][perm[ts:ts + vs]],
-                         E=raw["E"][perm[ts:ts + vs]], F=raw["F"][perm[ts:ts + vs]])
-                np.savez(osp.join(split_dir, f"{name}_test.npz"),
-                         z=raw["z"], R=raw["R"][perm[ts + vs:]],
-                         E=raw["E"][perm[ts + vs:]], F=raw["F"][perm[ts + vs:]])
-                np.savez(full_npz,
-                         z=raw["z"], R=raw["R"], E=raw["E"], F=raw["F"])
-                # Save split indices for MP20-style index-based access
-                np.save(osp.join(split_dir, f"{name}_train_idx.npy"), perm[:ts])
-                np.save(osp.join(split_dir, f"{name}_val_idx.npy"),
-                        perm[ts:ts + vs])
-                np.save(osp.join(split_dir, f"{name}_test_idx.npy"),
-                        perm[ts + vs:])
-                np.save(osp.join(split_dir, f"{name}_all_idx.npy"),
-                        np.arange(total, dtype=np.int64))
-            if dist.is_initialized():
-                dist.barrier()
+    def _resolve_data_path(self, path, name):
+        if osp.isfile(path):
+            return path
 
-    def read_data(self, path, name):
-        """Load all trajectory frames from the merged npz file."""
-        split_dir = osp.join(path, "splits")
-        data = np.load(osp.join(split_dir, f"{name}_all.npz"))
+        candidates = [
+            osp.join(path, f"{name}_dft.npz"),
+            osp.join(path, self.name, f"{name}_dft.npz"),
+        ]
+        if name in _BUNDLE_NPZ_MAP:
+            candidates.extend(
+                [
+                    osp.join(path, _BUNDLE_NPZ_MAP[name]),
+                    osp.join(path, self.name, _BUNDLE_NPZ_MAP[name]),
+                ]
+            )
+        for candidate in candidates:
+            if osp.exists(candidate):
+                return candidate
+
+        logger.message("The dataset is not found. Will download it now.")
+        root_path = download.get_datasets_path_from_url(self.url, self.md5)
+        candidates = [
+            osp.join(root_path, self.name, f"{name}_dft.npz"),
+            osp.join(root_path, f"{name}_dft.npz"),
+        ]
+        if name in _BUNDLE_NPZ_MAP:
+            candidates.extend(
+                [
+                    osp.join(root_path, self.name, _BUNDLE_NPZ_MAP[name]),
+                    osp.join(root_path, _BUNDLE_NPZ_MAP[name]),
+                ]
+            )
+        for candidate in candidates:
+            if osp.exists(candidate):
+                return candidate
+        raise FileNotFoundError(f"Cannot find MD17 npz file for molecule: {name}")
+
+    def read_data(self, path):
+        """Load all trajectory frames from the npz file."""
+        data = np.load(path)
         row_data = {
             "z": data["z"],
             "pos": data["R"],
@@ -232,13 +330,43 @@ class MD17Dataset(Dataset):
         }
         return row_data, data["R"].shape[0]
 
-    def _load_split_indices(self, path, name, split):
+    def _load_split_indices(self, path, name, split, split_file, total):
         """Load frame indices for the requested split."""
-        split_dir = osp.join(path, "splits")
-        key = split if split is not None else "all"
-        return np.load(osp.join(split_dir, f"{name}_{key}_idx.npy"))
+        if split is None and split_file is None:
+            return np.arange(total, dtype=np.int64)
+        if split_file is None:
+            split_dir = osp.join(osp.dirname(path), "splits")
+            key = split if split is not None else "all"
+            split_file = osp.join(split_dir, f"{name}_{key}_idx.npy")
+            if not osp.exists(split_file):
+                split_file = osp.join(split_dir, f"split_{key}.npy")
+        if not osp.exists(split_file):
+            raise FileNotFoundError(f"No such split file: {split_file}")
+        return np.load(split_file).astype(np.int64)
 
-    def save_to_cache(self, cache_path: str, obj):
+    def get_molecule_array(self, molecule):
+        conf = molecule.GetConformer()
+        z = np.array(
+            [atom.GetAtomicNum() for atom in molecule.GetAtoms()], dtype=np.int64
+        )
+        pos = np.array(
+            [
+                [
+                    conf.GetAtomPosition(i).x,
+                    conf.GetAtomPosition(i).y,
+                    conf.GetAtomPosition(i).z,
+                ]
+                for i in range(molecule.GetNumAtoms())
+            ],
+            dtype=np.float32,
+        )
+        return {
+            "z": ConcatData(z),
+            "pos": ConcatData(pos),
+            "num_atoms": ConcatData(np.array([z.shape[0]], dtype=np.int64)),
+        }
+
+    def save_to_cache(self, cache_path: str, obj: Any):
         with open(cache_path, "wb") as f:
             pickle.dump(obj, f)
 
@@ -251,28 +379,20 @@ class MD17Dataset(Dataset):
     def __getitem__(self, idx):
         frame = self._indices[idx]
         sample = {
-            "z": self.row_data["z"],
-            "pos": self.row_data["pos"][frame],
             self.energy_key: np.array(
                 [float(self.row_data["energy"][frame])], dtype=np.float32
             ),
-            self.force_key: self.row_data["force"][frame],
+            self.force_key: ConcatData(self.row_data["force"][frame]),
         }
         if self.graphs is not None:
-            gpath = self.graphs[frame]
-            graph = self.load_from_cache(gpath) if isinstance(gpath, str) else gpath
-            if isinstance(graph, dict):
-                sample["edge_index"] = graph["edge_index"]
-                sample["triplet_indices"] = {
-                    "i": graph["ti_i"],
-                    "j": graph["ti_j"],
-                    "idx_kj": graph["ti_idx_kj"],
-                    "idx_ji": graph["ti_idx_ji"],
-                    "idx_lk": graph["ti_idx_lk"],
-                    "idx_triplet": graph["ti_idx_triplet"],
-                }
-            else:
-                sample["edge_index"] = graph
+            graph = self.graphs[idx]
+            if isinstance(graph, str):
+                graph = self.load_from_cache(graph)
+            sample["graph"] = graph
+        else:
+            mol = self.load_from_cache(self.molecules[idx])
+            sample.update(self.get_molecule_array(mol))
+        sample["id"] = int(frame)
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample

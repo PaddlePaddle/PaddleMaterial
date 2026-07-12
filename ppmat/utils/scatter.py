@@ -31,6 +31,31 @@ def _broadcast(src: paddle.Tensor, other: paddle.Tensor, dim: int):
     return src
 
 
+def scatter_argmin(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
+    """Return the source index of the minimum value in each group.
+
+    ``src`` and ``index`` must be one-dimensional. Empty groups are assigned
+    ``-1``. Ties are resolved by selecting the first occurrence in ``src``.
+    """
+    if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
+        raise ValueError("src and index must be one-dimensional with equal length")
+
+    if dim_size is None:
+        dim_size = 0 if index.shape[0] == 0 else int(index.max()) + 1
+
+    out = paddle.full([dim_size], -1, dtype="int64")
+    if index.shape[0] == 0:
+        return out
+
+    order = paddle.argsort(src, stable=True)
+    groups, first = paddle.unique(index[order], return_index=True)
+    return paddle.scatter(out, groups, order[first], overwrite=True)
+
+
 def _scatter_sum(
     src: paddle.Tensor,
     index: paddle.Tensor,

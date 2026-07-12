@@ -5,6 +5,21 @@ Global:
   do_eval: true
   do_test: true
 
+  build_molecule_cfg:
+    format: xyz_block
+    sanitize: false
+    add_hs: false
+    remove_hs: false
+    kekulize: false
+    num_cpus: 10
+
+  graph_converter:
+    __class_name__: RadiusGraphConverter
+    __init_params__:
+      cutoff: 5.0
+      return_triplet_indices: true
+      num_cpus: 10
+
 Trainer:
   # Max epochs to train
   max_epochs: 100
@@ -39,7 +54,7 @@ Trainer:
   # Pretrained model path; null means no pretrained model
   pretrained_model_path:
 Model:
-  __class_name__: SphereNetPP
+  __class_name__: SphereNet
   __init_params__:
     energy_and_force: false
     cutoff: 5.0
@@ -81,17 +96,14 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data
+        path: ./data/qm9/train.csv
         property_names: [Cv]
-        split: train
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -102,17 +114,14 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data
+        path: ./data/qm9/val.csv
         property_names: [Cv]
-        split: val
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -123,17 +132,14 @@ Dataset:
     dataset:
       __class_name__: QM9Dataset
       __init_params__:
-        path: ./data
+        path: ./data/qm9/test.csv
         property_names: [Cv]
-        split: test
-        build_graph_cfg:
-          __class_name__: RadiusGraph
-          __init_params__:
-            cutoff: 5.0
+        build_molecule_cfg: ${Global.build_molecule_cfg}
+        build_graph_cfg: ${Global.graph_converter}
     loader:
       num_workers: 4
       use_shared_memory: false
-      collate_fn: MolecularGraphCollator
+      collate_fn: RadiusGraphCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -142,7 +148,4 @@ Dataset:
         drop_last: false
 
 Predict:
-  graph_converter:
-    __class_name__: RadiusGraph
-    __init_params__:
-      cutoff: 5.0
+  graph_converter: ${Global.graph_converter}

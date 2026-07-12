@@ -11,121 +11,88 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-SphereNet-specific spherical Fourier-Bessel embeddings.
-
-Provides three levels of geometric embeddings:
-    - DistEmbedding (RBF): radial basis with smooth envelope
-    - AngleEmbedding (SBF): spherical Bessel + Legendre (zero-m) basis
-    - TorsionEmbedding (TBF): full 3D spherical Fourier-Bessel (non-zero m) basis
-
-Bessel basis generation is imported from ppmat.models.common.basis_utils.
-The real spherical harmonics are implemented locally because the common
-variant does not support the non-zero-m indexing convention required here.
-"""
+"""Numerical spherical Fourier-Bessel embeddings for SphereNet."""
 
 import math
+from functools import lru_cache
 
+import numpy as np
 import paddle
-import sympy as sym
-
-from ppmat.models.common.basis_utils import bessel_basis
-
-# ---------------------------------------------------------------------------
-# Real spherical harmonics (SphereNet-compatible implementation)
-# Uses the same lexicographic indexing as the DIG/SphereNet reference code.
-# ---------------------------------------------------------------------------
+from scipy import optimize
+from scipy import special
 
 
-def _sph_harm_prefactor(l_degree, m_order):
-    return (
-        (2 * l_degree + 1)
-        * math.factorial(l_degree - abs(m_order))
-        / (4 * math.pi * math.factorial(l_degree + abs(m_order)))
-    ) ** 0.5
+def _spherical_jn_root(x, order):
+    return special.spherical_jn(order, x)
 
 
-def _associated_legendre_polynomials(k, zero_m_only=True):
-    z = sym.symbols("z")
-    P_l_m = [[0] * (j + 1) for j in range(k)]
-    P_l_m[0][0] = 1
-    if k > 0:
-        P_l_m[1][0] = z
-        for j in range(2, k):
-            P_l_m[j][0] = sym.simplify(
-                ((2 * j - 1) * z * P_l_m[j - 1][0] - (j - 1) * P_l_m[j - 2][0]) / j
+@lru_cache(maxsize=32)
+def _build_basis_constants(num_spherical, num_radial):
+    """Build deterministic Fourier-Bessel constants for one basis shape."""
+    if num_spherical < 1:
+        raise ValueError("num_spherical must be positive.")
+    if num_radial < 1:
+        raise ValueError("num_radial must be positive.")
+
+    zeros = np.zeros((num_spherical, num_radial), dtype=np.float64)
+    zeros[0] = np.arange(1, num_radial + 1, dtype=np.float64) * np.pi
+    points = np.arange(
+        1, num_radial + num_spherical, dtype=np.float64
+    ) * np.pi
+    roots = np.zeros(num_radial + num_spherical - 1, dtype=np.float64)
+    for order in range(1, num_spherical):
+        for i in range(num_radial + num_spherical - 1 - order):
+            roots[i] = optimize.brentq(
+                _spherical_jn_root,
+                points[i],
+                points[i + 1],
+                args=(order,),
             )
-        if not zero_m_only:
-            for i in range(1, k):
-                P_l_m[i][i] = sym.simplify((1 - 2 * i) * P_l_m[i - 1][i - 1])
-                if i + 1 < k:
-                    P_l_m[i + 1][i] = sym.simplify((2 * i + 1) * z * P_l_m[i][i])
-                for j in range(i + 2, k):
-                    P_l_m[j][i] = sym.simplify(
-                        (
-                            (2 * j - 1) * z * P_l_m[j - 1][i]
-                            - (i + j - 1) * P_l_m[j - 2][i]
-                        )
-                        / (j - i)
-                    )
-    return P_l_m
+        points = roots.copy()
+        zeros[order] = roots[:num_radial]
+
+    normalizers = np.empty_like(zeros)
+    for order in range(num_spherical):
+        values = special.spherical_jn(order + 1, zeros[order])
+        normalizers[order] = 1.0 / np.sqrt(0.5 * values**2)
+
+    harmonic_prefactors = np.zeros(
+        (num_spherical, num_spherical), dtype=np.float64
+    )
+    for degree in range(num_spherical):
+        for order in range(degree + 1):
+            harmonic_prefactors[degree, order] = math.sqrt(
+                (2 * degree + 1)
+                * math.factorial(degree - order)
+                / (4 * math.pi * math.factorial(degree + order))
+            )
+
+    zeros.setflags(write=False)
+    normalizers.setflags(write=False)
+    harmonic_prefactors.setflags(write=False)
+    return zeros, normalizers, harmonic_prefactors
 
 
-def _real_sph_harm(degree, zero_m_only=False, spherical_coordinates=True):
-    """Compute symbolic real spherical harmonics up to degree (excluded).
+def _double_factorial(value):
+    result = 1
+    for factor in range(value, 0, -2):
+        result *= factor
+    return result
 
-    This is a copy of the DIG/SphereNet implementation that uses list-of-lists
-    indexing (not sympy Matrix indexing), so it works correctly for both
-    zero-m-only and full non-zero-m cases.
-    """
-    if not zero_m_only:
-        x = sym.symbols("x")
-        y = sym.symbols("y")
-        S_m = [x * 0]
-        C_m = [1 + 0 * x]
-        for i in range(1, degree):
-            S_m += [x * S_m[i - 1] + y * C_m[i - 1]]
-            C_m += [x * C_m[i - 1] - y * S_m[i - 1]]
 
-    P_l_m = _associated_legendre_polynomials(degree, zero_m_only)
-    if spherical_coordinates:
-        theta = sym.symbols("theta")
-        z = sym.symbols("z")
-        for i in range(len(P_l_m)):
-            for j in range(len(P_l_m[i])):
-                if not isinstance(P_l_m[i][j], int):
-                    P_l_m[i][j] = P_l_m[i][j].subs(z, sym.cos(theta))
-        if not zero_m_only:
-            phi = sym.symbols("phi")
-            for i in range(len(S_m)):
-                S_m[i] = (
-                    S_m[i]
-                    .subs(x, sym.sin(theta) * sym.cos(phi))
-                    .subs(y, sym.sin(theta) * sym.sin(phi))
-                )
-            for i in range(len(C_m)):
-                C_m[i] = (
-                    C_m[i]
-                    .subs(x, sym.sin(theta) * sym.cos(phi))
-                    .subs(y, sym.sin(theta) * sym.sin(phi))
-                )
-
-    Y_func_l_m = [["0"] * (2 * j + 1) for j in range(degree)]
-    for i in range(degree):
-        Y_func_l_m[i][0] = sym.simplify(_sph_harm_prefactor(i, 0) * P_l_m[i][0])
-
-    if not zero_m_only:
-        for i in range(1, degree):
-            for j in range(1, i + 1):
-                Y_func_l_m[i][j] = sym.simplify(
-                    2**0.5 * _sph_harm_prefactor(i, j) * C_m[j] * P_l_m[i][j]
-                )
-        for i in range(1, degree):
-            for j in range(1, i + 1):
-                Y_func_l_m[i][-j] = sym.simplify(
-                    2**0.5 * _sph_harm_prefactor(i, -j) * S_m[j] * P_l_m[i][j]
-                )
-    return Y_func_l_m
+def _spherical_jn_series(order, x, num_terms=20):
+    """Stable spherical-Bessel series around zero."""
+    x_squared = x * x
+    term = paddle.ones_like(x)
+    series = term
+    for index in range(1, num_terms):
+        term = (
+            term
+            * -x_squared
+            / (2 * index * (2 * order + 2 * index + 1))
+        )
+        series = series + term
+    return x**order / _double_factorial(2 * order + 1) * series
 
 
 class Envelope(paddle.nn.Layer):
@@ -147,10 +114,7 @@ class Envelope(paddle.nn.Layer):
 
 
 class DistEmbedding(paddle.nn.Layer):
-    """Radial basis function (RBF) embedding.
-
-    Uses spherical Bessel functions with a smooth envelope cutoff.
-    """
+    """Radial basis with a smooth envelope cutoff."""
 
     def __init__(self, num_radial, cutoff=5.0, envelope_exponent=5):
         super().__init__()
@@ -168,11 +132,12 @@ class DistEmbedding(paddle.nn.Layer):
 
     def reset_parameters(self):
         with paddle.no_grad():
-            pi_t = paddle.to_tensor(math.pi)
             self.freq.set_value(
                 paddle.arange(
-                    1, self.freq.shape[0] + 1, dtype=paddle.get_default_dtype()
-                ).multiply(pi_t)
+                    1,
+                    self.freq.shape[0] + 1,
+                    dtype=paddle.get_default_dtype(),
+                ).multiply(paddle.to_tensor(math.pi))
             )
 
     def forward(self, dist):
@@ -180,102 +145,196 @@ class DistEmbedding(paddle.nn.Layer):
         return self.envelope(dist) * paddle.sin(self.freq * dist)
 
 
-class AngleEmbedding(paddle.nn.Layer):
-    """Spherical Bessel + Legendre (zero-m) embedding for bond angles.
-
-    Combines radial Bessel functions with m=0 real spherical harmonics
-    (Legendre polynomials) to encode pairwise distances and angles.
-    """
+class SphericalBesselBasis(paddle.nn.Layer):
+    """Normalized spherical-Bessel basis evaluated with Paddle operations."""
 
     def __init__(self, num_spherical, num_radial, cutoff=5.0):
         super().__init__()
-        assert num_radial <= 64
         self.num_spherical = num_spherical
         self.num_radial = num_radial
         self.cutoff = cutoff
 
-        bessel_forms = bessel_basis(num_spherical, num_radial)
-        sph_harm_forms = _real_sph_harm(num_spherical, zero_m_only=True)
-        self.sph_funcs = []
-        self.bessel_funcs = []
-
-        x, theta = sym.symbols("x theta")
-        modules = {"sin": paddle.sin, "cos": paddle.cos}
-        for i in range(num_spherical):
-            if i == 0:
-                sph1 = sym.lambdify([theta], sph_harm_forms[i][0], modules)(0)
-                self.sph_funcs.append(
-                    lambda x_val: paddle.zeros_like(x_val) + float(sph1)
-                )
-            else:
-                sph = sym.lambdify([theta], sph_harm_forms[i][0], modules)
-                self.sph_funcs.append(sph)
-            for j in range(num_radial):
-                bessel = sym.lambdify([x], bessel_forms[i][j], modules)
-                self.bessel_funcs.append(bessel)
-
-    def forward(self, dist, angle, idx_kj):
-        dist = dist / self.cutoff
-        rbf = paddle.stack([f(dist) for f in self.bessel_funcs], axis=1)
-        cbf = paddle.stack([f(angle) for f in self.sph_funcs], axis=1)
-
-        n, k = self.num_spherical, self.num_radial
-        out = (rbf[idx_kj].reshape([-1, n, k]) * cbf.reshape([-1, n, 1])).reshape(
-            [-1, n * k]
+        zeros, normalizers, _ = _build_basis_constants(
+            num_spherical, num_radial
         )
-        return out
+        self.register_buffer(
+            "zeros",
+            paddle.to_tensor(np.array(zeros, copy=True), dtype="float32"),
+            persistable=False,
+        )
+        self.register_buffer(
+            "normalizers",
+            paddle.to_tensor(
+                np.array(normalizers, copy=True), dtype="float32"
+            ),
+            persistable=False,
+        )
+
+    def forward(self, dist):
+        scaled_dist = dist.reshape([-1, 1, 1]) / self.cutoff
+        arguments = scaled_dist * self.zeros.reshape(
+            [1, self.num_spherical, self.num_radial]
+        )
+        safe_arguments = paddle.where(
+            paddle.abs(arguments) < 1e-2,
+            paddle.full_like(arguments, 1e-2),
+            arguments,
+        )
+
+        values = [paddle.sin(safe_arguments) / safe_arguments]
+        if self.num_spherical > 1:
+            values.append(
+                paddle.sin(safe_arguments) / safe_arguments**2
+                - paddle.cos(safe_arguments) / safe_arguments
+            )
+            for degree in range(1, self.num_spherical - 1):
+                values.append(
+                    (2 * degree + 1) / safe_arguments * values[-1]
+                    - values[-2]
+                )
+
+        basis = []
+        for degree in range(self.num_spherical):
+            degree_arguments = arguments[:, degree, :]
+            degree_values = values[degree][:, degree, :]
+            degree_values = paddle.where(
+                paddle.abs(degree_arguments) < degree + 1.0,
+                _spherical_jn_series(degree, degree_arguments),
+                degree_values,
+            )
+            basis.append(degree_values * self.normalizers[degree])
+        return paddle.stack(basis, axis=1)
 
 
-class TorsionEmbedding(paddle.nn.Layer):
-    """Full 3D spherical Fourier-Bessel embedding for torsion angles.
+class RealSphericalHarmonics(paddle.nn.Layer):
+    """Real spherical harmonics with the SphereNet ordering convention."""
 
-    Uses non-zero m spherical harmonics to encode the full 3D geometric
-    configuration (radial distance + polar angle + azimuthal angle).
-    """
+    def __init__(self, num_spherical):
+        super().__init__()
+        self.num_spherical = num_spherical
+        _, _, prefactors = _build_basis_constants(num_spherical, 1)
+        self.register_buffer(
+            "prefactors",
+            paddle.to_tensor(
+                np.array(prefactors, copy=True), dtype="float32"
+            ),
+            persistable=False,
+        )
+        self.register_buffer(
+            "m0_indices",
+            paddle.to_tensor(
+                [degree * degree for degree in range(num_spherical)],
+                dtype="int64",
+            ),
+            persistable=False,
+        )
+
+    def forward(self, angle, torsion):
+        cos_angle = paddle.cos(angle)
+        sin_angle = paddle.sin(angle)
+        one = paddle.ones_like(cos_angle)
+        polynomials = {(0, 0): one}
+
+        for order in range(1, self.num_spherical):
+            polynomials[(order, order)] = (
+                1 - 2 * order
+            ) * polynomials[(order - 1, order - 1)]
+
+        for order in range(self.num_spherical - 1):
+            polynomials[(order + 1, order)] = (
+                (2 * order + 1)
+                * cos_angle
+                * polynomials[(order, order)]
+            )
+
+        for order in range(self.num_spherical):
+            for degree in range(order + 2, self.num_spherical):
+                polynomials[(degree, order)] = (
+                    (2 * degree - 1)
+                    * cos_angle
+                    * polynomials[(degree - 1, order)]
+                    - (order + degree - 1)
+                    * polynomials[(degree - 2, order)]
+                ) / (degree - order)
+
+        harmonics = []
+        sqrt_two = math.sqrt(2.0)
+        for degree in range(self.num_spherical):
+            harmonics.append(
+                self.prefactors[degree, 0]
+                * polynomials[(degree, 0)]
+            )
+            for order in range(1, degree + 1):
+                harmonics.append(
+                    sqrt_two
+                    * self.prefactors[degree, order]
+                    * polynomials[(degree, order)]
+                    * sin_angle**order
+                    * paddle.cos(order * torsion)
+                )
+            for order in range(degree, 0, -1):
+                harmonics.append(
+                    sqrt_two
+                    * self.prefactors[degree, order]
+                    * polynomials[(degree, order)]
+                    * sin_angle**order
+                    * paddle.sin(order * torsion)
+                )
+        return paddle.stack(harmonics, axis=1)
+
+
+class SphericalFourierBesselEmbedding(paddle.nn.Layer):
+    """Shared angle and torsion Fourier-Bessel embedding."""
 
     def __init__(self, num_spherical, num_radial, cutoff=5.0):
         super().__init__()
-        assert num_radial <= 64
         self.num_spherical = num_spherical
         self.num_radial = num_radial
-        self.cutoff = cutoff
-
-        bessel_forms = bessel_basis(num_spherical, num_radial)
-        sph_harm_forms = _real_sph_harm(num_spherical, zero_m_only=False)
-        self.sph_funcs = []
-        self.bessel_funcs = []
-
-        x = sym.symbols("x")
-        theta = sym.symbols("theta")
-        phi = sym.symbols("phi")
-        modules = {"sin": paddle.sin, "cos": paddle.cos}
-        for i in range(self.num_spherical):
-            if i == 0:
-                sph1 = sym.lambdify([theta, phi], sph_harm_forms[i][0], modules)
-                self.sph_funcs.append(
-                    lambda theta_val, phi_val: (
-                        paddle.zeros_like(theta_val)
-                        + paddle.zeros_like(phi_val)
-                        + float(sph1(0, 0))
-                    )
-                )
-            else:
-                for k_order in range(-i, i + 1):
-                    sph = sym.lambdify(
-                        [theta, phi], sph_harm_forms[i][k_order + i], modules
-                    )
-                    self.sph_funcs.append(sph)
-            for j in range(self.num_radial):
-                bessel = sym.lambdify([x], bessel_forms[i][j], modules)
-                self.bessel_funcs.append(bessel)
-
-    def forward(self, dist, angle, phi, idx_kj):
-        dist = dist / self.cutoff
-        rbf = paddle.stack([f(dist) for f in self.bessel_funcs], axis=1)
-        cbf = paddle.stack([f(angle, phi) for f in self.sph_funcs], axis=1)
-
-        n, k = self.num_spherical, self.num_radial
-        out = (rbf[idx_kj].reshape([-1, 1, n, k]) * cbf.reshape([-1, n, n, 1])).reshape(
-            [-1, n * n * k]
+        self.radial_basis = SphericalBesselBasis(
+            num_spherical, num_radial, cutoff
         )
-        return out
+        self.spherical_harmonics = RealSphericalHarmonics(num_spherical)
+
+    def forward(self, dist, angle, torsion, idx_kj):
+        radial_basis = self.radial_basis(dist)[idx_kj]
+        harmonics = self.spherical_harmonics(angle, torsion)
+        angle_harmonics = paddle.index_select(
+            harmonics,
+            self.spherical_harmonics.m0_indices,
+            axis=1,
+        )
+
+        num_triplets = angle.shape[0]
+        angle_embedding = (
+            radial_basis * angle_harmonics.reshape(
+                [num_triplets, self.num_spherical, 1]
+            )
+        ).reshape(
+            [num_triplets, self.num_spherical * self.num_radial]
+        )
+        torsion_embedding = (
+            radial_basis.reshape(
+                [
+                    num_triplets,
+                    1,
+                    self.num_spherical,
+                    self.num_radial,
+                ]
+            )
+            * harmonics.reshape(
+                [
+                    num_triplets,
+                    self.num_spherical,
+                    self.num_spherical,
+                    1,
+                ]
+            )
+        ).reshape(
+            [
+                num_triplets,
+                self.num_spherical
+                * self.num_spherical
+                * self.num_radial,
+            ]
+        )
+        return angle_embedding, torsion_embedding
