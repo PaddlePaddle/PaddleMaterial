@@ -11,7 +11,7 @@ methods such as SchNet (distance-only) and DimeNet++ (distance + angle) suffer
 from equivariance ambiguity because multiple spatial configurations can map
 to the same pairwise distances or angles. By incorporating torsion angles
 (dihedral angles), SphereNet resolves this ambiguity and achieves
-state-of-the-art results on the QM9 and MD17 benchmarks.
+state-of-the-art results on the QM9 benchmark.
 
 <p align="center">
   <img src="../../docs/SphereNet.png" alt="SphereNet Architecture" width="80%"/>
@@ -39,26 +39,6 @@ B3LYP/6-31G(2df,p) level of theory.
 [figshare](https://figshare.com/ndownloader/files/3195389).
 
 **Reference**: [Quantum-chemical insights from deep learning](https://arxiv.org/abs/1708.04444) (Gaussian, 2017)
-
-### MD17
-
-The MD17 dataset contains DFT molecular dynamics trajectories for 8 small
-organic molecules. Each configuration includes the total energy (kcal/mol) and
-atomic forces (kcal/mol/Å).
-
-| Molecule      | Train | Val  | Test | Atoms |
-|---------------|------:|-----:|-----:|------:|
-| Aspirin       | 1000  | 500  | 1000 | 21    |
-| Benzene       | 1000  | 500  | 1000 | 12    |
-| Ethanol       | 1000  | 500  | 1000 | 9     |
-| Malonaldehyde | 1000  | 500  | 1000 | 9     |
-| Naphthalene   | 1000  | 500  | 1000 | 18    |
-| Salicylic     | 1000  | 500  | 1000 | 16    |
-| Toluene       | 1000  | 500  | 1000 | 15    |
-| Uracil        | 1000  | 500  | 1000 | 12    |
-
-**Data format**: Each molecule is stored as a single `.npz` file with keys
-`E` (energies), `F` (forces), `R` (positions), and `z` (atomic numbers).
 
 ## Model
 
@@ -98,7 +78,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
-            <th nowrap="nowrap">Checkpoint</th>
+            <th nowrap="nowrap">Checkpoint | Log</th>
         </tr>
     </head>
     <body>
@@ -110,7 +90,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~18 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_mu.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_mu.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_alpha</td>
@@ -120,7 +100,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~24 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_alpha.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_alpha.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_homo</td>
@@ -130,7 +110,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~22 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_homo.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_homo.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_lumo</td>
@@ -140,7 +120,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~22 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_lumo.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_lumo.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_gap</td>
@@ -150,7 +130,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~22 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_gap.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_gap.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_r2</td>
@@ -160,7 +140,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~12 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_r2.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_r2.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_zpve</td>
@@ -170,7 +150,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~14 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_zpve.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_zpve.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_U0</td>
@@ -180,7 +160,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~20 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_U0.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U0.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_U</td>
@@ -190,7 +170,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~20 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_U.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_H</td>
@@ -200,7 +180,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~20 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_H.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_H.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_G</td>
@@ -210,7 +190,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~20 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_G.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_G.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_qm9_Cv</td>
@@ -220,87 +200,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~18 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_Cv.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_aspirin</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.26 / 0.44</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~6 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_benzene_old</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.14 / 0.21</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~3 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_benzene_old.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_ethanol</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.10 / 0.23</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_ethanol.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_malonaldehyde</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.17 / 0.32</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_malonaldehyde.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_naphthalene</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.16 / 0.26</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~5 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_naphthalene.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_salicylic</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.22 / 0.38</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~5 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_salicylic.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_toluene</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.12 / 0.21</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~4 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_toluene.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
-        </tr>
-        <tr>
-            <td nowrap="nowrap">spherenet_md17_uracil</td>
-            <td nowrap="nowrap">MD17</td>
-            <td nowrap="nowrap">Energy (kcal/mol) / Force (kcal/mol/Å)</td>
-            <td nowrap="nowrap">0.12 / 0.30</td>
-            <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_uracil.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_Cv.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
@@ -311,10 +211,6 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
 # Single-GPU training — QM9 mu property
 python property_prediction/train.py \
   -c property_prediction/configs/spherenet/spherenet_qm9_mu.yaml
-
-# Single-GPU training — MD17 aspirin (energy + force)
-python interatomic_potentials/train.py \
-  -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml
 ```
 
 ### Validation
@@ -338,20 +234,18 @@ python property_prediction/train.py \
 ### Prediction
 
 ```bash
-# Using a registered model (check MODEL_REGISTRY in ppmat/models/__init__.py)
+# Using a registered QM9 model
 python property_prediction/predict.py \
-  --model_name spherenet_qm9_mu
-
-# Molecular prediction (QM9 / MD17 models)
-python property_prediction/predict.py \
-  --model_name spherenet_md17_aspirin \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
+  --model_name spherenet_qm9_mu \
+  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
+  --save_path ./output/spherenet_qm9_mu_prediction.csv
 
 # Using a local checkpoint
 python property_prediction/predict.py \
-  --config_path ./output/spherenet_qm9_mu_t_*/spherenet_qm9_mu.yaml \
+  --config_path ./property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
   --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
+  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
+  --save_path ./output/spherenet_qm9_mu_prediction.csv
 ```
 
 ## Citation

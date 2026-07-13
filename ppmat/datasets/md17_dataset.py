@@ -16,8 +16,6 @@
 import os
 import os.path as osp
 import pickle
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
 from typing import Any
 from typing import Callable
 from typing import Dict
@@ -26,11 +24,9 @@ from typing import Optional
 import numpy as np
 import paddle.distributed as dist
 from paddle.io import Dataset
-from tqdm import tqdm
 
 from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.datasets.custom_data_type import ConcatData
-from ppmat.datasets.graph_utils.spherenet_graph_utils import build_molecule_graph
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
@@ -236,29 +232,14 @@ class MD17Dataset(Dataset):
                 )
 
                 if build_graph_cfg is not None:
-                    os.makedirs(graph_cache_path, exist_ok=True)
                     converter = build_graph_converter(build_graph_cfg)
-                    logger.info(
-                        f"Pre-building graphs for {self.mol_name} "
-                        f"({self.num_samples} frames) with 24 threads ..."
-                    )
-                    with ThreadPoolExecutor(max_workers=24) as executor:
-                        futures = {
-                            executor.submit(
-                                build_molecule_graph,
-                                i,
-                                molecules[i],
-                                converter,
-                                graph_cache_path,
-                            ): i
-                            for i in range(self.num_samples)
-                        }
-                        for future in tqdm(
-                            as_completed(futures),
-                            total=self.num_samples,
-                            desc="Build graphs",
-                        ):
-                            future.result()
+                    graphs = converter(molecules)
+                    os.makedirs(graph_cache_path, exist_ok=True)
+                    for i in range(self.num_samples):
+                        self.save_to_cache(
+                            osp.join(graph_cache_path, f"{i:010d}.pkl"), graphs[i]
+                        )
+                    logger.info(f"Save {self.num_samples} graphs to {graph_cache_path}")
             if dist.is_initialized():
                 dist.barrier()
 

@@ -13,9 +13,6 @@
 # limitations under the License.
 """SphereNet-specific graph utilities."""
 
-import os.path as osp
-import pickle
-
 import paddle
 
 
@@ -64,12 +61,3 @@ def radius_graph(pos, batch, cutoff, loop=False):
     if not edge_list:
         return paddle.empty([2, 0], dtype="int64")
     return paddle.concat(edge_list, axis=1)
-
-
-def build_molecule_graph(idx, mol, converter, cache_dir):
-    """Build and cache one molecular graph."""
-    graph = converter(mol)
-    save_path = osp.join(cache_dir, f"{idx:010d}.pkl")
-    with open(save_path, "wb") as f:
-        pickle.dump(graph, f)
-    return idx

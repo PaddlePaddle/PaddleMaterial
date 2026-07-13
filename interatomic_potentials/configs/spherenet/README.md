@@ -79,7 +79,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
-            <th nowrap="nowrap">Checkpoint</th>
+            <th nowrap="nowrap">Checkpoint | Log</th>
         </tr>
     </head>
     <body>
@@ -90,8 +90,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.26 / 0.44</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~6 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_aspirin.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_aspirin.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_benzene_old</td>
@@ -100,8 +100,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.14 / 0.21</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~3 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_benzene_old.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_benzene_old.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_benzene_old.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_ethanol</td>
@@ -110,8 +110,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.10 / 0.23</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_ethanol.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_ethanol.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_ethanol.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_malonaldehyde</td>
@@ -120,8 +120,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.17 / 0.32</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_malonaldehyde.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_malonaldehyde.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_malonaldehyde.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_naphthalene</td>
@@ -130,8 +130,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.16 / 0.26</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~5 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_naphthalene.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_naphthalene.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_naphthalene.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_salicylic</td>
@@ -140,8 +140,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.22 / 0.38</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~5 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_salicylic.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_salicylic.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_salicylic.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_toluene</td>
@@ -150,8 +150,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.12 / 0.21</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~4 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_toluene.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_toluene.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_toluene.zip">checkpoint | log</a></td>
         </tr>
         <tr>
             <td nowrap="nowrap">spherenet_md17_uracil</td>
@@ -160,8 +160,8 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">0.12 / 0.30</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">~2 h</td>
-            <td nowrap="nowrap"><a href="../../../interatomic_potentials/configs/spherenet/spherenet_md17_uracil.yaml">config</a></td>
-            <td nowrap="nowrap">-</td>
+            <td nowrap="nowrap"><a href="./spherenet_md17_uracil.yaml">config</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_uracil.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
@@ -177,8 +177,8 @@ python interatomic_potentials/train.py \
 ### Validation
 
 ```bash
-python property_prediction/train.py \
-  -c property_prediction/configs/spherenet/spherenet_md17_aspirin.yaml \
+python interatomic_potentials/train.py \
+  -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_eval=True Global.do_train=False Global.do_test=False \
   Trainer.pretrained_model_path='your_model.pdparams'
 ```
@@ -186,8 +186,8 @@ python property_prediction/train.py \
 ### Testing
 
 ```bash
-python property_prediction/train.py \
-  -c property_prediction/configs/spherenet/spherenet_md17_aspirin.yaml \
+python interatomic_potentials/train.py \
+  -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_test=True Global.do_train=False Global.do_eval=False \
   Trainer.pretrained_model_path='your_model.pdparams'
 ```
@@ -196,15 +196,15 @@ python property_prediction/train.py \
 
 ```bash
 # Molecular prediction
-python property_prediction/predict.py \
+python interatomic_potentials/predict.py \
   --model_name spherenet_md17_aspirin \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
+  --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 
 # Using a local checkpoint
-python property_prediction/predict.py \
-  --config_path ./output/spherenet_spherenet_md17_aspirin.yaml.yaml \
-  --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz
+python interatomic_potentials/predict.py \
+  --config_path ./interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
+  --checkpoint_path ./output/spherenet_aspirin/checkpoints/best.pdparams \
+  --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 ```
 
 ## Citation

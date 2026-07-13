@@ -118,7 +118,18 @@ class BuildMolecule:
         elif format == "inchi":
             mol = Chem.MolFromInchi(str(mol_data))
         elif format == "dict":
-            mol_block = mol_data.get("mol_block", None)
+            atomic_numbers = mol_data["atomic_numbers"]
+            positions = mol_data["positions"]
+            mol = Chem.RWMol()
+            for atomic_number in atomic_numbers:
+                mol.AddAtom(Chem.Atom(int(atomic_number)))
+            mol = mol.GetMol()
+            conformer = Chem.Conformer(len(atomic_numbers))
+            for atom_idx, position in enumerate(positions):
+                conformer.SetAtomPosition(
+                    atom_idx, Point3D(*(float(value) for value in position))
+                )
+            mol.AddConformer(conformer)
         elif format == "rdmol":
             mol = mol_data
         else:

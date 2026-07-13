@@ -19,6 +19,7 @@ import paddle
 from rdkit import Chem
 from scipy import special
 
+from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.datasets.collate_fn import RadiusGraphCollator
 from ppmat.models.common.graph_converter import RadiusGraphConverter
 from ppmat.models.common.spherical_fourier_bessel import RealSphericalHarmonics
@@ -33,6 +34,23 @@ from ppmat.models.spherenet.spherenet import SphereNet
 
 def setup_module():
     paddle.set_device("cpu")
+
+
+def test_build_molecule_from_atomic_numbers_and_positions():
+    molecule = BuildMolecule(format="dict", sanitize=False)(
+        {
+            "atomic_numbers": np.array([8, 1, 1]),
+            "positions": np.array(
+                [[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]
+            ),
+        }
+    )
+
+    assert [atom.GetAtomicNum() for atom in molecule.GetAtoms()] == [8, 1, 1]
+    np.testing.assert_allclose(
+        molecule.GetConformer().GetPositions(),
+        [[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]],
+    )
 
 
 def test_basis_constants_are_cached_by_shape():
