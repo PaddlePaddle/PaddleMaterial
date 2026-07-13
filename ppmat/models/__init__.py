@@ -29,6 +29,7 @@ from ppmat.models.comformer.comformer_graph_converter import ComformerGraphConve
 from ppmat.models.common.graph_converter import CrystalNN
 from ppmat.models.common.graph_converter import FindPointsInSpheres
 from ppmat.models.common.graph_converter import MolecularGraphConverter
+from ppmat.models.common.graph_converter import RadiusGraphConverter
 from ppmat.models.diffcsp.diffcsp import DiffCSP
 from ppmat.models.diffnmr.diffnmr import DiffNMR
 from ppmat.models.diffnmr.diffnmr import DiffPrior
@@ -43,6 +44,7 @@ from ppmat.models.megnet.megnet import MEGNetPlus
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.sfin.sfin import SFIN
+from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
@@ -62,6 +64,7 @@ __all__ = [
     "M3GNetGraphConvertor",
     "M3GNet",
     "MolecularGraphConverter",
+    "RadiusGraphConverter",
     "MolecularGraphFormer",
     "NMRNetCLIP",
     "DiffPrior",
@@ -69,6 +72,7 @@ __all__ = [
     "InfGCN",
     "MatENO",
     "SFIN",
+    "SphereNet",
 ]
 
 # Warning: The key of the dictionary must be consistent with the file name of the value
@@ -117,6 +121,26 @@ MODEL_REGISTRY = {
     "sfin_haadf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_haadf_detect.zip",
     "sfin_bf_enhance": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_enhance.zip",
     "sfin_bf_detect": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip",
+    "spherenet_qm9_mu": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_mu.zip",
+    "spherenet_qm9_alpha": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_alpha.zip",
+    "spherenet_qm9_homo": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_homo.zip",
+    "spherenet_qm9_lumo": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_lumo.zip",
+    "spherenet_qm9_gap": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_gap.zip",
+    "spherenet_qm9_r2": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_r2.zip",
+    "spherenet_qm9_zpve": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_zpve.zip",
+    "spherenet_qm9_U0": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U0.zip",
+    "spherenet_qm9_U": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U.zip",
+    "spherenet_qm9_H": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_H.zip",
+    "spherenet_qm9_G": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_G.zip",
+    "spherenet_qm9_Cv": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_Cv.zip",
+    "spherenet_md17_aspirin": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_aspirin.zip",
+    "spherenet_md17_benzene_old": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_benzene_old.zip",
+    "spherenet_md17_ethanol": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_ethanol.zip",
+    "spherenet_md17_malonaldehyde": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_malonaldehyde.zip",
+    "spherenet_md17_naphthalene": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_naphthalene.zip",
+    "spherenet_md17_salicylic": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_salicylic.zip",
+    "spherenet_md17_toluene": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_toluene.zip",
+    "spherenet_md17_uracil": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/spherenet/spherenet_md17_uracil.zip",
 }
 
 

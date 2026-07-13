@@ -88,6 +88,68 @@ class DefaultCollator(object):
         )
 
 
+class RadiusGraphCollator:
+    """Collates radius-graph samples for SphereNet.
+
+    Each sample is expected to contain a ``pgl.Graph`` under ``graph``. The graph
+    comes from ``RadiusGraphConverter`` and stores cached SphereNet triplet
+    indices in ``edge_feat``. Graph fields remain inside the batched graph and
+    are unpacked by the model. Variable-length sample fields should be marked by
+    the dataset with ``ConcatData`` and are collated by ``DefaultCollator``.
+    """
+
+    def __call__(self, batch):
+        graphs = [sample["graph"] for sample in batch]
+        num_edges_list = [np.asarray(graph.edges).shape[0] for graph in graphs]
+        num_triplets_list = [
+            np.asarray(graph.edge_feat["ti_idx_kj"]).shape[0]
+            for graph in graphs
+        ]
+
+        edge_offsets = np.cumsum([0] + num_edges_list[:-1])
+        triplet_offsets = np.cumsum([0] + num_triplets_list[:-1])
+
+        triplet_fields = {
+            key: []
+            for key in ("idx_kj", "idx_ji", "idx_lk", "idx_triplet")
+        }
+        for i, graph in enumerate(graphs):
+            edge_feat = graph.edge_feat
+            triplet_fields["idx_kj"].append(
+                np.asarray(edge_feat["ti_idx_kj"], dtype=np.int64)
+                + edge_offsets[i]
+            )
+            triplet_fields["idx_ji"].append(
+                np.asarray(edge_feat["ti_idx_ji"], dtype=np.int64)
+                + edge_offsets[i]
+            )
+            triplet_fields["idx_lk"].append(
+                np.asarray(edge_feat["ti_idx_lk"], dtype=np.int64)
+                + edge_offsets[i]
+            )
+            triplet_fields["idx_triplet"].append(
+                np.asarray(edge_feat["ti_idx_triplet"], dtype=np.int64)
+                + triplet_offsets[i]
+            )
+
+        graph = pgl.Graph.batch(graphs)
+        graph.edge_feat.update(
+            {
+                f"ti_{key}": np.concatenate(value)
+                for key, value in triplet_fields.items()
+            }
+        )
+
+        result = DefaultCollator()(
+            [
+                {key: value for key, value in sample.items() if key != "graph"}
+                for sample in batch
+            ]
+        )
+        result["graph"] = graph
+        return result
+
+
 class DensityCollator:
     def __init__(
         self,

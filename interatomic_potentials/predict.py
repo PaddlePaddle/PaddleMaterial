@@ -24,6 +24,7 @@ from omegaconf import OmegaConf
 from pymatgen.core import Structure
 from tqdm import tqdm
 
+from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
@@ -35,8 +36,8 @@ from ppmat.utils import save_load
 class PotentialPredictor:
     """Potential predictor.
 
-    This class provides an interface for predicting properties of crystalline
-    structures using pre-trained deep learning models. Supports two initialization
+    This class provides an interface for predicting properties of crystal structures and
+    molecules using pre-trained deep learning models. Supports two initialization
     modes:
 
     1. **Automatic Model Loading**
@@ -101,7 +102,7 @@ class PotentialPredictor:
 
         self.model.eval()
 
-        predict_config = config.get("Predict", None)
+        predict_config = config.get("Predict") or {}
         self.predict_config = predict_config
         self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
 
@@ -183,6 +184,39 @@ class PotentialPredictor:
 
             return result
 
+    def from_xyz_file(self, xyz_file_path, save_path=None):
+        """Predict molecular energy and forces from one XYZ file."""
+        if save_path is not None:
+            assert save_path.endswith(".csv"), "save_path must end with .csv"
+        if not osp.isfile(xyz_file_path) or not xyz_file_path.endswith(".xyz"):
+            raise ValueError(f"Expected one XYZ file, but got: {xyz_file_path}")
+        if self.graph_converter_fn is None:
+            raise ValueError("Molecular prediction requires a graph converter.")
+
+        molecule = BuildMolecule(format="xyz_file", sanitize=False)(xyz_file_path)
+        if molecule is None:
+            raise ValueError(f"Failed to parse XYZ file: {xyz_file_path}")
+        graph = self.graph_converter_fn(molecule)
+
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                result = self.model.predict(graph)
+        else:
+            result = self.model.predict(graph)
+        result = self.post_process(result)
+
+        if save_path is not None:
+            row = {"xyz_file": osp.basename(xyz_file_path)}
+            row.update(
+                {
+                    key: value.tolist() if hasattr(value, "tolist") else value
+                    for key, value in result.items()
+                }
+            )
+            pd.DataFrame([row]).to_csv(save_path, index=False)
+            logger.info(f"Saved the prediction result to {save_path}")
+        return result
+
 
 if __name__ == "__main__":
 
@@ -214,8 +248,14 @@ if __name__ == "__main__":
     argparse.add_argument(
         "--cif_file_path",
         type=str,
-        default="./interatomic_potentials/",
+        default=None,
         help="Path to the CIF file whose material properties you want to predict.",
+    )
+    argparse.add_argument(
+        "--xyz_file_path",
+        type=str,
+        default=None,
+        help="Path to the XYZ molecule whose energy and forces to predict.",
     )
     argparse.add_argument(
         "--save_path",
@@ -232,5 +272,10 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    if args.xyz_file_path is not None:
+        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
+    elif args.cif_file_path is not None:
+        results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    else:
+        raise ValueError("Provide --xyz_file_path or --cif_file_path.")
     print(results)
