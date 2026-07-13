@@ -228,6 +228,10 @@ def build_model(
 
 def build_model_from_name(model_name: str, weights_name: Optional[str] = None):
     path = download.get_weights_path_from_url(MODEL_REGISTRY[model_name])
+    # The legacy single-directory decompressor can return a path derived from
+    # the first archive member even though files are extracted to its parent.
+    if not osp.exists(path) and osp.isdir(osp.dirname(path)):
+        path = osp.dirname(path)
     # If the zip already contains a model_name/ inner wrapper dir
     # (e.g. zipped as `zip -r model.zip model/`), the decompressor
     # returns the inner path directly.  Otherwise join it.

@@ -177,7 +177,7 @@ def _download(url, path, md5sum=None):
                     if chunk:
                         f.write(chunk)
         shutil.move(tmp_fullname, fullname)
-        logger.message(f"Finish downloading and saved to {fullname}")
+        logger.message(f"Finish downloading pretrained model and saved to {fullname}")
 
     return fullname
 
@@ -246,7 +246,7 @@ def _uncompress_file_zip(filepath):
                 files.extract(item, file_dir)
 
         elif _is_a_single_dir(file_list):
-            rootpath = file_list[0].replace("\\", "/").split("/", 1)[0]
+            rootpath = os.path.splitext(file_list[0])[0].split(os.sep)[-1]
             uncompressed_path = os.path.join(file_dir, rootpath)
 
             for item in file_list:
@@ -275,7 +275,7 @@ def _uncompress_file_tar(filepath, mode="r:*"):
             for item in file_list:
                 files.extract(item, file_dir)
         elif _is_a_single_dir(file_list):
-            rootpath = file_list[0].replace("\\", "/").split("/", 1)[0]
+            rootpath = os.path.splitext(file_list[0])[0].split(os.sep)[-1]
             uncompressed_path = os.path.join(file_dir, rootpath)
             for item in file_list:
                 files.extract(item, file_dir)

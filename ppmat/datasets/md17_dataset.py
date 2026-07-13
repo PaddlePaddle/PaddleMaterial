@@ -284,17 +284,27 @@ class MD17Dataset(Dataset):
 
         logger.message("The dataset is not found. Will download it now.")
         root_path = download.get_datasets_path_from_url(self.url, self.md5)
-        candidates = [
-            osp.join(root_path, self.name, f"{name}_dft.npz"),
-            osp.join(root_path, f"{name}_dft.npz"),
-        ]
-        if name in _BUNDLE_NPZ_MAP:
+        root_paths = [root_path]
+        if not osp.exists(root_path):
+            root_paths.append(osp.dirname(root_path))
+
+        candidates = []
+        for candidate_root in root_paths:
             candidates.extend(
                 [
-                    osp.join(root_path, self.name, _BUNDLE_NPZ_MAP[name]),
-                    osp.join(root_path, _BUNDLE_NPZ_MAP[name]),
+                    osp.join(candidate_root, self.name, f"{name}_dft.npz"),
+                    osp.join(candidate_root, f"{name}_dft.npz"),
                 ]
             )
+            if name in _BUNDLE_NPZ_MAP:
+                candidates.extend(
+                    [
+                        osp.join(
+                            candidate_root, self.name, _BUNDLE_NPZ_MAP[name]
+                        ),
+                        osp.join(candidate_root, _BUNDLE_NPZ_MAP[name]),
+                    ]
+                )
         for candidate in candidates:
             if osp.exists(candidate):
                 return candidate
