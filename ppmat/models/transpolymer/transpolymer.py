@@ -1,3 +1,7 @@
+import os
+import shutil
+import subprocess
+import tempfile
 from copy import deepcopy
 
 import paddle
@@ -13,9 +17,55 @@ from ppmat.models.transpolymer.tokenizer import PolymerSmilesTokenizer
 class TransPolymerRegressor(nn.Layer):
     """TransPolymer encoder with a regression head for polymer property prediction."""
 
+    @staticmethod
+    def _is_pretrained_checkpoint_ready(pretrained_model_path):
+        if pretrained_model_path is None:
+            return False
+        config_path = os.path.join(pretrained_model_path, "config.json")
+        state_path = os.path.join(pretrained_model_path, "model_state.pdparams")
+        return (
+            os.path.exists(config_path)
+            and os.path.exists(state_path)
+            and os.path.getsize(state_path) > 1024 * 1024
+        )
+
+    @classmethod
+    def _prepare_pretrained_checkpoint(cls, pretrained_model_path, pretrained_model_url):
+        if cls._is_pretrained_checkpoint_ready(pretrained_model_path):
+            return
+        if pretrained_model_url is None:
+            return
+        if shutil.which("git") is None:
+            raise RuntimeError(
+                "TransPolymer pretrained checkpoint is missing and git is not installed. "
+                f"Please download {pretrained_model_url} to {pretrained_model_path}."
+            )
+
+        os.makedirs(pretrained_model_path, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_dir = os.path.join(tmp_dir, "transpolymer_pretrain")
+            subprocess.run(["git", "lfs", "install"], check=True)
+            subprocess.run(
+                ["git", "clone", pretrained_model_url, repo_dir],
+                check=True,
+            )
+            for filename in ("config.json", "model_state.pdparams"):
+                src = os.path.join(repo_dir, filename)
+                if not os.path.exists(src):
+                    raise FileNotFoundError(
+                        f"Missing {filename} in downloaded TransPolymer checkpoint."
+                    )
+                shutil.copy2(src, os.path.join(pretrained_model_path, filename))
+            if not cls._is_pretrained_checkpoint_ready(pretrained_model_path):
+                raise RuntimeError(
+                    "Downloaded TransPolymer checkpoint is incomplete. "
+                    "Please check that Git LFS is installed and enabled."
+                )
+
     def __init__(
         self,
         pretrained_model_path=None,
+        pretrained_model_url=None,
         vocab_size=50265,
         hidden_size=768,
         intermediate_size=3072,
@@ -38,6 +88,9 @@ class TransPolymerRegressor(nn.Layer):
     ):
         super().__init__()
         if pretrained_model_path:
+            self._prepare_pretrained_checkpoint(
+                pretrained_model_path, pretrained_model_url
+            )
             encoder = RobertaModel.from_pretrained(pretrained_model_path)
         else:
             config = RobertaConfig(
