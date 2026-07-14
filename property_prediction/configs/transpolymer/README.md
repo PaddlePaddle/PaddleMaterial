@@ -34,15 +34,15 @@ provided train/test split, while the other downstream tasks are reported with
 | PE-I | 34803 / 146 | smiles | Conductivity [S/cm] | [transpolymer_pe_i_finetune.yaml](transpolymer_pe_i_finetune.yaml) |
 | PE-II | 271 | SMILES descriptor 1 | logCond60 | [transpolymer_pe_ii_finetune.yaml](transpolymer_pe_ii_finetune.yaml) |
 
-The pretrained checkpoint and datasets are provided in one artifact:
+The downstream datasets are provided in one artifact:
 
 | Artifact | Link | Extraction code |
 | :---: | :---: | :---: |
-| Pretrained checkpoint and datasets | [download](https://pan.baidu.com/s/12Y6iJXOXzff5AQzJhVlzOg) | 1227 |
+| Datasets | [download](https://pan.baidu.com/s/12Y6iJXOXzff5AQzJhVlzOg) | 1227 |
 
-Download `transpolymer_pretrain_and_data.zip` and extract it to the
-PaddleMaterials root directory. After extraction, the directory structure should
-be:
+Download `transpolymer_pretrain_and_data.zip` and extract the `data/` directory
+to the PaddleMaterials root directory. After extraction, the dataset directory
+structure should be:
 
 ```text
 PaddleMaterials/
@@ -62,6 +62,33 @@ PaddleMaterials/
 |       |-- vocab_sup_OPV.csv
 |       |-- vocab_sup_PE_I.csv
 |       `-- vocab_sup_PE_II.csv
+```
+
+The converted Paddle pretrained checkpoint is hosted in the model repository:
+
+```text
+https://git.aistudio.baidu.com/TransPolymer/TransPolymer123
+```
+
+The training configs set `pretrained_model_path=./ckpt/pretrain.pt` and
+`pretrained_model_url` to the Git LFS clone URL. If
+`./ckpt/pretrain.pt/config.json` and
+`./ckpt/pretrain.pt/model_state.pdparams` are missing, the model will clone the
+repository and prepare the checkpoint automatically before training. To download
+it manually:
+
+```bash
+git lfs install
+git clone https://28bf65435bc4c13f5b89a153488f09972c18f7f4@git.aistudio.baidu.com/TransPolymer/TransPolymer123.git /tmp/TransPolymer123
+mkdir -p ./ckpt/pretrain.pt
+cp /tmp/TransPolymer123/config.json ./ckpt/pretrain.pt/
+cp /tmp/TransPolymer123/model_state.pdparams ./ckpt/pretrain.pt/
+```
+
+The expected local checkpoint layout is:
+
+```text
+PaddleMaterials/
 `-- ckpt/
     `-- pretrain.pt/
         |-- config.json
@@ -123,6 +150,7 @@ Key options are defined in the `transpolymer_*_finetune.yaml` files:
 - `Model.__init_params__.blocksize`: maximum sequence length after tokenization.
 - `Model.__init_params__.vocab_sup_file`: supplementary vocabulary file, used by OPV, PE-I, and PE-II.
 - `Model.__init_params__.pretrained_model_path`: converted Paddle checkpoint directory.
+- `Model.__init_params__.pretrained_model_url`: Git LFS model repository used to automatically prepare the pretrained checkpoint when missing.
 - `Optimizer.lr.__init_params__.learning_rate`: finetuning learning rate.
 - `Trainer.max_epochs`: maximum finetuning epochs.
 
