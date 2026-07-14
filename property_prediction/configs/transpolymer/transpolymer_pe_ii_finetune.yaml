@@ -31,6 +31,7 @@ Model:
   __class_name__: TransPolymerRegressor
   __init_params__:
     pretrained_model_path: ./ckpt/pretrain.pt
+    pretrained_model_url: https://28bf65435bc4c13f5b89a153488f09972c18f7f4@git.aistudio.baidu.com/TransPolymer/TransPolymer123.git
     property_name: ${Global.label_names}
     tokenizer_name_or_path: roberta-base
     vocab_sup_file: ./data/vocab/vocab_sup_PE_II.csv
