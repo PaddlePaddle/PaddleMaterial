@@ -29,17 +29,26 @@ atomic forces (kcal/mol/Å).
 
 | Molecule      | Train | Val  | Test | Atoms |
 |---------------|------:|-----:|-----:|------:|
-| Aspirin       | 1000  | 500  | 1000 | 21    |
-| Benzene       | 1000  | 500  | 1000 | 12    |
-| Ethanol       | 1000  | 500  | 1000 | 9     |
-| Malonaldehyde | 1000  | 500  | 1000 | 9     |
-| Naphthalene   | 1000  | 500  | 1000 | 18    |
-| Salicylic     | 1000  | 500  | 1000 | 16    |
-| Toluene       | 1000  | 500  | 1000 | 15    |
-| Uracil        | 1000  | 500  | 1000 | 12    |
+| Aspirin       | 1000  | 1000 | 209762 | 21    |
+| Benzene       | 1000  | 1000 | 625983 | 12    |
+| Ethanol       | 1000  | 1000 | 553092 | 9     |
+| Malonaldehyde | 1000  | 1000 | 991237 | 9     |
+| Naphthalene   | 1000  | 1000 | 324250 | 18    |
+| Salicylic     | 1000  | 1000 | 318231 | 16    |
+| Toluene       | 1000  | 1000 | 440790 | 15    |
+| Uracil        | 1000  | 1000 | 131770 | 12    |
 
 **Data format**: Each molecule is stored as a single `.npz` file with keys
 `E` (energies), `F` (forces), `R` (positions), and `z` (atomic numbers).
+
+The configs expect each molecule file under `./data/md17/` and split indices
+under `./data/md17/splits/<molecule>_<split>_idx.npy`. For example, the
+aspirin config reads `./data/md17/md17_aspirin.npz`.
+
+Each MD17 config stores the training-split total-energy mean in the SphereNet
+model with `data_std: 1.0`. The model learns centered energy, restores physical
+energy internally, and differentiates the restored energy to obtain forces.
+Dataset labels therefore remain in their original physical units.
 
 ## Model
 
@@ -68,6 +77,11 @@ the torsion (dihedral) angle $\tau_{lkji}$ together with distances $d_{lk}$
 and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
 
 ## Results
+
+> **Checkpoint notice:** The linked MD17 checkpoints were trained before
+> SphereNet force gradients were enabled. They remain available for artifact
+> compatibility, but must not be used for force prediction. Retrain with the
+> current configs and replace the packages before reporting MLIP results.
 
 <table>
     <head>
@@ -166,18 +180,22 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
     </body>
 </table>
 
+On NVIDIA Ampere and newer GPUs, run SphereNet with `NVIDIA_TF32_OVERRIDE=0`
+to keep matrix multiplication in full FP32 precision. This is required to match
+the reference implementation when predicting large absolute MD17 energies.
+
 ### Training
 
 ```bash
 # Single-GPU training — MD17 aspirin (energy + force)
-python interatomic_potentials/train.py \
+NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml
 ```
 
 ### Validation
 
 ```bash
-python interatomic_potentials/train.py \
+NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_eval=True Global.do_train=False Global.do_test=False \
   Trainer.pretrained_model_path='your_model.pdparams'
@@ -186,7 +204,7 @@ python interatomic_potentials/train.py \
 ### Testing
 
 ```bash
-python interatomic_potentials/train.py \
+NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_test=True Global.do_train=False Global.do_eval=False \
   Trainer.pretrained_model_path='your_model.pdparams'
@@ -196,12 +214,12 @@ python interatomic_potentials/train.py \
 
 ```bash
 # Molecular prediction
-python interatomic_potentials/predict.py \
+NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/predict.py \
   --model_name spherenet_md17_aspirin \
   --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 
 # Using a local checkpoint
-python interatomic_potentials/predict.py \
+NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/predict.py \
   --config_path ./interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   --checkpoint_path ./output/spherenet_aspirin/checkpoints/best.pdparams \
   --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz

@@ -29,14 +29,15 @@ B3LYP/6-31G(2df,p) level of theory.
 
 | Split   | Size   |
 |---------|--------|
-| Train   | 110,831 |
+| Train   | 110,000 |
 | Val     | 10,000  |
-| Test    | 10,000  |
+| Test    | 10,831  |
 | **Total** | **130,831** |
 
-**Data format**: Each molecule contains atomic numbers (`z`), 3D positions
-(`pos`), and 12 property labels. The raw dataset is available at
-[figshare](https://figshare.com/ndownloader/files/3195389).
+**Data format**: The pre-split `train.csv`, `val.csv`, and `test.csv`
+files contain `standard_xyz`, `molecule_id`, and the 12 target columns.
+Missing files are downloaded from the
+[PaddleMaterials QM9 archive](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.zip).
 
 **Reference**: [Quantum-chemical insights from deep learning](https://arxiv.org/abs/1708.04444) (Gaussian, 2017)
 

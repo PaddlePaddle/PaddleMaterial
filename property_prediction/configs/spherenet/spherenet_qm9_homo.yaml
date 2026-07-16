@@ -22,15 +22,15 @@ Global:
 
 Trainer:
   # Max epochs to train
-  max_epochs: 100
+  max_epochs: 1000
   # Random seed
   seed: 42
   # Save path for checkpoints and logs
   output_dir: ./output/spherenet_qm9_homo
-  # Save frequency [epoch]; set 0 to disable saving during training
-  save_freq: 50
+  # Save frequency above max_epochs avoids periodic snapshots
+  save_freq: 1001
   # Logging frequency [step]
-  log_freq: 10
+  log_freq: 100
   # Start evaluation epoch
   start_eval_epoch: 1
   # Evaluation frequency [epoch]; set 0 to disable evaluation
@@ -66,13 +66,13 @@ Model:
     basis_emb_size_angle: 8
     basis_emb_size_torsion: 8
     out_emb_channels: 256
-    num_spherical: 7
+    num_spherical: 3
     num_radial: 6
     envelope_exponent: 5
     num_before_skip: 1
     num_after_skip: 2
     num_output_layers: 3
-    output_init: zeros
+    output_init: GlorotOrthogonal
     property_name: homo
 
 Metric:
@@ -85,10 +85,11 @@ Optimizer:
     beta1: 0.9
     beta2: 0.999
     lr:
-      __class_name__: Cosine
+      __class_name__: Step
       __init_params__:
         learning_rate: 0.0005
-        eta_min: 0.00001
+        step_size: 100
+        gamma: 0.5
         by_epoch: true
 
 Dataset:
@@ -107,7 +108,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 8
+        batch_size: 32
         shuffle: true
         drop_last: true
   val:
@@ -125,7 +126,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 8
+        batch_size: 32
         shuffle: false
         drop_last: false
   test:
@@ -143,7 +144,7 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 8
+        batch_size: 32
         shuffle: false
         drop_last: false
 

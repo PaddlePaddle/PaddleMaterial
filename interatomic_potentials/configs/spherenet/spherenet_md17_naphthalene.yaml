@@ -3,7 +3,8 @@ Global:
     - energy
   do_train: true
   do_eval: true
-  do_test: true
+  do_test: false
+  energy_mean: -241898.90456179375
 
   build_molecule_cfg:
     format: dict
@@ -24,15 +25,15 @@ Trainer:
   max_epochs: 500
   seed: 42
   output_dir: ./output/spherenet_naphthalene
-  save_freq: 50
+  save_freq: 501
   log_freq: 10
-  start_eval_epoch: 1
-  eval_freq: 1
+  start_eval_epoch: 200
+  eval_freq: 50
   use_amp: false
-  eval_with_no_grad: true
+  eval_with_no_grad: false
   gradient_accumulation_steps: 1
-  best_metric_indicator: eval_metric
-  name_for_best_metric: energy
+  best_metric_indicator: eval_loss
+  name_for_best_metric: loss
   greater_is_better: false
   compute_metric_during_train: false
   metric_strategy_during_eval: step
@@ -50,14 +51,17 @@ Model:
     basis_emb_size_angle: 8
     basis_emb_size_torsion: 8
     out_emb_channels: 256
-    num_spherical: 7
+    num_spherical: 3
     num_radial: 6
     envelope_exponent: 5
     num_before_skip: 1
     num_after_skip: 2
     num_output_layers: 3
-    output_init: zeros
+    output_init: GlorotOrthogonal
     property_name: energy
+    data_mean: ${Global.energy_mean}
+    data_std: 1.0
+    force_loss_weight: 100.0
 
 Metric:
   energy:
@@ -72,10 +76,11 @@ Optimizer:
     beta1: 0.9
     beta2: 0.999
     lr:
-      __class_name__: Cosine
+      __class_name__: Step
       __init_params__:
         learning_rate: 0.0005
-        eta_min: 0.00001
+        step_size: 200
+        gamma: 0.5
         by_epoch: true
 
 Dataset:
@@ -83,13 +88,11 @@ Dataset:
     dataset:
       __class_name__: MD17Dataset
       __init_params__:
-        path: ./data/md17
+        path: ./data/md17/md17_naphthalene.npz
         name: naphthalene
         split: train
-        split_file: ./data/md17/splits/naphthalene_train_idx.npy
         build_molecule_cfg: ${Global.build_molecule_cfg}
         build_graph_cfg: ${Global.graph_converter}
-        force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false
@@ -97,20 +100,18 @@ Dataset:
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        batch_size: 8
+        batch_size: 1
         shuffle: true
         drop_last: true
   val:
     dataset:
       __class_name__: MD17Dataset
       __init_params__:
-        path: ./data/md17
+        path: ./data/md17/md17_naphthalene.npz
         name: naphthalene
         split: val
-        split_file: ./data/md17/splits/naphthalene_val_idx.npy
         build_molecule_cfg: ${Global.build_molecule_cfg}
         build_graph_cfg: ${Global.graph_converter}
-        force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false
@@ -125,13 +126,11 @@ Dataset:
     dataset:
       __class_name__: MD17Dataset
       __init_params__:
-        path: ./data/md17
+        path: ./data/md17/md17_naphthalene.npz
         name: naphthalene
         split: test
-        split_file: ./data/md17/splits/naphthalene_test_idx.npy
         build_molecule_cfg: ${Global.build_molecule_cfg}
         build_graph_cfg: ${Global.graph_converter}
-        force_key: force
     loader:
       num_workers: 4
       use_shared_memory: false

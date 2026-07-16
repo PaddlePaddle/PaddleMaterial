@@ -18,63 +18,141 @@ SphereNet-specific — computes distance, angle, and torsion from 3D
 atomic coordinates for spherical message passing.
 """
 
+import math
+
 import paddle
 
 from ppmat.utils.scatter import scatter_argmin
 
 
+def _cross_product(left, right):
+    # paddle.linalg.cross lacks the second-order gradient required by force loss.
+    return paddle.stack(
+        (
+            left[:, 1] * right[:, 2] - left[:, 2] * right[:, 1],
+            left[:, 2] * right[:, 0] - left[:, 0] * right[:, 2],
+            left[:, 0] * right[:, 1] - left[:, 1] * right[:, 0],
+        ),
+        axis=-1,
+    )
+
+
 def compute_geometry(pos, edge_index, triplet_indices):
-    """Compute SphereNet distance, angle, and torsion tensors.
-
-    Args:
-        pos: Atom positions with shape [num_nodes, 3].
-        edge_index: Directed edge indices with shape [2, num_edges].
-        triplet_indices: Precomputed edge and triplet index tensors.
-
-    Returns:
-        Distance, angle, torsion, edge source/target indices, and triplet maps.
-    """
-    i, j = edge_index
+    """Compute differentiable SphereNet distance, angle, and torsion data."""
+    src, dst = edge_index
     idx_kj = triplet_indices["idx_kj"]
     idx_ji = triplet_indices["idx_ji"]
-    idx_lk = triplet_indices["idx_lk"]
-    idx_triplet = triplet_indices["idx_triplet"]
 
-    vec = pos[j] - pos[i]
-    dist = paddle.sqrt(paddle.sum(vec * vec, axis=-1) + 1e-8)
+    edge_vector = pos[dst] - pos[src]
+    dist = paddle.sqrt(paddle.sum(edge_vector * edge_vector, axis=-1))
 
-    vec_kj = vec[idx_kj]
-    vec_ji = vec[idx_ji]
+    axis = edge_vector[idx_ji]
+    reference = -edge_vector[idx_kj]
+    angle_cross = _cross_product(axis, reference)
+    angle_sin = paddle.sqrt(
+        paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8
+    )
+    angle_cos = paddle.sum(axis * reference, axis=-1)
+    angle_norm = paddle.sqrt(angle_cos * angle_cos + angle_sin * angle_sin)
+    angle_cos = angle_cos / angle_norm
+    angle_sin = angle_sin / angle_norm
 
-    angle_cross = paddle.linalg.cross(vec_kj, vec_ji)
-    angle_sin = paddle.sqrt(paddle.sum(angle_cross * angle_cross, axis=-1) + 1e-8)
-    angle_cos = -paddle.sum(vec_kj * vec_ji, axis=-1)
-    angle = paddle.atan2(angle_sin, angle_cos).detach()
+    # Match the original forward values while keeping force-loss gradients on
+    # operations that support Paddle's second-order automatic differentiation.
+    legacy_axis = axis.detach()
+    legacy_reference = reference.detach()
+    legacy_angle_cross = paddle.linalg.cross(legacy_axis, legacy_reference)
+    legacy_angle = paddle.atan2(
+        paddle.sqrt(
+            paddle.sum(legacy_angle_cross * legacy_angle_cross, axis=-1)
+        ),
+        paddle.sum(legacy_axis * legacy_reference, axis=-1),
+    )
+    angle_cos = angle_cos + (paddle.cos(legacy_angle) - angle_cos).detach()
+    angle_sin = angle_sin + (paddle.sin(legacy_angle) - angle_sin).detach()
 
-    torsion = paddle.zeros_like(angle)
-    if idx_lk.shape[0] > 0:
-        k_idx_from_edge_lk = j[idx_lk]
-        v1 = pos[k_idx_from_edge_lk] - pos[i[idx_lk]]
-        v2 = vec_kj[idx_triplet]
-        v3 = vec_ji[idx_triplet]
+    # Build all q->j candidates from the batched edge topology. Selection is
+    # discrete and detached because cross/atan2 do not support second gradients.
+    incoming_order = paddle.argsort(dst, stable=True)
+    incoming_counts = paddle.bincount(dst, minlength=pos.shape[0])
+    centers = src[idx_ji]
+    i_atoms = dst[idx_ji]
+    candidate_counts = incoming_counts[centers]
+    candidate_triplet = paddle.repeat_interleave(
+        paddle.arange(idx_kj.shape[0], dtype="int64"), candidate_counts
+    )
+    candidate_starts = paddle.cumsum(candidate_counts) - candidate_counts
+    candidate_offsets = paddle.arange(
+        candidate_triplet.shape[0], dtype="int64"
+    ) - paddle.repeat_interleave(candidate_starts, candidate_counts)
+    incoming_starts = paddle.cumsum(incoming_counts) - incoming_counts
+    candidate_positions = (
+        paddle.repeat_interleave(incoming_starts[centers], candidate_counts)
+        + candidate_offsets
+    )
+    idx_qj = incoming_order[candidate_positions]
+    valid_candidates = src[idx_qj] != i_atoms[candidate_triplet]
+    idx_qj = idx_qj[valid_candidates]
+    candidate_triplet = candidate_triplet[valid_candidates]
 
-        v2_norm = paddle.sqrt(paddle.sum(v2 * v2, axis=-1) + 1e-8)
-        v2_cross_v3 = paddle.linalg.cross(v2, v3)
-        v1_dot_v2crossv3 = paddle.sum(v1 * v2_cross_v3, axis=-1)
-        v1_cross_v2 = paddle.linalg.cross(v1, v2)
-        v1crossv2_dot_v2crossv3 = paddle.sum(v1_cross_v2 * v2_cross_v3, axis=-1)
+    candidate_axis = legacy_axis[candidate_triplet]
+    candidate_reference = legacy_reference[candidate_triplet]
+    candidate = -edge_vector.detach()[idx_qj]
+    reference_plane = paddle.linalg.cross(candidate_axis, candidate_reference)
+    candidate_plane = paddle.linalg.cross(candidate_axis, candidate)
+    torsion_x = paddle.sum(reference_plane * candidate_plane, axis=-1)
+    torsion_y = paddle.sum(
+        paddle.linalg.cross(reference_plane, candidate_plane) * candidate_axis,
+        axis=-1,
+    ) / paddle.sqrt(paddle.sum(candidate_axis * candidate_axis, axis=-1))
+    candidate_torsion = paddle.atan2(torsion_y, torsion_x)
+    candidate_torsion = paddle.where(
+        candidate_torsion <= 0,
+        candidate_torsion + 2 * math.pi,
+        candidate_torsion,
+    )
+    selected_candidates = scatter_argmin(
+        candidate_torsion, candidate_triplet, idx_kj.shape[0]
+    )
+    idx_qj = idx_qj[selected_candidates]
+    legacy_torsion = candidate_torsion[selected_candidates]
 
-        torsion_angle = paddle.atan2(
-            v2_norm * v1_dot_v2crossv3, v1crossv2_dot_v2crossv3
-        ).detach()
-
-        torsion_indices = scatter_argmin(
-            paddle.abs(torsion_angle), idx_triplet, idx_kj.shape[0]
+    candidate = -edge_vector[idx_qj]
+    reference_plane = _cross_product(axis, reference)
+    candidate_plane = _cross_product(axis, candidate)
+    torsion_x = paddle.sum(reference_plane * candidate_plane, axis=-1)
+    torsion_y = paddle.sum(
+        _cross_product(reference_plane, candidate_plane) * axis,
+        axis=-1,
+    ) / paddle.sqrt(paddle.sum(axis * axis, axis=-1))
+    torsion_squared_norm = torsion_x * torsion_x + torsion_y * torsion_y
+    valid_torsion = torsion_squared_norm > 1e-12
+    torsion_norm = paddle.sqrt(
+        paddle.where(
+            valid_torsion,
+            torsion_squared_norm,
+            paddle.ones_like(torsion_squared_norm),
         )
-        torsion = paddle.where(
-            torsion_indices >= 0,
-            torsion_angle[paddle.clip(torsion_indices, min=0)],
-            torsion,
-        )
+    )
+    torsion_cos = paddle.where(
+        valid_torsion, torsion_x / torsion_norm, paddle.ones_like(torsion_x)
+    )
+    torsion_sin = paddle.where(
+        valid_torsion, torsion_y / torsion_norm, paddle.zeros_like(torsion_y)
+    )
+    torsion_cos = torsion_cos + (
+        paddle.cos(legacy_torsion) - torsion_cos
+    ).detach()
+    torsion_sin = torsion_sin + (
+        paddle.sin(legacy_torsion) - torsion_sin
+    ).detach()
 
-    return dist, angle, torsion, i, j, idx_kj, idx_ji
+    return (
+        dist,
+        (angle_cos, angle_sin),
+        (torsion_cos, torsion_sin),
+        dst,
+        src,
+        idx_kj,
+        idx_ji,
+    )

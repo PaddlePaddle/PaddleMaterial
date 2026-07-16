@@ -16,7 +16,6 @@ import paddle
 from paddle import nn
 from paddle.nn import Embedding
 from paddle.nn import Linear
-from paddle.nn.functional import silu
 
 from ppmat.models.common import initializer
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
@@ -25,6 +24,22 @@ from ppmat.models.common.spherical_fourier_bessel import (
 )
 from ppmat.models.spherenet.geometry import compute_geometry
 from ppmat.utils.scatter import scatter_sum
+
+
+def _swish(x):
+    # Match DIG's expression and avoid fused silu's NaN first derivative for
+    # large negative float32 inputs.
+    return x * paddle.nn.functional.sigmoid(x)
+
+
+def _aggregate(src, index, dim_size, require_second_order):
+    if require_second_order:
+        return scatter_sum(src, index, dim=0, dim_size=dim_size)
+
+    if dim_size is None:
+        dim_size = int(index.max()) + 1
+    out = paddle.zeros([dim_size, *src.shape[1:]], dtype=src.dtype)
+    return paddle.scatter_nd_add(out, index.reshape([-1, 1]), src)
 
 
 class SphereNetEmbedding(paddle.nn.Layer):
@@ -41,22 +56,22 @@ class SphereNetEmbedding(paddle.nn.Layer):
     def forward(self, dist, angle, torsion, idx_kj):
         dist_emb = self.dist_emb(dist)
         angle_emb, torsion_emb = self.geometry_emb(
-            dist, angle, torsion, idx_kj
+            dist, *angle, *torsion, idx_kj
         )
         return dist_emb, angle_emb, torsion_emb
 
 
 class ResidualLayer(paddle.nn.Layer):
-    def __init__(self, hidden_channels, act=silu):
+    def __init__(self, hidden_channels, act=_swish):
         super().__init__()
         self.act = act
         self.lin1 = Linear(hidden_channels, hidden_channels)
         self.lin2 = Linear(hidden_channels, hidden_channels)
 
     def reset_parameters(self):
-        initializer.glorot_orthogonal_(self.lin1.weight, scale=1.0)
+        initializer.glorot_orthogonal_(self.lin1.weight, scale=2.0)
         initializer.zeros_(self.lin1.bias)
-        initializer.glorot_orthogonal_(self.lin2.weight, scale=1.0)
+        initializer.glorot_orthogonal_(self.lin2.weight, scale=2.0)
         initializer.zeros_(self.lin2.bias)
 
     def forward(self, x):
@@ -68,14 +83,16 @@ class InitialEdgeEmbedding(paddle.nn.Layer):
         self,
         num_radial,
         hidden_channels,
-        act=silu,
+        act=_swish,
         use_node_features=True,
         use_extra_node_feature=False,
+        require_second_order=False,
     ):
         super().__init__()
         self.act = act
         self.use_node_features = use_node_features
         self.use_extra_node_feature = use_extra_node_feature
+        self.require_second_order = require_second_order
         if self.use_node_features:
             self.emb = Embedding(95, hidden_channels)
         else:
@@ -101,16 +118,22 @@ class InitialEdgeEmbedding(paddle.nn.Layer):
         else:
             initializer.normal_(self.node_embedding)
 
-        for layer in self.sublayers():
-            if isinstance(layer, Linear):
-                initializer.glorot_orthogonal_(layer.weight, scale=1.0)
-                if layer.bias is not None:
-                    initializer.zeros_(layer.bias)
+        initializer.linear_init_(self.lin_rbf_0)
+        initializer.linear_init_(self.lin)
+        initializer.glorot_orthogonal_(self.lin_rbf_1.weight, scale=2.0)
 
     def forward(self, x, node_feature, emb_in, i, j):
         rbf, _, _ = emb_in
         if self.use_node_features:
-            x = self.emb(x)
+            if self.require_second_order:
+                # EmbeddingGradNode has no higher-order backward in Paddle 3.1.
+                # This equivalent lookup keeps force-loss gradients trainable.
+                x = paddle.nn.functional.one_hot(
+                    x, self.emb.weight.shape[0]
+                ).astype(self.emb.weight.dtype)
+                x = paddle.matmul(x, self.emb.weight)
+            else:
+                x = self.emb(x)
         else:
             x = self.node_embedding.unsqueeze(0).expand([x.shape[0], -1])
         if node_feature is not None and self.use_extra_node_feature:
@@ -133,10 +156,12 @@ class EdgeUpdate(paddle.nn.Layer):
         num_radial,
         num_before_skip,
         num_after_skip,
-        act=silu,
+        act=_swish,
+        require_second_order=False,
     ):
         super().__init__()
         self.act = act
+        self.require_second_order = require_second_order
         self.lin_rbf1 = Linear(num_radial, basis_emb_size_dist, bias_attr=False)
         self.lin_rbf2 = Linear(basis_emb_size_dist, hidden_channels, bias_attr=False)
         self.lin_sbf1 = Linear(
@@ -168,7 +193,7 @@ class EdgeUpdate(paddle.nn.Layer):
     def reset_parameters(self):
         for layer in self.sublayers():
             if isinstance(layer, Linear):
-                initializer.glorot_orthogonal_(layer.weight, scale=1.0)
+                initializer.glorot_orthogonal_(layer.weight, scale=2.0)
                 if layer.bias is not None:
                     initializer.zeros_(layer.bias)
 
@@ -184,16 +209,22 @@ class EdgeUpdate(paddle.nn.Layer):
         x_kj = x_kj * rbf
 
         x_kj = self.act(self.lin_down(x_kj))
+        if idx_kj.shape[0] == 0:
+            # Empty Linear/Matmul inputs have no second-order gradient in
+            # Paddle. With no triplets, the aggregated geometric message is 0.
+            x_kj = x_kj * 0.0
+        else:
+            sbf = self.lin_sbf1(sbf)
+            sbf = self.lin_sbf2(sbf)
+            x_kj = x_kj[idx_kj] * sbf
 
-        sbf = self.lin_sbf1(sbf)
-        sbf = self.lin_sbf2(sbf)
-        x_kj = x_kj[idx_kj] * sbf
+            t = self.lin_t1(t)
+            t = self.lin_t2(t)
+            x_kj = x_kj * t
 
-        t = self.lin_t1(t)
-        t = self.lin_t2(t)
-        x_kj = x_kj * t
-
-        x_kj = scatter_sum(x_kj, idx_ji, dim=0, dim_size=x1.shape[0])
+            x_kj = _aggregate(
+                x_kj, idx_ji, x1.shape[0], self.require_second_order
+            )
         x_kj = self.act(self.lin_up(x_kj))
 
         e1 = x_ji + x_kj
@@ -215,10 +246,12 @@ class NodeUpdate(paddle.nn.Layer):
         num_output_layers,
         act,
         output_init,
+        require_second_order=False,
     ):
         super().__init__()
         self.act = act
         self.output_init = output_init
+        self.require_second_order = require_second_order
 
         self.lin_up = Linear(hidden_channels, out_emb_channels, bias_attr=True)
         self.lins = nn.LayerList()
@@ -227,18 +260,18 @@ class NodeUpdate(paddle.nn.Layer):
         self.lin = Linear(out_emb_channels, out_channels, bias_attr=False)
 
     def reset_parameters(self):
-        initializer.glorot_orthogonal_(self.lin_up.weight, scale=1.0)
+        initializer.glorot_orthogonal_(self.lin_up.weight, scale=2.0)
         for lin in self.lins:
-            initializer.glorot_orthogonal_(lin.weight, scale=1.0)
+            initializer.glorot_orthogonal_(lin.weight, scale=2.0)
             initializer.zeros_(lin.bias)
         if self.output_init == "zeros":
             initializer.zeros_(self.lin.weight)
         if self.output_init == "GlorotOrthogonal":
-            initializer.glorot_orthogonal_(self.lin.weight, scale=1.0)
+            initializer.glorot_orthogonal_(self.lin.weight, scale=2.0)
 
     def forward(self, e, i, dim_size=None):
         _, e2 = e
-        v = scatter_sum(e2, i, dim=0, dim_size=dim_size)
+        v = _aggregate(e2, i, dim_size, self.require_second_order)
         v = self.lin_up(v)
         for lin in self.lins:
             v = self.act(lin(v))
@@ -279,10 +312,13 @@ class SphereNet(paddle.nn.Layer):
         extra_node_feature_dim=1,
         property_name="mu",
         force_key="force",
+        data_mean=0.0,
+        data_std=1.0,
+        force_loss_weight=1.0,
     ):
         super().__init__()
 
-        act_fn = silu if act in ("swish", "silu") else act
+        act_fn = _swish if act in ("swish", "silu") else act
         if not callable(act_fn):
             raise ValueError(f"Unsupported activation: {act}")
 
@@ -290,6 +326,15 @@ class SphereNet(paddle.nn.Layer):
         self.use_extra_node_feature = use_extra_node_feature
         self.property_name = property_name
         self.force_key = force_key
+        self.force_loss_weight = float(force_loss_weight)
+        self.register_buffer(
+            name="data_mean",
+            tensor=paddle.to_tensor(data_mean, dtype=paddle.get_default_dtype()),
+        )
+        self.register_buffer(
+            name="data_std",
+            tensor=paddle.to_tensor(data_std, dtype=paddle.get_default_dtype()),
+        )
 
         if use_extra_node_feature:
             self.extra_emb = Linear(extra_node_feature_dim, hidden_channels)
@@ -300,6 +345,7 @@ class SphereNet(paddle.nn.Layer):
             act_fn,
             use_node_features=use_node_features,
             use_extra_node_feature=use_extra_node_feature,
+            require_second_order=energy_and_force,
         )
         node_update_cfg = {
             "hidden_channels": hidden_channels,
@@ -308,6 +354,7 @@ class SphereNet(paddle.nn.Layer):
             "num_output_layers": num_output_layers,
             "act": act_fn,
             "output_init": output_init,
+            "require_second_order": energy_and_force,
         }
         self.init_v = NodeUpdate(**node_update_cfg)
         self.emb_layer = SphereNetEmbedding(
@@ -331,6 +378,7 @@ class SphereNet(paddle.nn.Layer):
                     num_before_skip,
                     num_after_skip,
                     act_fn,
+                    energy_and_force,
                 )
                 for _ in range(num_layers)
             ]
@@ -340,8 +388,7 @@ class SphereNet(paddle.nn.Layer):
 
     def reset_parameters(self):
         if self.use_extra_node_feature:
-            initializer.glorot_orthogonal_(self.extra_emb.weight, scale=1.0)
-            initializer.zeros_(self.extra_emb.bias)
+            initializer.linear_init_(self.extra_emb)
         layers = [
             self.init_e,
             self.init_v,
@@ -366,8 +413,6 @@ class SphereNet(paddle.nn.Layer):
         triplet_indices = {
             "idx_kj": graph.edge_feat["ti_idx_kj"].astype("int64"),
             "idx_ji": graph.edge_feat["ti_idx_ji"].astype("int64"),
-            "idx_lk": graph.edge_feat["ti_idx_lk"].astype("int64"),
-            "idx_triplet": graph.edge_feat["ti_idx_triplet"].astype("int64"),
         }
 
         if self.use_extra_node_feature and node_feature is not None:
@@ -384,14 +429,20 @@ class SphereNet(paddle.nn.Layer):
 
         e = self.init_e(z, extra_node_feature, emb_out, i, j)
         v = self.init_v(e, i, dim_size=num_nodes)
-        u = scatter_sum(v, node_batch, dim=0)
+        u = _aggregate(v, node_batch, None, self.energy_and_force)
 
         for update_e, update_v in zip(self.update_es, self.update_vs):
             e = update_e(e, emb_out, idx_kj, idx_ji)
             v = update_v(e, i, dim_size=num_nodes)
-            u = u + scatter_sum(v, node_batch, dim=0)
+            u = u + _aggregate(v, node_batch, None, self.energy_and_force)
 
         return u, pos
+
+    def normalize(self, tensor):
+        return (tensor - self.data_mean) / self.data_std
+
+    def unnormalize(self, tensor):
+        return tensor * self.data_std + self.data_mean
 
     def forward(self, data, return_loss=True, return_prediction=True):
         """Forward with the PaddleMaterials dict interface."""
@@ -399,11 +450,18 @@ class SphereNet(paddle.nn.Layer):
             return_loss or return_prediction
         ), "At least one of return_loss or return_prediction must be True."
 
-        pred, pos = self._forward(data)
+        normalized_pred, pos = self._forward(data)
+        pred = self.unnormalize(normalized_pred)
 
         forces_pred = None
         if self.energy_and_force:
-            grad = paddle.grad(pred.sum(), pos, create_graph=False, allow_unused=True)
+            # Force loss differentiates predicted forces again during backward.
+            grad = paddle.grad(
+                pred.sum(),
+                pos,
+                create_graph=self.training and return_loss,
+                allow_unused=True,
+            )
             if grad is not None and grad[0] is not None:
                 forces_pred = -grad[0]
 
@@ -415,7 +473,10 @@ class SphereNet(paddle.nn.Layer):
                 if isinstance(label, paddle.Tensor)
                 else paddle.to_tensor(label, dtype=paddle.get_default_dtype())
             )
-            loss = paddle.nn.functional.l1_loss(pred, label_tensor)
+            normalized_label = self.normalize(label_tensor)
+            loss = paddle.nn.functional.l1_loss(
+                normalized_pred, normalized_label
+            )
             loss_dict["loss"] = loss
 
             if self.energy_and_force and forces_pred is not None:
@@ -426,7 +487,7 @@ class SphereNet(paddle.nn.Layer):
                     else paddle.to_tensor(force, dtype=paddle.get_default_dtype())
                 )
                 force_loss = paddle.nn.functional.l1_loss(forces_pred, force_tensor)
-                loss_dict["loss"] = loss + force_loss
+                loss_dict["loss"] = loss + self.force_loss_weight * force_loss
 
         prediction = {}
         if return_prediction:
