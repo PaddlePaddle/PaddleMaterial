@@ -1,7 +1,10 @@
+import os
+
 import numpy as np
 import setuptools
 from Cython.Build import cythonize
 from setuptools import Extension
+from setuptools.command.build_py import build_py
 
 """
 Setup configuration
@@ -15,6 +18,21 @@ extensions = [
         include_dirs=[np.get_include()],
     )
 ]
+
+
+class BuildPyWithGMTNetConfig(build_py):
+    """Include the formal GMTNet config as an installed package resource."""
+
+    def run(self):
+        super().run()
+        destination = os.path.join(
+            self.build_lib, "ppmat", "models", "gmtnet", "config.yaml"
+        )
+        self.mkpath(os.path.dirname(destination))
+        self.copy_file(
+            "property_prediction/configs/gmtnet/config.yaml",
+            destination,
+        )
 
 
 def get_readme() -> str:
@@ -42,7 +60,8 @@ if __name__ == "__main__":
         ),
         long_description=get_readme(),
         long_description_content_type="text/markdown",
-        packages=setuptools.find_packages(
+        packages=setuptools.find_namespace_packages(
+            include=("ppmat", "ppmat.*"),
             exclude=(
                 "docs",
                 "examples",
@@ -51,8 +70,17 @@ if __name__ == "__main__":
                 "interatomic_potentials",
                 "property_prediction",
                 "structure_generation",
-            )
-        ),
+            ),
+        )
+        + ["property_prediction"],
+        package_data={
+            "ppmat.datasets": [
+                "gmtnet_dielectric_split_seed32.json",
+            ],
+        },
+        exclude_package_data={
+            "": ["*.pdparams", "*.pkl"],
+        },
         classifiers=[
             "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Science/Research",
@@ -65,5 +93,6 @@ if __name__ == "__main__":
         install_requires=get_requirements(),
         use_scm_version=True,
         setup_requires=["setuptools_scm"],
+        cmdclass={"build_py": BuildPyWithGMTNetConfig},
         ext_modules=cythonize(extensions),
     )

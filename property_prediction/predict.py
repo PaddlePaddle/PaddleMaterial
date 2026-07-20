@@ -28,8 +28,8 @@ from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
+from ppmat.models import build_predictor_input_adapter
 from ppmat.utils import logger
-from ppmat.utils import save_load
 
 
 class PropertyPredictor:
@@ -90,7 +90,18 @@ class PropertyPredictor:
             model_config = config.get("Model", None)
             assert model_config is not None, "Model config must be provided."
             model = build_model(model_config)
-            save_load.load_pretrain(model, checkpoint_path)
+            checkpoint_path = osp.abspath(checkpoint_path)
+            if not osp.isfile(checkpoint_path):
+                raise FileNotFoundError(
+                    f"Checkpoint file does not exist: {checkpoint_path}"
+                )
+            state_dict = paddle.load(checkpoint_path)
+            missing_keys, unexpected_keys = model.set_state_dict(state_dict)
+            if missing_keys or unexpected_keys:
+                raise ValueError(
+                    "Checkpoint is incompatible with the configured model: "
+                    f"missing={list(missing_keys)}, unexpected={list(unexpected_keys)}"
+                )
 
         else:
             logger.info("Since model_name is given, downloading it...")
@@ -101,7 +112,7 @@ class PropertyPredictor:
 
         self.model.eval()
 
-        predict_config = config.get("Predict", None)
+        predict_config = config.get("Predict", {})
         self.predict_config = predict_config
         self.eval_with_no_grad = predict_config.get("eval_with_no_grad", True)
 
@@ -111,6 +122,17 @@ class PropertyPredictor:
             if graph_converter_config is not None:
                 self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
+        input_adapter_config = predict_config.get("input_adapter", None)
+        self.input_adapter = build_predictor_input_adapter(
+            input_adapter_config, self.graph_converter_fn
+        )
+        if getattr(self.model, "requires_forward_grad", False):
+            if self.eval_with_no_grad:
+                raise ValueError(
+                    "This model requires forward gradients; set Predict.eval_with_no_grad to false."
+                )
+            self.eval_with_no_grad = False
+
         self.post_transforms_cfg = predict_config.get("post_transforms", None)
         if self.post_transforms_cfg is not None:
             self.post_transforms = build_post_transforms(self.post_transforms_cfg)
@@ -118,6 +140,8 @@ class PropertyPredictor:
             self.post_transforms = None
 
     def graph_converter(self, structure):
+        if self.input_adapter is not None:
+            return self.input_adapter(structure)
         if self.graph_converter_fn is None:
             return structure
         return self.graph_converter_fn(structure)
@@ -126,6 +150,13 @@ class PropertyPredictor:
         if self.post_transforms is None:
             return data
         return self.post_transforms(data)
+
+    def _load_structure_from_cif(self, cif_file_path):
+        """Load one CIF through an optional model-specific input adapter."""
+        loader = getattr(self.input_adapter, "load_structure_from_cif", None)
+        if callable(loader):
+            return loader(cif_file_path)
+        return Structure.from_file(cif_file_path)
 
     def from_structures(self, structures):
 
@@ -147,11 +178,12 @@ class PropertyPredictor:
                 for f in os.listdir(cif_file_path)
                 if f.endswith(".cif")
             ]
-            results = []
-            for cif_file in tqdm(cif_files):
-                structure = Structure.from_file(cif_file)
-                result = self.from_structures(structure)
-                results.append(result)
+            structures = [
+                self._load_structure_from_cif(cif_file) for cif_file in cif_files
+            ]
+            results = [
+                self.from_structures(structure) for structure in tqdm(structures)
+            ]
             if save_path is not None:
 
                 keys = list(results[0].keys())
@@ -167,7 +199,7 @@ class PropertyPredictor:
 
             return results
         else:
-            structure = Structure.from_file(cif_file_path)
+            structure = self._load_structure_from_cif(cif_file_path)
             result = self.from_structures(structure)
 
             keys = list(result.keys())

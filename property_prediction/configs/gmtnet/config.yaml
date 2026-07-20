@@ -1,44 +1,152 @@
-model:
-  name: GMTNet
-  target: dielectric
-  reduce_cell: false
-  use_mask: false
-
-dataset:
-  data_path: ./paddle_dielectric_data.pkl
-  train_ratio: 0.8
-  val_ratio: 0.1
-  test_ratio: 0.1
-  seed: 32
-
-dataloader:
-  batch_size: 1
-  num_workers: 0
-
-optimizer:
-  name: AdamW
-  learning_rate: 1e-5
-  weight_decay: 1e-5
-
-lr_scheduler:
-  name: ConstantLR
-
-loss:
-  name: MSELoss
-
-metric:
-  name: MAE
-
-trainer:
-  epochs: 10
-  log_interval: 10
-  save_interval: 10
-
-save:
-  save_dir: ./output
-
-log:
-  log_dir: ./logs
-
-eval:
+Global:
+  label_names: ["dielectric"]
+  do_train: true
   do_eval: true
+  do_test: true
+
+Trainer:
+  max_epochs: 10
+  seed: 32
+  output_dir: ./output/gmtnet_dielectric
+  save_freq: 10
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: false
+  amp_level: "O1"
+  eval_with_no_grad: false
+  gradient_accumulation_steps: 1
+  best_metric_indicator: "eval_metric"
+  name_for_best_metric: "dielectric"
+  greater_is_better: false
+  compute_metric_during_train: true
+  metric_strategy_during_eval: "epoch"
+  use_visualdl: false
+  use_wandb: false
+  use_tensorboard: false
+
+Model:
+  __class_name__: GMTNet
+  __init_params__:
+    args:
+      atom_input_features: 92
+      edge_features: 512
+      embedding_features: 128
+      output_features: 9
+      num_layers: 2
+      target: dielectric
+      use_mask: false
+      reduce_cell: false
+    loss_cfg:
+      __class_name__: MSELoss
+      __init_params__:
+        reduction: mean
+
+Optimizer:
+  __class_name__: AdamW
+  __init_params__:
+    lr: 1.0e-5
+    weight_decay: 1.0e-5
+
+Metric:
+  dielectric:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: GMTNetDielectricDataset
+      __init_params__:
+        data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
+        split: train
+        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
+        verify_sha256: true
+        build_graph_cfg:
+          __class_name__: GMTNetGraphConverter
+          __init_params__:
+            cutoff: 4.0
+            max_neighbors: 16
+            atom_features: cgcnn
+            use_canonize: true
+            reduce_cell: false
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: GMTNetDielectricCollate
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1
+        shuffle: true
+        drop_last: false
+  val:
+    dataset:
+      __class_name__: GMTNetDielectricDataset
+      __init_params__:
+        data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
+        split: val
+        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
+        verify_sha256: true
+        build_graph_cfg:
+          __class_name__: GMTNetGraphConverter
+          __init_params__:
+            cutoff: 4.0
+            max_neighbors: 16
+            atom_features: cgcnn
+            use_canonize: true
+            reduce_cell: false
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: GMTNetDielectricCollate
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1
+        shuffle: false
+        drop_last: false
+  test:
+    dataset:
+      __class_name__: GMTNetDielectricDataset
+      __init_params__:
+        data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
+        split: test
+        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
+        verify_sha256: true
+        build_graph_cfg:
+          __class_name__: GMTNetGraphConverter
+          __init_params__:
+            cutoff: 4.0
+            max_neighbors: 16
+            atom_features: cgcnn
+            use_canonize: true
+            reduce_cell: false
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: GMTNetDielectricCollate
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 1
+        shuffle: false
+        drop_last: false
+
+Predict:
+  graph_converter:
+    __class_name__: GMTNetGraphConverter
+    __init_params__:
+      cutoff: 4.0
+      max_neighbors: 16
+      atom_features: cgcnn
+      use_canonize: true
+      reduce_cell: false
+  input_adapter:
+    __class_name__: GMTNetPredictorInputAdapter
+    __init_params__:
+      symprec: 1.0e-5
+  eval_with_no_grad: false

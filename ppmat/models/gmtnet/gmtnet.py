@@ -1,6 +1,12 @@
+import copy
+import math
+from collections.abc import Mapping
+
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+
+from ppmat.losses import build_loss
 from ppmat.models.common.e3nn import o3
 
 
@@ -81,12 +87,10 @@ class RBFExpansion(nn.Layer):
             self.gamma = float(1.0 / self.lengthscale)
         else:
             self.lengthscale = float(lengthscale)
-            self.gamma = float(1.0 / (self.lengthscale ** 2))
+            self.gamma = float(1.0 / (self.lengthscale**2))
 
     def forward(self, distance):
-        return paddle.exp(
-            -self.gamma * (distance.unsqueeze(1) - self.centers) ** 2
-        )
+        return paddle.exp(-self.gamma * (distance.unsqueeze(1) - self.centers) ** 2)
 
 
 class ComformerConv(nn.Layer):
@@ -172,15 +176,11 @@ class ComformerConv(nn.Layer):
 
         edge_attr = self.lin_edge(edge_attr).reshape([-1, H, C])
 
-        key_j = self.key_update(
-            paddle.concat([key_i, key_j, edge_attr], axis=-1)
-        )
+        key_j = self.key_update(paddle.concat([key_i, key_j, edge_attr], axis=-1))
 
-        alpha = (query_i * key_j) / (C ** 0.5)
+        alpha = (query_i * key_j) / (C**0.5)
 
-        out = self.lin_msg_update(
-            paddle.concat([value_i, value_j, edge_attr], axis=-1)
-        )
+        out = self.lin_msg_update(paddle.concat([value_i, value_j, edge_attr], axis=-1))
 
         alpha_bn = self.bn_att(alpha.reshape([-1, C])).reshape([-1, H, C])
         out = out * self.sigmoid(alpha_bn)
@@ -194,7 +194,6 @@ class ComformerConv(nn.Layer):
         out_nodes = self.lin_concate(out_nodes)
 
         return self.softplus(x_dst + out_nodes)
-
 
 
 class W3JBuffers(nn.Layer):
@@ -222,7 +221,9 @@ class FakeTensorProduct(nn.Layer):
         super().__init__()
 
         self.register_buffer("weight", paddle.empty([0], dtype="float32"))
-        self.register_buffer("output_mask", paddle.ones([output_mask_dim], dtype="float32"))
+        self.register_buffer(
+            "output_mask", paddle.ones([output_mask_dim], dtype="float32")
+        )
 
         if w3j_shapes is not None and len(w3j_shapes) > 0:
             self._compiled_main_left_right = self.add_sublayer(
@@ -262,7 +263,9 @@ class TensorProductConvLayer(nn.Layer):
             nn.Linear(n_edge_features, self.tp.weight_numel),
         )
 
-    def forward(self, node_attr, edge_index, edge_attr, edge_sh, out_nodes=None, reduce="mean"):
+    def forward(
+        self, node_attr, edge_index, edge_attr, edge_sh, out_nodes=None, reduce="mean"
+    ):
         edge_index = edge_index.astype("int64")
 
         edge_src = edge_index[0]
@@ -400,7 +403,92 @@ class GradientBlock(nn.Layer):
             paddle.ones([self.tp.weight_numel], dtype="float32"),
         )
 
+    def _training_dielectric(self, node_feature):
+        input_slices = self.tp.irreps_in1.slices()
+        field_mul_ir = self.tp.irreps_in2[0]
+        output_mul_ir = self.tp.irreps_out[0]
+
+        if field_mul_ir.mul != 1 or field_mul_ir.ir.l != 1:
+            raise RuntimeError("GradientBlock requires a single 1o field irrep.")
+        if output_mul_ir.mul != 1 or output_mul_ir.ir.l != 1:
+            raise RuntimeError("GradientBlock requires a single 1o output irrep.")
+
+        batch_size = node_feature.shape[0]
+        field_dim = field_mul_ir.ir.dim
+        output_dim = output_mul_ir.ir.dim
+
+        if field_dim != 3 or output_dim != 3:
+            raise RuntimeError("GradientBlock requires three-dimensional field/output.")
+
+        dielectric = paddle.zeros(
+            [batch_size, output_mul_ir.mul, output_dim, field_dim],
+            dtype=node_feature.dtype,
+        )
+        external_weight = self.constant_w.astype(node_feature.dtype)
+
+        for instruction_index, instruction, weight_view in self.tp.weight_views(
+            external_weight,
+            yield_instruction=True,
+        ):
+            if instruction.connection_mode != "uvw" or not instruction.has_weight:
+                raise RuntimeError(
+                    "GradientBlock only supports weighted uvw tensor-product paths."
+                )
+            if instruction.i_in2 != 0 or instruction.i_out != 0:
+                raise RuntimeError(
+                    "GradientBlock only supports the configured single field/output irrep."
+                )
+
+            input_mul_ir = self.tp.irreps_in1[instruction.i_in1]
+            path_output_mul_ir = self.tp.irreps_out[instruction.i_out]
+
+            if weight_view.shape != [
+                input_mul_ir.mul,
+                field_mul_ir.mul,
+                path_output_mul_ir.mul,
+            ]:
+                raise RuntimeError("Unexpected tensor-product external weight shape.")
+
+            input_feature = node_feature[:, input_slices[instruction.i_in1]]
+            input_feature = input_feature.reshape(
+                [batch_size, input_mul_ir.mul, input_mul_ir.ir.dim]
+            )
+
+            coupling = o3.wigner_3j(
+                input_mul_ir.ir.l,
+                field_mul_ir.ir.l,
+                path_output_mul_ir.ir.l,
+                dtype=node_feature.dtype,
+                device=node_feature.place,
+            )
+
+            feature_term = input_feature.reshape(
+                [batch_size, input_mul_ir.mul, input_mul_ir.ir.dim, 1, 1, 1]
+            )
+            coupling_term = coupling.reshape(
+                [1, 1, input_mul_ir.ir.dim, field_dim, output_dim, 1]
+            )
+            weight_term = weight_view[:, 0, :].reshape(
+                [1, input_mul_ir.mul, 1, 1, 1, path_output_mul_ir.mul]
+            )
+
+            coefficient_qkw = paddle.sum(
+                feature_term * coupling_term * weight_term,
+                axis=[1, 2],
+            )
+            coefficient_qkw = instruction.path_weight * coefficient_qkw
+            coefficient_wkq = coefficient_qkw.transpose([0, 3, 2, 1])
+
+            dielectric = dielectric + coefficient_wkq
+
+        spherical_derivative = math.sqrt(3.0 / (4.0 * math.pi))
+        dielectric = spherical_derivative * dielectric
+        return dielectric.reshape([batch_size, output_dim, field_dim])
+
     def forward(self, node_feature):
+        if self.training:
+            return self._training_dielectric(node_feature)
+
         bs = node_feature.shape[0]
 
         outer_E = paddle.ones([bs, 3], dtype=node_feature.dtype)
@@ -440,7 +528,9 @@ class GradientBlock(nn.Layer):
 class GMTNet(nn.Layer):
     """First-stage Paddle GMTNet with RBFExpansion and ComformerConv."""
 
-    def __init__(self, args):
+    requires_forward_grad = True
+
+    def __init__(self, args, loss_cfg=None):
         super().__init__()
 
         atom_input_features = get_arg(args, "atom_input_features", 92)
@@ -477,7 +567,55 @@ class GMTNet(nn.Layer):
 
         self.etgnn_linear = nn.Linear(embsize, 1)
 
-    def forward(self, data, feat_mask=None, equality=None):
+        if loss_cfg is None:
+            self.loss_fn = None
+        else:
+            try:
+                self.loss_fn = build_loss(copy.deepcopy(loss_cfg))
+            except Exception as error:
+                raise ValueError(f"Invalid loss_cfg: {error}") from error
+
+    @staticmethod
+    def _validate_mapping_tensor(name, value, trailing_shape, dtype=None):
+        if not isinstance(value, paddle.Tensor):
+            raise TypeError(f"Mapping key '{name}' must be a Paddle Tensor")
+        if value.ndim != 3:
+            raise ValueError(
+                f"Mapping key '{name}' must have rank 3, got shape {list(value.shape)}"
+            )
+        if list(value.shape[1:]) != list(trailing_shape):
+            raise ValueError(
+                f"Mapping key '{name}' must have shape [B,{trailing_shape[0]},{trailing_shape[1]}], got {list(value.shape)}"
+            )
+        if dtype is not None and value.dtype != dtype:
+            raise TypeError(
+                f"Mapping key '{name}' must have dtype {dtype}, got {value.dtype}"
+            )
+
+    def _mapping_inputs(self, batch):
+        for key in ("graph", "feature_mask", "matrix_equal"):
+            if key not in batch:
+                raise ValueError(f"Mapping input is missing required key '{key}'")
+        feature_mask = batch["feature_mask"]
+        matrix_equal = batch["matrix_equal"]
+        self._validate_mapping_tensor("feature_mask", feature_mask, (32, 32))
+        self._validate_mapping_tensor(
+            "matrix_equal", matrix_equal, (9, 9), dtype=paddle.bool
+        )
+        if feature_mask.shape[0] != matrix_equal.shape[0]:
+            raise ValueError(
+                "Mapping feature_mask and matrix_equal batch sizes must match"
+            )
+        dielectric = batch.get("dielectric")
+        if dielectric is not None:
+            self._validate_mapping_tensor("dielectric", dielectric, (3, 3))
+            if dielectric.shape[0] != feature_mask.shape[0]:
+                raise ValueError(
+                    "Mapping dielectric and feature_mask batch sizes must match"
+                )
+        return batch["graph"], feature_mask, matrix_equal, dielectric
+
+    def _forward_tensor(self, data, feat_mask, equality):
         """Paddle GMTNet forward.
 
         Current stage:
@@ -555,3 +693,33 @@ class GMTNet(nn.Layer):
             outputs = equality_adjustment(equality, outputs)
 
         return outputs
+
+    def forward(self, data, feat_mask=None, equality=None):
+        if isinstance(data, Mapping):
+            if feat_mask is not None or equality is not None:
+                raise ValueError(
+                    "Mapping input must not be combined with feat_mask or equality arguments"
+                )
+            graph, feature_mask, matrix_equal, dielectric = self._mapping_inputs(data)
+            prediction = self._forward_tensor(graph, feature_mask, matrix_equal)
+            result = {"pred_dict": {"dielectric": prediction}}
+            if dielectric is None:
+                return result
+            if self.loss_fn is None:
+                raise ValueError(
+                    "Dielectric labels were provided, but no loss function was explicitly configured. No default loss is available."
+                )
+            result["loss_dict"] = {"loss": self.loss_fn(prediction, dielectric)}
+            return result
+        if feat_mask is None or equality is None:
+            raise ValueError(
+                "Raw GMTNet calls require both feat_mask and equality arguments"
+            )
+        return self._forward_tensor(data, feat_mask, equality)
+
+    def predict(self, data):
+        """Predict dielectric tensors from label-free GMTNet Mapping inputs."""
+        if isinstance(data, list):
+            predictions = [self.forward(item)["pred_dict"]["dielectric"] for item in data]
+            return {"pred_dict": {"dielectric": paddle.concat(predictions, axis=0)}}
+        return self.forward(data)

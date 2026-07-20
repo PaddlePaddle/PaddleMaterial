@@ -1,0 +1,5 @@
+global-exclude *.pdparams
+global-exclude *.pkl
+prune miit_logs
+prune paddle_scatter
+prune jointContribution
