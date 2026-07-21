@@ -22,10 +22,10 @@ Global:
       num_cpus: 10
 
 Trainer:
-  max_epochs: 500
-  seed: 42
+  max_epochs: 1100
+  seed: 45
   output_dir: ./output/spherenet_malonaldehyde
-  save_freq: 501
+  save_freq: 1101
   log_freq: 10
   start_eval_epoch: 200
   eval_freq: 50

@@ -19,9 +19,7 @@ from paddle.nn import Linear
 
 from ppmat.models.common import initializer
 from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
-from ppmat.models.common.spherical_fourier_bessel import (
-    SphericalFourierBesselEmbedding,
-)
+from ppmat.models.common.spherical_fourier_bessel import SphericalFourierBesselEmbedding
 from ppmat.models.spherenet.geometry import compute_geometry
 from ppmat.utils.scatter import scatter_sum
 
@@ -34,6 +32,7 @@ def _swish(x):
 
 def _aggregate(src, index, dim_size, require_second_order):
     if require_second_order:
+        # scatter_nd_add lacks the second derivative required by force loss.
         return scatter_sum(src, index, dim=0, dim_size=dim_size)
 
     if dim_size is None:
@@ -55,9 +54,7 @@ class SphereNetEmbedding(paddle.nn.Layer):
 
     def forward(self, dist, angle, torsion, idx_kj):
         dist_emb = self.dist_emb(dist)
-        angle_emb, torsion_emb = self.geometry_emb(
-            dist, *angle, *torsion, idx_kj
-        )
+        angle_emb, torsion_emb = self.geometry_emb(dist, *angle, *torsion, idx_kj)
         return dist_emb, angle_emb, torsion_emb
 
 
@@ -125,12 +122,12 @@ class InitialEdgeEmbedding(paddle.nn.Layer):
     def forward(self, x, node_feature, emb_in, i, j):
         rbf, _, _ = emb_in
         if self.use_node_features:
-            if self.require_second_order:
+            if self.require_second_order and self.training:
                 # EmbeddingGradNode has no higher-order backward in Paddle 3.1.
                 # This equivalent lookup keeps force-loss gradients trainable.
-                x = paddle.nn.functional.one_hot(
-                    x, self.emb.weight.shape[0]
-                ).astype(self.emb.weight.dtype)
+                x = paddle.nn.functional.one_hot(x, self.emb.weight.shape[0]).astype(
+                    self.emb.weight.dtype
+                )
                 x = paddle.matmul(x, self.emb.weight)
             else:
                 x = self.emb(x)
@@ -223,7 +220,10 @@ class EdgeUpdate(paddle.nn.Layer):
             x_kj = x_kj * t
 
             x_kj = _aggregate(
-                x_kj, idx_ji, x1.shape[0], self.require_second_order
+                x_kj,
+                idx_ji,
+                x1.shape[0],
+                self.require_second_order and self.training,
             )
         x_kj = self.act(self.lin_up(x_kj))
 
@@ -271,7 +271,12 @@ class NodeUpdate(paddle.nn.Layer):
 
     def forward(self, e, i, dim_size=None):
         _, e2 = e
-        v = _aggregate(e2, i, dim_size, self.require_second_order)
+        v = _aggregate(
+            e2,
+            i,
+            dim_size,
+            self.require_second_order and self.training,
+        )
         v = self.lin_up(v)
         for lin in self.lins:
             v = self.act(lin(v))
@@ -429,12 +434,13 @@ class SphereNet(paddle.nn.Layer):
 
         e = self.init_e(z, extra_node_feature, emb_out, i, j)
         v = self.init_v(e, i, dim_size=num_nodes)
-        u = _aggregate(v, node_batch, None, self.energy_and_force)
+        require_second_order = self.energy_and_force and self.training
+        u = _aggregate(v, node_batch, None, require_second_order)
 
         for update_e, update_v in zip(self.update_es, self.update_vs):
             e = update_e(e, emb_out, idx_kj, idx_ji)
             v = update_v(e, i, dim_size=num_nodes)
-            u = u + _aggregate(v, node_batch, None, self.energy_and_force)
+            u = u + _aggregate(v, node_batch, None, require_second_order)
 
         return u, pos
 
@@ -474,9 +480,7 @@ class SphereNet(paddle.nn.Layer):
                 else paddle.to_tensor(label, dtype=paddle.get_default_dtype())
             )
             normalized_label = self.normalize(label_tensor)
-            loss = paddle.nn.functional.l1_loss(
-                normalized_pred, normalized_label
-            )
+            loss = paddle.nn.functional.l1_loss(normalized_pred, normalized_label)
             loss_dict["loss"] = loss
 
             if self.energy_and_force and forces_pred is not None:

@@ -22,10 +22,10 @@ Global:
       num_cpus: 10
 
 Trainer:
-  max_epochs: 500
-  seed: 42
+  max_epochs: 600
+  seed: 47
   output_dir: ./output/spherenet_ethanol
-  save_freq: 501
+  save_freq: 601
   log_freq: 10
   start_eval_epoch: 200
   eval_freq: 50
