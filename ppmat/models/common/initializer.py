@@ -37,6 +37,7 @@ __all__ = [
     "normal_",
     "trunc_normal_",
     "glorot_normal_",
+    "glorot_orthogonal_",
     "constant_",
     "ones_",
     "zeros_",
@@ -489,4 +490,25 @@ def he_orthogonal_init(tensor):
         tensor.data = _standardize(tensor.data)
         tensor.data *= (1 / fan_in) ** 0.5
     tensor.stop_gradient = stop_gradient
+    return tensor
+
+
+def glorot_orthogonal_(tensor: paddle.Tensor, scale: float = 1.0) -> paddle.Tensor:
+    """Orthogonal initialization with scaling (Glorot & Bengio, 2010 style).
+
+    Initializes the tensor as a random (semi-)orthogonal matrix and scales it
+    by the given factor. This is a simpler variant than ``he_orthogonal_init``
+    — it does not standardise or apply fan-in scaling.
+
+    Args:
+        tensor: Paddle Tensor or Parameter.
+        scale: Scaling factor applied after orthogonal initialisation.
+
+    Returns:
+        paddle.Tensor: The initialised tensor (same object, modified in-place).
+    """
+    init_orth = paddle.nn.initializer.Orthogonal()
+    init_orth(tensor)
+    with paddle.no_grad():
+        tensor.set_value(tensor * scale)
     return tensor

@@ -12,58 +12,67 @@
  <img src="docs/overview_en.png" align="middle" width = "1000"/>
 <p align="left">
 
-### Core Capabilities
+### 🧩 Core Capabilities
 
 | Task | Description | Typical Applications |
 |------|-------------|---------------------|
-| **Property Prediction (PP)** | Predict material properties from structure | Formation energy, band gap, elastic moduli |
-| **Structure Generation (SG)** | Generate novel crystal structures | High-throughput screening, inverse design |
-| **Interatomic Potential (IP)** | Replace DFT with ML potentials | Molecular dynamics, large-scale simulations |
-| **Electronic Structure (ES)** | Predict electronic properties | Band structure, density of states |
+| **Property Prediction (PP)** | Predict material properties from structure | Forward design or predict formation energy, band gap, elastic moduli etc. |
+| **Structure Generation (SG)** | Generate novel crystal structures | Inverse design or structure generation |
+| **Machine Learning Interatomic Potential (MLIP)** | Surrogate Model for DFT as ML potentials | Molecular dynamics simulations |
+| **Electronic Structure (ES)** | Surrogate Model for DFT to predict physical field  | Predict electronic density |
 | **Spectrum Elucidation (SE)** | Reconstruct structures from spectra | NMR structure elucidation |
+| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectrum signals | STEM image enhancement, denoising |
 
-### Supported Materials
+### 🧱 Supported Materials
 
-- **Inorganic Crystals** - Well-supported with multiple datasets (MP2018, MP2024, JARVIS) and pretrained models
-- **Organic Molecules** - Support for small molecule datasets (QM9) and property prediction
+- **Inorganic Crystals** - Well-supported with multiple datasets and pretrained models
+- **Organic Molecules** - Support for small molecule datasets and property prediction
 - *Polymers, catalysts, and amorphous materials are under development*
 
-### Why PaddleMaterials?
+### ✨ Why PaddleMaterials?
 
-- ✅ **Rich Pretrained Models** - 50+ pretrained models ready for inference
-- ✅ **Multi-Task Integration** - Unified framework across PP, SG, MLIP, MLES, SE
-- ✅ **Domestic Hardware Support** - Full support for MetaX GPUs and NVIDIA GPUs
-- ✅ **PaddlePaddle Ecosystem** - Seamless integration with PaddlePaddle tools
-- ✅ **Production-Ready** - Distributed training, mixed precision, checkpoint recovery
+- ✅ **Rich Pretrained Models & AI-ready Datasets** - 50+ pretrained models ready for inference and Multiple curated datasets for training
+- ✅ **Multi-Task Integration** - Unified framework across tasks of PP, SG, MLIP, ES, SE, SPEN etc.
+- ✅ **Multi-Hardware Support** - Full support for NVIDIA GPUs and MetaX GPUs and Intel CPUs
+- ✅ **Production-Ready** - Easy to use with standandlize design & distributed training, mixed precision, checkpoint recovery
 
----
-
-## 📣 News
-
-
----
-
-## 📑 Tasks
+### 📑 Support Tasks
 
 | Task | Description | Link |
 |------|-------------|------|
 | **Property Prediction (PP)** | Predict formation energy, band gap, elastic properties | [README](property_prediction/README.md) |
 | **Structure Generation (SG)** | Generate new crystal structures with diffusion models | [README](structure_generation/README.md) |
-| **Interatomic Potential (IP)** | DFT-accurate potentials for molecular dynamics | [README](interatomic_potentials/README.md) |
+| **Machine Learning Interatomic Potential (MLIP)** | DFT-accurate potentials for molecular dynamics | [README](interatomic_potentials/README.md) |
 | **Electronic Structure (ES)** | Predict electronic structure properties | [README](electronic_structure/README.md) |
 | **Spectrum Elucidation (SE)** | Reconstruct molecular structures from NMR spectra | [README](spectrum_elucidation/README.md) |
+| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectral signals | [README](spectrum_enhancement/README.md) |
+
+### 🤖 Available Pretrained Models
+
+| Task | Models | Dataset |
+|------|--------|---------|
+| **Property Prediction**                       | MEGNet, iComformer, DimeNet++            | MP2018, MP2024, JARVIS |
+| **Structure Generation**                      | MatterGen, DiffCSP                       | MP20, ALEX |
+| **Machine Learning Interatomic Potential**    | CHGNet, MatterSim                        | MPTRJ |
+| **Electronic Structure**                      | InfGCN                                   | QM9_ES, MP_ES, OMol25_MC_ES |
+| **Spectrum Elucidation**                      | DiffNMR                                  | MSD_NMR |
+| **Spectrum Enhancement**                      | SFIN                                     | SFIN-HAADF/BF |
+
+Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
 
 ---
 
-## 🔧 Installation
+## 🚀 Get Started
+
+### 🔧 Installation
 
 Please refer to the installation [document](Install.md) for your hardware environment. See [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaptation information.
 
 ---
 
-## ⚡ Get Started
+### ⚡ Easy Inference
 
-### Property Prediction
+#### Property Prediction
 
 Predict material formation energy using a pretrained MEGNet model:
 
@@ -75,7 +84,7 @@ python property_prediction/predict.py \
     --save_path='result.csv'
 ```
 
-### Structure Generation
+#### Structure Generation
 
 Generate novel crystal structures:
 
@@ -86,7 +95,7 @@ python structure_generation/predict.py \
     --save_path='generated_structures/'
 ```
 
-### Interatomic Potentials
+#### Interatomic Potentials
 
 Run molecular dynamics with ML potentials:
 
@@ -97,54 +106,71 @@ python interatomic_potentials/run_md.py
     --temperature=300
 ```
 
+#### Electronic Structure
+
+Run prediction of elcutorninc density:
+
+```bash
+python interatomic_potentials/run_md.py 
+    --model_name='mattersim_1M' 
+    --structure_path='input.cif' 
+    --temperature=300
+```
+
+#### Spectrum Elucidation
+
+Run NMR spectrum elucidate:
+
+```bash
+python spectrum_elucidation/sample.py 
+    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' 
+    --weights_name='DiffNMR_nless15_best.pdparams' 
+    --save_path='result_diffnmr_nless15/' 
+    --checkpoint_path="pretrained"
+```
+
+#### Spectrum Enhancement
+
+Run prediction of elcutorninc density:
+
+```bash
+python spectrum_enhancement/predict.py 
+    --model_name sfin_haadf_enhance 
+    --split val
+```
+
 ---
 
-### Train Your Own Model
+### 🏋️ Start Training
 
 For training and fine-tuning, refer to the [documentation](get_started.md).
 
-### Contribute to PaddleMaterials
-
-For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
-
 ---
 
-## 🎯 Available Pretrained Models
-
-| Task | Models | Dataset |
-|------|--------|---------|
-| **Property Prediction** | MEGNet, iComformer, DimeNet++ | MP2018, MP2024, JARVIS |
-| **Structure Generation** | MatterGen, DiffCSP | MP20, ALEX |
-| **Interatomic Potentials** | CHGNet, MatterSim | MPTRJ |
-| **Electronic Structure** | InfGCN | Custom datasets |
-
-Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py)
-
----
-
-## ⭐️ Star History
+## 🤝 Contributors & Cooperation & Community
 
 [![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterilas&type=date&legend=top-left)
 
----
+Thanks to all contributors who have helped build PaddleMaterials！
+<a href="https://github.com/PaddlePaddle/PaddleMaterials/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=PaddlePaddle/PaddleMaterials" />
+</a>
 
-## 👩‍👩‍👧‍👦 Cooperation
-
+Thanks for the following organiziton for cooprative support!
 <p align="left">
- <img src="docs/logo_SZNL_2.jpeg" align="middle" width = "240"/>
- <img src="docs/logo_SinochemDI_2.jpeg" align="middle" width = "240"/>
- <img src="docs/logo_MetaX.png" align="middle" width = "240"/>
+ <img src="docs/logo_SZNL_2.jpeg" align="middle" width = "180"/>
+ <img src="docs/logo_SinochemDI_2.jpeg" align="middle" width = "180"/>
+ <img src="docs/logo_MetaX.png" align="middle" width = "140"/>
 <p align="left">
-
----
-
-## 👩‍👩‍👧‍👦 Community
 
 Join the PaddleMaterials WeChat group to discuss with us!
+<p align="left">
+ <img src="docs/wechat_group.png" align="middle" width = "100"/>
+<p align="left">
 
-<p align="left">
- <img src="docs/wechat_group.png" align="middle" width = "200"/>
-<p align="left">
+## 🛠️ Contribute to PaddleMaterials
+
+For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
 
 ---
 
@@ -167,7 +193,7 @@ PaddleMaterials is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 This repository references code from the following projects:
 
