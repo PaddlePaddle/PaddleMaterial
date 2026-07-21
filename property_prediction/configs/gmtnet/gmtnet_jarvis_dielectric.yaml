@@ -63,7 +63,6 @@ Dataset:
       __init_params__:
         data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
         split: train
-        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
         verify_sha256: true
         build_graph_cfg:
           __class_name__: GMTNetGraphConverter
@@ -76,7 +75,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: false
-      collate_fn: GMTNetDielectricCollate
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -89,7 +88,6 @@ Dataset:
       __init_params__:
         data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
         split: val
-        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
         verify_sha256: true
         build_graph_cfg:
           __class_name__: GMTNetGraphConverter
@@ -102,7 +100,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: false
-      collate_fn: GMTNetDielectricCollate
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -115,7 +113,6 @@ Dataset:
       __init_params__:
         data_path: data/gmtnet/gmtnet_dielectric_normalized_v1.pkl
         split: test
-        split_path: ppmat/datasets/gmtnet_dielectric_split_seed32.json
         verify_sha256: true
         build_graph_cfg:
           __class_name__: GMTNetGraphConverter
@@ -128,7 +125,7 @@ Dataset:
     loader:
       num_workers: 0
       use_shared_memory: false
-      collate_fn: GMTNetDielectricCollate
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -145,8 +142,4 @@ Predict:
       atom_features: cgcnn
       use_canonize: true
       reduce_cell: false
-  input_adapter:
-    __class_name__: GMTNetPredictorInputAdapter
-    __init_params__:
-      symprec: 1.0e-5
   eval_with_no_grad: false

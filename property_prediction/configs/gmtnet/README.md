@@ -6,20 +6,25 @@ crystal structure.
 
 ## Data and training
 
-Prepare the normalized GMTNet dielectric data with the repository tool:
+Verify or reproduce the fixed-seed split for the normalized JARVIS dielectric
+dataset with the repository tool:
 
 ```bash
-python -m ppmat.datasets.prepare_gmtnet_dataset --help
+python -m ppmat.datasets.split_gmtnet_dataset --help
 ```
 
-The canonical split is packaged as
-`ppmat.datasets.gmtnet_dielectric_split_seed32.json`. Use the public trainer
-entry point and this configuration for training or evaluation; the former
-standalone synthetic `train.py` smoke script is not a public GMTNet workflow.
+The canonical split is
+`property_prediction/configs/gmtnet/split_gmtnet_dielectric_seed32.json` and
+is installed as a `property_prediction` package resource. Use the public
+trainer entry point and this configuration for training or evaluation; the
+former standalone synthetic `train.py` smoke script is not a public GMTNet
+workflow. The YAML relies on `GMTNetDielectricDataset`'s resource fallback;
+callers can still pass an explicit `split_path`. Checkpoints are deliberately
+not committed to Git.
 
 ```bash
 python property_prediction/train.py \
-  -c property_prediction/configs/gmtnet/config.yaml
+  -c property_prediction/configs/gmtnet/gmtnet_jarvis_dielectric.yaml
 ```
 
 GMTNet's inference path requires forward gradients internally. Keep
@@ -31,8 +36,8 @@ GMTNet's inference path requires forward gradients internally. Keep
 from property_prediction.predict import PropertyPredictor
 
 predictor = PropertyPredictor(
-    config_path="property_prediction/configs/gmtnet/config.yaml",
-    checkpoint_path="property_prediction/configs/gmtnet/paddle_model.pdparams",
+    config_path="property_prediction/configs/gmtnet/gmtnet_jarvis_dielectric.yaml",
+    checkpoint_path="/path/to/gmtnet_checkpoint.pdparams",
 )
 ```
 

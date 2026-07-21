@@ -15,14 +15,19 @@ splits, or batches.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from collections.abc import Mapping
+from collections.abc import Sequence
 
 import numpy as np
 import paddle
+import spglib
 from jarvis.core.specie import get_node_attributes
+from pymatgen.core import Structure
 from pymatgen.io.jarvis import JarvisAtomsAdaptor
 
 from ppmat.datasets.geometric_data_type.data import Data
+from ppmat.models.common.e3nn import o3
+from ppmat.models.common.e3nn.io import CartesianTensor
 
 
 class GMTNetGraphConverter:
@@ -69,6 +74,108 @@ class GMTNetGraphConverter:
         self.use_canonize = bool(use_canonize)
         self.reduce_cell = bool(reduce_cell)
         self._adaptor = JarvisAtomsAdaptor()
+        self._irreps_output = o3.Irreps(
+            "1x0e + 1x0o + 1x1e + 1x1o + 1x2e + 1x2o + 1x3e + 1x3o"
+        )
+        self._cartesian_converter = CartesianTensor("ij")
+        self._symprec = 1e-5
+
+    @staticmethod
+    def load_structure_from_cif(cif_path) -> Structure:
+        """Load a CIF without parser-side coordinate idealization for GMTNet."""
+        try:
+            return Structure.from_file(
+                cif_path,
+                primitive=False,
+                sort=False,
+                merge_tol=0.0,
+                frac_tolerance=0.0,
+            )
+        except Exception as error:
+            raise ValueError(
+                f"GMTNet precision-preserving CIF parsing failed for {cif_path!s}."
+            ) from error
+
+    @staticmethod
+    def _dataset_value(dataset, name: str):
+        try:
+            return getattr(dataset, name)
+        except AttributeError:
+            return dataset[name]
+
+    @staticmethod
+    def _unique_rotations(rotations: np.ndarray) -> np.ndarray:
+        unique_rotations = []
+        seen = set()
+        for rotation in rotations:
+            key = tuple(rotation.reshape(-1).tolist())
+            if key not in seen:
+                seen.add(key)
+                unique_rotations.append(rotation)
+        return np.asarray(unique_rotations, dtype=np.float32)
+
+    def _symmetry_dataset(self, structure: Structure):
+        dataset = spglib.get_symmetry_dataset(
+            (structure.lattice.matrix, structure.frac_coords, structure.atomic_numbers),
+            symprec=self._symprec,
+        )
+        if dataset is None:
+            raise ValueError("spglib could not determine the structure symmetry.")
+        return dataset
+
+    def _prediction_constraints(self, structure: Structure, symmetry_dataset):
+        rotations = self._unique_rotations(
+            np.asarray(self._dataset_value(symmetry_dataset, "rotations"))
+        )
+        lattice = np.asarray(structure.lattice.matrix, dtype=np.float32).T
+        transformed_rotations = lattice @ rotations @ np.linalg.inv(lattice)
+        representations = self._irreps_output.D_from_matrix(
+            paddle.to_tensor(transformed_rotations, dtype="float32")
+        )
+        average = representations.sum(axis=0) / representations.shape[0]
+        feature_mask = average * (average > 1e-5).astype("float32")
+        mask = paddle.concat([
+            paddle.arange(8, dtype="float32") + 10.0,
+            (paddle.arange(24, dtype="float32") + 18.0) * 100.0,
+        ])
+        feature_total = representations.sum(axis=0) @ mask
+        selected = feature_total[[0, 2, 3, 4, 8, 9, 10, 11, 12]]
+        ideal_matrix = self._cartesian_converter.to_cartesian(selected).numpy()
+        flattened = ideal_matrix.reshape(-1)
+        matrix_equal = np.abs(flattened[:, None] - flattened[None, :]) < (
+            0.0001 * np.abs(flattened[:, None] + flattened[None, :]) / 2.0
+        )
+        return feature_mask, matrix_equal
+
+    def _build_prediction_input_from_structure(self, structure: Structure):
+        symmetry_dataset = self._symmetry_dataset(structure)
+        equivalent_atoms = np.asarray(
+            self._dataset_value(symmetry_dataset, "equivalent_atoms"), dtype=np.int32
+        )
+        feature_mask, matrix_equal = self._prediction_constraints(
+            structure, symmetry_dataset
+        )
+        return {
+            "graph": self(structure, equivalent_atoms),
+            "feature_mask": feature_mask.unsqueeze(0),
+            "matrix_equal": paddle.to_tensor(matrix_equal, dtype="bool").unsqueeze(0),
+        }
+
+    def build_prediction_input(self, values):
+        """Return GMTNet prediction Mappings while preserving Mapping inputs."""
+        if isinstance(values, Mapping):
+            return values
+        if isinstance(values, Structure):
+            return self._build_prediction_input_from_structure(values)
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            raise TypeError("structures must be a pymatgen Structure or a sequence of Structures.")
+        if not values:
+            raise ValueError("structures must not be empty.")
+        if all(isinstance(value, Mapping) for value in values):
+            return values
+        if not all(isinstance(value, Structure) for value in values):
+            raise TypeError("structures must contain only pymatgen Structure objects.")
+        return [self._build_prediction_input_from_structure(value) for value in values]
 
     @staticmethod
     def _canonize_edge(src_id, dst_id, src_image, dst_image):

@@ -1,5 +1,7 @@
+include requirements.txt
+include ppmat/models/mattersim/threebody_indices.pyx
+include property_prediction/configs/gmtnet/README.md
+include property_prediction/configs/gmtnet/gmtnet_jarvis_dielectric.yaml
+include property_prediction/configs/gmtnet/split_gmtnet_dielectric_seed32.json
 global-exclude *.pdparams
 global-exclude *.pkl
-prune miit_logs
-prune paddle_scatter
-prune jointContribution

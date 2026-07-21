@@ -88,18 +88,6 @@ class DefaultCollator(object):
         )
 
 
-class GMTNetDielectricCollate:
-    """Collate GMTNet dielectric samples with batch size one."""
-
-    def __init__(self):
-        pass
-
-    def __call__(self, batch):
-        from ppmat.datasets.gmtnet_dataset import gmtnet_dielectric_collate_fn
-
-        return gmtnet_dielectric_collate_fn(batch)
-
-
 class RadiusGraphCollator:
     """Collates radius-graph samples for SphereNet.
 

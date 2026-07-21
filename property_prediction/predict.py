@@ -29,7 +29,6 @@ from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
 from ppmat.models import build_model_from_name
-from ppmat.models import build_predictor_input_adapter
 from ppmat.utils import logger
 
 
@@ -123,10 +122,6 @@ class PropertyPredictor:
             if graph_converter_config is not None:
                 self.graph_converter_fn = build_graph_converter(graph_converter_config)
 
-        input_adapter_config = predict_config.get("input_adapter", None)
-        self.input_adapter = build_predictor_input_adapter(
-            input_adapter_config, self.graph_converter_fn
-        )
         if getattr(self.model, "requires_forward_grad", False):
             if self.eval_with_no_grad:
                 raise ValueError(
@@ -141,10 +136,13 @@ class PropertyPredictor:
             self.post_transforms = None
 
     def graph_converter(self, structure):
-        if self.input_adapter is not None:
-            return self.input_adapter(structure)
         if self.graph_converter_fn is None:
             return structure
+        prediction_input = getattr(
+            self.graph_converter_fn, "build_prediction_input", None
+        )
+        if callable(prediction_input):
+            return prediction_input(structure)
         return self.graph_converter_fn(structure)
 
     def post_process(self, data):
@@ -154,7 +152,7 @@ class PropertyPredictor:
 
     def _load_structure_from_cif(self, cif_file_path):
         """Load one CIF through an optional model-specific input adapter."""
-        loader = getattr(self.input_adapter, "load_structure_from_cif", None)
+        loader = getattr(self.graph_converter_fn, "load_structure_from_cif", None)
         if callable(loader):
             return loader(cif_file_path)
         return Structure.from_file(cif_file_path)

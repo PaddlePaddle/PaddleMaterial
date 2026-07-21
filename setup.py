@@ -1,10 +1,7 @@
-import os
-
 import numpy as np
 import setuptools
 from Cython.Build import cythonize
 from setuptools import Extension
-from setuptools.command.build_py import build_py
 
 """
 Setup configuration
@@ -18,21 +15,6 @@ extensions = [
         include_dirs=[np.get_include()],
     )
 ]
-
-
-class BuildPyWithGMTNetConfig(build_py):
-    """Include the formal GMTNet config as an installed package resource."""
-
-    def run(self):
-        super().run()
-        destination = os.path.join(
-            self.build_lib, "ppmat", "models", "gmtnet", "config.yaml"
-        )
-        self.mkpath(os.path.dirname(destination))
-        self.copy_file(
-            "property_prediction/configs/gmtnet/config.yaml",
-            destination,
-        )
 
 
 def get_readme() -> str:
@@ -74,8 +56,10 @@ if __name__ == "__main__":
         )
         + ["property_prediction"],
         package_data={
-            "ppmat.datasets": [
-                "gmtnet_dielectric_split_seed32.json",
+            "property_prediction": [
+                "configs/gmtnet/README.md",
+                "configs/gmtnet/gmtnet_jarvis_dielectric.yaml",
+                "configs/gmtnet/split_gmtnet_dielectric_seed32.json",
             ],
         },
         exclude_package_data={
@@ -93,6 +77,5 @@ if __name__ == "__main__":
         install_requires=get_requirements(),
         use_scm_version=True,
         setup_requires=["setuptools_scm"],
-        cmdclass={"build_py": BuildPyWithGMTNetConfig},
         ext_modules=cythonize(extensions),
     )

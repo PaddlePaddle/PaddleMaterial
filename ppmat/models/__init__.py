@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import importlib
 import inspect
 import os
 import os.path as osp
@@ -39,7 +38,8 @@ from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 from ppmat.models.gmtnet.gmtnet import GMTNet
 from ppmat.models.gmtnet.gmtnet_graph_converter import GMTNetGraphConverter
-from ppmat.models.gmtnet.gmtnet_predictor_adapter import GMTNetPredictorInputAdapter
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
@@ -50,44 +50,6 @@ from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
-
-
-_OPTIONAL_MODEL_IMPORTS = {
-    "InfGCN": ("ppmat.models.infgcn.infgcn", "InfGCN"),
-    "MatENO": ("ppmat.models.mateno.mateno", "MatENO"),
-}
-
-
-def _resolve_optional_model_class(class_name: str):
-    """Load a model class whose optional runtime dependency is requested."""
-    module_name, attribute_name = _OPTIONAL_MODEL_IMPORTS[class_name]
-    try:
-        module = importlib.import_module(module_name)
-    except ModuleNotFoundError as error:
-        if error.name == "paddle_scatter":
-            raise ImportError(
-                f"Building {class_name} requires the optional dependency "
-                "'paddle_scatter'. Install it before requesting this model."
-            ) from error
-        raise
-
-    model_class = getattr(module, attribute_name)
-    globals()[class_name] = model_class
-    return model_class
-
-
-def _resolve_model_class(class_name: str):
-    """Return a registered model class, loading optional classes on demand."""
-    if class_name in _OPTIONAL_MODEL_IMPORTS:
-        return _resolve_optional_model_class(class_name)
-    return eval(class_name)
-
-
-def __getattr__(name: str):
-    """Resolve optional model exports only when callers request them."""
-    if name in _OPTIONAL_MODEL_IMPORTS:
-        return _resolve_optional_model_class(name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
@@ -101,7 +63,6 @@ __all__ = [
     "DimeNetPlusPlus",
     "GMTNet",
     "GMTNetGraphConverter",
-    "GMTNetPredictorInputAdapter",
     "CrystalNN",
     "CHGNetGraphConverter",
     "CHGNet",
@@ -205,16 +166,6 @@ def build_graph_converter(cfg: Dict):
     return graph_converter
 
 
-def build_predictor_input_adapter(cfg: Dict, graph_converter):
-    """Build an opt-in structure input adapter for a property predictor."""
-    if cfg is None:
-        return None
-    cfg = copy.deepcopy(cfg)
-    class_name = cfg.pop("__class_name__")
-    init_params = cfg.pop("__init_params__")
-    return eval(class_name)(graph_converter=graph_converter, **init_params)
-
-
 def build_model(
     cfg: Dict[str, Any],
     strict_unused: bool = False,  # True → raise if some runtime deps are not consumed
@@ -248,7 +199,7 @@ def build_model(
     class_name = cfg.pop("__class_name__")
     init_params = cfg.pop("__init_params__")
 
-    cls = _resolve_model_class(class_name)
+    cls = eval(class_name)
 
     sig = inspect.signature(cls.__init__)
     accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())

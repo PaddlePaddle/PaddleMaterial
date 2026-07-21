@@ -19,8 +19,10 @@ import hashlib
 import json
 import operator
 import pickle
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -33,6 +35,11 @@ from ppmat.models.gmtnet.gmtnet_graph_converter import GMTNetGraphConverter
 
 _RECORD_COUNT = 4713
 _SPLIT_SIZES = {"train": 3770, "val": 471, "test": 472}
+_DEFAULT_SPLIT_RESOURCE = (
+    "configs",
+    "gmtnet",
+    "split_gmtnet_dielectric_seed32.json",
+)
 _CONVERTER_DEFAULTS = {
     "cutoff": 4.0,
     "max_neighbors": 16,
@@ -72,6 +79,24 @@ def _require_regular_file(path: Path, label: str) -> Path:
     if not resolved.is_file():
         raise ValueError(f"{label} must be a regular file: {resolved}")
     return resolved
+
+
+def _default_split_resource():
+    """Return the canonical split from installed resources or the source tree."""
+    try:
+        resource = resources.files("property_prediction").joinpath(
+            *_DEFAULT_SPLIT_RESOURCE
+        )
+    except ModuleNotFoundError:
+        resource = Path(__file__).resolve().parents[2].joinpath(
+            "property_prediction", *_DEFAULT_SPLIT_RESOURCE
+        )
+    if not resource.is_file():
+        raise FileNotFoundError(
+            "GMTNet split resource is missing: property_prediction/configs/gmtnet/"
+            "split_gmtnet_dielectric_seed32.json"
+        )
+    return resource
 
 
 def _validate_record(record: Any, index: int) -> None:
@@ -325,6 +350,7 @@ def _converter_params(build_graph_cfg: Mapping[str, Any] | None) -> dict[str, An
 class GMTNetDielectricDataset(Dataset):
     """Construct frozen GMTNet dielectric samples for one fixed split."""
 
+    property_names: ClassVar[tuple[str, ...]] = ("dielectric",)
     _payload_cache: ClassVar[dict[tuple[Path, int, int], _CachedPayload]] = {}
     _pickle_load_count: ClassVar[int] = 0
 
@@ -344,47 +370,50 @@ class GMTNetDielectricDataset(Dataset):
         if split not in _SPLIT_SIZES:
             raise ValueError("split must be one of: train, val, test.")
         self.data_path = _require_regular_file(Path(data_path), "data_path")
-        resolved_split_path = (
-            Path(split_path)
+        split_path_context = (
+            nullcontext(Path(split_path))
             if split_path is not None
-            else Path(__file__)
-            .resolve()
-            .with_name("gmtnet_dielectric_split_seed32.json")
+            else resources.as_file(_default_split_resource())
         )
-        self.split_path = _require_regular_file(resolved_split_path, "split_path")
-        cache_entry = self._load_payload(self.data_path)
-        self._payload = cache_entry.payload
-        if allow_smoke_split:
-            if canonical_split_path is None:
-                raise ValueError(
-                    "canonical_split_path is required when allow_smoke_split is true."
-                )
-            try:
-                resolved_canonical_path = _require_regular_file(
-                    Path(canonical_split_path), "canonical_split_path"
-                )
-            except (FileNotFoundError, ValueError) as error:
-                raise ValueError(f"canonical_split_path is invalid: {error}") from error
-            self._split_indices = _validate_smoke_split_json(
-                self.split_path,
-                resolved_canonical_path,
-                cache_entry.sha256,
-                self._payload,
-                verify_sha256,
-            )[split]
-        else:
-            with self.split_path.open("r", encoding="utf-8") as handle:
-                split_data = json.load(handle)
-            if isinstance(split_data, dict) and split_data.get("smoke_only") is True:
-                raise ValueError(
-                    "Smoke split JSON requires allow_smoke_split to be true."
-                )
-            self._split_indices = _validate_split_json(
-                self.split_path,
-                cache_entry.sha256,
-                self._payload,
-                verify_sha256,
-            )[split]
+        with split_path_context as resolved_split_path:
+            self.split_path = _require_regular_file(
+                Path(resolved_split_path), "split_path"
+            )
+            cache_entry = self._load_payload(self.data_path)
+            self._payload = cache_entry.payload
+            if allow_smoke_split:
+                if canonical_split_path is None:
+                    raise ValueError(
+                        "canonical_split_path is required when allow_smoke_split is true."
+                    )
+                try:
+                    resolved_canonical_path = _require_regular_file(
+                        Path(canonical_split_path), "canonical_split_path"
+                    )
+                except (FileNotFoundError, ValueError) as error:
+                    raise ValueError(
+                        f"canonical_split_path is invalid: {error}"
+                    ) from error
+                self._split_indices = _validate_smoke_split_json(
+                    self.split_path,
+                    resolved_canonical_path,
+                    cache_entry.sha256,
+                    self._payload,
+                    verify_sha256,
+                )[split]
+            else:
+                with self.split_path.open("r", encoding="utf-8") as handle:
+                    split_data = json.load(handle)
+                if isinstance(split_data, dict) and split_data.get("smoke_only") is True:
+                    raise ValueError(
+                        "Smoke split JSON requires allow_smoke_split to be true."
+                    )
+                self._split_indices = _validate_split_json(
+                    self.split_path,
+                    cache_entry.sha256,
+                    self._payload,
+                    verify_sha256,
+                )[split]
         self.split = split
         self.graph_converter = GMTNetGraphConverter(
             **_converter_params(build_graph_cfg)
@@ -429,23 +458,5 @@ class GMTNetDielectricDataset(Dataset):
             "matrix_equal": paddle.to_tensor(record["matrix_equal"], dtype="bool"),
             "dielectric": paddle.to_tensor(record["dielectric"], dtype="float32"),
             "id": record["JARVIS_ID"],
-            "data_index": record["data_index"],
+            "data_index": paddle.to_tensor(record["data_index"], dtype="int64"),
         }
-
-
-def gmtnet_dielectric_collate_fn(batch: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Collate one GMTNet graph while preserving its single-graph representation."""
-
-    if not batch:
-        raise ValueError("GMTNet dielectric collate requires a non-empty batch.")
-    if len(batch) != 1:
-        raise ValueError("GMTNet dielectric collate currently requires batch_size=1.")
-    sample = batch[0]
-    return {
-        "graph": sample["graph"],
-        "feature_mask": sample["feature_mask"].unsqueeze(0),
-        "matrix_equal": sample["matrix_equal"].unsqueeze(0),
-        "dielectric": sample["dielectric"].unsqueeze(0),
-        "id": [sample["id"]],
-        "data_index": paddle.to_tensor([sample["data_index"]], dtype="int64"),
-    }
