@@ -36,18 +36,21 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
+from ppmat.models.gmtnet.gmtnet import GMTNet
+from ppmat.models.gmtnet.gmtnet_graph_converter import GMTNetGraphConverter
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+
 
 __all__ = [
     "iComformer",
@@ -58,6 +61,8 @@ __all__ = [
     "MatterGen",
     "MatterGenWithCondition",
     "DimeNetPlusPlus",
+    "GMTNet",
+    "GMTNetGraphConverter",
     "CrystalNN",
     "CHGNetGraphConverter",
     "CHGNet",

@@ -42,7 +42,8 @@ if __name__ == "__main__":
         ),
         long_description=get_readme(),
         long_description_content_type="text/markdown",
-        packages=setuptools.find_packages(
+        packages=setuptools.find_namespace_packages(
+            include=("ppmat", "ppmat.*"),
             exclude=(
                 "docs",
                 "examples",
@@ -51,8 +52,19 @@ if __name__ == "__main__":
                 "interatomic_potentials",
                 "property_prediction",
                 "structure_generation",
-            )
-        ),
+            ),
+        )
+        + ["property_prediction"],
+        package_data={
+            "property_prediction": [
+                "configs/gmtnet/README.md",
+                "configs/gmtnet/gmtnet_jarvis_dielectric.yaml",
+                "configs/gmtnet/split_gmtnet_dielectric_seed32.json",
+            ],
+        },
+        exclude_package_data={
+            "": ["*.pdparams", "*.pkl"],
+        },
         classifiers=[
             "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Science/Research",
