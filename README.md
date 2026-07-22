@@ -1,8 +1,20 @@
 # PaddleMaterials
 
 <p align="center">
- <img src="docs/ppmat_logo.png" align="middle" width = "400"/>
+  <img src="docs/ppmat_logo.png" alt="PaddleMaterials" width="400">
+</p>
+
 <p align="center">
+  <a href="./Install.md">
+    <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white">
+  </a>
+  <a href="./LICENSE">
+    <img alt="Apache 2.0 License" src="https://img.shields.io/github/license/PaddlePaddle/PaddleMaterials">
+  </a>
+  <a href="https://github.com/PaddlePaddle/PaddleMaterials/stargazers">
+    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/PaddlePaddle/PaddleMaterials?style=flat&amp;logo=github">
+  </a>
+</p>
 
 ## 🚀 Introduction
 
