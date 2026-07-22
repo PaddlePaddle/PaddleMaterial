@@ -650,7 +650,7 @@ class RadiusGraphConverter:
         edge_index, distances, directions = self.get_radius_edges(positions)
         triplet_indices = None
         if self.return_triplet_indices:
-            triplet_indices = self.get_triplet_indices(edge_index, num_nodes)
+            triplet_indices = self.get_triplet_indices(edge_index)
         return self.build_pgl_graph(
             atomic_numbers,
             positions,
@@ -693,39 +693,39 @@ class RadiusGraphConverter:
                 np.empty((0, 3), dtype=np.float32),
             )
 
-        diff = positions[None, :, :] - positions[:, None, :]
-        dist = np.linalg.norm(diff, axis=-1)
-        mask = dist < self.cutoff
+        displacement = positions[:, None, :] - positions[None, :, :]
+        distance_matrix = np.linalg.norm(displacement, axis=-1)
+        mask = distance_matrix < self.cutoff
         np.fill_diagonal(mask, False)
-        rows, cols = np.where(mask)
+        targets, sources = np.where(mask)
 
         if self.edge_mode == "undirected":
-            keep = rows < cols
-            rows, cols = rows[keep], cols[keep]
+            keep = sources < targets
+            sources, targets = sources[keep], targets[keep]
 
         if self.add_self_loops:
             self_nodes = np.arange(num_nodes, dtype=np.int64)
-            rows = np.concatenate([rows, self_nodes], axis=0)
-            cols = np.concatenate([cols, self_nodes], axis=0)
+            sources = np.concatenate([sources, self_nodes])
+            targets = np.concatenate([targets, self_nodes])
 
-        if rows.size == 0:
+        if sources.size == 0:
             return (
                 np.empty((2, 0), dtype=np.int64),
                 np.empty((0, 1), dtype=np.float32),
                 np.empty((0, 3), dtype=np.float32),
             )
 
-        edge_index = np.stack([rows, cols], axis=0).astype(np.int64)
-        distances = dist[rows, cols].reshape(-1, 1).astype(np.float32)
-        directions = diff[rows, cols].astype(np.float32)
+        edge_index = np.stack([sources, targets], axis=0).astype(np.int64)
+        distances = distance_matrix[targets, sources].reshape(-1, 1)
+        directions = displacement[targets, sources]
         directions = directions / np.maximum(distances, 1e-8)
 
         order = np.argsort(
-            edge_index[0] * max(1, num_nodes) + edge_index[1], kind="mergesort"
+            edge_index[1] * max(1, num_nodes) + edge_index[0], kind="mergesort"
         )
         edge_index = edge_index[:, order]
-        distances = distances[order]
-        directions = directions[order]
+        distances = distances[order].astype(np.float32)
+        directions = directions[order].astype(np.float32)
         return edge_index, distances, directions
 
     def get_node_feat(
@@ -778,46 +778,27 @@ class RadiusGraphConverter:
         )
 
     def get_triplet_indices(
-        self, edge_index: np.ndarray, num_atoms: int
+        self, edge_index: np.ndarray
     ) -> Dict[str, np.ndarray]:
         edge_index = np.asarray(edge_index, dtype=np.int64)
-        src, dst = edge_index
-        num_edges = edge_index.shape[1]
+        sources, targets = edge_index
+        num_atoms = int(edge_index.max()) + 1 if edge_index.size else 0
 
-        in_edges = [[] for _ in range(num_atoms)]
-        out_edges = [[] for _ in range(num_atoms)]
-        for edge_id in range(num_edges):
-            in_edges[int(dst[edge_id])].append(edge_id)
-            out_edges[int(src[edge_id])].append(edge_id)
+        incoming_edges = [[] for _ in range(num_atoms)]
+        for edge_id, target in enumerate(targets):
+            incoming_edges[int(target)].append(edge_id)
 
-        idx_kj_list = []
-        idx_ji_list = []
-        for atom_id in range(num_atoms):
-            for kj_edge in in_edges[atom_id]:
-                k_atom = src[kj_edge]
-                for ji_edge in out_edges[atom_id]:
-                    i_atom = dst[ji_edge]
-                    if k_atom != i_atom:
-                        idx_kj_list.append(kj_edge)
-                        idx_ji_list.append(ji_edge)
-
-        idx_kj = np.asarray(idx_kj_list, dtype=np.int64)
-        idx_ji = np.asarray(idx_ji_list, dtype=np.int64)
-
-        idx_lk_list = []
-        idx_triplet_list = []
-        for triplet_id, kj_edge in enumerate(idx_kj_list):
-            k_atom = int(src[kj_edge])
-            lk_edges = in_edges[k_atom]
-            if lk_edges:
-                idx_lk_list.extend(lk_edges)
-                idx_triplet_list.extend([triplet_id] * len(lk_edges))
+        idx_kj = []
+        idx_ji = []
+        for edge_id, (source, target) in enumerate(edge_index.T):
+            for incoming_edge in incoming_edges[int(source)]:
+                if sources[incoming_edge] != target:
+                    idx_kj.append(incoming_edge)
+                    idx_ji.append(edge_id)
 
         return {
-            "ti_idx_kj": idx_kj,
-            "ti_idx_ji": idx_ji,
-            "ti_idx_lk": np.asarray(idx_lk_list, dtype=np.int64),
-            "ti_idx_triplet": np.asarray(idx_triplet_list, dtype=np.int64),
+            "ti_idx_kj": np.asarray(idx_kj, dtype=np.int64),
+            "ti_idx_ji": np.asarray(idx_ji, dtype=np.int64),
         }
 
 

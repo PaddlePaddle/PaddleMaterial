@@ -31,8 +31,9 @@ class BuildMolecule:
 
     Args:
         format (Literal["smiles","mol_block","mol_file","sdf_file","xyz_block",
-            "xyz_file","inchi","dict","rdmol"]): format of input molecules data used
-            by convertion of RDKit
+            "xyz_file","inchi","dict","rdmol"]): format of input molecules data
+            used by convertion of RDKit. The ``dict`` format accepts
+            ``atomic_numbers`` and ``positions`` arrays.
         sanitize (bool): Whether to sanitize the molecule using RDKit after construction
             (e.g., validate valence, adjust bond orders). Defaults to True.
         add_hs (bool): Whether to add explicit hydrogen atoms to the molecule.

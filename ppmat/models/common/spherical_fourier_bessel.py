@@ -169,6 +169,13 @@ class SphericalBesselBasis(paddle.nn.Layer):
             ),
             persistable=False,
         )
+        self.register_buffer(
+            "degree_selectors",
+            paddle.eye(num_spherical, dtype="float32").reshape(
+                [num_spherical, 1, num_spherical, 1]
+            ),
+            persistable=False,
+        )
 
     def forward(self, dist):
         scaled_dist = dist.reshape([-1, 1, 1]) / self.cutoff
@@ -193,7 +200,7 @@ class SphericalBesselBasis(paddle.nn.Layer):
                     - values[-2]
                 )
 
-        basis = []
+        basis = paddle.zeros_like(arguments)
         for degree in range(self.num_spherical):
             degree_arguments = arguments[:, degree, :]
             degree_values = values[degree][:, degree, :]
@@ -202,8 +209,10 @@ class SphericalBesselBasis(paddle.nn.Layer):
                 _spherical_jn_series(degree, degree_arguments),
                 degree_values,
             )
-            basis.append(degree_values * self.normalizers[degree])
-        return paddle.stack(basis, axis=1)
+            basis = basis + (
+                degree_values * self.normalizers[degree]
+            ).unsqueeze(1) * self.degree_selectors[degree]
+        return basis
 
 
 class RealSphericalHarmonics(paddle.nn.Layer):
@@ -228,12 +237,34 @@ class RealSphericalHarmonics(paddle.nn.Layer):
             ),
             persistable=False,
         )
+        # Paddle stack/concat double gradients cannot handle the constant l=0
+        # harmonic, so assemble columns with fixed non-trainable selectors.
+        num_harmonics = num_spherical**2
+        self.register_buffer(
+            "harmonic_selectors",
+            paddle.eye(num_harmonics, dtype="float32").reshape(
+                [num_harmonics, 1, num_harmonics]
+            ),
+            persistable=False,
+        )
 
-    def forward(self, angle, torsion):
-        cos_angle = paddle.cos(angle)
-        sin_angle = paddle.sin(angle)
+    def forward(
+        self, cos_angle, sin_angle, cos_torsion, sin_torsion
+    ):
         one = paddle.ones_like(cos_angle)
         polynomials = {(0, 0): one}
+
+        torsion_cosines = [one]
+        torsion_sines = [paddle.zeros_like(one)]
+        for _ in range(1, self.num_spherical):
+            previous_cos = torsion_cosines[-1]
+            previous_sin = torsion_sines[-1]
+            torsion_cosines.append(
+                previous_cos * cos_torsion - previous_sin * sin_torsion
+            )
+            torsion_sines.append(
+                previous_sin * cos_torsion + previous_cos * sin_torsion
+            )
 
         for order in range(1, self.num_spherical):
             polynomials[(order, order)] = (
@@ -270,7 +301,7 @@ class RealSphericalHarmonics(paddle.nn.Layer):
                     * self.prefactors[degree, order]
                     * polynomials[(degree, order)]
                     * sin_angle**order
-                    * paddle.cos(order * torsion)
+                    * torsion_cosines[order]
                 )
             for order in range(degree, 0, -1):
                 harmonics.append(
@@ -278,9 +309,15 @@ class RealSphericalHarmonics(paddle.nn.Layer):
                     * self.prefactors[degree, order]
                     * polynomials[(degree, order)]
                     * sin_angle**order
-                    * paddle.sin(order * torsion)
+                    * torsion_sines[order]
                 )
-        return paddle.stack(harmonics, axis=1)
+        result = paddle.zeros(
+            [cos_angle.shape[0], self.num_spherical**2],
+            dtype=cos_angle.dtype,
+        )
+        for index, value in enumerate(harmonics):
+            result = result + value.unsqueeze(1) * self.harmonic_selectors[index]
+        return result
 
 
 class SphericalFourierBesselEmbedding(paddle.nn.Layer):
@@ -295,16 +332,26 @@ class SphericalFourierBesselEmbedding(paddle.nn.Layer):
         )
         self.spherical_harmonics = RealSphericalHarmonics(num_spherical)
 
-    def forward(self, dist, angle, torsion, idx_kj):
+    def forward(
+        self,
+        dist,
+        angle_cos,
+        angle_sin,
+        torsion_cos,
+        torsion_sin,
+        idx_kj,
+    ):
         radial_basis = self.radial_basis(dist)[idx_kj]
-        harmonics = self.spherical_harmonics(angle, torsion)
+        harmonics = self.spherical_harmonics(
+            angle_cos, angle_sin, torsion_cos, torsion_sin
+        )
         angle_harmonics = paddle.index_select(
             harmonics,
             self.spherical_harmonics.m0_indices,
             axis=1,
         )
 
-        num_triplets = angle.shape[0]
+        num_triplets = angle_cos.shape[0]
         angle_embedding = (
             radial_basis * angle_harmonics.reshape(
                 [num_triplets, self.num_spherical, 1]

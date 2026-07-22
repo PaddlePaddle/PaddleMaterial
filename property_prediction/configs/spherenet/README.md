@@ -1,6 +1,6 @@
 # SphereNet
 
-[Spherical Message Passing for 3D Molecular Graphs](https://arxiv.org/abs/2102.05013) (ICLR 2021)
+[Spherical Message Passing for 3D Molecular Graphs](https://arxiv.org/abs/2102.05013) (ICLR 2022)
 
 ## Abstract
 
@@ -29,14 +29,15 @@ B3LYP/6-31G(2df,p) level of theory.
 
 | Split   | Size   |
 |---------|--------|
-| Train   | 110,831 |
+| Train   | 110,000 |
 | Val     | 10,000  |
-| Test    | 10,000  |
+| Test    | 10,831  |
 | **Total** | **130,831** |
 
-**Data format**: Each molecule contains atomic numbers (`z`), 3D positions
-(`pos`), and 12 property labels. The raw dataset is available at
-[figshare](https://figshare.com/ndownloader/files/3195389).
+**Data format**: The pre-split `train.csv`, `val.csv`, and `test.csv`
+files contain `standard_xyz`, `molecule_id`, and the 12 target columns.
+Missing files are downloaded from the
+[PaddleMaterials QM9 archive](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.zip).
 
 **Reference**: [Quantum-chemical insights from deep learning](https://arxiv.org/abs/1708.04444) (Gaussian, 2017)
 
@@ -86,9 +87,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_mu</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\mu$ (D)</td>
-            <td nowrap="nowrap">0.032</td>
+            <td nowrap="nowrap">0.024501</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~18 h</td>
+            <td nowrap="nowrap">73.3 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_mu.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_mu.zip">checkpoint | log</a></td>
         </tr>
@@ -96,9 +97,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_alpha</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\alpha$ (Bohr³)</td>
-            <td nowrap="nowrap">0.24</td>
+            <td nowrap="nowrap">0.045156</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~24 h</td>
+            <td nowrap="nowrap">73.3 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_alpha.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_alpha.zip">checkpoint | log</a></td>
         </tr>
@@ -106,9 +107,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_homo</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\varepsilon_{\text{HOMO}}$ (meV)</td>
-            <td nowrap="nowrap">42</td>
+            <td nowrap="nowrap">24.492</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap">64.6 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_homo.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_homo.zip">checkpoint | log</a></td>
         </tr>
@@ -116,9 +117,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_lumo</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\varepsilon_{\text{LUMO}}$ (meV)</td>
-            <td nowrap="nowrap">43</td>
+            <td nowrap="nowrap">18.843</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap">64.6 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_lumo.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_lumo.zip">checkpoint | log</a></td>
         </tr>
@@ -126,9 +127,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_gap</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\Delta\varepsilon$ (meV)</td>
-            <td nowrap="nowrap">62</td>
+            <td nowrap="nowrap">43.969</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~22 h</td>
+            <td nowrap="nowrap">64.4 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_gap.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_gap.zip">checkpoint | log</a></td>
         </tr>
@@ -136,9 +137,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_r2</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$\langle R^2 \rangle$ (Bohr²)</td>
-            <td nowrap="nowrap">0.30</td>
+            <td nowrap="nowrap">0.260937</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~12 h</td>
+            <td nowrap="nowrap">63.9 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_r2.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_r2.zip">checkpoint | log</a></td>
         </tr>
@@ -146,9 +147,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_zpve</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">ZPVE (meV)</td>
-            <td nowrap="nowrap">1.4</td>
+            <td nowrap="nowrap">1.262</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~14 h</td>
+            <td nowrap="nowrap">64.8 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_zpve.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_zpve.zip">checkpoint | log</a></td>
         </tr>
@@ -156,9 +157,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_U0</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$U_0$ (meV)</td>
-            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">6.218</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap">64.7 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_U0.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U0.zip">checkpoint | log</a></td>
         </tr>
@@ -166,9 +167,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_U</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$U$ (meV)</td>
-            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">6.443</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap">62.3 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_U.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_U.zip">checkpoint | log</a></td>
         </tr>
@@ -176,9 +177,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_H</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$H$ (meV)</td>
-            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">6.599</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap">62.3 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_H.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_H.zip">checkpoint | log</a></td>
         </tr>
@@ -186,9 +187,9 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_G</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$G$ (meV)</td>
-            <td nowrap="nowrap">22</td>
+            <td nowrap="nowrap">7.639</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~20 h</td>
+            <td nowrap="nowrap">61.5 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_G.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_G.zip">checkpoint | log</a></td>
         </tr>
@@ -196,14 +197,35 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
             <td nowrap="nowrap">spherenet_qm9_Cv</td>
             <td nowrap="nowrap">QM9</td>
             <td nowrap="nowrap">$C_v$ (cal/(mol·K))</td>
-            <td nowrap="nowrap">0.052</td>
+            <td nowrap="nowrap">0.025012</td>
             <td nowrap="nowrap">1</td>
-            <td nowrap="nowrap">~18 h</td>
+            <td nowrap="nowrap">61.4 h</td>
             <td nowrap="nowrap"><a href="spherenet_qm9_Cv.yaml">config</a></td>
             <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/spherenet/spherenet_qm9_Cv.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
+
+The split and all target values are rebuilt directly from the
+[DIG `qm9_eV.npz` reference](https://github.com/divelab/DIG/blob/dig-stable/dig/threedgraph/dataset/PygQM93D.py)
+using `RandomState(42)`: 110,000 molecules for
+training, 10,000 for validation, and 10,831 for testing. Training follows the
+released DIG checkpoint metadata: 1,000 epochs, batch size 32, Adam with an
+initial learning rate of 5e-4, and StepLR decay by 0.5 every 100 or 150 epochs
+according to the target. The `r2` model uses two spherical harmonics; the
+remaining targets use three.
+
+The SphereNet paper MAEs in the same row order are `0.0245, 0.0449, 22.8,
+19.6, 31.1, 0.268, 1.26, 6.31, 6.36, 6.33, 7.78, 0.024`.
+The released DIG Torch checkpoints evaluated on this fixed split give
+`0.024478, 0.044901, 22.839, 19.575, 31.077, 0.279623, 1.263, 6.847,
+6.641, 6.321, 7.783, 0.023989`; the gap value uses the derived protocol below.
+
+The table reports MAE on the fixed 10,831-molecule test split. The standalone
+`spherenet_qm9_gap` checkpoint is trained directly on the gap label. In the
+[paper-comparable DIG protocol](https://github.com/divelab/DIG_storage/tree/main/3dgraph/qm9),
+the gap prediction is instead computed as `lumo - homo` from the two released
+target checkpoints; its test MAE is 31.758 meV (SphereNet paper: 31.1 meV).
 
 ### Training
 
@@ -243,7 +265,7 @@ python property_prediction/predict.py \
 # Using a local checkpoint
 python property_prediction/predict.py \
   --config_path ./property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
-  --checkpoint_path ./output/spherenet_qm9_mu_t_*/checkpoints/best.pdparams \
+  --checkpoint_path 'your_model.pdparams' \
   --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
   --save_path ./output/spherenet_qm9_mu_prediction.csv
 ```
@@ -251,11 +273,11 @@ python property_prediction/predict.py \
 ## Citation
 
 ```bibtex
-@inproceedings{liu2021spherenet,
+@inproceedings{liu2022spherenet,
   title={Spherical Message Passing for 3D Molecular Graphs},
   author={Liu, Yi and Wang, Limei and Liu, Meng and Lin, Yuchao and Zhang, Xuan and
           Oztekin, Bora and Ji, Shuiwang},
   booktitle={International Conference on Learning Representations (ICLR)},
-  year={2021}
+  year={2022}
 }
 ```

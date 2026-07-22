@@ -54,7 +54,7 @@ class QM9Dataset(Dataset):
     └───────────────────┴─────────┴─────────┴─────────┘
     ```
     The dataset can also be downloaded from the following source:
-    https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9_split.zip
+    https://paddle-org.bj.bcebos.com/paddlematerials/datasets/qm9/qm9.zip
 
     **Data Format**
     The dataset is structured as comma-separated values (CSV) files with one
