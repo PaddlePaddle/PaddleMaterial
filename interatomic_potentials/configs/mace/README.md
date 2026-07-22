@@ -30,6 +30,10 @@ MACE-MP-0 is trained on the Materials Project Trajectory (MPtrj) dataset, which 
     | :--- | :---: | :---: | :---: |
     | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592 | 14593 |
 
+    **数据与权重下载：**
+    - 原数据集下载链接：[MPtrj_2022.9_full.zip](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip)
+    - 飞桨星河社区（数据集 + Paddle 权重）：[mace 模型空间](https://aistudio.baidu.com/modelsdetail/51803/space)
+
 ## Models
 MACE constructs an atomistic graph where:
 * **Nodes**: Represent atoms with element-specific embeddings
@@ -82,11 +86,11 @@ $$
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap"><a href="mace_mp0_medium.yaml">mace_mp0_medium</a></td>
-            <td nowrap="nowrap"><a href="https://github.com/ACEsuit/mace-mp/releases/download/mace_mp_0/2023-12-03-mace-128-L1_epoch-199.model">checkpoint | log</a></td>
+            <td nowrap="nowrap"><a href="https://aistudio.baidu.com/modelsdetail/51803/space">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
-**Note**: The model weights were directly adapted from the [MACE](https://github.com/ACEsuit/mace) repository. The MAE metrics listed in the table are directly cited from the original paper's experimental results.
+**Note**: The model has been fully implemented and verified in PaddlePaddle, including complete training, inference, and accuracy alignment validation with the original PyTorch version. The MAE metrics listed in the table are directly cited from the original paper's experimental results. 预训练权重与数据集已上传至[飞桨星河社区](https://aistudio.baidu.com/modelsdetail/51803/space)；原数据集亦可从 [MPtrj_2022.9_full.zip](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) 下载。
 
 ### Training
 ```bash
