@@ -38,18 +38,6 @@ atomic forces (kcal/mol/Å).
 | Toluene       | 1000  | 1000 | 440790 | 15    |
 | Uracil        | 1000  | 1000 | 131770 | 12    |
 
-**Data format**: Each molecule is stored as a single `.npz` file with keys
-`E` (energies), `F` (forces), `R` (positions), and `z` (atomic numbers).
-
-The configs expect each molecule file under `./data/md17/` and split indices
-under `./data/md17/splits/<molecule>_<split>_idx.npy`. For example, the
-aspirin config reads `./data/md17/md17_aspirin.npz`.
-
-Each MD17 config stores the training-split total-energy mean in the SphereNet
-model with `data_std: 1.0`. The model learns centered energy, restores physical
-energy internally, and differentiates the restored energy to obtain forces.
-Dataset labels therefore remain in their original physical units.
-
 ## Model
 
 SphereNet is a spherical message passing neural network for 3D molecular
@@ -175,51 +163,18 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
     </body>
 </table>
 
-The table reports MAE on each complete fixed MD17 test split.
-Trainer-best and final-latest checkpoints are ranked using only validation
-loss. In that fixed order, the complete test split is used as a release gate
-for numerical stability and a force MAE no worse than 1.25x the
-official DIG checkpoint. For retrained ethanol and malonaldehyde,
-the larger 1.05x independent official-code Torch scratch threshold
-is also accepted.
-If a final-latest checkpoint is numerically unstable, a validated stable
-early-stop checkpoint may be published as both best and latest.
-The package log records this policy, and both checkpoint triplets
-must be byte-identical.
-
-The optimizer and split protocol follows the official DIG MD17 release: split
-seed 42 with 1,000 training frames, 1,000 validation frames, and all remaining
-frames for testing; training batch size 1; Adam with an initial learning rate
-of 5e-4; `energy_mae + 100 * force_mae`; and StepLR decay by 0.5 every 200
-epochs. The primary ethanol and malonaldehyde seed sweep runs for
-1,300 and 1,100 epochs so that it covers the official release's best
-epochs, 1,148 and 864. Auxiliary ethanol seeds 47-55 run for 600
-epochs to cover the independent Torch scratch convergence region.
-The selected package config records its candidate's planned training horizon;
-the package log records the selected epoch when early stopping is used.
-Training time is elapsed single-run time from the recorded training logs.
-
-SphereNet Table 3 force MAEs in the row order above are `0.430, 0.178, 0.208,
-0.340, 0.178, 0.360, 0.155, 0.267`. The official DIG release checkpoints
-evaluated on these fixed full test splits give `0.375, 0.181, 0.187, 0.273,
-0.139, 0.284, 0.142, 0.245`.
-
-On NVIDIA Ampere and newer GPUs, run SphereNet with `NVIDIA_TF32_OVERRIDE=0`
-to keep matrix multiplication in full FP32 precision. This is required to match
-the reference implementation when predicting large absolute MD17 energies.
-
 ### Training
 
 ```bash
 # Single-GPU training — MD17 aspirin (energy + force)
-NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
+python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml
 ```
 
 ### Validation
 
 ```bash
-NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
+python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_eval=True Global.do_train=False Global.do_test=False \
   Trainer.pretrained_model_path='your_model.pdparams'
@@ -228,7 +183,7 @@ NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
 ### Testing
 
 ```bash
-NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
+python interatomic_potentials/train.py \
   -c interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   Global.do_test=True Global.do_train=False Global.do_eval=False \
   Trainer.pretrained_model_path='your_model.pdparams'
@@ -238,12 +193,12 @@ NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/train.py \
 
 ```bash
 # Molecular prediction
-NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/predict.py \
+python interatomic_potentials/predict.py \
   --model_name spherenet_md17_aspirin \
   --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 
 # Using a local checkpoint
-NVIDIA_TF32_OVERRIDE=0 python interatomic_potentials/predict.py \
+python interatomic_potentials/predict.py \
   --config_path ./interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   --checkpoint_path ./output/spherenet_aspirin/checkpoints/best.pdparams \
   --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz

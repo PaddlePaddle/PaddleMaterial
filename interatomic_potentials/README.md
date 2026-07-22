@@ -14,8 +14,8 @@ Machine-learning interatomic potentials (MLIP) bridge the gap between quantum-le
 | &emsp;Stress                        | ✅                                       | ✅                                              | -                                               |
 | &emsp;Magmom                        | ✅                                       | -                                               | -                                               |
 | **ML Capabilities · Training**      |                                          |                                                 |                                                 |
-| &emsp;Single-GPU                    | ✅                                       | ✅                                              | ✅                                              |
-| &emsp;Distributed Train             | ✅                                       | ✅                                              | -                                               |
+| &emsp;Single-GPU                    | ✅                                       | 🧪                                              | ✅                                              |
+| &emsp;Distributed Train             | ✅                                       | ✅                                              | 🧪                                               |
 | &emsp;Mixed Precision               | -                                        | -                                               | -                                               |
 | &emsp;Fine-tuning                   | ✅                                       | ✅                                              | ✅                                              |
 | &emsp;Uncertainty / Active-Learning | -                                        | -                                               | -                                               |
@@ -27,10 +27,10 @@ Machine-learning interatomic potentials (MLIP) bridge the gap between quantum-le
 | &emsp;Distributed inference         | -                                        | -                                               | -                                               |
 | &emsp;Compiler CINN                 | -                                        | -                                               | -                                               |
 | **Molecular Dynamic Interface**     |                                          |                                                 |                                                 |
-| &emsp;ASE                           | ✅                                       | ✅                                              | -                                               |
+| &emsp;ASE                           | ✅                                       | ✅                                              | 🧪                                               |
 | **Dataset**                         |                                          |                                                 |                                                 |
-| &emsp;MPtrj                         | ✅                                       | 🚧                                              | -                                               |
+| &emsp;MPtrj                         | ✅                                       | 🧪                                              | -                                               |
 | &emsp;MD17                          | -                                        | -                                               | ✅                                              |
-| **ML2DDB🌟**                        | ✅                                       | -                                               | -                                               |
+| &emsp;ML2DDB🌟                      | ✅                                       | -                                               | -                                               |
 
-**Notice**:🌟 represent originate research work published from paddlematerials toolkit
+**Legend:** ✅ Verified · 🧪 Implemented, pending validation · 🚧 In development · `-` Not supported · 🌟 Original Work

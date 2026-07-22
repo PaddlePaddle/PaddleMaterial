@@ -54,4 +54,4 @@ Property Prediction (PP) targets rapid, first-principles-level estimation of key
 | **ML2DDB🌟**                                 |                    ✅                    |                       ✅                      |                       ✅                       |                       —                        |
 | **QM9**                                      |                    —                    |                       —                       |                       ✅                       |                       ✅                       |
 
-**Notice**:🌟 represent originate research work published from paddlematerials toolkit
+**Legend:** ✅ Verified · 🧪 Implemented, pending validation · 🚧 In development · `-` Not supported · 🌟 Original Work

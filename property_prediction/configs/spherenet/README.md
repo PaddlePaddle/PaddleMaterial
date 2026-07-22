@@ -206,26 +206,7 @@ and $d_{kj}$ is expanded using a 3D spherical Fourier-Bessel basis.
     </body>
 </table>
 
-The split and all target values are rebuilt directly from the
-[DIG `qm9_eV.npz` reference](https://github.com/divelab/DIG/blob/dig-stable/dig/threedgraph/dataset/PygQM93D.py)
-using `RandomState(42)`: 110,000 molecules for
-training, 10,000 for validation, and 10,831 for testing. Training follows the
-released DIG checkpoint metadata: 1,000 epochs, batch size 32, Adam with an
-initial learning rate of 5e-4, and StepLR decay by 0.5 every 100 or 150 epochs
-according to the target. The `r2` model uses two spherical harmonics; the
-remaining targets use three.
-
-The SphereNet paper MAEs in the same row order are `0.0245, 0.0449, 22.8,
-19.6, 31.1, 0.268, 1.26, 6.31, 6.36, 6.33, 7.78, 0.024`.
-The released DIG Torch checkpoints evaluated on this fixed split give
-`0.024478, 0.044901, 22.839, 19.575, 31.077, 0.279623, 1.263, 6.847,
-6.641, 6.321, 7.783, 0.023989`; the gap value uses the derived protocol below.
-
-The table reports MAE on the fixed 10,831-molecule test split. The standalone
-`spherenet_qm9_gap` checkpoint is trained directly on the gap label. In the
-[paper-comparable DIG protocol](https://github.com/divelab/DIG_storage/tree/main/3dgraph/qm9),
-the gap prediction is instead computed as `lumo - homo` from the two released
-target checkpoints; its test MAE is 31.758 meV (SphereNet paper: 31.1 meV).
+> **Note:** The standalone gap model is trained directly on the gap label (43.969 meV); the SphereNet paper reports 31.1 meV, while the paper-comparable `LUMO - HOMO` protocol gives 31.758 meV with the Paddle checkpoints.
 
 ### Training
 
