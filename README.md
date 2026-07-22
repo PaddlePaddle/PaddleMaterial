@@ -119,7 +119,7 @@ Run NMR spectrum elucidate using a pretrained DiffNMR model:
 python spectrum_elucidation/sample.py \
     --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' \
     --weights_name='DiffNMR_nless15_best.pdparams' \
-    --save_path='result_diffnmr_nless15/' \ 
+    --save_path='result_diffnmr_nless15/' \
     --checkpoint_path="pretrained"
 ```
 
