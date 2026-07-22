@@ -34,6 +34,22 @@ jobs:
       - name: Validate distributions
         run: python -m twine check dist/*
 
+      - name: Validate runtime metadata
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheel_path, = glob.glob("dist/*.whl")
+          with zipfile.ZipFile(wheel_path) as wheel:
+              metadata_path, = (
+                  name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
+              )
+              metadata = wheel.read(metadata_path).decode()
+
+          assert "Requires-Dist: setuptools==68.2.2" in metadata
+          PY
+
       - name: Store distributions
         uses: actions/upload-artifact@v5
         with:

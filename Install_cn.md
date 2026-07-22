@@ -43,6 +43,10 @@
 
     python -m pip install ppmat
 
+验证 PaddleMaterials 是否从已安装的软件包导入：
+
+    python -c "import ppmat; print(ppmat.__version__); print(ppmat.__file__)"
+
 如需开发 PaddleMaterials，请从源码安装：
 
     # clone PaddleMaterials
@@ -61,6 +65,9 @@
 
 
 ## 2. 运行示例
+
+任务脚本、配置文件和示例数据保存在源码仓库中，不包含在 `ppmat` wheel 内。
+请先克隆源码仓库，并在仓库根目录执行以下命令。
 
 使用 MegNet 模型预测材料属性：
 

@@ -42,6 +42,10 @@ Install the released package from PyPI:
 
     python -m pip install ppmat
 
+Verify that PaddleMaterials is imported from the installed package:
+
+    python -c "import ppmat; print(ppmat.__version__); print(ppmat.__file__)"
+
 For development, install PaddleMaterials from source:
 
     # Clone PaddleMaterials repository
@@ -61,6 +65,10 @@ For development, install PaddleMaterials from source:
 
 
 ## 2. Run Examples
+
+The task scripts, configuration files, and example data are maintained in the source
+repository and are not included in the `ppmat` wheel. Clone the repository and run
+the following commands from its root directory.
 
 Predict material properties using the MegNet model:
 

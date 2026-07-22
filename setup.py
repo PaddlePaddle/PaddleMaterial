@@ -23,7 +23,6 @@ extensions = [
 BUILD_AND_TEST_REQUIREMENTS = {
     "cython",
     "pytest",
-    "setuptools",
     "setuptools-scm",
 }
 
@@ -37,6 +36,7 @@ def get_requirements() -> list[str]:
     """Read runtime requirements, excluding build and test dependencies."""
     requirements = []
     seen = set()
+    # Keep setuptools at runtime while matminer 0.9.2 relies on pkg_resources.
     for line in Path("requirements.txt").read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):

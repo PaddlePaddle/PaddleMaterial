@@ -16,14 +16,16 @@ from ppmat import losses  # noqa
 from ppmat import metrics  # noqa
 from ppmat import models  # noqa
 from ppmat import optimizer  # noqa
+from ppmat import predictor  # noqa
+from ppmat import sampler  # noqa
 from ppmat import schedulers  # noqa
 from ppmat import trainer  # noqa
 from ppmat import utils  # noqa
-from ppmat import sampler  # noqa
 
 __all__ = [
     "models",
     "trainer",
+    "predictor",
     "sampler",
 ]
 
