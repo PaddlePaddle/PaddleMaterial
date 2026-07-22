@@ -1,0 +1,115 @@
+# 高熵合金自进化智能体配置文件
+
+evolution:
+  population_size: 50
+  max_generations: 100
+  mutation_rate: 0.15
+  crossover_rate: 0.8
+  elite_ratio: 0.1
+
+constraints:
+  max_elements: 7
+  min_concentration: 0.05
+  max_concentration: 0.40
+  allowed_elements:
+    - Co
+    - Cr
+    - Fe
+    - Ni
+    - Mn
+    - Al
+    - Ti
+    - V
+    - Mo
+    - W
+    - Cu
+    - Nb
+    - Ta
+
+evaluation:
+  fitness_profile: single_phase  # 可选: single_phase / eutectic
+  objectives:
+    - name: thermodynamic
+      weight: 0.3
+      target: maximize
+    - name: mechanical
+      weight: 0.5
+      target: maximize
+    - name: corrosion
+      weight: 0.2
+      target: maximize
+
+# 可选: LLM策略智能体配置
+strategy_agent:
+  enabled: false
+  model: gpt-4
+  temperature: 0.7
+  max_tokens: 500
+  graphrag:
+    enabled: true
+    max_results: 5
+
+active_learning:
+  enabled: true
+  fitness_weight: 0.6
+  uncertainty_weight: 0.2
+  novelty_weight: 0.2
+  candidate_pool_size: 5
+
+# 可选: 高级特性
+advanced:
+  adaptive_mutation: true
+  pareto_optimization: true
+  constraint_handling: penalty
+  diversity_maintenance: true
+
+# CrewAI 入口默认参数
+crewai:
+  # 可选: llmone / openai
+  # DeepSeek、千帆、AI Studio 等 OpenAI-compatible 服务通过 base_url/model 配置。
+  default_llm_api: llmone
+  default_elements:
+    - Co
+    - Cr
+    - Fe
+    - Ni
+    - V
+  default_requirement: "设计一种在800°C下屈服强度>900MPa、延伸率>10%的五元高熵合金，要求热力学稳定"
+  default_model: gpt-5.2
+  output_report: .ark/output/crewai_result/report.md
+
+# CALPHAD 配置
+calphad:
+  database_path: null
+  allow_simplified_database: false
+  default_temperature_k: 1273.15
+  use_hybrid_evaluator: false
+  calphad_threshold: 0.72
+  use_calphad_probability: 0.1
+
+# 自动闭环运行参数
+loop:
+  default_run_mode: single
+  max_rounds: 3
+  patience: 1
+  min_improvement: 0.01
+  enable_validation: true
+  stop_on_stable_validation: false
+
+# Agentic Materials Agent 自进化能力
+agentic_materials:
+  enabled: true
+  surrogate_family: composition_graph_neural_surrogate
+  target_fitness: 0.92
+  min_train_samples: 24
+  performance_floor: 0.82
+  uncertainty_collect_threshold: 0.55
+  calphad_confidence_threshold: 0.45
+  problem_batch_size: 4
+  property_targets:
+    yield_strength_MPa:
+      min: 900
+      unit: MPa
+    elongation_percent:
+      min: 10
+      unit: "%"

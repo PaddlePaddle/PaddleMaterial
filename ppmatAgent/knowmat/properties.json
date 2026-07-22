@@ -1,0 +1,82 @@
+{
+    "optical properties": {
+        "optical conductivity": ["optical conductivity", "real part of optical conductivity", "imaginary part of optical conductivity"],
+        "optical absorption coefficient": ["transmittance", "optical absorption coefficient"],
+        "plasma edge": ["plasma frequency", "plasma edge"],
+        "values of luminescence": ["luminescence lifetime", "wavelength for luminescence"],
+        "phonons": ["energy of transverse optical phonon", "wavenumber of longitudinal optical phonon", "wavenumber of optical phonon", "wavenumber of transverse optical phonon", "energy of longitudinal optical phonon", "energy of optical phonon"],
+        "work function": ["work function"],
+        "refractive index": ["extraordinary refractive index", "pressure dependence of refractive index", "birefringence", "refractive index", "ordinary refractive index", "temperature derivative of refractive index"],
+        "reflectivity": ["reflectivity"]
+    },
+    "phase transitions": {
+        "eutectoid decomposition": ["temperature for eutectoid decomposition"],
+        "fusion": ["temperature for congruent melting"],
+        "values of peritectic formation": ["temperature for peritectic formation"],
+        "decomposition": ["decomposition temperature"],
+        "peritectoid formation": ["temperature for peritectoid formation"],
+        "structural transitions": ["temperature for structural transition", "pressure derivative of transition temperature", "pressure for structural transition", "magnetic field for structural transition", "composition derivative of transition temperature"]
+    },
+    "electronic and electrical properties": {
+        "electric field gradient": ["electric field gradient"],
+        "values of conductivity or resistivity": ["ionic conductivity", "temperature dependence of resistivity", "pressure dependence of resistivity", "electrical resistivity", "electron conductivity", "phonon resistivity", "electrical conductivity", "field dependence of resistivity", "resistivity anisotropy", "temperature derivative of resistivity", "magnetic resistivity"],
+        "electric polarization": ["electric polarization", "electric dipole moment", "spontaneous polarization"],
+        "spin-fluctuation resistivity": ["spin-fluctuation resistivity"],
+        "effective mass": ["effective mass of electrons", "effective mass of polarons", "effective mass of electrons to holes ratio", "effective mass of electrons anisotropy"],
+        "values of charge carrier concentration": ["donor concentration", "effective electron number", "electron to hole concentration ratio", "values of charge carrier concentration", "acceptor to donor concentration"],
+        "values of ferroelectric hysteresis": ["remanent polarization", "coercive electric field"],
+        "pyroelectricity": ["pyroelectric coefficients"],
+        "values of valence or charge transfer": ["average number of 3d electrons", "valence electron concentration", "average number of 4f electrons", "effective charge", "average number of 5f electrons"],
+        "values of activation energy": ["acceptor energy", "pressure derivative of activation energy", "activation energy for migration of vacancies", "activation energy", "donor energy"],
+        "metal or nonmetal character": ["temperature for metal-nonmetal transition", "pressure for metal-nonmetal transition"],
+        "permittivity dielectric constant": ["static permittivity", "imaginary part of permittivity", "pressure dependence of static permittivity", "dielectric loss tangent", "real part of permittivity", "magnetic field dependence of permittivity", "temperature dependence of static permittivity", "high-frequency permittivity", "volume strain dependence of high-frequency permittivity", "volume strain dependence of static permittivity"],
+        "values of charge carrier mobility": ["electron mobility", "hole mobility", "values of charge carrier mobility", "electron to hole mobility ratio"],
+        "values of residual resistivity": ["values of residual resistivity"],
+        "piezoelectricity": ["piezoelectric coefficient"],
+        "ferroelectric transitions": ["freezing temperature for relaxor", "temperature for ferroelectric reordering"],
+        "electronic energy gap": ["pressure derivative of energy gap for direct transition", "pressure dependence of energy gap", "thermal energy gap", "charge-transfer energy", "temperature derivative of energy gap for direct transition", "exciton energy", "temperature derivative of energy gap", "pressure derivative of energy gap for indirect transition", "volume strain dependence of energy gap for direct transition", "energy gap for direct transition", "pressure derivative of energy gap", "electronic energy gap", "energy gap for indirect transition", "spin-orbit splitting of valence band", "polaron formation energy"]
+    },
+    "superconductivity": {
+        "values of superconductivity energy gap": ["values of superconductivity energy gap"],
+        "critical magnetic field": ["critical magnetic field", "upper critical magnetic field anisotropy", "temperature derivative of upper critical magnetic field", "lower critical magnetic field", "temperature derivative of critical magnetic field", "upper critical magnetic field", "irreversibility field"],
+        "superconducting transition temperature": ["superconducting transition temperature", "composition derivative of superconducting transition temperature", "pressure derivative of superconducting transition temperature", "lower superconducting transition temperature", "lowest temperature of investigation", "pressure dependence of superconducting transition temperature"],
+        "critical current density": ["critical current density"],
+        "coherence length": ["coherence length"],
+        "electron-phonon interaction parameter": ["electron-phonon interaction parameter"]
+    },
+    "magnetic properties": {
+        "crystal electric field": ["crystal electric field splitting", "crystal electric field", "crystal field level"],
+        "exchange field": ["exchange field", "exchange interaction parameter"],
+        "magnetic transitions": ["magnetic field for magnetic transition", "freezing temperature for spin glass", "pressure for magnetic transition", "pressure derivative of temperature for magnetic transition", "temperature for magnetic transition"],
+        "spin-fluctuation": ["spin-fluctuation temperature"],
+        "curie-weiss paramagnetism": ["molecular field parameter", "paramagnetic moment", "molecular field parameter"],
+        "n tin orbital tb lmto method": ["spontaneous magnetic moment"],
+        "values of magnetic susceptibility": ["paramagnetic contribution to magnetic susceptibility", "temperature-independent part of magnetic susceptibility", "real part of magnetic permeability", "valence-electron contribution to magnetic susceptibility", "spin contribution to magnetic susceptibility", "imaginary part of magnetic susceptibility", "values of magnetic susceptibility", "imaginary part of magnetic permeability", "diamagnetic contribution to magnetic susceptibility", "real part of magnetic susceptibility", "magnetic permeability", "pressure dependence of magnetic susceptibility", "core-electron contribution to magnetic susceptibility", "temperature derivative of magnetic susceptibility"],
+        "magnetization": ["pressure dependence of saturation magnetic moment", "saturation magnetic moment", "magnetic moment", "orbital magnetic moment", "spontaneous magnetization", "spin magnetic moment", "magnetization", "saturation magnetization"],
+        "moessbauer spectra": ["isomer shift", "quadrupole splitting", "hyperfine magnetic field"],
+        "values of magnetic anisotropy": ["second-order magnetocrystalline anisotropy coefficient", "magnetic anisotropy energy", "first-order magnetocrystalline anisotropy coefficient", "magnetic anisotropy field"],
+        "resonance spectra": ["quadrupole frequency"],
+        "magnetic hysteresis": ["remanent magnetization", "coercive field", "remanent magnetic field", "energy product", "remanent magnetic moment"]
+    },
+    "mechanical properties": {
+        "values of magnetostriction": ["spontaneous linear magnetostriction", "saturation linear magnetostriction", "spontaneous volume magnetostriction", "volume magnetostriction", "linear magnetostriction", "magnetic field derivative of linear magnetostriction"],
+        "values of sound velocity": ["values of sound velocity", "transverse sound velocity", "longitudinal sound velocity"],
+        "values of elasticity": ["elastic compliance", "temperature dependence of elastic stiffness coefficient", "elastic stiffness coefficient", "longitudinal-mode elastic coefficient", "temperature derivative of elastic stiffness coefficient", "elastic stiffness coefficient anisotropy", "pressure derivative of elastic stiffness coefficient"],
+        "values of elastic moduli": ["shear modulus", "temperature derivative of isothermal bulk modulus", "adiabatic bulk modulus", "pressure derivative of isothermal bulk modulus", "pressure derivative of adiabatic bulk modulus", "isothermal bulk modulus", "temperature derivative of adiabatic bulk modulus"],
+        "ferroelasticity": ["paraelastic-ferroelastic transition temperature", "spontaneous elastic strain"],
+        "values of compressibility": ["isothermal linear compressibility", "volume change at structural transition", "mechanical cell parameters change", "molar volume", "adiabatic volume compressibility", "isothermal volume compressibility", "volume change", "pressure dependence of cell parameter"],
+        "hardness": ["microhardness"]
+    },
+    "thermal and thermodynamic properties": {
+        "entropy": ["entropy of formation", "magnetic entropy", "entropy", "entropy of reaction"],
+        "values of thermoelectric power": ["seebeck coefficient", "power factor", "temperature derivative of thermoelectric power", "thermoelectric figure of merit", "relative cooling power"],
+        "thermal expansion": ["volume thermal expansion coefficient", "thermal strain", "cell volume change", "volume thermal expansion coefficient change", "thermal cell parameters change", "linear thermal expansion coefficient", "temperature derivative of cell parameter"],
+        "values of volume change at phase transition": ["volume change at melting point", "cell parameter change at phase transition", "cell volume change at phase transition", "length change at phase transition", "values of volume change at phase transition"],
+        "values of entropy change at phase transition": ["entropy change at melting point", "values of entropy change at phase transition"],
+        "heat capacity": ["coefficient of third-order term in heat capacity", "electronic heat capacity coefficient", "coefficient of fifth-order term in heat capacity", "electronic contribution to superconducting heat capacity", "magnetic heat capacity", "adiabatic temperature change", "phonon heat capacity at constant pressure", "heat capacity at constant volume", "heat capacity at constant pressure", "electronic contribution to heat capacity", "superconducting heat capacity"],
+        "enthalpy or energy": ["enthalpy of reaction", "enthalpy change", "enthalpy of formation"],
+        "values of thermal conductivity": ["values of thermal conductivity", "phonon contribution to thermal conductivity", "electronic contribution to thermal conductivity"],
+        "heat capacity discontinuity": ["heat capacity discontinuity at superconducting transition", "heat capacity discontinuity", "heat capacity discontinuity at structural transition"],
+        "enthalpy change at phase transition": ["enthalpy change at melting point", "enthalpy change at structural transition", "enthalpy change at eutectoid decomposition", "enthalpy change at decomposition", "enthalpy of sublimation"]
+    }
+}
