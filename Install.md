@@ -27,7 +27,22 @@ After installation, verify the installation with:
 
 If you see "PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now.", the installation was successful.
 
-### 1.3 Install PaddleMaterials from Source:
+### 1.3 Install paddle_scatter
+
+Install the third-party `paddle_scatter` dependency from source:
+
+    git clone https://github.com/PFCCLab/paddle_scatter.git
+    cd paddle_scatter
+    pip install -v . --no-build-isolation
+    cd ..
+
+### 1.4 Install PaddleMaterials
+
+Install the released package from PyPI:
+
+    python -m pip install ppmat
+
+For development, install PaddleMaterials from source:
 
     # Clone PaddleMaterials repository
     git clone https://github.com/PaddlePaddle/PaddleMaterials.git
@@ -39,16 +54,11 @@ If you see "PaddlePaddle is installed successfully! Let's start deep learning wi
     pip install --upgrade pip setuptools==68.2.2 wheel
     pip install setuptools_scm
     pip install Cython
-    # Install 3rd dependency paddle_scatter manully
-    git clone https://github.com/PFCCLab/paddle_scatter.git
-    cd paddle_scatter
-    pip install -v . --no-build-isolation
-    cd ..
 
     # Install in editable mode
     pip install -e . --no-build-isolation
     # pip install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple recommended if you are in China
-    
+
 
 ## 2. Run Examples
 

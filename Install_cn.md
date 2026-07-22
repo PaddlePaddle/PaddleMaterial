@@ -28,7 +28,22 @@
 
 如果出现 PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now. 信息，说明已成功安装。
 
-### 1.3 源码安装PaddleMaterials：
+### 1.3 安装 paddle_scatter
+
+从源码安装第三方依赖 `paddle_scatter`：
+
+    git clone https://github.com/PFCCLab/paddle_scatter.git
+    cd paddle_scatter
+    pip install -v . --no-build-isolation
+    cd ..
+
+### 1.4 安装 PaddleMaterials
+
+从 PyPI 安装已发布的软件包：
+
+    python -m pip install ppmat
+
+如需开发 PaddleMaterials，请从源码安装：
 
     # clone PaddleMaterials
     git clone https://github.com/PaddlePaddle/PaddleMaterials.git
@@ -40,11 +55,6 @@
     pip install --upgrade pip setuptools==68.2.2 wheel
     pip install setuptools_scm
     pip install Cython
-    # 手动安装第三方依赖paddle_scatter
-    git clone https://github.com/PFCCLab/paddle_scatter.git
-    cd paddle_scatter
-    pip install -v . --no-build-isolation
-    cd ..
 
     # 以可编辑模式安装PaddleMaterials
     pip install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple
