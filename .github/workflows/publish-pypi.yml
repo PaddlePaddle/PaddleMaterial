@@ -48,6 +48,8 @@ jobs:
               metadata = wheel.read(metadata_path).decode()
 
           assert "Requires-Dist: setuptools==68.2.2" in metadata
+          assert "https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/" in metadata
+          assert 'src="docs/' not in metadata
           PY
 
       - name: Store distributions

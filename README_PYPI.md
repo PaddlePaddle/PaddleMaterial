@@ -1,17 +1,19 @@
+<!-- PyPI long description: keep repository links and image sources absolute. -->
+
 # PaddleMaterials
 
 <p align="center">
-  <img src="docs/ppmat_logo.png" alt="PaddleMaterials" width="400">
+  <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/ppmat_logo.png" alt="PaddleMaterials" width="400">
 </p>
 
 <p align="center">
-  <a href="Install.md">
+  <a href="https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/Install.md">
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white">
   </a>
   <a href="https://pypi.org/project/ppmat/">
     <img alt="PyPI version" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white">
   </a>
-  <a href="LICENSE">
+  <a href="https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/LICENSE">
     <img alt="Apache 2.0 License" src="https://img.shields.io/github/license/PaddlePaddle/PaddleMaterials">
   </a>
   <a href="https://github.com/PaddlePaddle/PaddleMaterials/stargazers">
@@ -24,7 +26,7 @@
 **PaddleMaterials** is an end-to-end AI4Materials toolkit built on the **PaddlePaddle** deep learning framework. Designed as a data-mechanism dual-driven platform for developing and deploying foundation models in materials science, **PPMat** enables researchers to efficiently build AI models and accelerate material discovery using pretrained models.
 
 <p align="left">
- <img src="docs/overview_en.png" align="middle" width = "1000"/>
+ <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/overview_en.png" align="middle" width = "1000"/>
 <p align="left">
 
 ### 🧩 Core Capabilities
@@ -54,12 +56,12 @@
 
 | Task | Description | Link |
 |------|-------------|------|
-| **Property Prediction (PP)** | Predict formation energy, band gap, elastic properties | [README](property_prediction/README.md) |
-| **Structure Generation (SG)** | Generate new crystal structures with diffusion models | [README](structure_generation/README.md) |
-| **Machine Learning Interatomic Potential (MLIP)** | DFT-accurate potentials for molecular dynamics | [README](interatomic_potentials/README.md) |
-| **Electronic Structure (ES)** | Predict electronic structure properties | [README](electronic_structure/README.md) |
-| **Spectrum Elucidation (SE)** | Reconstruct molecular structures from NMR spectra | [README](spectrum_elucidation/README.md) |
-| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectral signals | [README](spectrum_enhancement/README.md) |
+| **Property Prediction (PP)** | Predict formation energy, band gap, elastic properties | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/property_prediction/README.md) |
+| **Structure Generation (SG)** | Generate new crystal structures with diffusion models | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/structure_generation/README.md) |
+| **Machine Learning Interatomic Potential (MLIP)** | DFT-accurate potentials for molecular dynamics | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/interatomic_potentials/README.md) |
+| **Electronic Structure (ES)** | Predict electronic structure properties | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/electronic_structure/README.md) |
+| **Spectrum Elucidation (SE)** | Reconstruct molecular structures from NMR spectra | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/spectrum_elucidation/README.md) |
+| **Spectrum Enhancement (SPEN)** | Enhance microscopy and spectral signals | [README](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/spectrum_enhancement/README.md) |
 
 ### 🤖 Available Pretrained Models
 
@@ -72,7 +74,7 @@
 | **Spectrum Elucidation**                      | DiffNMR                                  | MSD_NMR, etc.|
 | **Spectrum Enhancement**                      | SFIN                                     | SFIN-HAADF/BF, etc.|
 
-Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
+Full model list: See [MODEL_REGISTRY](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/ppmat/models/__init__.py#L75)
 
 ---
 
@@ -80,7 +82,7 @@ Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
 
 ### 🔧 Installation
 
-Please refer to the installation [document](Install.md) for your hardware environment. See [SupportedHardwareList](./docs/multi_device.md) for more multi-hardware adaptation information.
+Please refer to the installation [document](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/Install.md) for your hardware environment. See [SupportedHardwareList](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/docs/multi_device.md) for more multi-hardware adaptation information.
 
 ---
 
@@ -137,7 +139,7 @@ python electronic_structure/predict.py \
     --save_pred_cube
 ```
 
-See the [InfGCN prediction guide](electronic_structure/configs/infgcn/README.md#prediction) for dataset and checkpoint preparation.
+See the [InfGCN prediction guide](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/electronic_structure/configs/infgcn/README.md#prediction) for dataset and checkpoint preparation.
 
 #### Spectrum Elucidation
 
@@ -164,7 +166,7 @@ python spectrum_enhancement/predict.py \
 
 ### 🏋️ Start Training
 
-For training and fine-tuning, refer to the [documentation](get_started.md).
+For training and fine-tuning, refer to the [documentation](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/get_started.md).
 
 ---
 
@@ -179,25 +181,25 @@ Thanks to all contributors who have helped build PaddleMaterials！
 
 Thanks for the following organiziton for cooprative support!
 <p align="left">
- <img src="docs/logo_SZNL_2.jpeg" align="middle" width = "180"/>
- <img src="docs/logo_SinochemDI_2.jpeg" align="middle" width = "180"/>
- <img src="docs/logo_MetaX.png" align="middle" width = "140"/>
+ <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/logo_SZNL_2.jpeg" align="middle" width = "180"/>
+ <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/logo_SinochemDI_2.jpeg" align="middle" width = "180"/>
+ <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/logo_MetaX.png" align="middle" width = "140"/>
 <p align="left">
 
 Join the PaddleMaterials WeChat group to discuss with us!
 <p align="left">
- <img src="docs/wechat_group.png" align="middle" width = "100"/>
+ <img src="https://raw.githubusercontent.com/PaddlePaddle/PaddleMaterials/develop/docs/wechat_group.png" align="middle" width = "100"/>
 <p align="left">
 
 ## 🛠️ Contribute to PaddleMaterials
 
-For developer, please refer to [architecture](docs/ARCHITECTURE_ch.md).
+For developer, please refer to [architecture](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/docs/ARCHITECTURE_ch.md).
 
 ---
 
 ## 📜 License
 
-PaddleMaterials is licensed under the [Apache License 2.0](LICENSE).
+PaddleMaterials is licensed under the [Apache License 2.0](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/LICENSE).
 
 ---
 

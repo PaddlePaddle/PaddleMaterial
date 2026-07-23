@@ -69,12 +69,79 @@
 任务脚本、配置文件和示例数据保存在源码仓库中，不包含在 `ppmat` wheel 内。
 请先克隆源码仓库，并在仓库根目录执行以下命令。
 
-使用 MegNet 模型预测材料属性：
+### 2.1 分子与材料性质预测
 
-    python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/'
+使用预训练 MEGNet 模型预测材料形成能：
 
-使用 MatterSim 模型预测能量和力：
+```bash
+python property_prediction/predict.py \
+    --model_name='megnet_mp2018_train_60k_e_form' \
+    --weights_name='best.pdparams' \
+    --cif_file_path='./property_prediction/example_data/cifs/' \
+    --save_path='result.csv'
+```
 
-    python interatomic_potentials/predict.py --model_name='mattersim_1M' --weights_name='mattersim-v1.0.0-1M_model.pdparams' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+### 2.2 结构生成
 
-更多的使用说明可以参考[Get Started](./get_started.md)。
+使用预训练 MatterGen 模型生成包含四个原子的晶体结构：
+
+```bash
+python structure_generation/sample.py \
+    --model_name='mattergen_mp20' \
+    --weights_name='latest.pdparams' \
+    --save_path='result_mattergen_mp20/' \
+    --mode='by_num_atoms' \
+    --num_atoms=4
+```
+
+### 2.3 机器学习势函数
+
+使用预训练 MatterSim 模型预测能量和力：
+
+```bash
+python interatomic_potentials/predict.py \
+    --model_name='mattersim_1M' \
+    --weights_name='mattersim-v1.0.0-1M_model.pdparams' \
+    --cif_file_path='./interatomic_potentials/example_data/cifs/' \
+    --save_path='result.csv'
+```
+
+### 2.4 电子结构预测
+
+使用训练完成的 InfGCN 权重预测电子密度：
+
+```bash
+python electronic_structure/predict.py \
+    --config='electronic_structure/configs/infgcn/infgcn_qm9.yaml' \
+    --checkpoint='path/to/infgcn_qm9.pdparams' \
+    --split='validation' \
+    --index=0 \
+    --output_dir='output/infgcn_qm9/validation_0' \
+    --save_pred_cube
+```
+
+数据集和权重准备方式请参考
+[InfGCN 预测文档](electronic_structure/configs/infgcn/README.md#prediction)。
+
+### 2.5 波谱解析
+
+使用训练完成的 DiffNMR 权重进行核磁共振波谱解析：
+
+```bash
+python spectrum_elucidation/sample.py \
+    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' \
+    --checkpoint_path='path/to/DiffNMR_nless15_best.pdparams' \
+    --save_path='result_diffnmr_nless15/'
+```
+
+### 2.6 波谱增强
+
+使用预训练 SFIN 模型增强 STEM 图像：
+
+```bash
+python spectrum_enhancement/predict.py \
+    --model_name='sfin_haadf_enhance' \
+    --split='val'
+```
+
+更多使用说明请参考各任务 README 或 [Get Started](./get_started.md)。

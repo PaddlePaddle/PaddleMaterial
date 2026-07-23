@@ -28,8 +28,8 @@ BUILD_AND_TEST_REQUIREMENTS = {
 
 
 def get_readme() -> str:
-    """Read the package description."""
-    return Path("README.md").read_text(encoding="utf-8")
+    """Read the PyPI package description."""
+    return Path("README_PYPI.md").read_text(encoding="utf-8")
 
 
 def get_requirements() -> list[str]:
