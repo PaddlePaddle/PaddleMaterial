@@ -59,11 +59,8 @@ if __name__ == "__main__":
         description=("An AI-driven materials science toolkit based on PaddlePaddle."),
         long_description=get_readme(),
         long_description_content_type="text/markdown",
-        packages=setuptools.find_namespace_packages(
-            include=("ppmat", "ppmat.*"),
-            exclude=("ppmat.utils.tests", "ppmat.utils.tests.*"),
-        ),
-        package_data={"ppmat.models.mattergen": ["gemnet-dT.json"]},
+        packages=setuptools.find_namespace_packages(include=("ppmat", "ppmat.*")),
+        package_data={"": ["*.json"]},
         license_files=("LICENSE",),
         python_requires=">=3.10",
         project_urls={

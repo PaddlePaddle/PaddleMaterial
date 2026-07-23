@@ -125,7 +125,7 @@ python interatomic_potentials/predict.py \
 
 #### Electronic Structure
 
-Predict electron density using a trained InfGCN checkpoint:
+Predict electron density using a pretrained InfGCN checkpoint:
 
 ```bash
 python electronic_structure/predict.py \
@@ -141,7 +141,7 @@ See the [InfGCN prediction guide](electronic_structure/configs/infgcn/README.md#
 
 #### Spectrum Elucidation
 
-Run NMR spectrum elucidation using a trained DiffNMR checkpoint:
+Run NMR spectrum elucidation using a pretrained DiffNMR checkpoint:
 
 ```bash
 python spectrum_elucidation/sample.py \
