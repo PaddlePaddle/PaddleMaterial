@@ -63,9 +63,11 @@ class EquivariantLayer(nn.Layer):
         message = self.W_message(message)
         message = F.relu(message)
 
-        # Aggregate messages
+        # 按目标节点聚合消息（保留原 scatter_add 累加语义）
         aggregated = paddle.zeros_like(x)
-        aggregated = paddle.scatter_add(aggregated, dst.unsqueeze(-1).expand(-1, x.shape[-1]), message)
+        # index 形状需与 message 一致：[E, H]
+        index = dst.reshape([-1, 1]).expand_as(message)
+        aggregated = paddle.scatter_add(aggregated, 0, index.astype("int64"), message)
 
         # Update node features
         x_new = paddle.concat([x, aggregated], axis=-1)
