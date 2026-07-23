@@ -123,9 +123,9 @@ python electronic_structure/predict.py \
 数据集和权重准备方式请参考
 [InfGCN 预测文档](electronic_structure/configs/infgcn/README.md#prediction)。
 
-### 2.5 波谱解析
+### 2.5 谱图解析
 
-使用训练完成的 DiffNMR 权重进行核磁共振波谱解析：
+使用训练完成的 DiffNMR 权重进行 NMR 谱图解析：
 
 ```bash
 python spectrum_elucidation/sample.py \
@@ -134,7 +134,7 @@ python spectrum_elucidation/sample.py \
     --save_path='result_diffnmr_nless15/'
 ```
 
-### 2.6 波谱增强
+### 2.6 谱图增强
 
 使用预训练 SFIN 模型增强 STEM 图像：
 

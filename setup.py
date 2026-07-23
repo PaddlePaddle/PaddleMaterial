@@ -72,7 +72,7 @@ if __name__ == "__main__":
             "Source": "https://github.com/PaddlePaddle/PaddleMaterials",
         },
         classifiers=[
-            "Development Status :: 5 - Production/Stable",
+            "Development Status :: 4 - Beta",
             "Intended Audience :: Science/Research",
             "License :: OSI Approved :: Apache Software License",
             "Programming Language :: Python :: 3 :: Only",
