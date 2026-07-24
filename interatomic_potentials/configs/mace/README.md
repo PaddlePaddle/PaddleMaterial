@@ -86,7 +86,7 @@ $$
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap">~</td>
             <td nowrap="nowrap"><a href="mace_mp0_medium.yaml">mace_mp0_medium</a></td>
-            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mace/mace_mp0_medium.zip">checkpoint | log</a></td>
+            <td nowrap="nowrap"><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/mace/mace_mp0_medium.zip">checkpoint | log</a></td>
         </tr>
     </body>
 </table>
