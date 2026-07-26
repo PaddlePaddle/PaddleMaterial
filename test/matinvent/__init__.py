@@ -11,9 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
-
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]

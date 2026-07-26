@@ -12,8 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+"""
+Reward system for reinforcement learning.
+"""
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+from ppmat.models.matinvent.rewards.base import Calculator
+from ppmat.models.matinvent.rewards.reward import Reward
+
+__all__ = [
+    "Reward",
+    "Calculator",
+]

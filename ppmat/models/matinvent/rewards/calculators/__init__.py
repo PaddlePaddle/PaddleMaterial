@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+from ppmat.models.matinvent.rewards.calculators.dft import DFTCalc
+from ppmat.models.matinvent.rewards.calculators.fairchem import FairChem
+from ppmat.models.matinvent.rewards.calculators.pymatgen import PyMatGen
+from ppmat.models.matinvent.rewards.calculators.syn_score import SynScore
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+__all__ = ["PyMatGen", "SynScore", "DFTCalc", "FairChem"]

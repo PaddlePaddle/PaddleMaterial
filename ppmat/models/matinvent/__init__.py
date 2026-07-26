@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+from ppmat.models.matinvent.rl_loop import MatInvent
+from ppmat.models.matinvent.rl_finetune import MatinventRL
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+__all__ = ["MatInvent", "MatinventRL"]

@@ -12,8 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+import os
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+
+class Calculator:
+    def __init__(self, root_dir: str, task: str):
+        self.root_dir = root_dir
+        self.task = task
+        os.makedirs(root_dir, exist_ok=True)
+
+    def calc(self, samples, label="tmp"):
+        raise NotImplementedError

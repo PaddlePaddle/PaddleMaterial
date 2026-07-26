@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+import os
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+EMB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "element_emb.json"))
+MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "model"))
+
+from ppmat.models.matinvent.rewards.calculators.syn_score.calc import SynScore
+from ppmat.models.matinvent.rewards.calculators.syn_score.model import Net
+
+__all__ = ["SynScore", "Net"]

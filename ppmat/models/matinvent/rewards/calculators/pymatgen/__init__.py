@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.sampler.matinvent import BaseSampler
-from ppmat.sampler.matinvent import DiffCSPSampler
-from ppmat.sampler.matinvent import MatterGenSampler
+import os
 
-__all__ = ["BaseSampler", "DiffCSPSampler", "MatterGenSampler"]
+SUBSTRATE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "substrates"))
+
+from ppmat.models.matinvent.rewards.calculators.pymatgen.calc import PyMatGen
+
+__all__ = ["PyMatGen", "SUBSTRATE_PATH"]
