@@ -36,6 +36,8 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
+from ppmat.models.deeph.deeph import DeepHHamiltonian
+from ppmat.models.deeph.deeph_graph_converter import DeepHGraphConverter
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
@@ -69,6 +71,8 @@ __all__ = [
     "NMRNetCLIP",
     "DiffPrior",
     "DiffNMR",
+    "DeepHHamiltonian",
+    "DeepHGraphConverter",
     "InfGCN",
     "MatENO",
     "SFIN",

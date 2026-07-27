@@ -42,7 +42,8 @@ from ppmat.datasets.mptrj_dataset import MPTrjDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.density_dataset import DensityDataset
-from ppmat.datasets.small_density_dataset import SmallDensityDataset 
+from ppmat.datasets.deeph_dataset import DeepHDataset
+from ppmat.datasets.small_density_dataset import SmallDensityDataset
 from ppmat.datasets.sfin_dataset import SFINDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
@@ -67,6 +68,7 @@ __all__ = [
     "MSDnmrDataset",
     "MatbenchDataset",
     "DensityDataset", 
+    "DeepHDataset",
     "SmallDensityDataset",
     "SFINDataset",
     "OMol25Dataset",
