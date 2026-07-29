@@ -14,7 +14,6 @@
 
 from .layers import EquivariantLayer
 from .layers import RadialBasisFunction
-from .mace_graph_converter import MACEGraphConverter
 from .model import MACE
 from .utils import atomic_number_to_index
 from .utils import get_edge_vectors
@@ -22,7 +21,6 @@ from .utils import radial_basis
 
 __all__ = [
     "MACE",
-    "MACEGraphConverter",
     "EquivariantLayer",
     "RadialBasisFunction",
     "atomic_number_to_index",

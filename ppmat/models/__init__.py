@@ -42,6 +42,12 @@ from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
 from ppmat.models.megnet.megnet import MEGNetPlus
+<<<<<<< HEAD
+=======
+from ppmat.models.infgcn.infgcn import InfGCN
+from ppmat.models.mateno.mateno import MatENO
+from ppmat.models.mace.model import MACE
+>>>>>>> 0351db3 (Add files via upload)
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download

@@ -28,7 +28,7 @@ MACE-MP-0 is trained on the Materials Project Trajectory (MPtrj) dataset, which 
     
     | Dataset | Train | Val | Test |
     | :--- | :---: | :---: | :---: |
-    | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592 | 14593 |
+    | MPtrj_2022.9_full | 116738 | 14592 | 14593 |
 
 ## Models
 MACE constructs an atomistic graph where:
@@ -87,42 +87,6 @@ $$
     </body>
 </table>
 **Note**: The MAE metrics listed in the table are directly cited from the original paper's experimental results. The suite checkpoint zip (`mace_mp0_medium.zip`) contains the config yaml and `checkpoints/best.pdparams` for one-click train/predict via `predict.py --model_name=mace_mp0_medium`.
-
-### Accuracy Alignment
-Train/inference accuracy alignment against the original MACE-MP-0 (PyTorch) is summarized below.
-
-**Forward alignment**
-
-| Metric | Criterion | Result |
-|------|----------|----------|
-| Energy diff | ≤ 1e-4 eV | Pass |
-| Force diff | ≤ 1e-4 eV/Å | Pass |
-| Stress diff | ≤ 1e-4 kBar | Pass |
-
-**Backward alignment**
-
-| Metric | Criterion | Result |
-|------|----------|----------|
-| Training loss | Consistent with reference | Pass |
-| Parameter gradients | diff ≤ 1e-4 | Pass |
-
-**Test-set performance**
-
-| Metric | Original MACE-MP-0 | Paddle | Relative gap |
-|------|----------------|-------------|------|
-| Energy MAE | 0.022 eV/atom | 0.023 eV/atom | +4.5% |
-| Force MAE | 0.032 eV/Å | 0.033 eV/Å | +3.1% |
-| Stress MAE | 0.89 kBar | 0.91 kBar | +2.2% |
-
-**Acceptance**
-
-| Item | Requirement | Result |
-|----------|------|------|
-| Forward accuracy | diff ≤ 1e-4 | Met |
-| Backward alignment | Loss consistent | Met |
-| Supervised metrics | gap < 5% | Met (gap < 5%) |
-
-All reported gaps versus the original MACE-MP-0 are below 5%.
 
 ### Training
 ```bash

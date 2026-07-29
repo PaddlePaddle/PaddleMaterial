@@ -4,10 +4,9 @@ Global:
   do_test: False
   label_names: ['energy_per_atom', 'force', 'stress']
   graph_converter:
-    __class_name__: MACEGraphConverter
+    __class_name__: FindPointsInSpheres
     __init_params__:
       cutoff: 6.0
-      num_elements: 89
   prim_eager_enabled: True
 
 Trainer:
