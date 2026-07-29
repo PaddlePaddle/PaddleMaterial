@@ -30,10 +30,6 @@ MACE-MP-0 is trained on the Materials Project Trajectory (MPtrj) dataset, which 
     | :--- | :---: | :---: | :---: |
     | [MPtrj_2022.9_full](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip) | 116738 | 14592 | 14593 |
 
-    **数据与权重下载：**
-    - 原数据集下载链接：[MPtrj_2022.9_full.zip](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip)
-    - 飞桨星河社区（数据集 + Paddle 权重）：[mace 模型空间](https://aistudio.baidu.com/modelsdetail/51803/space)
-
 ## Models
 MACE constructs an atomistic graph where:
 * **Nodes**: Represent atoms with element-specific embeddings
@@ -90,43 +86,43 @@ $$
         </tr>
     </body>
 </table>
-**Note**: 套件内一键训推权重为与当前实现同结构的 `mace_mp0_medium.zip`（含 yaml + `checkpoints/best.pdparams`）。论文表中的 MAE 引用自原始 MACE-MP-0 实验结果。预训练权重与数据集亦可在[飞桨星河社区](https://aistudio.baidu.com/modelsdetail/51803/space)获取；原数据集：[MPtrj_2022.9_full.zip](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mptrj/MPtrj_2022.9_full.zip)。
+**Note**: The MAE metrics listed in the table are directly cited from the original paper's experimental results. The suite checkpoint zip (`mace_mp0_medium.zip`) contains the config yaml and `checkpoints/best.pdparams` for one-click train/predict via `predict.py --model_name=mace_mp0_medium`.
 
-### 精度对齐结果
-与原始 MACE-MP-0（PyTorch）对照的训推精度验证如下。
+### Accuracy Alignment
+Train/inference accuracy alignment against the original MACE-MP-0 (PyTorch) is summarized below.
 
-**前向精度对齐**
+**Forward alignment**
 
-| 指标 | 对齐标准 | 验证结果 |
+| Metric | Criterion | Result |
 |------|----------|----------|
-| 能量 diff | ≤ 1e-4 eV | 通过 |
-| 力 diff | ≤ 1e-4 eV/Å | 通过 |
-| 应力 diff | ≤ 1e-4 kBar | 通过 |
+| Energy diff | ≤ 1e-4 eV | Pass |
+| Force diff | ≤ 1e-4 eV/Å | Pass |
+| Stress diff | ≤ 1e-4 kBar | Pass |
 
-**反向对齐**
+**Backward alignment**
 
-| 指标 | 对齐标准 | 验证结果 |
+| Metric | Criterion | Result |
 |------|----------|----------|
-| 训练 Loss | 与原始一致 | 通过 |
-| 参数梯度 | diff ≤ 1e-4 | 通过 |
+| Training loss | Consistent with reference | Pass |
+| Parameter gradients | diff ≤ 1e-4 | Pass |
 
-**测试集性能对比**
+**Test-set performance**
 
-| 指标 | 原始 MACE-MP-0 | Paddle 复现 | 偏差 |
+| Metric | Original MACE-MP-0 | Paddle | Relative gap |
 |------|----------------|-------------|------|
-| 能量 MAE | 0.022 eV/atom | 0.023 eV/atom | +4.5% |
-| 力 MAE | 0.032 eV/Å | 0.033 eV/Å | +3.1% |
-| 应力 MAE | 0.89 kBar | 0.91 kBar | +2.2% |
+| Energy MAE | 0.022 eV/atom | 0.023 eV/atom | +4.5% |
+| Force MAE | 0.032 eV/Å | 0.033 eV/Å | +3.1% |
+| Stress MAE | 0.89 kBar | 0.91 kBar | +2.2% |
 
-**验收标准**
+**Acceptance**
 
-| 验收标准 | 要求 | 结果 |
+| Item | Requirement | Result |
 |----------|------|------|
-| 前向精度 | diff ≤ 1e-4 | 满足 |
-| 反向对齐 | Loss 一致 | 满足 |
-| 监督精度 | metric 误差 < 5% | 满足（偏差 < 5%） |
+| Forward accuracy | diff ≤ 1e-4 | Met |
+| Backward alignment | Loss consistent | Met |
+| Supervised metrics | gap < 5% | Met (gap < 5%) |
 
-说明：上述对齐指标均已验证通过，与原始 MACE-MP-0 的偏差均小于 5%。套件侧可通过 `predict.py --model_name=mace_mp0_medium` 一键加载 checkpoint zip 完成推理。
+All reported gaps versus the original MACE-MP-0 are below 5%.
 
 ### Training
 ```bash

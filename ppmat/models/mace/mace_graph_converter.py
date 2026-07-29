@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""将晶体结构转换为 MACE 可用的原子图。"""
+"""Convert crystal structures to atomistic graphs for MACE."""
 
 from __future__ import annotations
 
@@ -24,16 +24,20 @@ from ppmat.models.common.graph_converter import FindPointsInSpheres
 
 
 class MACEGraphConverter:
-    """基于截断半径邻域搜索构建 MACE 输入图。
+    """Build MACE input graphs via cutoff-radius neighbor search.
 
-    内部复用套件已有的 FindPointsInSpheres，保证与 Trainer / Predictor
-    的图字段约定一致（atom_types、cart_coords、bond_dist、lattice 等）。
+    Wraps the suite ``FindPointsInSpheres`` converter so that graph fields
+    match Trainer / Predictor conventions (``atom_types``, ``cart_coords``,
+    ``bond_dist``, ``lattice``, etc.).
 
     Args:
-        cutoff (float): 邻域截断半径（Å），默认 6.0，与 mace_mp0_medium 配置一致。
-        num_elements (int): 元素种类数，默认 89（MACE-MP-0 覆盖范围）。
-        pbc (tuple): 周期边界条件开关，默认全开。
-        num_cpus (Optional[int]): 并行构建图的 CPU 数；None 表示自动。
+        cutoff (float): Neighbor cutoff radius in Angstrom. Default: 6.0
+            (same as ``mace_mp0_medium``).
+        num_elements (int): Number of element types. Default: 89
+            (MACE-MP-0 coverage).
+        pbc (tuple): Periodic boundary flags. Default: all enabled.
+        num_cpus (Optional[int]): CPUs for parallel graph building;
+            ``None`` means automatic.
     """
 
     def __init__(
@@ -55,5 +59,5 @@ class MACEGraphConverter:
         )
 
     def __call__(self, structure: Structure):
-        """将单个或多个 Structure 转为 PGL Graph。"""
+        """Convert one or more ``Structure`` objects to PGL graphs."""
         return self._converter(structure)
