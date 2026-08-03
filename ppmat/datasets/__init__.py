@@ -43,11 +43,12 @@ from ppmat.datasets.asu_mp20_dataset import AsymmetricUnitDataset # noqa
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.density_dataset import DensityDataset
-from ppmat.datasets.small_density_dataset import SmallDensityDataset
+from ppmat.datasets.small_density_dataset import SmallDensityDataset 
 from ppmat.datasets.sfin_dataset import SFINDataset
 from ppmat.datasets.num_atom_crystal_dataset import NumAtomsCrystalDataset
 from ppmat.datasets.oc20_s2ef_dataset import OC20S2EFDataset  # noqa
 from ppmat.datasets.qm9_dataset import QM9Dataset # noqa
+from ppmat.datasets.md17_dataset import MD17Dataset  # noqa
 from ppmat.datasets.omol25_dataset import OMol25Dataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
@@ -71,6 +72,7 @@ __all__ = [
     "SFINDataset",
     "OMol25Dataset",
     "AsymmetricUnitDataset",
+    "MD17Dataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {

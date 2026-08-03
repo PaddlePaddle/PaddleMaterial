@@ -1,8 +1,23 @@
 # PaddleMaterials
 
 <p align="center">
- <img src="docs/ppmat_logo.png" align="middle" width = "400"/>
+  <img src="docs/ppmat_logo.png" alt="PaddleMaterials" width="400">
+</p>
+
 <p align="center">
+  <a href="Install.md">
+    <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white">
+  </a>
+  <a href="https://pypi.org/project/ppmat/">
+    <img alt="PyPI version" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white">
+  </a>
+  <a href="LICENSE">
+    <img alt="Apache 2.0 License" src="https://img.shields.io/github/license/PaddlePaddle/PaddleMaterials">
+  </a>
+  <a href="https://github.com/PaddlePaddle/PaddleMaterials/stargazers">
+    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/PaddlePaddle/PaddleMaterials?style=flat&amp;logo=github">
+  </a>
+</p>
 
 ## 🚀 Introduction
 
@@ -26,8 +41,7 @@
 ### 🧱 Supported Materials
 
 - **Inorganic Crystals** - Well-supported with multiple datasets and pretrained models
-- **Organic Molecules** - Support for small molecule datasets and property prediction
-- *Polymers, catalysts, and amorphous materials are under development*
+- **Organic Molecules** - Support for multiple datasets and pretrained models including small molecules and partial polymers
 
 ### ✨ Why PaddleMaterials?
 
@@ -51,12 +65,12 @@
 
 | Task | Models | Dataset |
 |------|--------|---------|
-| **Property Prediction**                       | MEGNet, iComformer, DimeNet++            | MP2018, MP2024, JARVIS |
-| **Structure Generation**                      | MatterGen, DiffCSP                       | MP20, ALEX |
-| **Machine Learning Interatomic Potential**    | CHGNet, MatterSim                        | MPTRJ |
-| **Electronic Structure**                      | InfGCN                                   | QM9_ES, MP_ES, OMol25_MC_ES |
-| **Spectrum Elucidation**                      | DiffNMR                                  | MSD_NMR |
-| **Spectrum Enhancement**                      | SFIN                                     | SFIN-HAADF/BF |
+| **Property Prediction**                       | MEGNet, iComformer, DimeNet++, SphereNet | MP2018, MP2024, JARVIS, QM9, etc.|
+| **Structure Generation**                      | MatterGen, DiffCSP                       | MP20, ALEX, etc.|
+| **Machine Learning Interatomic Potential**    | CHGNet, MatterSim, SphereNet             | MPTRJ, MD17, etc.|
+| **Electronic Structure**                      | InfGCN                                   | QM9_ES, MP_ES, OMol25_MC_ES, etc.|
+| **Spectrum Elucidation**                      | DiffNMR                                  | MSD_NMR, etc.|
+| **Spectrum Enhancement**                      | SFIN                                     | SFIN-HAADF/BF, etc.|
 
 Full model list: See [MODEL_REGISTRY](ppmat/models/__init__.py#L75)
 
@@ -86,57 +100,64 @@ python property_prediction/predict.py \
 
 #### Structure Generation
 
-Generate novel crystal structures:
+Generate novel crystal structures using a pretrained MatterGen model:
 
 ```bash
-python structure_generation/predict.py \
+python structure_generation/sample.py \
     --model_name='mattergen_mp20' \
-    --num_structures=100 \
-    --save_path='generated_structures/'
+    --weights_name='latest.pdparams' \
+    --save_path='result_mattergen_mp20/' \
+    --mode='by_num_atoms' \
+    --num_atoms=4
 ```
 
 #### Interatomic Potentials
 
-Run molecular dynamics with ML potentials:
+Predict energy and forces using a pretrained MatterSim model:
 
 ```bash
-python interatomic_potentials/run_md.py 
-    --model_name='mattersim_1M' 
-    --structure_path='input.cif' 
-    --temperature=300
+python interatomic_potentials/predict.py \
+    --model_name='mattersim_1M' \
+    --weights_name='mattersim-v1.0.0-1M_model.pdparams' \
+    --cif_file_path='./interatomic_potentials/example_data/cifs/' \
+    --save_path='result.csv'
 ```
 
 #### Electronic Structure
 
-Run prediction of elcutorninc density:
+Predict electron density using a pretrained InfGCN checkpoint:
 
 ```bash
-python interatomic_potentials/run_md.py 
-    --model_name='mattersim_1M' 
-    --structure_path='input.cif' 
-    --temperature=300
+python electronic_structure/predict.py \
+    --config='electronic_structure/configs/infgcn/infgcn_qm9.yaml' \
+    --checkpoint='path/to/infgcn_qm9.pdparams' \
+    --split='validation' \
+    --index=0 \
+    --output_dir='output/infgcn_qm9/validation_0' \
+    --save_pred_cube
 ```
+
+See the [InfGCN prediction guide](electronic_structure/configs/infgcn/README.md#prediction) for dataset and checkpoint preparation.
 
 #### Spectrum Elucidation
 
-Run NMR spectrum elucidate:
+Run NMR spectrum elucidation using a pretrained DiffNMR checkpoint:
 
 ```bash
-python spectrum_elucidation/sample.py 
-    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' 
-    --weights_name='DiffNMR_nless15_best.pdparams' 
-    --save_path='result_diffnmr_nless15/' 
-    --checkpoint_path="pretrained"
+python spectrum_elucidation/sample.py \
+    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' \
+    --checkpoint_path='path/to/DiffNMR_nless15_best.pdparams' \
+    --save_path='result_diffnmr_nless15/'
 ```
 
 #### Spectrum Enhancement
 
-Run prediction of elcutorninc density:
+Enhance STEM images using a pretrained SFIN model:
 
 ```bash
-python spectrum_enhancement/predict.py 
-    --model_name sfin_haadf_enhance 
-    --split val
+python spectrum_enhancement/predict.py \
+    --model_name='sfin_haadf_enhance' \
+    --split='val'
 ```
 
 ---
@@ -149,7 +170,7 @@ For training and fine-tuning, refer to the [documentation](get_started.md).
 
 ## 🤝 Contributors & Cooperation & Community
 
-[![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterilas&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=PaddlePaddle/PaddleMaterials&type=date&legend=top-left)](https://www.star-history.com/#PaddlePaddle/PaddleMaterials&type=date&legend=top-left)
 
 Thanks to all contributors who have helped build PaddleMaterials！
 <a href="https://github.com/PaddlePaddle/PaddleMaterials/graphs/contributors">

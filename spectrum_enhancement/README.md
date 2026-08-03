@@ -35,3 +35,5 @@ prediction with the common PaddleMaterials trainer/predictor style.
 | **Dataset**                         |                                      |
 | &emsp;HAADF STEM                    | ✅                                   |
 | &emsp;BF STEM                       | ✅                                   |
+
+**Legend:** ✅ Verified · 🧪 Implemented, pending validation · 🚧 In development · `-` Not supported · 🌟 Original Work

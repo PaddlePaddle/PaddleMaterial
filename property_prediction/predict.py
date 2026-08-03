@@ -24,6 +24,7 @@ from omegaconf import OmegaConf
 from pymatgen.core import Structure
 from tqdm import tqdm
 
+from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.datasets.transform import build_post_transforms
 from ppmat.models import build_graph_converter
 from ppmat.models import build_model
@@ -182,6 +183,103 @@ class PropertyPredictor:
 
             return result
 
+    def from_molecule(self, molecule_data, molecule_format):
+        """Predict properties from molecular data.
+
+        Follows the standard PaddleMaterials molecular pipeline:
+        ``BuildMolecule -> graph_converter -> predict``.
+        """
+        mol = BuildMolecule(format=molecule_format)(molecule_data)
+
+        try:
+            conf = mol.GetConformer()
+        except ValueError:
+            conf = None
+        if conf is None or not conf.Is3D():
+            from rdkit import Chem as RDChem
+            from rdkit.Chem import AllChem
+
+            if molecule_format == "smiles":
+                mol = RDChem.AddHs(mol)
+            AllChem.EmbedMolecule(mol, randomSeed=42)
+            AllChem.MMFFOptimizeMolecule(mol)
+
+        if self.graph_converter_fn is not None:
+            data = self.graph_converter_fn(mol)
+        else:
+            conf = mol.GetConformer()
+            num_atoms = mol.GetNumAtoms()
+            z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+            pos = [
+                [
+                    conf.GetAtomPosition(i).x,
+                    conf.GetAtomPosition(i).y,
+                    conf.GetAtomPosition(i).z,
+                ]
+                for i in range(num_atoms)
+            ]
+            data = {
+                "z": paddle.to_tensor(z, dtype=paddle.int64),
+                "pos": paddle.to_tensor(pos, dtype=paddle.get_default_dtype()),
+                "batch": paddle.zeros([num_atoms], dtype=paddle.int64),
+            }
+
+        if self.eval_with_no_grad:
+            with paddle.no_grad():
+                out = self.model.predict(data)
+        else:
+            out = self.model.predict(data)
+        return self.post_process(out)
+
+    def from_xyz_file(self, xyz_file_path, save_path=None):
+        """Predict molecular properties from XYZ file(s).
+
+        Reads each ``.xyz`` file via RDKit, then delegates to
+        :meth:`from_molecule` (``BuildMolecule → graph_converter → predict``).
+
+        Args:
+            xyz_file_path: Path to a single ``.xyz`` file or a directory
+                of ``.xyz`` files.
+            save_path: Optional CSV path.
+
+        Returns:
+            Single result dict or list of result dicts.
+        """
+        from rdkit import Chem
+
+        if save_path is not None:
+            assert save_path.endswith(".csv"), "save_path must end with .csv"
+
+        if osp.isdir(xyz_file_path):
+            xyz_files = sorted([
+                osp.join(xyz_file_path, f)
+                for f in os.listdir(xyz_file_path) if f.endswith(".xyz")
+            ])
+        else:
+            xyz_files = [xyz_file_path]
+
+        results = []
+        for xyz_path in tqdm(xyz_files, desc="Predict"):
+            with open(xyz_path, "r") as f:
+                xyz_block = f.read()
+            mol = Chem.MolFromXYZBlock(xyz_block)
+            if mol is None:
+                raise ValueError(f"Failed to parse XYZ file: {xyz_path}")
+            out = self.from_molecule(mol, "rdmol")
+            results.append(out)
+
+        if save_path is not None and results:
+            keys = list(results[0].keys())
+            props = defaultdict(list)
+            for key in keys:
+                for r in results:
+                    props[key].append(r[key])
+            df = pd.DataFrame({"xyz_file": [osp.basename(f) for f in xyz_files], **props})
+            df.to_csv(save_path, index=False)
+            logger.info(f"Saved prediction results to {save_path}")
+
+        return results if len(results) > 1 else results[0]
+
 
 if __name__ == "__main__":
 
@@ -217,6 +315,12 @@ if __name__ == "__main__":
         help="Path to the CIF file whose material properties you want to predict.",
     )
     argparse.add_argument(
+        "--xyz_file_path",
+        type=str,
+        default=None,
+        help="Path to the XYZ file whose molecular properties you want to predict.",
+    )
+    argparse.add_argument(
         "--save_path",
         type=str,
         default="result.csv",
@@ -231,5 +335,13 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint_path,
     )
 
-    results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    if args.xyz_file_path is not None:
+        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
+    elif args.cif_file_path is not None:
+        results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+    else:
+        raise ValueError(
+            "Provide --xyz_file_path for molecular prediction, "
+            "or --cif_file_path for crystal prediction."
+        )
     print(results)

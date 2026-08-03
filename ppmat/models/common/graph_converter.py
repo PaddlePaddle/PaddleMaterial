@@ -572,6 +572,236 @@ class MolecularGraphConverter:
             )
 
 
+class RadiusGraphConverter:
+    """Convert RDKit molecules into PGL radius graphs.
+
+    The converter is used by SphereNet-style molecular datasets. It accepts an
+    RDKit ``Mol`` or a list of RDKit ``Mol`` objects and returns PGL graph data
+    with atom numbers, positions, radius edges, and optional SphereNet triplet
+    indices cached in ``graph.edge_feat``.
+
+    Args:
+        cutoff: Neighbor cutoff distance in Angstrom.
+        atom_vocab: Mapping from atomic number to feature index for optional PGL
+            node features.
+        add_self_loops: Whether to add self-loop edges.
+        edge_mode: ``"directed"``, ``"undirected"``, or ``"bidirectional"``.
+        include_distance: Whether to include distance in PGL edge features.
+        include_direction: Whether to include unit direction in PGL edge features.
+        return_triplet_indices: Whether to cache SphereNet triplet indices.
+        num_cpus: Number of CPUs for parallel graph construction.
+    """
+
+    def __init__(
+        self,
+        cutoff: float = 5.0,
+        atom_vocab: Optional[Dict[int, int]] = None,
+        add_self_loops: bool = False,
+        edge_mode: str = "bidirectional",
+        include_distance: bool = True,
+        include_direction: bool = False,
+        return_triplet_indices: bool = False,
+        num_cpus: Optional[int] = None,
+    ) -> None:
+        if atom_vocab is None:
+            atom_vocab = {1: 0, 6: 1, 7: 2, 8: 3, 9: 4}
+        if edge_mode not in {"directed", "undirected", "bidirectional"}:
+            raise ValueError(f"Unknown edge_mode: {edge_mode}")
+
+        self.cutoff = float(cutoff)
+        self.atom_vocab = dict(atom_vocab)
+        self.add_self_loops = add_self_loops
+        self.edge_mode = edge_mode
+        self.include_distance = include_distance
+        self.include_direction = include_direction
+        self.return_triplet_indices = return_triplet_indices
+        self.num_cpus = 1 if num_cpus is None else int(num_cpus)
+
+    def __call__(
+        self, molecule: Union[Chem.Mol, List[Chem.Mol]]
+    ) -> Union[Optional[pgl.Graph], List[Optional[pgl.Graph]]]:
+        if isinstance(molecule, Chem.Mol):
+            graph = self.get_graph_by_radius(molecule)
+        elif isinstance(molecule, list):
+            if self.num_cpus == 1:
+                graph = [self.get_graph_by_radius(mol) for mol in molecule]
+            else:
+                graph = p_map(
+                    self.get_graph_by_radius,
+                    molecule,
+                    num_cpus=self.num_cpus,
+                    desc="Building graphs",
+                    dynamic_ncols=True,
+                    mininterval=0.2,
+                )
+        else:
+            raise TypeError("The input must be an RDKit Mol or a list of them.")
+        return graph
+
+    def get_graph_by_radius(self, molecule: Chem.Mol) -> Optional[pgl.Graph]:
+        if molecule is None:
+            return None
+
+        atomic_numbers, positions = self.get_molecule_array(molecule)
+        num_nodes = positions.shape[0]
+        if num_nodes == 0:
+            return None
+
+        edge_index, distances, directions = self.get_radius_edges(positions)
+        triplet_indices = None
+        if self.return_triplet_indices:
+            triplet_indices = self.get_triplet_indices(edge_index)
+        return self.build_pgl_graph(
+            atomic_numbers,
+            positions,
+            edge_index,
+            distances,
+            directions,
+            triplet_indices,
+        )
+
+    def get_molecule_array(self, molecule: Chem.Mol) -> Tuple[np.ndarray, np.ndarray]:
+        if molecule.GetNumConformers() == 0:
+            raise ValueError("RDKit Mol has no conformer. Cannot build radius graph.")
+
+        atomic_numbers = np.asarray(
+            [atom.GetAtomicNum() for atom in molecule.GetAtoms()], dtype=np.int64
+        )
+        conf = molecule.GetConformer()
+        positions = np.asarray(
+            [
+                [
+                    conf.GetAtomPosition(i).x,
+                    conf.GetAtomPosition(i).y,
+                    conf.GetAtomPosition(i).z,
+                ]
+                for i in range(molecule.GetNumAtoms())
+            ],
+            dtype=np.float32,
+        )
+        return atomic_numbers, positions
+
+    def get_radius_edges(
+        self, positions: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        positions = np.asarray(positions, dtype=np.float32)
+        num_nodes = positions.shape[0]
+        if num_nodes == 0:
+            return (
+                np.empty((2, 0), dtype=np.int64),
+                np.empty((0, 1), dtype=np.float32),
+                np.empty((0, 3), dtype=np.float32),
+            )
+
+        displacement = positions[:, None, :] - positions[None, :, :]
+        distance_matrix = np.linalg.norm(displacement, axis=-1)
+        mask = distance_matrix < self.cutoff
+        np.fill_diagonal(mask, False)
+        targets, sources = np.where(mask)
+
+        if self.edge_mode == "undirected":
+            keep = sources < targets
+            sources, targets = sources[keep], targets[keep]
+
+        if self.add_self_loops:
+            self_nodes = np.arange(num_nodes, dtype=np.int64)
+            sources = np.concatenate([sources, self_nodes])
+            targets = np.concatenate([targets, self_nodes])
+
+        if sources.size == 0:
+            return (
+                np.empty((2, 0), dtype=np.int64),
+                np.empty((0, 1), dtype=np.float32),
+                np.empty((0, 3), dtype=np.float32),
+            )
+
+        edge_index = np.stack([sources, targets], axis=0).astype(np.int64)
+        distances = distance_matrix[targets, sources].reshape(-1, 1)
+        directions = displacement[targets, sources]
+        directions = directions / np.maximum(distances, 1e-8)
+
+        order = np.argsort(
+            edge_index[1] * max(1, num_nodes) + edge_index[0], kind="mergesort"
+        )
+        edge_index = edge_index[:, order]
+        distances = distances[order].astype(np.float32)
+        directions = directions[order].astype(np.float32)
+        return edge_index, distances, directions
+
+    def get_node_feat(
+        self, atomic_numbers: np.ndarray, positions: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        atomic_numbers = np.asarray(atomic_numbers, dtype=np.int64)
+        node_feat = {
+            "pos": positions.astype(np.float32),
+            "atomic_number": atomic_numbers.reshape(-1, 1),
+        }
+
+        idxs = []
+        for z in atomic_numbers:
+            if int(z) not in self.atom_vocab:
+                return node_feat
+            idxs.append(self.atom_vocab[int(z)])
+        idxs = np.asarray(idxs, dtype=np.int64)
+        node_feat["feat"] = np.eye(len(self.atom_vocab), dtype=np.float32)[idxs]
+        return node_feat
+
+    def build_pgl_graph(
+        self,
+        atomic_numbers: np.ndarray,
+        positions: np.ndarray,
+        edge_index: np.ndarray,
+        distances: np.ndarray,
+        directions: np.ndarray,
+        triplet_indices: Optional[Dict[str, np.ndarray]] = None,
+    ) -> pgl.Graph:
+        edge_feat = {}
+        edge_feats = []
+        if self.include_distance:
+            edge_feat["distance"] = distances
+            edge_feats.append(distances)
+        if self.include_direction:
+            edge_feat["direction"] = directions
+            edge_feats.append(directions)
+        if edge_feats:
+            edge_feat["feat"] = np.concatenate(edge_feats, axis=-1).astype(
+                np.float32
+            )
+        if triplet_indices is not None:
+            edge_feat.update(triplet_indices)
+
+        return pgl.Graph(
+            num_nodes=positions.shape[0],
+            edges=edge_index.T.astype(np.int64),
+            node_feat=self.get_node_feat(atomic_numbers, positions),
+            edge_feat=edge_feat,
+        )
+
+    def get_triplet_indices(
+        self, edge_index: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        edge_index = np.asarray(edge_index, dtype=np.int64)
+        sources, targets = edge_index
+        num_atoms = int(edge_index.max()) + 1 if edge_index.size else 0
+
+        incoming_edges = [[] for _ in range(num_atoms)]
+        for edge_id, target in enumerate(targets):
+            incoming_edges[int(target)].append(edge_id)
+
+        idx_kj = []
+        idx_ji = []
+        for edge_id, (source, target) in enumerate(edge_index.T):
+            for incoming_edge in incoming_edges[int(source)]:
+                if sources[incoming_edge] != target:
+                    idx_kj.append(incoming_edge)
+                    idx_ji.append(edge_id)
+
+        return {
+            "ti_idx_kj": np.asarray(idx_kj, dtype=np.int64),
+            "ti_idx_ji": np.asarray(idx_ji, dtype=np.int64),
+        }
+
+
 def subgraph(
     subset: Union[np.ndarray, List[int]],
     edge_index: np.ndarray,

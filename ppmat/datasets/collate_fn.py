@@ -88,6 +88,42 @@ class DefaultCollator(object):
         )
 
 
+class RadiusGraphCollator:
+    """Collate PGL radius graphs and offset their edge-based triplet indices."""
+
+    def __call__(self, batch):
+        graphs = [sample["graph"] for sample in batch]
+        num_edges = [np.asarray(graph.edges).shape[0] for graph in graphs]
+        edge_offsets = np.cumsum([0] + num_edges[:-1])
+
+        triplet_fields = {key: [] for key in ("idx_kj", "idx_ji")}
+        for index, graph in enumerate(graphs):
+            for key in triplet_fields:
+                triplet_fields[key].append(
+                    np.asarray(
+                        graph.edge_feat[f"ti_{key}"], dtype=np.int64
+                    )
+                    + edge_offsets[index]
+                )
+
+        graph = pgl.Graph.batch(graphs)
+        graph.edge_feat.update(
+            {
+                f"ti_{key}": np.concatenate(values)
+                for key, values in triplet_fields.items()
+            }
+        )
+
+        result = DefaultCollator()(
+            [
+                {key: value for key, value in sample.items() if key != "graph"}
+                for sample in batch
+            ]
+        )
+        result["graph"] = graph
+        return result
+
+
 class DensityCollator:
     def __init__(
         self,

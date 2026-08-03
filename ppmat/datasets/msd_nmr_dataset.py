@@ -277,12 +277,12 @@ class MSDnmrDataset(Dataset):
                     logger.info(
                         "The cached build_molecule_cfg configuration matches "
                         "the current settings. Reusing previously generated"
-                        " structural data to optimize performance."
+                        " moelcular data to optimize performance."
                     )
                 else:
                     logger.warning(
                         "build_molecule_cfg is different from "
-                        "build_molecule_cfgg_cache. Will rebuild the molecules and "
+                        "build_molecule_cfg_cache. Will rebuild the molecules and "
                         "graphs."
                     )
                     logger.warning(
@@ -365,7 +365,7 @@ class MSDnmrDataset(Dataset):
         spectrum_cache_path = osp.join(self.cache_path, "spectrums")
 
         if overwrite or not self.cache_exists:
-            # convert strucutes and graphs
+            # convert molecules and graphs
             # only rank 0 process do the conversion
             if dist.get_rank() == 0:
                 # save build_molecule_cfg and build_graph_cfg and build_spechtrum_cfg
