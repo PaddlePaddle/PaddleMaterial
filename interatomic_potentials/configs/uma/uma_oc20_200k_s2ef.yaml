@@ -4,11 +4,10 @@ Global:
   do_test: True
   label_names: ["energy", "forces"]
   graph_converter:
-    __class_name__: UMAGraphConverter
+    __class_name__: FindPointsInSpheres
     __init_params__:
       cutoff: 6.0
       max_neighbors: 30
-      radius_pbc_version: 1
   prim_eager_enabled: True
   prim_backward_white_list: ["stack_grad", "assign_grad"]
 
@@ -25,53 +24,32 @@ Trainer:
   resume_from_checkpoint: null
   use_amp: False
   amp_level: "O1"
-  eval_with_no_grad: False
+  eval_with_no_grad: True
   gradient_accumulation_steps: 1
   best_metric_indicator: "eval_metric"
   name_for_best_metric: "energy"
   greater_is_better: False
   compute_metric_during_train: True
-  metric_strategy_during_eval: "epoch"
+  metric_strategy_during_eval: "step"
   use_visualdl: False
   use_wandb: False
   use_tensorboard: False
 
 Model:
-  __class_name__: UMASingleTaskModel
+  __class_name__: UMA
   __init_params__:
-    freeze_backbone: False
-    head_name: MLP_EFS_Direct_Head
-    head_params:
-      reduce: mean
-      wrap_property: True
-    loss_type: mae
-    loss_weights:
+    loss_weights_dict:
       energy: 10.0
       forces: 30.0
-    backbone_params:
-      max_num_elements: 100
-      sphere_channels: 128
-      edge_channels: 128
-      hidden_channels: 128
-      num_distance_basis: 64
-      num_layers: 4
-      lmax: 2
-      mmax: 2
-      otf_graph: False
-      max_neighbors: 30
-      cutoff: 6.0
-      direct_forces: True
-      regress_forces: False
-      direct_stress: False
-      regress_stress: False
-      use_dataset_embedding: True
-      dataset_mapping:
-        oc20: oc20
-      use_quaternion_wigner: False
-      norm_type: rms_norm_sh
-      act_type: gate
-      ff_type: spectral
-      execution_mode: general
+    max_num_elements: 100
+    sphere_channels: 128
+    edge_channels: 128
+    hidden_channels: 128
+    num_distance_basis: 64
+    num_layers: 4
+    lmax: 2
+    mmax: 2
+    cutoff: 6.0
 
 Optimizer:
   __class_name__: AdamW
@@ -102,16 +80,12 @@ Dataset:
       __class_name__: UMAAseDBDataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        src: ./data/oc20/uma_aselmdb/train/train.aselmdb
-        dataset_name: oc20-s2ef-200k-train
-        task_name: oc20
-        include_energy: True
-        include_forces: True
-        include_stress: False
+        path: ./data/oc20/uma_aselmdb/train/train.aselmdb
+        property_names: ["energy", "forces"]
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: UMASingleCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -124,16 +98,14 @@ Dataset:
       __class_name__: UMAAseDBDataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        src: ./data/oc20/uma_aselmdb/val/val.aselmdb
-        dataset_name: oc20-s2ef-200k-val
-        task_name: oc20
-        include_energy: True
-        include_forces: True
-        include_stress: False
+        path: ./data/oc20/uma_aselmdb/val/val.aselmdb
+        property_names: ["energy", "forces"]
+        select_args:
+          limit: 25000
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: UMASingleCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -146,19 +118,19 @@ Dataset:
       __class_name__: UMAAseDBDataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        src: ./data/oc20/uma_aselmdb/test/test.aselmdb
-        dataset_name: oc20-s2ef-200k-test
-        task_name: oc20
-        include_energy: True
-        include_forces: True
-        include_stress: False
+        path: ./data/oc20/uma_aselmdb/test/test.aselmdb
+        property_names: ["energy", "forces"]
     loader:
       num_workers: 0
       use_shared_memory: False
-      collate_fn: UMASingleCollator
+      collate_fn: DefaultCollator
     sampler:
       __class_name__: BatchSampler
       __init_params__:
         shuffle: False
         drop_last: False
         batch_size: 4
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: True

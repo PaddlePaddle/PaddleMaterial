@@ -56,8 +56,6 @@ from ppmat.datasets.sfin_dataset import SFINDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
 from ppmat.datasets.uma_dataset import UMAAseDBDataset
-from ppmat.datasets.uma_dataset import UMAMultiDataset
-from ppmat.datasets.uma_dataset import UMASingleDataset
 from ppmat.utils import logger
 
 __all__ = [
@@ -83,8 +81,6 @@ __all__ = [
     "OMol25Dataset",
     "MD17Dataset",
     "UMAAseDBDataset",
-    "UMAMultiDataset",
-    "UMASingleDataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {

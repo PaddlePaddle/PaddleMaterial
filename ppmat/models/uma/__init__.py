@@ -11,13 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-try:
-    from .escn_md import UMASingleTaskModel
-except ModuleNotFoundError:
-    UMASingleTaskModel = None  # type: ignore[assignment]
-from .uma_graph_converter import UMAGraphConverter
 
-__all__ = [
-    "UMASingleTaskModel",
-    "UMAGraphConverter",
-]
+from .escn_md import UMA
+
+__all__ = ["UMA"]

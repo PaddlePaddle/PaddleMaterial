@@ -125,22 +125,6 @@ class RadiusGraphCollator:
         return result
 
 
-class UMASingleCollator:
-    """Collate UMA atomistic samples with variable numbers of atoms.
-
-    `DefaultCollator` stacks tensors and therefore requires node-level fields
-    such as `pos`, `atomic_numbers`, and `forces` to have identical shapes in a
-    batch. UMA samples have different atom counts, so they must be concatenated
-    along the node dimension while generating `batch` indices and shifting
-    `edge_index` offsets.
-    """
-
-    def __call__(self, batch):
-        from ppmat.datasets.uma_dataset import uma_data_list_to_batch
-
-        return uma_data_list_to_batch(batch)
-
-
 class DensityCollator:
     def __init__(
         self,

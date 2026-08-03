@@ -34,10 +34,12 @@ class GaussianSmearing(paddle.nn.Layer):
         start: float = 0.0,
         stop: float = 5.0,
         num_gaussians: int = 50,
+        basis_width_scalar: float = 1.0,
     ):
         super(GaussianSmearing, self).__init__()
         offset = paddle.linspace(start, stop, num_gaussians)
-        self.coeff = -0.5 / (offset[1] - offset[0]).item() ** 2
+        spacing = basis_width_scalar * (offset[1] - offset[0]).item()
+        self.coeff = -0.5 / spacing**2
         self.register_buffer("offset", offset)
 
     def forward(self, dist: Tensor) -> Tensor:
