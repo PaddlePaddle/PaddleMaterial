@@ -45,12 +45,18 @@ The model uses Paddle-format precomputed Wigner-d coefficients stored in
 
 ## Results
 
-The native single-task model was trained for three epochs on the OC20
-`train_200K` split and evaluated on 25,000 structures from `val_id`.
+The native single-task model was trained on OC20 S2EF and OMat24
+`rattled-500`. Both runs used eight RTX 3090 GPUs, a batch size of four per GPU,
+and full-precision training. The model has 6.26M trainable parameters.
 
-| Energy MAE (eV/atom) | Force vector L2 (eV/A) |
-| :--: | :--: |
-| 0.008893 | 0.100804 |
+| Dataset | Train structures | Validation structures | Epochs | Energy MAE (eV/atom) | Force vector L2 (eV/A) | Training time |
+| :-- | --: | --: | --: | --: | --: | --: |
+| OC20 `train_200K` / `val_id` | 200,000 | 25,000 | 3 | 0.008893 | 0.100804 | 2 h 56 min |
+| OMat24 `rattled-500` | 6,922,197 | 71,522 | 1 | 0.015218 | 0.179509 | 5 h 15 min |
+
+The OMat24 run used the complete training split without a sample limit. With
+`drop_last: True`, only the final 21 structures that did not fill a global batch
+were omitted.
 
 ## Training
 
