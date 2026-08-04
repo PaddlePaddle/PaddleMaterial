@@ -5,8 +5,9 @@ Global:
   use_voxel: False
 
 Trainer:
-  max_epochs: 2
-  max_iter: null
+  # Keep the epoch ceiling above the official 80,000-step training budget.
+  max_epochs: 100
+  max_iter: 80000
   seed: 42
   output_dir: ./output/gpwno_qm9
   save_freq: 1

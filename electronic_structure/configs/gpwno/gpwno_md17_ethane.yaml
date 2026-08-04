@@ -5,8 +5,9 @@ Global:
   use_voxel: False
 
 Trainer:
-  max_epochs: 32
-  max_iter: 10000
+  # Keep the epoch ceiling above the official 4,000-step training budget.
+  max_epochs: 100
+  max_iter: 4000
   seed: 42
   output_dir: ./output/gpwno_md17_ethane
   save_freq: 2000
@@ -95,7 +96,7 @@ Dataset:
       __init_params__:
         shuffle: True
         drop_last: False
-        batch_size: 16
+        batch_size: 32
     loader:
       num_workers: 4
       use_shared_memory: False
@@ -114,7 +115,7 @@ Dataset:
       __init_params__:
         shuffle: True
         drop_last: False
-        batch_size: 16
+        batch_size: 32
     loader:
       num_workers: 8
       use_shared_memory: False
