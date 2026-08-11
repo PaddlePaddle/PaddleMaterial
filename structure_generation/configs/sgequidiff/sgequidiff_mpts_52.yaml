@@ -7,7 +7,7 @@ Global:
 Trainer:
   max_epochs: 2000
   seed: 42
-  output_dir: ./output/sgequidiff_mp20
+  output_dir: ./output/sgequidiff_mpts_52
   save_freq: 100
   log_freq: 10
   start_eval_epoch: 1
@@ -30,7 +30,7 @@ Trainer:
 Model:
   __class_name__: SGEQuiDiff
   __init_params__:
-    dataset_name: mp_20
+    dataset_name: mpts_52
     num_wn_lattice_translations: 3
     noise_scheduler_cfg:
       __class_name__: ASUVESDEScheduler
@@ -53,7 +53,7 @@ Model:
       num_msg_pass_steps: 5
       cutoff: 10.0
       use_frac_coords_in_node_emb: True
-      dataset_name: mp_20
+      dataset_name: mpts_52
 
 Optimizer:
   __class_name__: AdamW
@@ -77,7 +77,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
+        name: mpts_52
         split: train
     loader:
       num_workers: 0
@@ -92,7 +92,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
+        name: mpts_52
         split: val
     loader:
       num_workers: 0
@@ -107,7 +107,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
+        name: mpts_52
         split: test
     loader:
       num_workers: 0
@@ -128,4 +128,4 @@ Sample:
   metrics:
     __class_name__: SGEQuiDiffMetric
     __init_params__:
-      gt_file_path: data/data/mp_20/test.csv
+      gt_file_path: data/data/mpts_52/test.csv

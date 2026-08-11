@@ -21,12 +21,12 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 
-import ppmat.models.sgequidiff.global_vars as global_vars
+import ppmat.utils.wyckoff_data as wyckoff_data
+from ppmat.utils.wyckoff_data import _ensure_wyckoff_shape_decomp
 from ppmat.utils import logger
-from ppmat.models.sgequidiff.constants import MAX_WYCKOFF_SITES, NUM_SPACE_GROUPS
-from ppmat.models.sgequidiff.global_vars import DATA_DIRECTORY, _ensure_wyckoff_shape_decomp
-from ppmat.models.sgequidiff.crystal_data import uniformly_sample_point_in_asu_wyckoff_site
-from ppmat.models.sgequidiff.data_utils import (
+from ppmat.utils.asu_crystal import uniformly_sample_point_in_asu_wyckoff_site
+from ppmat.utils.crystal import MAX_WYCKOFF_POSITIONS, NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
+from ppmat.utils.asu_math import (
     get_space_group_ops_and_conventional_atoms,
     d_log_p_asu_wrapped_normal,
 )
@@ -69,7 +69,7 @@ class ASUVESDEScheduler(nn.Layer):
         self.register_buffer(
             "sigma_norms",
             paddle.concat(
-                [paddle.ones([NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, 1]), _sigma_norms],
+                [paddle.ones([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, 1]), _sigma_norms],
                 axis=-1,
             ),
         )
@@ -86,7 +86,7 @@ class ASUVESDEScheduler(nn.Layer):
     @paddle.no_grad()
     def _sigma_norm_unwrapped(self, sigmas: paddle.Tensor) -> paddle.Tensor:
         sigma_norms = 1.0 / sigmas
-        return sigma_norms[None, None, :].expand([NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, -1])
+        return sigma_norms[None, None, :].expand([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, -1])
 
     @paddle.no_grad()
     def _sigma_norm_asu_wrapped(
@@ -102,7 +102,7 @@ class ASUVESDEScheduler(nn.Layer):
             f"_T{num_timesteps}_{num_monte_carlo_samples}MCsamples"
             f"_{num_lattice_translations}LatticeTranslations.pdparams"
         )
-        cache_path = DATA_DIRECTORY / cache_name
+        cache_path = wyckoff_data.DATA_DIRECTORY / cache_name
         logger.info(f"Checking cache: {cache_path}")
         logger.info(f"Cache exists: {cache_path.exists()}")
         if cache_path.exists():
@@ -110,16 +110,16 @@ class ASUVESDEScheduler(nn.Layer):
             sigma_norms = paddle.load(str(cache_path))
             logger.info(f"Successfully loaded sigma_norms with shape: {sigma_norms.shape}")
             return sigma_norms
-        logger.info(f"Cache not found, computing sigma_norms...")
+        logger.info("Cache not found, computing sigma_norms...")
 
         _ensure_wyckoff_shape_decomp()
-        with open(DATA_DIRECTORY / "wyckoff_shape_decomposition.pkl", "rb") as f:
+        with open(wyckoff_data.DATA_DIRECTORY / "wyckoff_shape_decomposition.pkl", "rb") as f:
             wyckoff_shape_decomp_dict = pickle.load(f)
 
-        asu_wyckoff_dict = global_vars.asu_wyckoff_dict
-        sigma_norms = paddle.zeros([NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, num_timesteps], dtype=paddle.float32)
+        asu_wyckoff_dict = wyckoff_data.asu_wyckoff_dict
+        sigma_norms = paddle.zeros([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, num_timesteps], dtype=paddle.float32)
 
-        for sg_num in range(NUM_SPACE_GROUPS, 0, -1):
+        for sg_num in range(NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 0, -1):
             sg_dict = asu_wyckoff_dict[str(sg_num)]
             wyckoff_letters = sg_dict["ordered_wyckoff_letters"]
 
@@ -128,7 +128,7 @@ class ASUVESDEScheduler(nn.Layer):
                 wyckoff_letters=wyckoff_letters,
                 dictionary_of_wyckoffs_in_asu=asu_wyckoff_dict,
                 dictionary_of_wyckoff_shape_decompositions=wyckoff_shape_decomp_dict,
-                hull_equations_3d=global_vars.asu_hull_equations,
+                hull_equations_3d=wyckoff_data.asu_hull_equations,
                 n_samples_per_wyckoff=num_monte_carlo_samples,
                 return_sampled_wyckoff_shape_indices=True,
             )
@@ -139,17 +139,18 @@ class ASUVESDEScheduler(nn.Layer):
                 _wyckoff_idx = paddle.to_tensor([i], dtype=paddle.int64)
                 _wyckoff_idx_expanded = _wyckoff_idx.expand([num_monte_carlo_samples])
 
-                _, _, _, map_conv_to_asu, _, _, orbited_x, unique_indices = (
-                    get_space_group_ops_and_conventional_atoms(
-                        x0s[i],
-                        paddle.zeros_like(_wyckoff_idx_expanded),
-                        _wyckoff_idx_expanded,
-                        space_group_idx,
-                        n_atoms_per_xtal=paddle.to_tensor(
-                            [num_monte_carlo_samples], dtype=paddle.int64
-                        ),
-                    )
+                sg_ops = get_space_group_ops_and_conventional_atoms(
+                    x0s[i],
+                    paddle.zeros_like(_wyckoff_idx_expanded),
+                    _wyckoff_idx_expanded,
+                    space_group_idx,
+                    n_atoms_per_xtal=paddle.to_tensor(
+                        [num_monte_carlo_samples], dtype=paddle.int64
+                    ),
                 )
+                map_conv_to_asu = sg_ops.map_conventional_to_asu_atom
+                orbited_x = sg_ops.conventional_frac_coords
+                unique_indices = sg_ops.unique_non_overlapping_atom_indices
                 map_unique_conv_to_asu = map_conv_to_asu[unique_indices]
 
                 _chunks = min(200, num_timesteps)

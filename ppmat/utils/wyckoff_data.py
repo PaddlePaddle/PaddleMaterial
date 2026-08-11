@@ -12,86 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Space group global precomputed variables and EmbeddingTools."""
+"""Wyckoff site / space group precomputed data for the asymmetric unit (ASU)."""
+
 import json
-import os
-from ppmat.utils import logger
 from fractions import Fraction
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
-import paddle.nn.functional as F
 from pymatgen.symmetry.groups import SpaceGroup as _PymatgenSpaceGroup
 from scipy.spatial import ConvexHull
 
-from ppmat.models.sgequidiff.constants import (
-    MAX_WYCKOFF_SITES,
-    NUM_ELEMENTS,
-    NUM_SPACE_GROUPS,
-)
-from ppmat.models.sgequidiff.constants import spgroup_data
+from ppmat.utils.asu_data import resolve_asu_data_dir
+from ppmat.utils.crystal import MAX_WYCKOFF_POSITIONS
+from ppmat.utils.crystal import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
+from ppmat.utils.crystal import spgroup_data
 
-_THIS_FILE = Path(__file__).resolve()
+_DATA_DIRECTORY = None
 
-_MODULE_DIR = _THIS_FILE.parent
-_PROJECT_ROOT = _MODULE_DIR.parents[2]
 
-_ENV_DATA_DIR_STR = os.getenv("SGEQUI_DATA_DIR")
-if _ENV_DATA_DIR_STR:
-    DATA_DIRECTORY = Path(_ENV_DATA_DIR_STR)
-else:
-    _CANDIDATE_DIRS = [
-        _PROJECT_ROOT / "ppmat/utils/vocabs/crystals/sgequidiff",
-    ]
+def _resolve_data_dir() -> Path:
+    global _DATA_DIRECTORY
+    if _DATA_DIRECTORY is None:
+        _DATA_DIRECTORY = resolve_asu_data_dir()
+    return _DATA_DIRECTORY
 
-    _TARGET_FILE = "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
-    DATA_DIRECTORY = None
-
-    for _d in _CANDIDATE_DIRS:
-        if (_d / _TARGET_FILE).exists():
-            DATA_DIRECTORY = _d
-            break
-
-    if DATA_DIRECTORY is None:
-        _candidate_paths = "\n".join([f"  * {d}" for d in _CANDIDATE_DIRS])
-        raise FileNotFoundError(
-            f"Cannot find SGEQUI data directory.\n"
-            f"\nTried paths:\n{_candidate_paths}\n"
-            f"\nSolutions:\n"
-            f"  1. Copy data to: {str(_CANDIDATE_DIRS[0])}\n"
-            f"  2. Set environment variable: export SGEQUI_DATA_DIR=/your/data/path\n"
-            f"\nRequired file: {_TARGET_FILE}"
-        )
-
-def _resolve_data_dir():
-    if DATA_DIRECTORY is None:
-        raise RuntimeError("DATA_DIRECTORY was not initialized properly")
-    return DATA_DIRECTORY
-
-ASU_DICT_PATH: str = (_resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in_asu_v6.json").as_posix()
-
-SHAPE_DECOMP_DICT_PATH: Path = _resolve_data_dir() / "wyckoff_shape_decomposition.pkl"
 
 def _ensure_wyckoff_shape_decomp() -> None:
     """Ensure wyckoff_shape_decomposition.pkl exists."""
-    if SHAPE_DECOMP_DICT_PATH.exists():
+    shape_decomp_path = _resolve_data_dir() / "wyckoff_shape_decomposition.pkl"
+    if shape_decomp_path.exists():
         return
-    from ppmat.models.sgequidiff.wyckoff_shape_decomp_builder import (
+    from ppmat.utils.wyckoff_shape_decomp import (
         build_wyckoff_shape_decomposition_dict,
     )
-    build_wyckoff_shape_decomposition_dict(str(SHAPE_DECOMP_DICT_PATH), ASU_DICT_PATH)
+    asu_dict_path = (
+        _resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
+    ).as_posix()
+    build_wyckoff_shape_decomposition_dict(str(shape_decomp_path), asu_dict_path)
 
-embedding_tools = None
 
 def string_to_fraction(string: str) -> Fraction:
     return Fraction(string)
 
+
 def load_dictionary_of_wyckoff_sites_in_asus(
-    json_filepath: str = ASU_DICT_PATH,
+    json_filepath: Optional[str] = None,
 ) -> dict:
     """Load Wyckoff site dictionary within ASU."""
+    if json_filepath is None:
+        json_filepath = (
+            _resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
+        ).as_posix()
     try:
         with open(json_filepath) as file:
             wyckoffs_dict = json.load(file)
@@ -137,10 +110,12 @@ def load_dictionary_of_wyckoff_sites_in_asus(
 
     return wyckoffs_dict
 
+
 def _project_onto_1d_subspace(line: paddle.Tensor) -> paddle.Tensor:
     """Project to 1D subspace, return (3,3) projection matrix."""
     projection_matrix = (line.T @ line) / (line ** 2).sum()
     return projection_matrix
+
 
 def _project_onto_2d_subspace(
     facet_vertices: paddle.Tensor, return_plane_normal: bool = False
@@ -161,7 +136,12 @@ def _project_onto_2d_subspace(
     else:
         return projection_matrix
 
+
+# Max number of geometric shapes a single Wyckoff site is decomposed into
+# (0D point / 1D line / 2D facet); used to pad shape-related tensors.
 max_shapes_per_wyckoff = 4
+# Max number of simplicial facets of an ASU convex hull; used to pad hull
+# equation tensors to a fixed shape across all space groups.
 max_simplicial_hull_facets = 16
 
 _eye3 = paddle.to_tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=paddle.float32)
@@ -244,6 +224,7 @@ _lazy_vars = {
 }
 _initialized = False
 
+
 def _lazy_init():
     global _initialized, asu_wyckoff_dict
     global padded_general_wyckoff_matrices, padded_inverse_general_wyckoff_matrices
@@ -256,14 +237,33 @@ def _lazy_init():
     global asu_hull_equations
     if _initialized:
         return
+    try:
+        _lazy_init_once()
+    except BaseException:
+        _initialized = False
+        raise
     _initialized = True
 
-    asu_wyckoff_dict = load_dictionary_of_wyckoff_sites_in_asus(ASU_DICT_PATH)
 
-    padded_general_wyckoff_matrices = paddle.zeros([NUM_SPACE_GROUPS, 192, 3, 3])
-    padded_inverse_general_wyckoff_matrices = paddle.zeros([NUM_SPACE_GROUPS, 192, 3, 3])
-    padded_general_wyckoff_translations = paddle.zeros([NUM_SPACE_GROUPS, 192, 1, 3])
-    padded_general_wyckoff_ops_mask = paddle.zeros([NUM_SPACE_GROUPS, 192], dtype=paddle.bool)
+def _lazy_init_once():
+    global asu_wyckoff_dict
+    global padded_general_wyckoff_matrices, padded_inverse_general_wyckoff_matrices
+    global padded_general_wyckoff_translations, padded_general_wyckoff_ops_mask
+    global conventional_to_primitive_P_matrices, conventional_to_primitive_invP_matrices
+    global wyckoff_dimension_tensor
+    global noise_projection_matrices, wyckoff_shape_volumes
+    global point_per_1d_wyckoff_line, line_directions_of_1d_wyckoffs
+    global point_per_2d_wyckoff_plane, plane_normals_of_2d_wyckoffs
+    global asu_hull_equations
+
+    asu_wyckoff_dict = load_dictionary_of_wyckoff_sites_in_asus(
+        (_resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in_asu_v6.json").as_posix()
+    )
+
+    padded_general_wyckoff_matrices = paddle.zeros([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 192, 3, 3])
+    padded_inverse_general_wyckoff_matrices = paddle.zeros([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 192, 3, 3])
+    padded_general_wyckoff_translations = paddle.zeros([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 192, 1, 3])
+    padded_general_wyckoff_ops_mask = paddle.zeros([NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 192], dtype=paddle.bool)
 
     for space_group_number in range(1, 231):
         _sg = _PymatgenSpaceGroup.from_int_number(space_group_number)
@@ -322,7 +322,7 @@ def _lazy_init():
                 paddle.zeros([1, 3])
             ).item()
             and
-            padded_general_wyckoff_ops_mask[space_group_number - 1][0].item() == True
+            padded_general_wyckoff_ops_mask[space_group_number - 1][0].item() is True
         )
 
     conventional_to_primitive_P_matrices = []
@@ -342,7 +342,11 @@ def _lazy_init():
         conventional_to_primitive_invP_matrices, axis=0
     )
 
-    wyckoff_dimension_tensor = -1 * paddle.ones([NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES], dtype=paddle.int64)
+    wyckoff_dimension_tensor = -1 * paddle.ones(
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS],
+        dtype=paddle.int64,
+    )
+
     for space_group_number in range(1, 231):
         sorted_wyckoff_letters = asu_wyckoff_dict[str(space_group_number)][
             "ordered_wyckoff_letters"
@@ -352,22 +356,22 @@ def _lazy_init():
             wyckoff_dimension_tensor[space_group_number - 1, wyckoff_index] = wyckoff_dim
 
     noise_projection_matrices = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, 3, 3]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff, 3, 3]
     )
     wyckoff_shape_volumes = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff]
     )
     point_per_1d_wyckoff_line = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, 3]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff, 3]
     )
     line_directions_of_1d_wyckoffs = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, 3]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff, 3]
     )
     point_per_2d_wyckoff_plane = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, 3]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff, 3]
     )
     plane_normals_of_2d_wyckoffs = paddle.zeros(
-        [NUM_SPACE_GROUPS, MAX_WYCKOFF_SITES, max_shapes_per_wyckoff, 3]
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, max_shapes_per_wyckoff, 3]
     )
 
     for sg_num in range(1, 231):
@@ -414,7 +418,7 @@ def _lazy_init():
             noise_projection_matrices[sg_num - 1, i] = wyckoff_projection_matrices
 
     asu_hull_equations = paddle.full(
-        [NUM_SPACE_GROUPS, max_simplicial_hull_facets, 4],
+        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, max_simplicial_hull_facets, 4],
         fill_value=0.0,
         dtype=paddle.float32,
     )
@@ -436,7 +440,16 @@ def _lazy_init():
             equations, dtype=paddle.float32
         )
 
+
 def __getattr__(name):
+    if name == "DATA_DIRECTORY":
+        return _resolve_data_dir()
+    if name == "ASU_DICT_PATH":
+        return (
+            _resolve_data_dir() / "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
+        ).as_posix()
+    if name == "SHAPE_DECOMP_DICT_PATH":
+        return _resolve_data_dir() / "wyckoff_shape_decomposition.pkl"
     if name in _lazy_vars:
         _lazy_init()
         try:
@@ -446,138 +459,6 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-class EmbeddingTools:
-    """Element/space-group/Wyckoff embedding tools. Singleton, accessed via embedding_tools."""
-
-    @paddle.no_grad()
-    def __init__(
-        self,
-        space_group_embedding_json_path: Optional[str] = None,
-        element_embedding_json_path: Optional[str] = None,
-        wyckoff_embedding_json_path: Optional[str] = None,
-    ):
-        self.space_group_embedding_dict = None
-        self.element_embedding_dict = None
-        self.wyckoff_embedding_dict = None
-
-        data_directory = DATA_DIRECTORY
-
-        if space_group_embedding_json_path is not None:
-            fp = Path(data_directory / space_group_embedding_json_path).as_posix()
-            with open(fp, "r") as file:
-                self.space_group_embedding_dict = json.load(file)
-            self.space_group_embedding_length = len(
-                self.space_group_embedding_dict["1"]
-            )
-            self.space_group_embedding_tensor = paddle.to_tensor(
-                [
-                    self.space_group_embedding_dict[str(sg_num)]
-                    for sg_num in range(1, 231)
-                ],
-                dtype=paddle.float32,
-            )
-        else:
-            self.space_group_embedding_length = NUM_SPACE_GROUPS
-
-        if element_embedding_json_path is not None:
-            fp = Path(data_directory / element_embedding_json_path).as_posix()
-            with open(fp, "r") as file:
-                self.element_embedding_dict = json.load(file)
-            self.element_embedding_length = len(self.element_embedding_dict["0"])
-            self.element_embedding_tensor = paddle.to_tensor(
-                [
-                    self.element_embedding_dict[str(atomic_number)]
-                    for atomic_number in range(NUM_ELEMENTS + 1)
-                ],
-                dtype=paddle.float32,
-            )
-        else:
-            self.element_embedding_length = NUM_ELEMENTS
-
-        if wyckoff_embedding_json_path is not None:
-            fp = Path(data_directory / wyckoff_embedding_json_path).as_posix()
-            with open(fp, "r") as file:
-                self.wyckoff_embedding_dict = json.load(file)
-            self.wyckoff_embedding_length = len(
-                self.wyckoff_embedding_dict["1"]["a"]
-            )
-
-            wyckoff_emb_list = []
-            n_wyckoffs_list = []
-            for sg_num in range(1, 231):
-                wyckoff_dict_of_sg = self.wyckoff_embedding_dict[str(sg_num)]
-                letters = list(wyckoff_dict_of_sg.keys())
-
-                wyckoff_ascii = [ord(l) for l in letters]
-                wyckoff_idxs = [
-                    ai - 97 if ai >= 97 else ai - 65 + 26 for ai in wyckoff_ascii
-                ]
-                sorted_letters = [
-                    l
-                    for l, _ in sorted(
-                        zip(letters, wyckoff_idxs), key=lambda pair: pair[1]
-                    )
-                ]
-
-                emb_array = paddle.to_tensor(
-                    [wyckoff_dict_of_sg[l] for l in sorted_letters],
-                    dtype=paddle.float32,
-                )
-                padding = paddle.zeros(
-                    [MAX_WYCKOFF_SITES - len(letters), self.wyckoff_embedding_length]
-                )
-                wyckoff_emb_list.append(paddle.concat([emb_array, padding], axis=0))
-                n_wyckoffs_list.append(len(letters))
-
-            self.wyckoff_embedding_tensor = paddle.stack(wyckoff_emb_list, axis=0)
-            self.n_wyckoffs_per_space_group = paddle.to_tensor(
-                n_wyckoffs_list, dtype=paddle.int64
-            )
-        else:
-            self.wyckoff_embedding_length = MAX_WYCKOFF_SITES
-
-    def get_space_group_embedding(self, space_group_index: paddle.Tensor) -> paddle.Tensor:
-        """Get space group embedding."""
-        assert space_group_index.dtype == paddle.int64
-        if self.space_group_embedding_dict is None:
-            return F.one_hot(space_group_index, NUM_SPACE_GROUPS).cast(paddle.float32)
-        else:
-            return self.space_group_embedding_tensor[space_group_index]
-
-    @paddle.no_grad()
-    def get_element_embedding(self, atomic_number: paddle.Tensor) -> paddle.Tensor:
-        """Get element embedding."""
-        assert atomic_number.dtype == paddle.int64
-        if self.element_embedding_dict is None:
-            return F.one_hot(
-                atomic_number - 1, NUM_ELEMENTS
-            ).cast(paddle.float32)
-        else:
-            return self.element_embedding_tensor[atomic_number]
-
-    @paddle.no_grad()
-    def get_wyckoff_embedding(
-        self,
-        wyckoff_index: paddle.Tensor,
-        space_group_index: paddle.Tensor,
-    ) -> paddle.Tensor:
-        """Get Wyckoff embedding by index and space group."""
-        if self.wyckoff_embedding_dict is None:
-            return F.one_hot(wyckoff_index, MAX_WYCKOFF_SITES).cast(paddle.float32)
-        else:
-            valid_mask = self.n_wyckoffs_per_space_group[space_group_index] > wyckoff_index
-            assert valid_mask.all().item(), "Invalid space group-Wyckoff index pairs"
-            return self.wyckoff_embedding_tensor[space_group_index, wyckoff_index, :]
-
-def set_global_embedding_tools(
-    space_group_embedding_json_path: Optional[str] = None,
-    element_embedding_json_path: Optional[str] = None,
-    wyckoff_embedding_json_path: Optional[str] = None,
-) -> None:
-    """Initialize and set global embedding_tools."""
-    global embedding_tools
-    embedding_tools = EmbeddingTools(
-        space_group_embedding_json_path=space_group_embedding_json_path,
-        element_embedding_json_path=element_embedding_json_path,
-        wyckoff_embedding_json_path=wyckoff_embedding_json_path,
-    )
+def __dir__():
+    """Expose lazily-initialized variables to IDEs / static analysis."""
+    return sorted(set(globals().keys()) | _lazy_vars)

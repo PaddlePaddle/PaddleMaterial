@@ -178,33 +178,3 @@ def get_smallest_edge_per_primal_node_pair(
     dst_idx = edges[:, 0]
     src_idx = edges[:, 1]
     return dst_idx, src_idx, pbc_frac_offsets_per_source_atom, num_edges_per_crystal
-
-
-def ocp_get_pbc_distances(
-    coords: paddle.Tensor,
-    source_id: paddle.Tensor,
-    destination_id: paddle.Tensor,
-    lattice: paddle.Tensor,
-    pbc_frac_offsets_per_source_node: paddle.Tensor,
-    num_edges_per_crystal: paddle.Tensor,
-    return_offsets: bool = False,
-    return_distance_vec: bool = False,
-) -> dict:
-    neighbors = num_edges_per_crystal.cast(paddle.int64)
-    lattice = paddle.repeat_interleave(lattice, neighbors, axis=0)
-    offsets = (
-        pbc_frac_offsets_per_source_node.cast(paddle.float32)
-        .unsqueeze(1)
-        .bmm(lattice.cast(paddle.float32))
-        .reshape([-1, 3])
-    )
-    distance_vectors = coords[source_id] + offsets - coords[destination_id]
-    distances = distance_vectors.norm(axis=-1)
-    edge_index = paddle.stack([source_id, destination_id], axis=0)
-
-    out = {"edge_index": edge_index, "distances": distances}
-    if return_distance_vec:
-        out["distance_vec"] = distance_vectors
-    if return_offsets:
-        out["offsets"] = offsets
-    return out

@@ -16,33 +16,11 @@
 
 from typing import List, Optional, Tuple, Union
 
-import numpy as np
 import paddle
-
-from ppmat.models.sgequidiff.constants import NUM_ELEMENTS
-
-
-class _CartesianAtom:
-    __slots__ = ('wyckoff_index', 'element', 'cartesian_cart_coords')
-
-    def __init__(self, wyckoff_index, element, cartesian_cart_coords):
-        self.wyckoff_index = wyckoff_index
-        self.element = element
-        self.cartesian_cart_coords = cartesian_cart_coords
-
-    def __eq__(self, other):
-        if not isinstance(other, _CartesianAtom):
-            return NotImplemented
-        return (self.wyckoff_index == other.wyckoff_index and self.element == other.element
-                and paddle.allclose(self.cartesian_cart_coords, other.cartesian_cart_coords, atol=0.1, rtol=0.0))
-
-    def __str__(self):
-        rounded = paddle.round(self.cartesian_cart_coords * 10) / 10
-        return f"{int(self.wyckoff_index)}_{int(self.element)}_{rounded}"
 
 
 class ASUCrystal:
-    """ASU crystal data with optional immutability for hashable operations."""
+    """ASU crystal data."""
 
     __hash__ = None
 
@@ -54,11 +32,6 @@ class ASUCrystal:
         element_indices: paddle.Tensor,
         wyckoff_indices: paddle.Tensor,
         conventional_frac_coords: paddle.Tensor,
-        device: Union[str, paddle.CUDAPlace, paddle.CPUPlace] = "cpu",
-        wyckoff_shape_indices: Optional[paddle.Tensor] = None,
-        composition_space: Optional[paddle.Tensor] = None,
-        cartesian_coords: Optional[paddle.Tensor] = None,
-        _immutable: bool = False,
     ):
         assert wyckoff_indices.shape[0] == element_indices.shape[0] == conventional_frac_coords.shape[0]
         self.space_group_number = space_group_number
@@ -67,70 +40,10 @@ class ASUCrystal:
         self.element_indices = element_indices
         self.wyckoff_indices = wyckoff_indices
         self.conventional_frac_coords = conventional_frac_coords
-        self.device = device
-        self.wyckoff_shape_indices = wyckoff_shape_indices
-        self.cartesian_coords: Optional[paddle.Tensor] = cartesian_coords
-        self.composition_space = composition_space
-        self._immutable = _immutable
-
-    @classmethod
-    def from_flat(cls, flat_crystal: np.ndarray):
-        num_atoms: int = int(flat_crystal[0])
-        space_group_number = paddle.to_tensor(flat_crystal[1].astype("int64"), dtype=paddle.int64)
-        composition_space = paddle.to_tensor(flat_crystal[2: 2 + NUM_ELEMENTS], dtype=paddle.float32)
-        conventional_lattice_lengths = paddle.to_tensor(flat_crystal[2 + NUM_ELEMENTS: 5 + NUM_ELEMENTS], dtype=paddle.float32)
-        conventional_lattice_angles = paddle.to_tensor(flat_crystal[5 + NUM_ELEMENTS: 8 + NUM_ELEMENTS], dtype=paddle.float32)
-        element_indices = paddle.to_tensor(flat_crystal[8 + NUM_ELEMENTS: 8 + NUM_ELEMENTS + num_atoms], dtype=paddle.int64)
-        wyckoff_indices = paddle.to_tensor(flat_crystal[8 + NUM_ELEMENTS + num_atoms: 8 + NUM_ELEMENTS + (2 * num_atoms)], dtype=paddle.int64)
-        conventional_frac_coords = paddle.to_tensor(flat_crystal[8 + NUM_ELEMENTS + (2 * num_atoms): 8 + NUM_ELEMENTS + (5 * num_atoms)].reshape(num_atoms, 3), dtype=paddle.float32)
-        wyckoff_shape_indices = paddle.to_tensor(flat_crystal[8 + NUM_ELEMENTS + (5 * num_atoms): 8 + NUM_ELEMENTS + (6 * num_atoms)], dtype=paddle.int64) if len(flat_crystal) > 8 + NUM_ELEMENTS + (5 * num_atoms) else None
-        return cls(space_group_number=space_group_number, composition_space=composition_space, conventional_lattice_lengths=conventional_lattice_lengths, conventional_lattice_angles=conventional_lattice_angles, element_indices=element_indices, wyckoff_indices=wyckoff_indices, conventional_frac_coords=conventional_frac_coords, wyckoff_shape_indices=wyckoff_shape_indices)
 
     @property
     def num_atoms(self) -> int:
         return int(self.conventional_frac_coords.shape[0])
-
-    def to_ImmutableASUCrystal(self):
-        return ImmutableASUCrystal(
-            self.space_group_number, self.conventional_lattice_lengths, self.conventional_lattice_angles,
-            self.element_indices, self.wyckoff_indices, self.conventional_frac_coords, self.device,
-            self.wyckoff_shape_indices, self.composition_space, self.cartesian_coords,
-        )
-
-
-class ImmutableASUCrystal(ASUCrystal):
-    """Hashable version of ASUCrystal."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, _immutable=True, **kwargs)
-        self._num_atoms = int(self.conventional_frac_coords.shape[0])
-        if isinstance(self.cartesian_coords, paddle.Tensor):
-            self._atoms = [_CartesianAtom(w, e, c.unsqueeze(0)) for w, e, c in zip(self.wyckoff_indices.detach(), self.element_indices.detach(), self.cartesian_coords.detach())]
-        else:
-            self._atoms = None
-
-    def to_ASUCrystal(self):
-        return ASUCrystal(self.space_group_number.clone(), self.conventional_lattice_lengths.clone(), self.conventional_lattice_angles.clone(), self.element_indices.clone(), self.wyckoff_indices.clone(), self.conventional_frac_coords.clone(), self.device, self.wyckoff_shape_indices.clone() if self.wyckoff_shape_indices is not None else None, self.composition_space.clone() if self.composition_space is not None else None, self.cartesian_coords)
-
-    @property
-    def num_atoms(self) -> int:
-        return self._num_atoms
-
-    def __eq__(self, other):
-        if not isinstance(other, ImmutableASUCrystal):
-            return NotImplemented
-        if other is self:
-            return True
-        if int(self.space_group_number) != int(other.space_group_number) or self._num_atoms != other._num_atoms:
-            return False
-        if not (paddle.allclose(self.conventional_lattice_lengths, other.conventional_lattice_lengths, atol=1e-6, rtol=0.0) and paddle.allclose(self.conventional_lattice_angles, other.conventional_lattice_angles, atol=1e-6, rtol=0.0)):
-            return False
-        assert self._atoms is not None
-        return all(a in other._atoms for a in self._atoms) and all(a in self._atoms for a in other._atoms)
-
-    def __hash__(self):
-        assert self._atoms is not None
-        return hash(f"{int(self.space_group_number)}_{self.conventional_lattice_lengths.detach().numpy().round(1)}_{self.conventional_lattice_angles.detach().numpy().round(0)}_{sorted([str(a) for a in self._atoms])}")
 
 
 def is_inside(
@@ -148,7 +61,6 @@ def uniformly_sample_point_in_asu_wyckoff_site(
     wyckoff_letters: List[str],
     dictionary_of_wyckoffs_in_asu: dict,
     dictionary_of_wyckoff_shape_decompositions: dict,
-    device=None,
     finished_sampling_mask: paddle.Tensor = None,
     n_samples_per_wyckoff: int = 1,
     return_sampled_wyckoff_shape_indices: bool = False,
@@ -188,9 +100,14 @@ def uniformly_sample_point_in_asu_wyckoff_site(
             for j in range(n_samples_per_wyckoff):
                 n = _sampled_facet_triangle_areas[j].shape[0]
                 sampled_facet_triangle_areas[j, :n] = _sampled_facet_triangle_areas[j]
-            sampled_triangle_idxs = paddle.multinomial(sampled_facet_triangle_areas, num_samples=1).squeeze(axis=1)
+            sampled_triangle_idxs = paddle.multinomial(
+                sampled_facet_triangle_areas, num_samples=1
+            ).squeeze(axis=1)
             vertices = paddle.stack([
-                paddle.to_tensor(wyckoff_shapes_decomp_dict["facet_triangles"][int(fid)][int(tid)], dtype=paddle.float32)
+                paddle.to_tensor(
+                    wyckoff_shapes_decomp_dict["facet_triangles"][int(fid)][int(tid)],
+                    dtype=paddle.float32,
+                )
                 for fid, tid in zip(sampled_facet_idxs, sampled_triangle_idxs)
             ], axis=0)
             sampled_wyckoff_shape_index = sampled_facet_idxs
@@ -245,11 +162,22 @@ def uniformly_sample_point_in_convex_shape(
         box_top_right = paddle.max(vertices, axis=0)
         accepted = []
         total = 0
-        while True:
-            candidate = paddle.rand([3 * n_samples, 3]) * (box_top_right - box_lower_left) + box_lower_left
+        max_iters = 1000
+        batch_size = max(3 * n_samples, 1)
+        for _ in range(max_iters):
+            candidate = (
+                paddle.rand([batch_size, 3]) * (box_top_right - box_lower_left)
+                + box_lower_left
+            )
             mask = is_inside(candidate, hull_equations)
             accepted.append(candidate[mask])
             total += mask.cast(paddle.int64).sum().item()
             if total >= n_samples:
                 return paddle.concat(accepted, axis=0)[:n_samples]
+            batch_size *= 2
+        raise RuntimeError(
+            f"Rejection sampling failed to collect {n_samples} points inside the "
+            f"3D hull after {max_iters} iterations (collected {total}); "
+            "check hull_equations / bounding box validity"
+        )
     raise AttributeError(f"Invalid dimensionality: {wyckoff_site_dimensionality}")

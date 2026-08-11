@@ -12,12 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
-from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
-from ppmat.models.sgequidiff.wrappers import SGEQUIDiffSampler
 
-__all__ = [
-    "EquivariantDiffusionModel",
-    "EquivariantDiffusionModelConfig",
-    "SGEQUIDiffSampler",
-]

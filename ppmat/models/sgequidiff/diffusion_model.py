@@ -19,17 +19,18 @@ from typing import Any, Dict, Optional
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from tqdm import tqdm
 
-import ppmat.models.sgequidiff.global_vars as global_vars
-from ppmat.models.sgequidiff.crystal_data import uniformly_sample_point_in_asu_wyckoff_site
-from ppmat.models.sgequidiff.data_utils import (
+import ppmat.utils.wyckoff_data as wyckoff_data
+from ppmat.utils.asu_math import (
     get_wyckoff_shape_hull_equations,
     wrap_frac_coords_into_asu,
     d_log_p_asu_wrapped_normal,
     get_space_group_ops_and_conventional_atoms,
     get_wyckoff_projected_gaussian_noise,
 )
-from ppmat.models.sgequidiff.non_equivariant_drift_modules import (
+from ppmat.utils.asu_crystal import uniformly_sample_point_in_asu_wyckoff_site
+from ppmat.models.sgequidiff.drift_modules import (
     FourierTimeEmbeddings,
     TorusMLP,
     GNN,
@@ -51,7 +52,6 @@ class EquivariantDiffusionModelConfig:
     time_emb_dim: int = 256
     model_type: str = "mlp"  # ["mlp", "gnn", "cspnet"]
     num_plane_wave_freqs: int = 64
-    subsample_group_operations: bool = False
 
     gnn_config: Optional[GNNConfig] = None
     cspnet_config: Optional[CSPNetConfig] = None
@@ -62,7 +62,6 @@ class EquivariantDiffusionModel(nn.Layer):
 
     def __init__(
         self,
-        config: Optional[EquivariantDiffusionModelConfig] = None,
         num_wn_lattice_translations: int = 5,
         noise_scheduler_num_monte_carlo_samples: int = 10_000,
         num_timesteps: int = 1000,
@@ -71,51 +70,52 @@ class EquivariantDiffusionModel(nn.Layer):
         time_emb_dim: int = 256,
         model_type: str = "mlp",
         num_plane_wave_freqs: int = 64,
-        subsample_group_operations: bool = False,
         gnn_config: Any = None,
         cspnet_config: Any = None,
         noise_scheduler_cfg: Optional[dict] = None,
     ):
-        if config is None:
-            if isinstance(gnn_config, dict):
-                gnn_config = GNNConfig(**gnn_config)
-            if isinstance(cspnet_config, dict):
-                cspnet_config = CSPNetConfig(**cspnet_config)
-            config = EquivariantDiffusionModelConfig(
-                num_wn_lattice_translations=num_wn_lattice_translations,
-                noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
-                num_timesteps=num_timesteps,
-                sigma_min=sigma_min,
-                sigma_max=sigma_max,
-                time_emb_dim=time_emb_dim,
-                model_type=model_type,
-                num_plane_wave_freqs=num_plane_wave_freqs,
-                subsample_group_operations=subsample_group_operations,
-                gnn_config=gnn_config,
-                cspnet_config=cspnet_config,
-                noise_scheduler_cfg=noise_scheduler_cfg,
-            )
         super().__init__()
+        if isinstance(gnn_config, dict):
+            gnn_config = GNNConfig(**gnn_config)
+        if isinstance(cspnet_config, dict):
+            cspnet_config = CSPNetConfig(**cspnet_config)
+        config = EquivariantDiffusionModelConfig(
+            num_wn_lattice_translations=num_wn_lattice_translations,
+            noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
+            num_timesteps=num_timesteps,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            time_emb_dim=time_emb_dim,
+            model_type=model_type,
+            num_plane_wave_freqs=num_plane_wave_freqs,
+            gnn_config=gnn_config,
+            cspnet_config=cspnet_config,
+            noise_scheduler_cfg=noise_scheduler_cfg,
+        )
         self.validate_config(config)
         self.config = config
         self.num_wn_lattice_translations = config.num_wn_lattice_translations
 
-        if config.noise_scheduler_cfg:
-            from ppmat.schedulers import build_scheduler
-            self.noise_scheduler = build_scheduler(config.noise_scheduler_cfg)
-        else:
-            from ppmat.schedulers.scheduling_asu_ve_sde import ASUVESDEScheduler
-            self.noise_scheduler = ASUVESDEScheduler(
-                num_timesteps=config.num_timesteps,
-                sigma_min=config.sigma_min,
-                sigma_max=config.sigma_max,
-                num_lattice_translations=config.num_wn_lattice_translations,
-                num_monte_carlo_samples=config.noise_scheduler_num_monte_carlo_samples,
-            )
+        if config.noise_scheduler_cfg is None:
+            config.noise_scheduler_cfg = {
+                "__class_name__": "ASUVESDEScheduler",
+                "__init_params__": {
+                    "num_timesteps": config.num_timesteps,
+                    "sigma_min": config.sigma_min,
+                    "sigma_max": config.sigma_max,
+                    "num_lattice_translations": config.num_wn_lattice_translations,
+                    "num_monte_carlo_samples": config.noise_scheduler_num_monte_carlo_samples,
+                },
+            }
+        from ppmat.schedulers import build_scheduler
+        self.noise_scheduler = build_scheduler(config.noise_scheduler_cfg)
         self.time_embedder = FourierTimeEmbeddings(dim=config.time_emb_dim)
-        from ppmat.models.sgequidiff.global_vars import embedding_tools, set_global_embedding_tools
-        if embedding_tools is None:
-            set_global_embedding_tools(element_embedding_json_path="cgcnn_atom_init.json")
+        from ppmat.models.sgequidiff.drift_modules import set_global_embedding_tools
+        set_global_embedding_tools(
+            element_embedding_json_path="cgcnn_atom_init.json",
+            space_group_embedding_json_path="init_tokens/space_group_features/space_group_embeddings_62dim.json",
+            wyckoff_embedding_json_path="init_tokens/wyckoff_features/wyckoff_embeddings_231dim.json",
+        )
         self.non_equivariant_drift_model = self.get_non_equivariant_drift_module(
             config, self.time_embedder
         )
@@ -135,7 +135,7 @@ class EquivariantDiffusionModel(nn.Layer):
         """Lazy-load wyckoff_shape_decomposition.pkl."""
         if self._wyckoff_shape_decomposition_dict is None:
             import pickle
-            from ppmat.models.sgequidiff.global_vars import SHAPE_DECOMP_DICT_PATH, _ensure_wyckoff_shape_decomp
+            from ppmat.utils.wyckoff_data import SHAPE_DECOMP_DICT_PATH, _ensure_wyckoff_shape_decomp
             _ensure_wyckoff_shape_decomp()
             with open(str(SHAPE_DECOMP_DICT_PATH), "rb") as f:
                 self._wyckoff_shape_decomposition_dict = pickle.load(f)
@@ -187,22 +187,16 @@ class EquivariantDiffusionModel(nn.Layer):
                 self.padded_hull_equations_mask[_sg_per_asu_atom, wyckoff_indices].clone(),
             )
 
-            (
-                _,
-                _,
-                _,
-                map_conventional_to_asu_atom,
-                conventional_wyckoff_indices,
-                conventional_element_indices,
-                conventional_frac_coords,
-                unique_non_overlapping_atom_indices,
-            ) = get_space_group_ops_and_conventional_atoms(
+            sg_ops = get_space_group_ops_and_conventional_atoms(
                 asu_frac_coords,
                 element_indices,
                 wyckoff_indices,
                 space_group_indices,
                 n_atoms_per_xtal,
             )
+            map_conventional_to_asu_atom = sg_ops.map_conventional_to_asu_atom
+            conventional_frac_coords = sg_ops.conventional_frac_coords
+            unique_non_overlapping_atom_indices = sg_ops.unique_non_overlapping_atom_indices
             map_unique_conventional_to_asu = map_conventional_to_asu_atom[
                 unique_non_overlapping_atom_indices
             ]
@@ -258,27 +252,42 @@ class EquivariantDiffusionModel(nn.Layer):
     ) -> paddle.Tensor:
         """Variance-exploding Predictor-Corrector SDE sampling."""
         num_asu_atoms: int = wyckoff_indices.shape[0]
-        num_crystals: int = space_group_indices.shape[0]
         time_start: int = self.noise_scheduler.num_timesteps
 
         space_group_indices_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
 
+        space_group_numbers = [
+            str(1 + int(sg_idx)) for sg_idx in space_group_indices_per_atom.tolist()
+        ]
+        wyckoff_letters = [
+            wyckoff_data.asu_wyckoff_dict[sg_num]["ordered_wyckoff_letters"][
+                int(w_idx)
+            ]
+            for sg_num, w_idx in zip(space_group_numbers, wyckoff_indices.tolist())
+        ]
+
         x_T, wyckoff_shape_indices = uniformly_sample_point_in_asu_wyckoff_site(
-            space_group_numbers=[str(1 + int(sg_idx)) for sg_idx in space_group_indices_per_atom.tolist()],
-            wyckoff_letters=[chr(97 + int(idx)) if int(idx) <= 25 else chr(39 + int(idx)) for idx in wyckoff_indices.tolist()],
-            dictionary_of_wyckoffs_in_asu=global_vars.asu_wyckoff_dict,
+            space_group_numbers=space_group_numbers,
+            wyckoff_letters=wyckoff_letters,
+            dictionary_of_wyckoffs_in_asu=wyckoff_data.asu_wyckoff_dict,
             dictionary_of_wyckoff_shape_decompositions=self.wyckoff_shape_decomposition_dict,
-            hull_equations_3d=global_vars.asu_hull_equations, n_samples_per_wyckoff=1,
+            hull_equations_3d=wyckoff_data.asu_hull_equations, n_samples_per_wyckoff=1,
             return_sampled_wyckoff_shape_indices=True,
         )
         x_T = x_T.squeeze(1)
         wyckoff_shape_indices = wyckoff_shape_indices.squeeze(1)
 
-        wyckoff_dims = global_vars.wyckoff_dimension_tensor[space_group_indices_per_atom, wyckoff_indices]
-        proj_matrices = global_vars.noise_projection_matrices[space_group_indices_per_atom, wyckoff_indices, wyckoff_shape_indices]
+        wyckoff_dims = wyckoff_data.wyckoff_dimension_tensor[
+            space_group_indices_per_atom, wyckoff_indices
+        ]
+        proj_matrices = wyckoff_data.noise_projection_matrices[
+            space_group_indices_per_atom, wyckoff_indices, wyckoff_shape_indices
+        ]
 
-        def _predict_and_project(x, sigma_norm):
-            te = self.time_embedder(paddle.to_tensor([0], dtype=paddle.float32)).expand([num_asu_atoms, -1])
+        def _predict_and_project(x, sigma_norm, t):
+            te = self.time_embedder(
+                paddle.to_tensor([t], dtype=paddle.float32)
+            ).expand([num_asu_atoms, -1])
             score = sigma_norm.unsqueeze(1) * self.predict_equivariant_vectors(
                 te, x, element_indices, wyckoff_indices, space_group_indices, n_atoms_per_xtal,
                 lattice_matrices=lattice_matrices, lattice_lengths=lattice_lengths, lattice_angles=lattice_angles,
@@ -291,17 +300,23 @@ class EquivariantDiffusionModel(nn.Layer):
             )
 
         x_t_plus_1 = x_T
-        for t in range(time_start - 1, 0, -1):
+        for t in tqdm(range(time_start - 1, 0, -1), desc="reverse diffusion", disable=time_start <= 2):
             sn_t1 = self.noise_scheduler.sigma_norms[space_group_indices_per_atom, wyckoff_indices, t + 1]
             sn_t = self.noise_scheduler.sigma_norms[space_group_indices_per_atom, wyckoff_indices, t]
 
-            score_pred = _predict_and_project(x_t_plus_1, sn_t1)
+            score_pred = _predict_and_project(x_t_plus_1, sn_t1, t)
             x_t = self.noise_scheduler.step_pred(x_t_plus_1, score_pred, t, _wyckoff_noise())
 
-            score_corr = _predict_and_project(x_t, sn_t)
+            score_corr = _predict_and_project(x_t, sn_t, t)
             x_t = self.noise_scheduler.step_correct(x_t, score_corr, _wyckoff_noise(), snr, max_step_size)
 
-            x_t = self.project_point_onto_wyckoff_shape(x_t, space_group_indices_per_atom, wyckoff_indices, wyckoff_shape_indices, wyckoff_dims)
+            x_t = self.project_point_onto_wyckoff_shape(
+                x_t,
+                space_group_indices_per_atom,
+                wyckoff_indices,
+                wyckoff_shape_indices,
+                wyckoff_dims,
+            )
             x_t_plus_1 = x_t
 
         x_final = x_t_plus_1 % 1.0
@@ -353,22 +368,20 @@ class EquivariantDiffusionModel(nn.Layer):
         """Equivariant vector field: mean(A^-1 @ f(Ax + t))."""
         frac_coords = frac_coords % 1.0
 
-        (
-            A_inv_ops,
-            t_ops,
-            inverse_indices,
-            map_conventional_to_asu_atom,
-            conventional_wyckoff_indices,
-            conventional_element_indices,
-            frac_coords_of_conv_atoms,
-            unique_non_overlapping_atom_indices,
-        ) = get_space_group_ops_and_conventional_atoms(
+        sg_ops = get_space_group_ops_and_conventional_atoms(
             frac_coords,
             element_indices,
             wyckoff_indices,
             space_group_indices,
             n_atoms_per_xtal,
         )
+        A_inv_ops = sg_ops.A_inv_ops
+        inverse_indices = sg_ops.inverse_indices
+        map_conventional_to_asu_atom = sg_ops.map_conventional_to_asu_atom
+        conventional_wyckoff_indices = sg_ops.conventional_wyckoff_indices
+        conventional_element_indices = sg_ops.conventional_element_indices
+        frac_coords_of_conv_atoms = sg_ops.conventional_frac_coords
+        unique_non_overlapping_atom_indices = sg_ops.unique_non_overlapping_atom_indices
 
         map_asu_atom_to_xtal = paddle.arange(space_group_indices.shape[0]).repeat_interleave(
             n_atoms_per_xtal, axis=0
@@ -408,24 +421,6 @@ class EquivariantDiffusionModel(nn.Layer):
             reduce="mean",
         )
         return vector_field
-
-    @paddle.no_grad()
-    def uniform_prior_log_prob(
-        self,
-        wyckoff_indices: paddle.Tensor,
-        space_group_indices: paddle.Tensor,
-        n_atoms_per_xtal: paddle.Tensor,
-    ) -> paddle.Tensor:
-        """Uniform prior log-probability."""
-        sg_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
-        wyckoff_volumes = global_vars.wyckoff_shape_volumes[
-            sg_per_atom, wyckoff_indices
-        ].sum(axis=-1)
-        return paddle.where(
-            wyckoff_volumes == 0.0,
-            paddle.zeros_like(wyckoff_volumes),
-            paddle.log(1.0 / wyckoff_volumes),
-        )
 
     @staticmethod
     def validate_config(config: EquivariantDiffusionModelConfig) -> None:
@@ -479,12 +474,12 @@ class EquivariantDiffusionModel(nn.Layer):
             mask = wyckoff_dim_is_1
             pts_1d = project_to_lines(
                 points[mask],
-                global_vars.point_per_1d_wyckoff_line[
+                wyckoff_data.point_per_1d_wyckoff_line[
                     space_group_indices_repeated[mask],
                     wyckoff_indices[mask],
                     wyckoff_shape_indices[mask],
                 ],
-                global_vars.line_directions_of_1d_wyckoffs[
+                wyckoff_data.line_directions_of_1d_wyckoffs[
                     space_group_indices_repeated[mask],
                     wyckoff_indices[mask],
                     wyckoff_shape_indices[mask],
@@ -496,12 +491,12 @@ class EquivariantDiffusionModel(nn.Layer):
             mask = wyckoff_dim_is_2
             pts_2d = project_to_planes(
                 points[mask],
-                global_vars.point_per_2d_wyckoff_plane[
+                wyckoff_data.point_per_2d_wyckoff_plane[
                     space_group_indices_repeated[mask],
                     wyckoff_indices[mask],
                     wyckoff_shape_indices[mask],
                 ],
-                global_vars.plane_normals_of_2d_wyckoffs[
+                wyckoff_data.plane_normals_of_2d_wyckoffs[
                     space_group_indices_repeated[mask],
                     wyckoff_indices[mask],
                     wyckoff_shape_indices[mask],

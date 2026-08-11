@@ -56,6 +56,34 @@ def scatter_argmin(
     return paddle.scatter(out, groups, order[first], overwrite=True)
 
 
+def scatter_argmax(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim_size: Optional[int] = None,
+) -> paddle.Tensor:
+    """Return the source index of the maximum value in each group.
+
+    ``src`` and ``index`` must be one-dimensional. Empty groups are assigned
+    ``0``. Ties are resolved by selecting the last occurrence in ``src``.
+    """
+    if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
+        raise ValueError("src and index must be one-dimensional with equal length")
+
+    if dim_size is None:
+        dim_size = 0 if index.shape[0] == 0 else int(index.max()) + 1
+
+    max_values = paddle.geometric.segment_max(src, index)
+    n = src.shape[0]
+    weights = paddle.arange(n, dtype=paddle.float32)
+    is_max = src == max_values[index]
+    max_weights = paddle.where(is_max, weights, paddle.to_tensor(-float("inf")))
+    argmax = paddle.geometric.segment_max(max_weights, index)
+    out = paddle.zeros([dim_size], dtype="int64")
+    if argmax.shape[0] > 0:
+        out[: argmax.shape[0]] = argmax.cast(paddle.int64)
+    return out
+
+
 def _scatter_sum(
     src: paddle.Tensor,
     index: paddle.Tensor,
@@ -183,26 +211,34 @@ def scatter_min_with_argmin(
     dim_size: Optional[int] = None,
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     if dim_size is None:
-        dim_size = int(index.max().item()) + 1
+        dim_size = 0 if index.shape[0] == 0 else int(index.max().item()) + 1
+    if index.shape[0] == 0:
+        return (
+            paddle.full([dim_size], float("inf"), dtype=src.dtype),
+            paddle.full([dim_size], dim_size, dtype="int64"),
+        )
 
+    seg_size = int(index.max().item()) + 1
     min_values = paddle.geometric.segment_min(src, index)
-
-    present = paddle.zeros([dim_size], dtype=paddle.bool)
-    if index.numel() > 0:
-        present = paddle.scatter(
-            present.cast(paddle.int32), paddle.unique(index),
-            paddle.ones([paddle.unique(index).shape[0]], dtype=paddle.int32),
-        ).cast(paddle.bool)
-    min_values = paddle.where(
-        present, min_values,
-        paddle.full([dim_size], float('inf'), dtype=src.dtype),
-    )
+    if seg_size < dim_size:
+        min_values = paddle.concat(
+            [
+                min_values,
+                paddle.full(
+                    [dim_size - seg_size], float("inf"), dtype=src.dtype
+                ),
+            ]
+        )
 
     n = src.shape[0]
     weights = paddle.arange(n, dtype=paddle.float32)
     is_min = (src == min_values[index])
     min_weights = paddle.where(is_min, weights, paddle.to_tensor(float('inf')))
     argmin_weights = paddle.geometric.segment_min(min_weights, index)
+    if seg_size < dim_size:
+        argmin_weights = paddle.concat(
+            [argmin_weights, paddle.full([dim_size - seg_size], float("inf"))]
+        )
     argmin = paddle.where(
         paddle.isinf(argmin_weights),
         paddle.full([dim_size], dim_size, dtype=paddle.int64),

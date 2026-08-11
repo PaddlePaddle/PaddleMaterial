@@ -39,7 +39,7 @@ from ppmat.datasets.mp20_dataset import MP20MatterGenDataset
 from ppmat.datasets.mp2018_dataset import MP2018Dataset
 from ppmat.datasets.mp2024_dataset import MP2024Dataset
 from ppmat.datasets.mptrj_dataset import MPTrjDataset
-from ppmat.datasets.asu_mp20_dataset import AsymmetricUnitDataset # noqa
+from ppmat.datasets.asu_dataset import AsymmetricUnitDataset # noqa
 from ppmat.datasets.msd_nmr_dataset import MSDnmrDataset
 from ppmat.datasets.msd_nmr_dataset import MSDnmrinfos
 from ppmat.datasets.density_dataset import DensityDataset

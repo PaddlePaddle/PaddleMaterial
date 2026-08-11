@@ -15,29 +15,21 @@
 """Telescoping discrete lattice parameter sampler."""
 import dataclasses
 import math
-
+from typing import Tuple
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distribution import Categorical
 
-import ppmat.models.sgequidiff.global_vars as global_vars
 from ppmat.utils.crystal import lattice_transform_and_log_prob_mask
-from ppmat.models.sgequidiff.encoders import SpaceGroupEncoder
-from ppmat.models.sgequidiff.non_equivariant_drift_modules import FourierLinear, Swish
+from ppmat.models.sgequidiff.drift_modules import FourierLinear, SpaceGroupEncoder
 
 
 @dataclasses.dataclass
 class LatticeSamplerConfig:
     input_dimension: int
     hidden_dimension: int
-    num_hidden_layers: int = 1
-    use_fourier_features: bool = True
-    max_fourier_frequency: float = 64.0
-    num_fourier_frequencies: int = 16
-    lattice_lengths_transform: str = "identity"
-    model_type: str = "telescoping_discrete"
     min_lattice_length: float = 2.0
     max_lattice_length: float = 133.0
     min_lattice_angle: float = 60.0
@@ -51,6 +43,7 @@ class LatticeSamplerConfig:
     lattice_angle_embedder_fourier_scale: float = 1.0
     lattice_param_dim: int = 112
     n_emb_layers: int = 4
+    space_group_encoder_hidden_channels: int = 256
 
 class TelescopingDiscreteLatticeSampler(nn.Layer):
     def __init__(self, config: LatticeSamplerConfig):
@@ -79,7 +72,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         self.max_bin_edge = 4.0
 
         self.space_group_encoder = SpaceGroupEncoder(
-            hidden_channels=256,
+            hidden_channels=self.config.space_group_encoder_hidden_channels,
             space_group_embedding_dim=self.config.input_dimension,
         )
 
@@ -278,7 +271,11 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         gammas_gt_max = discretized_normed_lattice_parameters[:, -1] > max_normed_gamma
 
         if paddle.any(gammas_lt_min | gammas_gt_max):
-            bin_edges = (self.max_bin_edge - self.min_bin_edge) * paddle.linspace(0, 1, self.n_telescopes * self.n_bins + 1) + self.min_bin_edge
+            bin_edges = (
+                (self.max_bin_edge - self.min_bin_edge)
+                * paddle.linspace(0, 1, self.n_telescopes * self.n_bins + 1)
+                + self.min_bin_edge
+            )
             bin_midpoints = paddle.mean(paddle.stack([bin_edges[:-1], bin_edges[1:]], axis=-1), axis=-1)
             if paddle.any(gammas_lt_min):
                 valid_bin_indices = paddle.argmax(
@@ -289,6 +286,131 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                     (bin_midpoints.unsqueeze(0) < max_normed_gamma[gammas_gt_max].unsqueeze(-1)).cast("int32"), axis=-1)
                 discretized_normed_lattice_parameters[:, -1][gammas_gt_max] = bin_midpoints[valid_bin_indices]
         return discretized_normed_lattice_parameters
+
+    def log_prob(
+        self,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+        space_group_indices: paddle.Tensor,
+        noisy_lattice_lengths: paddle.Tensor = None,
+        noisy_lattice_angles: paddle.Tensor = None,
+    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+        """Log forward probability of sampling the given lattice parameters."""
+        batch_size = lattice_lengths.shape[0]
+        num_lattice_parameters = 6
+        noisy_lattice_lengths = (
+            noisy_lattice_lengths
+            if self.training and noisy_lattice_lengths is not None
+            else lattice_lengths
+        )
+        noisy_lattice_angles = (
+            noisy_lattice_angles
+            if self.training and noisy_lattice_angles is not None
+            else lattice_angles
+        )
+        assert (
+            lattice_lengths.shape
+            == lattice_angles.shape
+            == noisy_lattice_lengths.shape
+            == noisy_lattice_angles.shape
+            == (batch_size, 3)
+        )
+
+        sg_features = self.space_group_encoder(space_group_indices)
+        normed_lattice_parameters = self._get_normed_lattice_parameters(
+            lattice_lengths,
+            lattice_angles,
+            self.min_bin_edge,
+            self.max_bin_edge,
+            norm_gamma_separately=False,
+        )
+        normed_noisy_lattice_parameters = (
+            self._get_normed_lattice_parameters(
+                noisy_lattice_lengths,
+                noisy_lattice_angles,
+                self.min_bin_edge,
+                self.max_bin_edge,
+                norm_gamma_separately=False,
+            )
+            if self.training
+            else normed_lattice_parameters
+        )
+        _normed_gt_and_noisy_lattice_params = self.get_discretized_normed_lattice_params(
+            paddle.concat(
+                [normed_lattice_parameters, normed_noisy_lattice_parameters], axis=0
+            ),
+            # get_valid_gamma_angle_interval expects alpha/beta angles [:, :2].
+            #
+            # DEV NOTE (intentional divergence from the upstream PyTorch code):
+            # upstream passed lattice_angles[:, 1:] (beta/gamma) here, which
+            # computes a wrong valid-gamma interval for the discretized gamma
+            # bins in log_prob(). The forward() sampling path always used
+            # [:, :2] (alpha/beta), so the upstream training loss and the
+            # sampling path disagreed.
+            #
+            # Impact on this port:
+            # - Sampling / inference with the released weights is unaffected:
+            #   this fix only touches log_prob(), which is never called on the
+            #   sampling path (forward()).
+            # - Training / fine-tuning computes the corrected (alpha, beta)-
+            #   based gamma interval in the loss, intentionally differing from
+            #   the upstream buggy loss values.
+            paddle.concat([lattice_angles[:, :2], noisy_lattice_angles[:, :2]], axis=0),
+        )
+        normed_lattice_parameters = _normed_gt_and_noisy_lattice_params[:batch_size]
+        normed_noisy_lattice_parameters = _normed_gt_and_noisy_lattice_params[batch_size:]
+
+        log_pfs = []
+        regularizer = paddle.zeros([batch_size])
+        lattice_mask = paddle.ones([6])
+        current_lattice_embedding = paddle.concat(
+            [
+                self.lattice_length_embedder(
+                    normed_noisy_lattice_parameters[:, :3].reshape([-1, 3, 1])
+                ).reshape([batch_size, -1]),
+                self.lattice_angle_embedder(
+                    normed_noisy_lattice_parameters[:, 3:].reshape([-1, 3, 1])
+                ).reshape([batch_size, -1]),
+            ],
+            axis=-1,
+        )
+        for i in range(num_lattice_parameters - 1, -1, -1):
+            next_normed_lattice_parameter = normed_lattice_parameters[:, i].clone()
+            current_lattice_embedding[
+                :, self.lattice_param_dim * i : self.lattice_param_dim * (i + 1)
+            ] = 0.0
+            lattice_mask[i] = 0.0
+            current_state_features = paddle.concat(
+                [
+                    sg_features,
+                    current_lattice_embedding,
+                    lattice_mask[None, :].expand([batch_size, 6]),
+                ],
+                axis=1,
+            )[:, None, :].expand([-1, self.n_bins, -1])
+            _, log_prob = self._sample_and_log_prob(
+                lattice_param_index=i,
+                bin_embedder=self.length_bin_embedder if i < 3 else self.angle_bin_embedder,
+                batch_size=batch_size,
+                x=next_normed_lattice_parameter,
+                z=current_state_features,
+            )
+            log_pfs.append(log_prob)
+        log_pfs = paddle.stack(log_pfs, axis=1)
+        column_indices_reversed = paddle.arange(
+            start=log_pfs.shape[1] - 1, end=-1, step=-1, dtype=paddle.int64
+        )
+        log_pfs = log_pfs[:, column_indices_reversed]
+        log_pf_masks = self.bravais_log_prob_masks[space_group_indices]
+        log_pfs = log_pfs * log_pf_masks
+        if self.config.gradient_attenuation_factor != 1.0:
+            log_pfs_detach = log_pfs.detach()
+            log_pfs = (
+                self.config.gradient_attenuation_factor * log_pfs
+                - self.config.gradient_attenuation_factor * log_pfs_detach
+                + log_pfs_detach
+            )
+        return log_pfs, regularizer
 
     @paddle.no_grad()
     def forward(self, space_group_indices):

@@ -18,7 +18,7 @@ A crystal structure in the asymmetric unit (ASU) representation is described by:
 - Wyckoff indices: $W = (w_1, \ldots, w_N)$ specifying the Wyckoff position of each ASU atom
 - fractional coordinates: $F = (f_1, \ldots, f_N),\; f_i \in [0,1)^3$ within the ASU
 
-SGEquiDiff implements a hierarchical generative model through the `CrystalSampler`, which orchestrates four specialized modules: `SpaceGroupSampler`, `TelescopingDiscreteLatticeSampler`, `WyckoffElementTransformer`, and `EquivariantDiffusionModel`. The total training loss combines negative log-likelihood terms for discrete components with a score-matching loss for fractional coordinates, balanced by gradient reweighting:
+SGEquiDiff implements a hierarchical generative model through the `SGEQuiDiff`, which orchestrates four specialized modules: `SpaceGroupSampler`, `TelescopingDiscreteLatticeSampler`, `WyckoffElementTransformer`, and `EquivariantDiffusionModel`. The total training loss combines negative log-likelihood terms for discrete components with a score-matching loss for fractional coordinates, balanced by gradient reweighting:
 
 $$
 \mathcal{L} = w_{sg}\,\mathcal{L}_{sg} + w_{L}\,\mathcal{L}_{L} + w_{EW}\,\mathcal{L}_{EW} + w_{F}\,\mathcal{L}_{F}
@@ -33,7 +33,7 @@ $$
 p_\theta(sg) = \text{Categorical}\!\left(\text{softmax}(\boldsymbol{\theta}_{sg})\right), \quad \boldsymbol{\theta}_{sg} \in \mathbb{R}^{230}
 $$
 
-The logits $\boldsymbol{\theta}_{sg}$ are initialized from empirical dataset frequencies and optionally frozen. The training loss is the negative log-likelihood:
+The logits $\boldsymbol{\theta}_{sg}$ are initialized to uniform values (all logits equal) and learned during training. The training loss is the negative log-likelihood:
 
 $$
 \mathcal{L}_{sg} = -\log p_\theta(sg)
@@ -150,7 +150,7 @@ Evaluation metrics include structural validity (`struct_valid`), compositional v
 | Model | Dataset | Config | Checkpoint |
 | --- | --- | --- | --- |
 | sgequidiff | mp_20 | [sgequidiff_mp20.yaml](sgequidiff_mp20.yaml) | [sgequidiff_mp20.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mp20.zip) |
-| sgequidiff | mpts_52 | [sgequidiff_mp20.yaml](sgequidiff_mp20.yaml) | [sgequidiff_mpts_52.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mpts_52.zip) |
+| sgequidiff | mpts_52 | [sgequidiff_mpts_52.yaml](sgequidiff_mpts_52.yaml) | [sgequidiff_mpts_52.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mpts_52.zip) |
 
 ---
 
@@ -158,10 +158,10 @@ Evaluation metrics include structural validity (`struct_valid`), compositional v
 
 ### Setup
 
-NPZ data is auto-discovered in this order: `$SGEQUI_DATA_DIR` > `data/data/` > `~/.sgequidiff_data/`. Place `train.npz / val.npz / test.npz` under `<root>/mp_20/`. Set the env var only if data lives elsewhere:
+NPZ data is auto-discovered in this order: `$ASU_DATA_DIR` > `data/data/` > `~/.asu_data/`. Place `train.npz / val.npz / test.npz` under `<root>/mp_20/`. Set the env var only if data lives elsewhere:
 
 ```bash
-export SGEQUI_DATA_DIR=/path/to/data
+export ASU_DATA_DIR=/path/to/data
 ```
 
 ### Training

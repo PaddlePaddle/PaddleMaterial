@@ -7,11 +7,13 @@ import paddle
 import smact
 from matminer.featurizers.composition.composite import ElementProperty
 from matminer.featurizers.site.fingerprint import CrystalNNFingerprint
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Element
 from pymatgen.core.composition import Composition
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 from scipy.linalg import polar
+from scipy.spatial.distance import cdist
 from smact.screening import pauling_test
 
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
@@ -203,3 +205,160 @@ def get_crys_from_cif(cif, polar_decompose=False):
             "angles": np.array(lattice.angles),
         }
     return Crystal(crys_array_dict)
+
+
+class StandardScaler:
+    """Standardize features along axis 0 (fit/transform/inverse_transform)."""
+
+    def __init__(self, means=None, stds=None, replace_nan_token=None):
+        self.means = means
+        self.stds = stds
+        self.replace_nan_token = replace_nan_token
+
+    def fit(self, X):
+        X = np.array(X).astype(float)
+        self.means = np.nanmean(X, axis=0)
+        self.stds = np.nanstd(X, axis=0)
+        self.means = np.where(np.isnan(self.means), np.zeros(self.means.shape), self.means)
+        self.stds = np.where(np.isnan(self.stds), np.ones(self.stds.shape), self.stds)
+        self.stds = np.where(self.stds == 0, np.ones(self.stds.shape), self.stds)
+        return self
+
+    def transform(self, X):
+        X = np.array(X).astype(float)
+        transformed = (X - self.means) / self.stds
+        if self.replace_nan_token is not None:
+            transformed = np.where(
+                np.isnan(transformed), self.replace_nan_token, transformed
+            )
+        return transformed
+
+    def inverse_transform(self, X):
+        X = np.array(X).astype(float)
+        transformed = X * self.stds + self.means
+        if self.replace_nan_token is not None:
+            transformed = np.where(
+                np.isnan(transformed), self.replace_nan_token, transformed
+            )
+        return transformed
+
+
+def get_matches(structure, alternatives, matcher):
+    """Indices and RMS distances of alternative structures matching ``structure``."""
+    matches, rms_dists = [], []
+    for idx, alt in enumerate(alternatives):
+        rms_dist = matcher.get_rms_dist(structure, alt)
+        if rms_dist is not None:
+            rms_dists.append(rms_dist[0])
+            matches.append(idx)
+    return matches, rms_dists
+
+
+def get_unique_structures(structures, matcher):
+    """Return structurally unique structures (and their first-match indices)."""
+    unique_structures = []
+    unique_structure_idxs = []
+    for i, structure in enumerate(structures):
+        matches, _ = get_matches(structure, structures, matcher)
+        first_match = sorted(matches)[0] if matches else i
+        if first_match not in unique_structure_idxs:
+            unique_structure_idxs.append(first_match)
+            unique_structures.append(structures[first_match])
+    return unique_structures, unique_structure_idxs
+
+
+def get_chemsys(structure):
+    return str(sorted(set(e.name for e in structure.composition.elements)))
+
+
+def get_novel_structures(structures, reference_structures, matcher):
+    """Return structures not present (within tolerance) in the reference set."""
+    generated_chemsys = np.array(list(map(get_chemsys, structures)))
+    reference_chemsys = np.array(list(map(get_chemsys, reference_structures)))
+
+    intersection = np.intersect1d(generated_chemsys, reference_chemsys)
+    gen_to_compare = np.isin(generated_chemsys, intersection)
+    ref_to_compare = np.isin(reference_chemsys, intersection)
+    filtered_reference = [
+        s for compare, s in zip(ref_to_compare, reference_structures) if compare
+    ]
+
+    novel_structures = []
+    novel_structure_idxs = []
+    for i, (compare, structure) in enumerate(zip(gen_to_compare, structures)):
+        if not compare:
+            novel_structures.append(structure)
+            novel_structure_idxs.append(i)
+
+    for gen_idx, (compare, structure) in enumerate(zip(gen_to_compare, structures)):
+        if not compare:
+            continue
+        matches, _ = get_matches(structure, filtered_reference, matcher)
+        if len(matches) == 0:
+            novel_structures.append(structure)
+            novel_structure_idxs.append(gen_idx)
+
+    return novel_structures, novel_structure_idxs
+
+
+def filter_fingerprints(struc_fps, comp_fps):
+    """Keep fingerprints whose structural fingerprint is valid."""
+    filtered_struc_fps = []
+    filtered_comp_fps = []
+    for struc_fp, comp_fp in zip(struc_fps, comp_fps):
+        if struc_fp is not None and comp_fp is not None:
+            filtered_struc_fps.append(struc_fp)
+            filtered_comp_fps.append(comp_fp)
+    return filtered_struc_fps, filtered_comp_fps
+
+
+def compute_cov(crys, gt_crys, struc_cutoff, comp_cutoff, num_gen_crystals=None):
+    """Coverage / matching metrics between generated and ground-truth crystals.
+
+    The composition fingerprints are standardized on the ground-truth set only
+    (reference distribution), avoiding leakage from generated structures.
+    """
+    struc_fps = [c.struct_fp for c in crys if c.struct_fp is not None]
+    comp_fps = [c.comp_fp for c in crys if c.comp_fp is not None]
+    gt_struc_fps = [c.struct_fp for c in gt_crys if c.struct_fp is not None]
+    gt_comp_fps = [c.comp_fp for c in gt_crys if c.comp_fp is not None]
+
+    if num_gen_crystals is None:
+        num_gen_crystals = len(struc_fps)
+
+    struc_fps, comp_fps = filter_fingerprints(struc_fps, comp_fps)
+    gt_struc_fps, gt_comp_fps = filter_fingerprints(gt_struc_fps, gt_comp_fps)
+
+    scaler = StandardScaler(replace_nan_token=0.0).fit(gt_comp_fps)
+    comp_fps = scaler.transform(comp_fps)
+    gt_comp_fps = scaler.transform(gt_comp_fps)
+
+    struc_pdist = cdist(np.array(struc_fps), np.array(gt_struc_fps))
+    comp_pdist = cdist(np.array(comp_fps), np.array(gt_comp_fps))
+
+    struc_recall_dist = struc_pdist.min(axis=0)
+    struc_precision_dist = struc_pdist.min(axis=1)
+    comp_recall_dist = comp_pdist.min(axis=0)
+    comp_precision_dist = comp_pdist.min(axis=1)
+
+    cov_recall = np.mean(
+        np.logical_and(struc_recall_dist <= struc_cutoff, comp_recall_dist <= comp_cutoff)
+    )
+    cov_precision = (
+        np.sum(
+            np.logical_and(
+                struc_precision_dist <= struc_cutoff,
+                comp_precision_dist <= comp_cutoff,
+            )
+        )
+        / num_gen_crystals
+    )
+
+    return {
+        "cov_recall": cov_recall,
+        "cov_precision": cov_precision,
+        "amsd_recall": np.mean(struc_recall_dist),
+        "amsd_precision": np.mean(struc_precision_dist),
+        "amcd_recall": np.mean(comp_recall_dist),
+        "amcd_precision": np.mean(comp_precision_dist),
+    }

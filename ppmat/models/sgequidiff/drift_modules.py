@@ -12,28 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Non-equivariant drift modules: GNN (PBC message passing) and CSPNet (from DiffCSP)."""
+"""Non-equivariant drift modules: GNN (PBC message passing), CSPNet (from DiffCSP),
+and space-group / element / Wyckoff embedding tools."""
 import dataclasses
+import json
 import math
-from typing import Optional, Tuple
 from contextlib import nullcontext
+from pathlib import Path
+from typing import Optional, Tuple
 
 import paddle
 import paddle.nn as nn
-import ppmat.models.sgequidiff.global_vars as global_vars
-from ppmat.models.sgequidiff.constants import lattice_parameter_ranges, NUM_ELEMENTS
-from ppmat.utils.pbc_graph import (
-    construct_fully_connected_graphs_with_periodic_boundaries,
-    ocp_get_pbc_distances,
-)
+import paddle.nn.functional as F
+from ppmat.utils.asu_data import lattice_parameter_ranges
+from ppmat.utils.crystal import MAX_WYCKOFF_POSITIONS
+from ppmat.utils.crystal import ELEMENT_ENCODING_SIZE
+from ppmat.utils.crystal import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
+from ppmat.utils.wyckoff_data import _resolve_data_dir
+from ppmat.utils.pbc_graph import construct_fully_connected_graphs_with_periodic_boundaries
 from ppmat.utils.crystal import frac_to_cart_coords
+from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.scatter import scatter as paddle_scatter
+from ppmat.models.common.activation import ScaledSiLU as Swish
+from ppmat.models.common.radial_basis import GaussianSmearing
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings as FourierTimeEmbeddings
+from ppmat.models.diffcsp.diffcsp import CSPLayer as _DiffCSP_CSPLayer
+from ppmat.models.diffcsp.diffcsp import SinusoidsEmbedding as _DiffCSP_SinusoidsEmbedding
 
 
-def _get_diffcsp_classes():
-    from ppmat.models.diffcsp.diffcsp import CSPLayer, SinusoidsEmbedding
-    return CSPLayer, SinusoidsEmbedding
+class SpaceGroupEncoder(nn.Layer):
+    """Feature encoder for space group indices."""
+
+    def __init__(self, hidden_channels: int = 128, space_group_embedding_dim: int = 64):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(embedding_tools.space_group_embedding_length, hidden_channels),
+            Swish(),
+            nn.Linear(hidden_channels, space_group_embedding_dim),
+            Swish(),
+        )
+
+    def forward(self, space_group_indices):
+        return self.net(embedding_tools.get_space_group_embedding(space_group_indices))
 
 def get_plane_wave_frequencies(
     num_freqs: int,
@@ -109,7 +129,6 @@ class TorusMLP(nn.Layer):
     def forward(
         self,
         frac_coords: paddle.Tensor,
-        element_indices: paddle.Tensor,
         time_embeddings: paddle.Tensor,
         *args,
         **kwargs,
@@ -123,19 +142,6 @@ class TorusMLP(nn.Layer):
                 axis=-1,
             )
         )
-
-class GaussianSmearing(nn.Layer):
-    """Gaussian distance smearing."""
-
-    def __init__(self, start: float = 0.0, stop: float = 5.0, num_gaussians: int = 50):
-        super().__init__()
-        offset = paddle.linspace(start, stop, num_gaussians)
-        self.coeff = -0.5 / (offset[1] - offset[0]).item() ** 2
-        self.register_buffer("offset", offset)
-
-    def forward(self, dist: paddle.Tensor) -> paddle.Tensor:
-        dist = dist.reshape([-1, 1]) - self.offset.reshape([1, -1])
-        return paddle.exp(self.coeff * dist ** 2)
 
 def custom_he_orthogonal_(weight: paddle.Tensor, gain: float = 1.0) -> paddle.Tensor:
     """He initialization + orthogonalization."""
@@ -172,12 +178,12 @@ class NodeAndEdgeEmbedder(nn.Layer):
         if use_frac_coords_in_node_emb:
             self.frac_pos_emb = nn.Linear(fourier_frac_edge_dim, atom_hidden_dim)
             self.ele_emb = nn.Linear(
-                global_vars.embedding_tools.element_embedding_length, atom_hidden_dim
+                embedding_tools.element_embedding_length, atom_hidden_dim
             )
             self.atom_emb1 = nn.Linear(2 * atom_hidden_dim, atom_hidden_dim)
         else:
             self.atom_emb1 = nn.Linear(
-                global_vars.embedding_tools.element_embedding_length, atom_hidden_dim
+                embedding_tools.element_embedding_length, atom_hidden_dim
             )
         self.atom_emb2 = nn.Linear(atom_hidden_dim + time_emb_dim, atom_hidden_dim)
 
@@ -214,13 +220,13 @@ class NodeAndEdgeEmbedder(nn.Layer):
             frac_pos_emb = self.act(self.frac_pos_emb(fourier_atom_frac_pos))
             ele_emb_out = self.act(
                 self.ele_emb(
-                    global_vars.embedding_tools.get_element_embedding(1 + element_indices)
+                    embedding_tools.get_element_embedding(1 + element_indices)
                 )
             )
             h = self.atom_emb1(paddle.concat([frac_pos_emb, ele_emb_out], axis=-1))
         else:
             h = self.atom_emb1(
-                global_vars.embedding_tools.get_element_embedding(1 + element_indices)
+                embedding_tools.get_element_embedding(1 + element_indices)
             )
         h = self.act(h)
         h = self.act(self.atom_emb2(paddle.concat([h, time_embeddings], axis=-1)))
@@ -446,13 +452,15 @@ class GNN(nn.Layer):
             lattice_matrix=lattice_matrices,
             num_nodes_per_crystal=n_atoms_per_xtal,
         )
-        out = ocp_get_pbc_distances(
-            coords=cart_coords,
-            source_id=source_ids,
-            destination_id=destination_ids,
-            lattice=lattice_matrices,
-            pbc_frac_offsets_per_source_node=source_node_image_offsets,
-            num_edges_per_crystal=num_edges_per_crystal,
+        edge_index = paddle.stack([source_ids, destination_ids], axis=0)
+        out = get_pbc_distances(
+            cart_coords,
+            edge_index,
+            lattice_matrices,
+            source_node_image_offsets,
+            num_atoms=n_atoms_per_xtal,
+            num_bonds=num_edges_per_crystal,
+            coord_is_cart=True,
         )
         cartesian_distances = out["distances"]
         edge_index = out["edge_index"]
@@ -480,7 +488,7 @@ class GNN(nn.Layer):
         normed_angles = 2.0 * (lattice_angles - min_ang) / (max_ang - min_ang) - 1.0
         return paddle.concat([normed_lengths, normed_angles], axis=-1)
 
-class CSPLayer(paddle.nn.Layer):
+class CSPLayer(_DiffCSP_CSPLayer):
     """CSPLayer subclass adapted from DiffCSP for SGEquiDiff's 6-dim lattice (lengths+angles).
 
     DiffCSP uses 9-dim lattice inner-product (lattice_ips), SGEquiDiff uses 6-dim
@@ -495,15 +503,16 @@ class CSPLayer(paddle.nn.Layer):
         dis_emb=None,
         ln: bool = False,
     ):
-        _DiffCSP_CSPLayer, _ = _get_diffcsp_classes()
+        act_fn = act_fn if act_fn is not None else nn.Silu()
         super().__init__(
             hidden_dim=hidden_dim,
             prop_dim=0,
-            act_fn=act_fn if act_fn is not None else nn.Silu(),
+            act_fn=act_fn,
             dis_emb=dis_emb,
             ln=ln,
             ip=False,
         )
+        self.act_fn = act_fn
         # parent uses 9-dim lattice_ips for edge_mlp, override to 6-dim lattice
         self.edge_mlp = nn.Sequential(
             nn.Linear(hidden_dim * 2 + 6 + self.dis_dim, hidden_dim),
@@ -548,7 +557,7 @@ class CSPNet(nn.Layer):
         super().__init__()
         latent_dim = time_embedder.dim
         num_layers = config.num_msg_pass_steps
-        max_atoms = NUM_ELEMENTS
+        max_atoms = ELEMENT_ENCODING_SIZE
         hidden_dim = config.hidden_dim
         num_freqs = config.num_freqs
         act_fn_str = config.act_fn
@@ -562,8 +571,7 @@ class CSPNet(nn.Layer):
         if act_fn_str == "silu":
             self.act_fn = nn.Silu()
         if dis_emb_str == "sin":
-            _, DiffCSPSinusoidsEmbedding = _get_diffcsp_classes()
-            self.dis_emb = DiffCSPSinusoidsEmbedding(
+            self.dis_emb = _DiffCSP_SinusoidsEmbedding(
                 n_frequencies=num_freqs, n_space=3
             )
         elif dis_emb_str == "none":
@@ -642,11 +650,7 @@ class CSPNet(nn.Layer):
         return self.coord_out(node_features)
 
 
-# === Shared submodules: Swish, VariancePreservingAggregation, FourierLinear, GraphNorm ===
-
-class Swish(nn.Layer):
-    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        return nn.functional.silu(x) / 0.6
+# === Shared submodules: VariancePreservingAggregation, FourierLinear, GraphNorm ===
 
 class VariancePreservingAggregation(nn.Layer):
     """Variance preserving aggregation: vpa(X) = sum(X) / sqrt(|X|)."""
@@ -765,3 +769,170 @@ class GraphNorm(nn.Layer):
 
         std = (var + self.eps).sqrt()[map_node_to_graph].clip(min=1.0)
         return self.weight * out / std + self.bias
+
+
+embedding_tools = None
+
+
+class EmbeddingTools:
+    """Element/space-group/Wyckoff embedding tools. Singleton, accessed via embedding_tools."""
+
+    @paddle.no_grad()
+    def __init__(
+        self,
+        space_group_embedding_json_path: Optional[str] = None,
+        element_embedding_json_path: Optional[str] = None,
+        wyckoff_embedding_json_path: Optional[str] = None,
+    ):
+        self.space_group_embedding_dict = None
+        self.element_embedding_dict = None
+        self.wyckoff_embedding_dict = None
+
+        data_directory = _resolve_data_dir()
+
+        def _resolve_json(json_path: str) -> Path:
+            # element embedding lives at the data dir root in the vocabs layout
+            # and under init_tokens/ in the data/data layout.
+            fp = Path(data_directory / json_path)
+            if not fp.exists():
+                fp = Path(data_directory / "init_tokens" / json_path)
+            return fp
+
+        if space_group_embedding_json_path is not None:
+            fp = _resolve_json(space_group_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.space_group_embedding_dict = json.load(file)
+            self.space_group_embedding_length = len(
+                self.space_group_embedding_dict["1"]
+            )
+            self.space_group_embedding_tensor = paddle.to_tensor(
+                [
+                    self.space_group_embedding_dict[str(sg_num)]
+                    for sg_num in range(1, 231)
+                ],
+                dtype=paddle.float32,
+            )
+        else:
+            self.space_group_embedding_length = NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
+
+        if element_embedding_json_path is not None:
+            fp = _resolve_json(element_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.element_embedding_dict = json.load(file)
+            self.element_embedding_length = len(self.element_embedding_dict["0"])
+            self.element_embedding_tensor = paddle.to_tensor(
+                [
+                    self.element_embedding_dict[str(atomic_number)]
+                    for atomic_number in range(ELEMENT_ENCODING_SIZE + 1)
+                ],
+                dtype=paddle.float32,
+            )
+        else:
+            self.element_embedding_length = ELEMENT_ENCODING_SIZE
+
+        if wyckoff_embedding_json_path is not None:
+            fp = _resolve_json(wyckoff_embedding_json_path).as_posix()
+            with open(fp, "r") as file:
+                self.wyckoff_embedding_dict = json.load(file)
+            self.wyckoff_embedding_length = len(
+                self.wyckoff_embedding_dict["1"]["a"]
+            )
+
+            wyckoff_emb_list = []
+            n_wyckoffs_list = []
+            for sg_num in range(1, 231):
+                wyckoff_dict_of_sg = self.wyckoff_embedding_dict[str(sg_num)]
+                letters = list(wyckoff_dict_of_sg.keys())
+
+                wyckoff_ascii = [ord(letter) for letter in letters]
+                wyckoff_idxs = [
+                    ai - 97 if ai >= 97 else ai - 65 + 26 for ai in wyckoff_ascii
+                ]
+                sorted_letters = [
+                    letter
+                    for letter, _ in sorted(
+                        zip(letters, wyckoff_idxs), key=lambda pair: pair[1]
+                    )
+                ]
+
+                emb_array = paddle.to_tensor(
+                    [wyckoff_dict_of_sg[letter] for letter in sorted_letters],
+                    dtype=paddle.float32,
+                )
+                padding = paddle.zeros(
+                    [MAX_WYCKOFF_POSITIONS - len(letters), self.wyckoff_embedding_length]
+                )
+                wyckoff_emb_list.append(paddle.concat([emb_array, padding], axis=0))
+                n_wyckoffs_list.append(len(letters))
+
+            self.wyckoff_embedding_tensor = paddle.stack(wyckoff_emb_list, axis=0)
+            self.n_wyckoffs_per_space_group = paddle.to_tensor(
+                n_wyckoffs_list, dtype=paddle.int64
+            )
+        else:
+            self.wyckoff_embedding_length = MAX_WYCKOFF_POSITIONS
+
+    def get_space_group_embedding(self, space_group_index: paddle.Tensor) -> paddle.Tensor:
+        """Get space group embedding."""
+        assert space_group_index.dtype == paddle.int64
+        if self.space_group_embedding_dict is None:
+            return F.one_hot(space_group_index, NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS).cast(paddle.float32)
+        else:
+            return self.space_group_embedding_tensor[space_group_index]
+
+    @paddle.no_grad()
+    def get_element_embedding(self, atomic_number: paddle.Tensor) -> paddle.Tensor:
+        """Get element embedding."""
+        assert atomic_number.dtype == paddle.int64
+        if self.element_embedding_dict is None:
+            return F.one_hot(
+                atomic_number - 1, ELEMENT_ENCODING_SIZE
+            ).cast(paddle.float32)
+        else:
+            return self.element_embedding_tensor[atomic_number]
+
+    @paddle.no_grad()
+    def get_wyckoff_embedding(
+        self,
+        wyckoff_index: paddle.Tensor,
+        space_group_index: paddle.Tensor,
+    ) -> paddle.Tensor:
+        """Get Wyckoff embedding by index and space group."""
+        if self.wyckoff_embedding_dict is None:
+            return F.one_hot(wyckoff_index, MAX_WYCKOFF_POSITIONS).cast(paddle.float32)
+        else:
+            valid_mask = self.n_wyckoffs_per_space_group[space_group_index] > wyckoff_index
+            assert valid_mask.all().item(), "Invalid space group-Wyckoff index pairs"
+            return self.wyckoff_embedding_tensor[space_group_index, wyckoff_index, :]
+
+_embedding_tools_paths = None
+
+
+def set_global_embedding_tools(
+    space_group_embedding_json_path: Optional[str] = None,
+    element_embedding_json_path: Optional[str] = None,
+    wyckoff_embedding_json_path: Optional[str] = None,
+) -> None:
+    """Initialize and set global embedding_tools (idempotent).
+
+    Re-initialization with identical paths is a no-op; conflicting paths raise
+    an error so that model instances cannot silently override each other.
+    """
+    global embedding_tools, _embedding_tools_paths
+    paths = (
+        space_group_embedding_json_path,
+        element_embedding_json_path,
+        wyckoff_embedding_json_path,
+    )
+    if embedding_tools is not None:
+        assert _embedding_tools_paths == paths, (
+            "embedding_tools already initialized with different paths: "
+            f"{_embedding_tools_paths} vs {paths}"
+        )
+        return
+    embedding_tools = EmbeddingTools(
+        space_group_embedding_json_path=space_group_embedding_json_path,
+        element_embedding_json_path=element_embedding_json_path,
+        wyckoff_embedding_json_path=wyckoff_embedding_json_path,
+    )
+    _embedding_tools_paths = paths
