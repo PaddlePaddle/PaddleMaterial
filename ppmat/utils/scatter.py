@@ -71,16 +71,32 @@ def scatter_argmax(
 
     if dim_size is None:
         dim_size = 0 if index.shape[0] == 0 else int(index.max()) + 1
+    if index.shape[0] == 0:
+        return paddle.zeros([dim_size], dtype="int64")
 
-    max_values = paddle.geometric.segment_max(src, index)
+    # paddle.geometric.segment_max requires sorted segment ids; sort first.
+    sorted_order = paddle.argsort(index, stable=True)
+    sorted_index = index[sorted_order]
+    sorted_src = src[sorted_order]
+    seg_size = int(sorted_index.max().item()) + 1
+
+    group_counts = paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
+    empty_mask = ~group_counts
+
+    max_values = paddle.geometric.segment_max(sorted_src, sorted_index)
     n = src.shape[0]
     weights = paddle.arange(n, dtype=paddle.float32)
-    is_max = src == max_values[index]
+    is_max = sorted_src == max_values[sorted_index]
     max_weights = paddle.where(is_max, weights, paddle.to_tensor(-float("inf")))
-    argmax = paddle.geometric.segment_max(max_weights, index)
+    argmax_sorted = paddle.geometric.segment_max(max_weights, sorted_index)
+    argmax = paddle.where(
+        empty_mask,
+        paddle.zeros([seg_size], dtype="int64"),
+        sorted_order[argmax_sorted.cast(paddle.int64)],
+    )
     out = paddle.zeros([dim_size], dtype="int64")
-    if argmax.shape[0] > 0:
-        out[: argmax.shape[0]] = argmax.cast(paddle.int64)
+    if seg_size > 0:
+        out[:seg_size] = argmax
     return out
 
 
@@ -218,8 +234,21 @@ def scatter_min_with_argmin(
             paddle.full([dim_size], dim_size, dtype="int64"),
         )
 
-    seg_size = int(index.max().item()) + 1
-    min_values = paddle.geometric.segment_min(src, index)
+    # paddle.geometric.segment_min requires sorted segment ids; sort first.
+    sorted_order = paddle.argsort(index, stable=True)
+    sorted_index = index[sorted_order]
+    sorted_src = src[sorted_order]
+
+    seg_size = int(sorted_index.max().item()) + 1
+    group_counts = paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
+    empty_mask = ~group_counts
+
+    min_values = paddle.geometric.segment_min(sorted_src, sorted_index)
+    min_values = paddle.where(
+        empty_mask,
+        paddle.full([seg_size], float("inf"), dtype=src.dtype),
+        min_values,
+    )
     if seg_size < dim_size:
         min_values = paddle.concat(
             [
@@ -232,18 +261,18 @@ def scatter_min_with_argmin(
 
     n = src.shape[0]
     weights = paddle.arange(n, dtype=paddle.float32)
-    is_min = (src == min_values[index])
+    is_min = (sorted_src == min_values[sorted_index])
     min_weights = paddle.where(is_min, weights, paddle.to_tensor(float('inf')))
-    argmin_weights = paddle.geometric.segment_min(min_weights, index)
-    if seg_size < dim_size:
-        argmin_weights = paddle.concat(
-            [argmin_weights, paddle.full([dim_size - seg_size], float("inf"))]
-        )
+    argmin_sorted = paddle.geometric.segment_min(min_weights, sorted_index)
     argmin = paddle.where(
-        paddle.isinf(argmin_weights),
-        paddle.full([dim_size], dim_size, dtype=paddle.int64),
-        argmin_weights.cast(paddle.int64),
+        empty_mask,
+        paddle.full([seg_size], dim_size, dtype=paddle.int64),
+        sorted_order[argmin_sorted.cast(paddle.int64)],
     )
+    if seg_size < dim_size:
+        argmin = paddle.concat(
+            [argmin, paddle.full([dim_size - seg_size], dim_size, dtype="int64")]
+        )
     return min_values, argmin
 
 
@@ -254,8 +283,12 @@ def scatter_min_indices(
 ) -> paddle.Tensor:
     if ov_row.shape[0] == 0:
         return paddle.arange(n_total, dtype=paddle.int64)
+    # paddle.geometric.segment_min requires sorted segment ids; sort first.
+    order = paddle.argsort(ov_row, stable=True)
+    sorted_row = ov_row[order]
+    sorted_col = ov_col[order]
     min_per_row = paddle.geometric.segment_min(
-        ov_col.cast(paddle.float32), ov_row
+        sorted_col.cast(paddle.float32), sorted_row
     )
     unique_rows = paddle.unique(ov_row)
     result = paddle.arange(n_total, dtype=paddle.float32)
