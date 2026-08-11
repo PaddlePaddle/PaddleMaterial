@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const homepageDir = __dirname;
+const homepageDir = path.join(__dirname, '..', 'docs');
 const html = readFileSync(path.join(homepageDir, 'index.html'), 'utf8');
 const script = readFileSync(path.join(homepageDir, 'script.js'), 'utf8');
 
@@ -80,4 +80,17 @@ test('quickstart uses complete README training and inference commands', () => {
   }
   assert.doesNotMatch(script, /command\.slice\(6\)/, 'command rendering must not rely on slicing a multiline command');
   assert.match(script, /html: String\.raw`<span class=\"token-purple\">python<\/span> property_prediction\/predict\.py/, 'inference display must preserve README line continuations');
+});
+
+
+test('GitHub Pages homepage is published from docs without a separate assets directory', () => {
+  const docsDir = homepageDir;
+  const docsIndex = path.join(docsDir, 'index.html');
+  assert.ok(existsSync(docsIndex), 'docs/index.html must be the GitHub Pages entry point');
+  const publishedHtml = readFileSync(docsIndex, 'utf8');
+  assert.match(publishedHtml, /src="\.\/ppmat_logo_image\.png"/);
+  assert.match(publishedHtml, /src="\.\/ppmat_logo_character\.png"/);
+  assert.match(publishedHtml, /src="\.\/materials-discovery-loop\.png"/);
+  assert.doesNotMatch(publishedHtml, /(?:src|href)="\.\/assets\//);
+  assert.equal(existsSync(path.join(__dirname, '..', 'homepage', 'assets')), false, 'homepage/assets should be removed');
 });
