@@ -148,10 +148,10 @@ python spectrum_elucidation/train.py -c spectrum_elucidation/configs/diffnmr/Dif
 ```bash
 # This command is used to predict the  crystal structure using a trained model.
 # Note: The model_name and weights_name parameters are used to specify the pre-trained model and its corresponding weights. 
-# The prediction results will be saved in the folder specified by the `save_path` parameter, with the default set to `result`.
+# The prediction results will be saved in the folder specified by the `output_dir` parameter, with the default set to `result`.
 
 # Mode 1: Use a custom configuration file and checkpoint for crystal structure prediction. This approach allows for more flexibility and customization.
-python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --weights_name='DiffNMR_nless15_best.pdparams' --save_path='result_diffnmr_nless15/' --checkpoint_path="pretrained"
+python spectrum_elucidation/sample.py --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' --weights_name='DiffNMR_nless15_best.pdparams' --output_dir='result_diffnmr_nless15/' --checkpoint_path="pretrained"
 
 ```
 

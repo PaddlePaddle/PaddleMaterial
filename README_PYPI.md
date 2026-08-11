@@ -108,7 +108,7 @@ Generate novel crystal structures using a pretrained MatterGen model:
 python structure_generation/sample.py \
     --model_name='mattergen_mp20' \
     --weights_name='latest.pdparams' \
-    --save_path='result_mattergen_mp20/' \
+    --output_dir='result_mattergen_mp20/' \
     --mode='by_num_atoms' \
     --num_atoms=4
 ```
@@ -127,29 +127,32 @@ python interatomic_potentials/predict.py \
 
 #### Electronic Structure
 
-Predict electron density using a pretrained InfGCN checkpoint:
+Predict electron density from the bundled methane example using a pretrained InfGCN
+model:
 
 ```bash
 python electronic_structure/predict.py \
-    --config='electronic_structure/configs/infgcn/infgcn_qm9.yaml' \
-    --checkpoint='path/to/infgcn_qm9.pdparams' \
-    --split='validation' \
-    --index=0 \
-    --output_dir='output/infgcn_qm9/validation_0' \
-    --save_pred_cube
+    --model_name='infgcn_qm9' \
+    --weights_name='best.pdparams' \
+    --mol_file_path='electronic_structure/configs/infgcn/example/methane.mol' \
+    --grid_shape=8 \
+    --grid_batch_size=4096 \
+    --save_path='output/infgcn_qm9/methane'
 ```
 
-See the [InfGCN prediction guide](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/electronic_structure/configs/infgcn/README.md#prediction) for dataset and checkpoint preparation.
+See the [InfGCN prediction guide](https://github.com/PaddlePaddle/PaddleMaterials/blob/develop/electronic_structure/configs/infgcn/README.md#prediction)
+for dataset-based and local-checkpoint inference.
 
 #### Spectrum Elucidation
 
-Run NMR spectrum elucidation using a pretrained DiffNMR checkpoint:
+Run NMR spectrum elucidation using the bundled example and a pretrained DiffNMR
+model:
 
 ```bash
 python spectrum_elucidation/sample.py \
-    --config_path='spectrum_elucidation/configs/diffnmr/DiffNMR.yaml' \
-    --checkpoint_path='path/to/DiffNMR_nless15_best.pdparams' \
-    --save_path='result_diffnmr_nless15/'
+    --model_name='diffnmr_msdnmr_nless15' \
+    --weights_name='best.pdparams' \
+    --output_dir='result_diffnmr_nless15/'
 ```
 
 #### Spectrum Enhancement
@@ -159,7 +162,9 @@ Enhance STEM images using a pretrained SFIN model:
 ```bash
 python spectrum_enhancement/predict.py \
     --model_name='sfin_haadf_enhance' \
-    --split='val'
+    --weights_name='best.pdparams' \
+    --input_path='path/to/noisy_image.png' \
+    --output_dir='result_sfin/'
 ```
 
 ---

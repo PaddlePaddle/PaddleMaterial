@@ -104,11 +104,19 @@ class BuildMolecule:
         if format == "smiles":
             mol = Chem.MolFromSmiles(str(mol_data), sanitize=sanitize)
         elif format == "mol_block":
-            mol = Chem.MolFromMolBlock(str(mol_data), sanitize=sanitize)
+            mol = Chem.MolFromMolBlock(
+                str(mol_data),
+                sanitize=sanitize,
+                removeHs=False,
+            )
         elif format == "mol_file":
             with open(str(mol_data), "r") as f:
                 mol_block = f.read()
-            mol = Chem.MolFromMolBlock(mol_block, sanitize=sanitize)
+            mol = Chem.MolFromMolBlock(
+                mol_block,
+                sanitize=sanitize,
+                removeHs=False,
+            )
         elif format == "sdf_file":
             suppl = Chem.SDMolSupplier(str(mol_data), sanitize=sanitize, removeHs=False)
             mol = next((m for m in suppl if m is not None), None)

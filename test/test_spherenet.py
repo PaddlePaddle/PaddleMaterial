@@ -225,7 +225,7 @@ def test_radius_graph_uses_edges_as_endpoint_indices():
         "idx_kj": graph.edge_feat["ti_idx_kj"].astype("int64"),
         "idx_ji": graph.edge_feat["ti_idx_ji"].astype("int64"),
     }
-    result = compute_geometry(graph.node_feat["pos"], edge_index, triplet_indices)
+    result = compute_geometry(graph.node_feat["cart_coords"], edge_index, triplet_indices)
     np.testing.assert_array_equal(result[3].numpy(), edge_index[1].numpy())
     np.testing.assert_array_equal(result[4].numpy(), edge_index[0].numpy())
 
@@ -299,7 +299,7 @@ def test_geometry_components_match_angle_and_torsion_definitions():
     graph = RadiusGraphConverter(cutoff=5.0, return_triplet_indices=True)(
         molecule
     ).tensor()
-    pos = graph.node_feat["pos"]
+    pos = graph.node_feat["cart_coords"]
     edge_index = paddle.transpose(graph.edges.astype("int64"), [1, 0])
     triplet_indices = {
         key: graph.edge_feat[f"ti_{key}"].astype("int64")

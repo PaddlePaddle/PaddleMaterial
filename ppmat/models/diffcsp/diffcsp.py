@@ -354,6 +354,8 @@ class DiffCSP(paddle.nn.Layer):
         coord_loss_weight (float, optional): Coordinate loss weight. Defaults to 1.0.
     """
 
+    supports_num_atoms_sampling = False
+
     def __init__(
         self,
         decoder_cfg: dict,

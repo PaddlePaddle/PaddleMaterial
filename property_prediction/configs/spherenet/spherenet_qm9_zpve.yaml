@@ -17,6 +17,7 @@ Global:
     __class_name__: RadiusGraphConverter
     __init_params__:
       cutoff: 5.0
+      max_num_neighbors: 32
       return_triplet_indices: true
       num_cpus: 10
 
