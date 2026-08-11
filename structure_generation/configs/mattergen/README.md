@@ -291,61 +291,61 @@ python structure_generation/train.py -c structure_generation/configs/mattergen/m
 # This command is used to predict the crystal structure using a trained model.
 # Mode 1: Use a pre-trained model (downloads automatically).
 # Mode 2: Use a custom configuration file and checkpoint.
-# Results are saved to the folder specified by --save_path (default: result).
+# Results are saved to the folder specified by --output_dir (default: results).
 
 # mp20 dataset, without conditional constraints
-python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
-python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
+python structure_generation/sample.py --model_name='mattergen_mp20' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20/' --mode='by_num_atoms' --num_atoms=4
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20.yaml' --checkpoint_path='./output/mattergen_mp20/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20/' --mode='by_dataloader'
 
 # mp20 dataset, with chemical system constraints
-python structure_generation/sample.py --model_name='mattergen_mp20_chemical_system' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' --checkpoint_path='./output/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_mp20_chemical_system' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_chemical_system.yaml' --checkpoint_path='./output/mattergen_mp20_chemical_system/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20_chemical_system/' --mode='by_dataloader'
 
 # mp20 dataset, with dft_band_gap constraints
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_band_gap' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' --checkpoint_path='./output/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_mp20_dft_band_gap' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_band_gap.yaml' --checkpoint_path='./output/mattergen_mp20_dft_band_gap/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20_dft_band_gap/' --mode='by_dataloader'
 
 # mp20 dataset, with dft_bulk_modulus constraints
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_bulk_modulus' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' --checkpoint_path='./output/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_mp20_dft_bulk_modulus' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_bulk_modulus.yaml' --checkpoint_path='./output/mattergen_mp20_dft_bulk_modulus/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20_dft_bulk_modulus/' --mode='by_dataloader'
 
 # mp20 dataset, with dft_mag_density constraints
-python structure_generation/sample.py --model_name='mattergen_mp20_dft_mag_density' --weights_name='latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' --checkpoint_path='./output/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_mp20_dft_mag_density' --weights_name='latest.pdparams' --output_dir='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_mp20_dft_mag_density.yaml' --checkpoint_path='./output/mattergen_mp20_dft_mag_density/checkpoints/latest.pdparams' --output_dir='result_mattergen_mp20_dft_mag_density/' --mode='by_dataloader'
 
 # alex_mp20 dataset, without conditional constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' --checkpoint_path='./output/mattergen_alex_mp20/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20.yaml' --checkpoint_path='./output/mattergen_alex_mp20/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with dft_band_gap constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_band_gap' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_band_gap' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_band_gap.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_band_gap/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_band_gap/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with chemical system constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' --checkpoint_path='./output/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system.yaml' --checkpoint_path='./output/mattergen_alex_mp20_chemical_system/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_chemical_system/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_mag_density/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_mag_density/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with ml_bulk_modulus constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_ml_bulk_modulus' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' --checkpoint_path='./output/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_ml_bulk_modulus' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_ml_bulk_modulus.yaml' --checkpoint_path='./output/mattergen_alex_mp20_ml_bulk_modulus/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_ml_bulk_modulus/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with space_group constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_space_group' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' --checkpoint_path='./output/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_space_group' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_space_group.yaml' --checkpoint_path='./output/mattergen_alex_mp20_space_group/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_space_group/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with chemical system and energy above hull constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' --checkpoint_path='./output/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_chemical_system_energy_above_hull' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_chemical_system_energy_above_hull.yaml' --checkpoint_path='./output/mattergen_alex_mp20_chemical_system_energy_above_hull/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_chemical_system_energy_above_hull/' --mode='by_dataloader'
 
 # alex_mp20 dataset, with dft_mag_density and hhi_score constraints
-python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' --weights_name='latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density_hhi_score/' --mode='by_dataloader'
-python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' --save_path='result_mattergen_alex_mp20_dft_mag_density_hhi_score/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='mattergen_alex_mp20_dft_mag_density_hhi_score' --weights_name='latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_mag_density_hhi_score/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.yaml' --checkpoint_path='./output/mattergen_alex_mp20_dft_mag_density_hhi_score/checkpoints/latest.pdparams' --output_dir='result_mattergen_alex_mp20_dft_mag_density_hhi_score/' --mode='by_dataloader'
 ```
 
 ---

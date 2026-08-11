@@ -198,13 +198,13 @@ python structure_generation/train.py -c structure_generation/configs/diffcsp/dif
 # Predict crystal structures using a trained model.
 # Mode 1: Use a pre-trained model (downloads automatically).
 # Mode 2: Use a custom configuration file and checkpoint.
-# Results are saved to the folder specified by --save_path (default: result).
+# Results are saved to the folder specified by --output_dir (default: results).
 
 # Mode 1: pre-trained model
-python structure_generation/sample.py --model_name='diffcsp_mp20' --weights_name='latest.pdparams' --save_path='result_diffcsp_mp20/' --chemical_formula='LiMnO2'
+python structure_generation/sample.py --model_name='diffcsp_mp20' --weights_name='latest.pdparams' --output_dir='result_diffcsp_mp20/' --chemical_formula='LiMnO2'
 
 # Mode 2: custom config + checkpoint
-python structure_generation/sample.py --config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' --checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' --save_path='result_diffcsp_mp20/' --chemical_formula='LiMnO2'
+python structure_generation/sample.py --config_path='structure_generation/configs/diffcsp/diffcsp_mp20.yaml' --checkpoint_path='./output/diffcsp_mp20/checkpoints/latest.pdparams' --output_dir='result_diffcsp_mp20/' --chemical_formula='LiMnO2'
 ```
 
 ---

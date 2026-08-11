@@ -15,6 +15,7 @@
 from __future__ import absolute_import
 from __future__ import annotations
 
+import hashlib
 import os
 import os.path as osp
 import pickle
@@ -29,8 +30,8 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle.io import Dataset
-from PIL import Image
 
+from ppmat.datasets.build_image import BuildImage
 from ppmat.datasets.build_matched_name import build_matched_name_samples
 from ppmat.datasets.build_matched_name import build_prediction_samples
 from ppmat.utils import download
@@ -98,6 +99,9 @@ class SFINDataset(Dataset):
         build_samples_cfg (Optional[Dict[str, Any]], optional): Configuration
             for matching noisy and target files by name. Defaults to indexed
             matching.
+        build_image_cfg (Optional[Dict[str, Any]], optional): Configuration for
+            building channel-first NumPy image arrays. Defaults to grayscale
+            ``float32`` image-file loading.
         transforms (Optional[Callable], optional): Preprocess transforms for
             each sample. Defaults to None.
         cache_path (Optional[str], optional): Explicit path for the cache
@@ -113,8 +117,7 @@ class SFINDataset(Dataset):
     )
     md5 = "f96dea9ac1f722d6ca55c7e49c1b3a41"
     bf_url = (
-        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-        "SFIN/sfin_bf.zip"
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/" "SFIN/sfin_bf.zip"
     )
     bf_md5 = "74ec1c1959e162669cc8cbbc8713bda0"
     label_subdirs = ("gt_enhance", "gt_detect")
@@ -126,6 +129,7 @@ class SFINDataset(Dataset):
         target_subdir: Optional[str] = "gt_enhance",
         data_count: Optional[int] = None,
         build_samples_cfg: Optional[Dict[str, Any]] = None,
+        build_image_cfg: Optional[Dict[str, Any]] = None,
         transforms: Optional[Callable] = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
@@ -170,6 +174,20 @@ class SFINDataset(Dataset):
             )
         self.build_samples_cfg = build_samples_cfg
         self.sample_builder = build_matched_name_samples(build_samples_cfg)
+
+        if build_image_cfg is None:
+            build_image_cfg = {
+                "format": "image_file",
+                "mode": "L",
+                "dtype": "float32",
+                "num_cpus": 1,
+            }
+            logger.message(
+                "The build_image_cfg is not set, will use the default "
+                f"configs: {build_image_cfg}"
+            )
+        self.build_image_cfg = build_image_cfg
+        self.image_builder = BuildImage(**build_image_cfg)
 
         self.data_root = osp.join(self.path, self.split)
         self.noisy_root = osp.join(self.data_root, "noisy")
@@ -311,14 +329,43 @@ class SFINDataset(Dataset):
                 f"No complete cached SFIN samples found under {sample_cache_path}."
             )
 
+    @staticmethod
+    def _file_fingerprint(path: str) -> Dict[str, Any]:
+        path = osp.abspath(path)
+        digest = hashlib.sha256()
+        with open(path, "rb") as file_obj:
+            for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+                digest.update(chunk)
+        stat = os.stat(path)
+        return {
+            "path": path,
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "sha256": digest.hexdigest(),
+        }
+
+    def _source_fingerprints(self) -> List[Dict[str, Any]]:
+        paths = set()
+        for sample in self.samples:
+            for key, value in sample.items():
+                if key == "name" or not isinstance(value, (str, os.PathLike)):
+                    continue
+                if key == "noisy":
+                    paths.add(osp.join(self.noisy_root, value))
+                elif key in self.target_roots:
+                    paths.add(osp.join(self.target_roots[key], value))
+        return [self._file_fingerprint(path) for path in sorted(paths)]
+
     def _cache_cfg(self) -> Dict[str, Any]:
         return {
+            "build_image_cfg": self.build_image_cfg,
             "build_samples_cfg": self.build_samples_cfg,
             "path": osp.abspath(self.path),
             "split": self.split,
             "target_subdir": self.target_subdir,
             "sample_names": self.file_names,
             "num_samples": self.num_samples,
+            "source_files": self._source_fingerprints(),
         }
 
     def _is_cache_valid(
@@ -360,7 +407,9 @@ class SFINDataset(Dataset):
         self._clean_cache_dir(sample_cache_path)
         self.save_to_cache(cache_cfg_path, self._cache_cfg())
 
-        logger.message(f"Caching {self.num_samples} SFIN samples to {sample_cache_path}")
+        logger.message(
+            f"Caching {self.num_samples} SFIN samples to {sample_cache_path}"
+        )
         for idx in range(self.num_samples):
             self.save_to_cache(
                 osp.join(sample_cache_path, f"{idx:010d}.pkl"),
@@ -387,7 +436,7 @@ class SFINDataset(Dataset):
 
     def _build_item(self, idx: int) -> Dict[str, Any]:
         data = {
-            "noisy": self._load_gray_image(
+            "noisy": self.image_builder(
                 osp.join(self.noisy_root, self.row_data["noisy"][idx])
             ),
             "name": self.row_data["name"][idx],
@@ -396,15 +445,10 @@ class SFINDataset(Dataset):
 
         if self.target_subdir is not None:
             for label_name, target_root in self.target_roots.items():
-                data[label_name] = self._load_gray_image(
+                data[label_name] = self.image_builder(
                     osp.join(target_root, self.row_data[label_name][idx])
                 )
         return data
-
-    def _load_gray_image(self, file_path: str) -> paddle.Tensor:
-        image = Image.open(file_path).convert("L")
-        image_array = np.asarray(image, dtype=np.float32)
-        return paddle.to_tensor(image_array).unsqueeze(0)
 
     @staticmethod
     def _serialize_item(data: Dict[str, Any]) -> Dict[str, Any]:

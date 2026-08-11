@@ -406,8 +406,8 @@ class SphereNet(paddle.nn.Layer):
 
     def _forward(self, data):
         graph = data["graph"].tensor()
-        z = graph.node_feat["atomic_number"].astype("int64").reshape([-1])
-        pos = graph.node_feat["pos"].astype(paddle.get_default_dtype())
+        z = graph.node_feat["atom_types"].astype("int64").reshape([-1])
+        pos = graph.node_feat["cart_coords"].astype(paddle.get_default_dtype())
         if self.energy_and_force:
             pos = pos.detach()
             pos.stop_gradient = False

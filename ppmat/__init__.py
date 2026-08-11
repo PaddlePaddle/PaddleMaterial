@@ -22,6 +22,7 @@ from ppmat import sampler  # noqa
 from ppmat import schedulers  # noqa
 from ppmat import trainer  # noqa
 from ppmat import utils  # noqa
+from ppmat import vocab  # noqa
 
 __all__ = [
     "calculator",
@@ -29,6 +30,7 @@ __all__ = [
     "trainer",
     "predictor",
     "sampler",
+    "vocab",
 ]
 
 try:
