@@ -5,6 +5,9 @@
 </p>
 
 <p align="center">
+  <a href="https://paddlepaddle.github.io/PaddleMaterials/">
+    <img alt="Homepage" src="https://img.shields.io/badge/Homepage-PaddleMaterials-3B82F6?style=flat">
+  </a>
   <a href="Install.md">
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white">
   </a>

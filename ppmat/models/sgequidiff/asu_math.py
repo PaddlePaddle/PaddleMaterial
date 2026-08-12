@@ -15,25 +15,29 @@
 """
 ASU / Wyckoff math helpers: hull test, ASU wrapping, diffusion score computation.
 """
-from typing import NamedTuple, Optional, Tuple, Union
+from typing import NamedTuple
+from typing import Optional
+from typing import Tuple
+from typing import Union
 
 import numpy as np
 import paddle
-from pymatgen.core import Lattice, Structure
-from scipy.spatial import ConvexHull
+from pymatgen.core import Lattice
+from pymatgen.core import Structure
 
-import ppmat.utils.wyckoff_data as wyckoff_data
-from ppmat.utils.asu_crystal import ASUCrystal
-from ppmat.utils.crystal import MAX_WYCKOFF_POSITIONS
-from ppmat.utils.crystal import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
-from ppmat.utils.scatter import scatter_min_indices
+from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
+from ppmat.models.sgequidiff.wyckoff_data import WyckoffData
+from ppmat.utils.crystal import OFFSET_LIST
+from ppmat.utils.crystal import frac_to_cart_coords
+from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 from ppmat.utils.scatter import scatter
 from ppmat.utils.scatter import scatter_argmax
-from ppmat.utils.crystal import OFFSET_LIST, frac_to_cart_coords, lattice_params_to_matrix_paddle
+from ppmat.utils.scatter import scatter_min_indices
 
 
 def primitive_lattice_matrix_from_conventional_lattice_params(
     space_group_indices: paddle.Tensor,
+    wyckoff_data: "WyckoffData",
     conventional_lattice_lengths: Optional[paddle.Tensor] = None,
     conventional_lattice_angles: Optional[paddle.Tensor] = None,
     conventional_lattice_matrix: Optional[paddle.Tensor] = None,
@@ -52,7 +56,7 @@ def _deduplicate_orbit_coords(
     orbit_sizes: paddle.Tensor,
     return_inverse: bool = False,
 ):
-    orbit_sizes_sqr = (orbit_sizes ** 2).cast(paddle.int64)
+    orbit_sizes_sqr = (orbit_sizes**2).cast(paddle.int64)
     first_idx = paddle.cumsum(orbit_sizes, axis=0) - orbit_sizes
     first_expand = paddle.repeat_interleave(first_idx, orbit_sizes_sqr)
     orbit_expand = paddle.repeat_interleave(orbit_sizes, orbit_sizes_sqr)
@@ -96,7 +100,6 @@ class _SpaceGroupOpsResult(NamedTuple):
     """Named result of space-group operation expansion."""
 
     A_inv_ops: paddle.Tensor
-    t_ops: paddle.Tensor
     inverse_indices: paddle.Tensor
     map_conventional_to_asu_atom: paddle.Tensor
     conventional_wyckoff_indices: paddle.Tensor
@@ -112,6 +115,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     n_coords_per_asu: paddle.Tensor,
     conventional_lattice_matrix: paddle.Tensor,
     space_group_indices: paddle.Tensor,
+    wyckoff_data: "WyckoffData",
     return_cartesian_coords: bool = True,
     return_node_is_original: bool = False,
     map_frac_coords_to_0_1_unit_cell: bool = True,
@@ -128,18 +132,20 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     )
 
     padded_gc_mats = wyckoff_data.padded_general_wyckoff_matrices[space_group_indices]
-    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[space_group_indices]
+    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[
+        space_group_indices
+    ]
     padded_gc_mask = wyckoff_data.padded_general_wyckoff_ops_mask[space_group_indices]
-    general_wyckoff_multiplicity_per_crystal = padded_gc_mask.cast(paddle.int64).sum(axis=1)
+    general_wyckoff_multiplicity_per_crystal = padded_gc_mask.cast(paddle.int64).sum(
+        axis=1
+    )
 
     def _repeat_interleave_along_asu(tensor_B_X):
         if tensor_B_X.dtype == paddle.bool:
             return paddle.repeat_interleave(
                 tensor_B_X.cast(paddle.int32), num_asu_nodes_per_crystal, axis=0
             ).cast(paddle.bool)
-        return paddle.repeat_interleave(
-            tensor_B_X, num_asu_nodes_per_crystal, axis=0
-        )
+        return paddle.repeat_interleave(tensor_B_X, num_asu_nodes_per_crystal, axis=0)
 
     padded_gc_mats = _repeat_interleave_along_asu(padded_gc_mats)
     padded_gc_trans = _repeat_interleave_along_asu(padded_gc_trans)
@@ -151,8 +157,10 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     ].reshape([-1, 1, 3])
 
     # orbit ASU atoms to conventional cell
-    asu_multiplicity_per_asu_atom = general_wyckoff_multiplicity_per_crystal.repeat_interleave(
-        num_asu_nodes_per_crystal, axis=0
+    asu_multiplicity_per_asu_atom = (
+        general_wyckoff_multiplicity_per_crystal.repeat_interleave(
+            num_asu_nodes_per_crystal, axis=0
+        )
     )
     asu_frac_coords_repeated = asu_frac_coords.repeat_interleave(
         asu_multiplicity_per_asu_atom, axis=0
@@ -183,10 +191,10 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
         num_asu_nodes_per_crystal * general_wyckoff_multiplicity_per_crystal, axis=0
     )
 
-    # de-duplicate overlapping atoms
     if return_node_is_original:
         first_asu_atom_index_per_orbit = (
-            paddle.cumsum(asu_multiplicity_per_asu_atom, axis=0) - asu_multiplicity_per_asu_atom
+            paddle.cumsum(asu_multiplicity_per_asu_atom, axis=0)
+            - asu_multiplicity_per_asu_atom
         )
         node_is_original = paddle.zeros(
             [primitive_frac_coords.shape[0]], dtype=paddle.bool
@@ -209,7 +217,6 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     )
     assert num_prim_nodes_per_crystal.shape[0] == batch_size
 
-    # get Wyckoff and element indices from ASU
     map_prim_to_asu = paddle.arange(asu_frac_coords.shape[0]).repeat_interleave(
         asu_multiplicity_per_asu_atom, axis=0
     )[unique_non_overlapping_atom_indices]
@@ -217,10 +224,12 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     primitive_element_indices = asu_element_indices[map_prim_to_asu]
     asu_frac_coords_of_prim_atoms = asu_frac_coords[map_prim_to_asu]
 
-    # compute primitive lattice matrix
-    primitive_lattice_matrix = primitive_lattice_matrix_from_conventional_lattice_params(
-        space_group_indices=space_group_indices,
-        conventional_lattice_matrix=conventional_lattice_matrix,
+    primitive_lattice_matrix = (
+        primitive_lattice_matrix_from_conventional_lattice_params(
+            space_group_indices=space_group_indices,
+            wyckoff_data=wyckoff_data,
+            conventional_lattice_matrix=conventional_lattice_matrix,
+        )
     )
 
     if return_cartesian_coords:
@@ -257,132 +266,20 @@ def atoms_are_in_hull(
     n_bounds = hull_equations.shape[2]
 
     coords_flat = supercell_frac_coords.reshape([-1, 3])
-    hulls_expanded = hull_equations.unsqueeze(1).expand(
-        [n_atoms, n_images, n_shapes, n_bounds, 4]
-    ).reshape([n_atoms * n_images, n_shapes, n_bounds, 4])
+    hulls_expanded = (
+        hull_equations.unsqueeze(1)
+        .expand([n_atoms, n_images, n_shapes, n_bounds, 4])
+        .reshape([n_atoms * n_images, n_shapes, n_bounds, 4])
+    )
 
     normals = hulls_expanded[..., :3]
     offsets = hulls_expanded[..., 3]
 
     # (n*img, 1, 1, 3) @ (n*img, n_shapes, n_bounds, 3) -> sum
-    dots = (
-        coords_flat[:, None, None, :] * normals
-    ).sum(axis=-1)
+    dots = (coords_flat[:, None, None, :] * normals).sum(axis=-1)
 
     inside = (dots < -offsets - epsilon).all(axis=-1)
     return inside.reshape([n_atoms, n_images, n_shapes])
-
-
-_wyckoff_shape_hull_equations_cache = None
-
-
-def get_wyckoff_shape_hull_equations() -> Tuple[paddle.Tensor, paddle.Tensor]:
-    """
-    Compute hull equations for each 0/1/2/3D Wyckoff shape (bounded shapes included).
-    Cached at module level: identical across all model instances.
-    """
-    global _wyckoff_shape_hull_equations_cache
-    if _wyckoff_shape_hull_equations_cache is not None:
-        return _wyckoff_shape_hull_equations_cache
-
-    asu_wyckoff_dict = wyckoff_data.asu_wyckoff_dict
-    max_num_shape_bounds = max(2, 5, wyckoff_data.max_simplicial_hull_facets)
-
-    padded_hull_equations = paddle.full(
-        [
-            NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS,
-            MAX_WYCKOFF_POSITIONS,
-            wyckoff_data.max_shapes_per_wyckoff,
-            max_num_shape_bounds,
-            4,
-        ],
-        0.0,
-        dtype=paddle.float32,
-    )
-    padded_hull_equations[..., 3] = -1.0
-
-    mask_padded_hull_equations = paddle.zeros(
-        [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, wyckoff_data.max_shapes_per_wyckoff],
-        dtype=paddle.bool,
-    )
-
-    for sg_num in range(1, 231):
-        sg_dict = asu_wyckoff_dict[str(sg_num)]
-        for wp_idx, wp_letter in enumerate(sg_dict["ordered_wyckoff_letters"]):
-            wp_dict = sg_dict[wp_letter]
-            dim = int(wp_dict["dim"])
-
-            if dim == 0:
-                shape_idx = 0
-                mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
-                vertex = wp_dict["vertices"].astype("float64").reshape(-1)
-                eps = 1e-4
-                hull_equations = np.zeros((6, 4))
-                hull_equations[:3, :3] = np.eye(3)
-                hull_equations[3:, :3] = -np.eye(3)
-                hull_equations[:3, -1] = -(vertex + eps)
-                hull_equations[3:, -1] = -(-vertex + eps)
-                padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :6] = paddle.to_tensor(
-                    hull_equations, dtype=paddle.float32
-                )
-
-            elif dim == 1:
-                for shape_idx, line_segment in enumerate(wp_dict["vertices"].astype("float64")):
-                    mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
-                    eps = 1e-4
-                    line_dir = line_segment[1] - line_segment[0]
-                    line_dir /= np.linalg.norm(line_dir)
-                    # deterministic seed keeps hull equations reproducible across runs
-                    normal1 = np.cross(line_dir, np.random.RandomState(0).rand(3))[np.newaxis, :]
-                    normal1 /= np.linalg.norm(normal1)
-                    normal2 = np.cross(line_dir, normal1)
-                    normal2 /= np.linalg.norm(normal2)
-                    p1 = eps * normal1
-                    p2 = eps * normal2
-                    bounding_polytope = np.concatenate([
-                        line_segment + (p1 + p2),
-                        line_segment + (p1 - p2),
-                        line_segment + (-p1 + p2),
-                        line_segment + (-p1 - p2),
-                    ], axis=0)
-                    hull = ConvexHull(bounding_polytope)
-                    n_facets = hull.equations.shape[0]
-                    padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
-                        hull.equations, dtype=paddle.float32
-                    )
-
-            elif dim == 2:
-                for shape_idx, polygon_vertices in enumerate(wp_dict["vertices"]):
-                    mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
-                    polygon_vertices = polygon_vertices.astype("float64")
-                    ab = polygon_vertices[1] - polygon_vertices[0]
-                    ac = polygon_vertices[2] - polygon_vertices[0]
-                    normal = np.cross(ab, ac)
-                    normal /= np.linalg.norm(normal)
-                    bounding = np.concatenate([
-                        polygon_vertices + 1e-4 * normal,
-                        polygon_vertices - 1e-4 * normal,
-                    ], axis=0)
-                    hull = ConvexHull(bounding)
-                    n_facets = hull.equations.shape[0]
-                    padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
-                        hull.equations, dtype=paddle.float32
-                    )
-
-            elif dim == 3:
-                shape_idx = 0
-                mask_padded_hull_equations[sg_num - 1, wp_idx, shape_idx] = True
-                hull = ConvexHull(wp_dict["vertices"].astype("float64"))
-                n_facets = hull.equations.shape[0]
-                padded_hull_equations[sg_num - 1, wp_idx, shape_idx, :n_facets] = paddle.to_tensor(
-                    hull.equations, dtype=paddle.float32
-                )
-
-    _wyckoff_shape_hull_equations_cache = (
-        padded_hull_equations,
-        mask_padded_hull_equations,
-    )
-    return _wyckoff_shape_hull_equations_cache
 
 
 @paddle.no_grad()
@@ -393,6 +290,7 @@ def wrap_frac_coords_into_asu(
     num_atoms_per_asu: paddle.Tensor,
     hull_equations: paddle.Tensor,
     hull_equations_mask: paddle.Tensor,
+    wyckoff_data: "WyckoffData",
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """
     Map noisy fractional coordinates back to canonical ASU via group operations.
@@ -409,24 +307,23 @@ def wrap_frac_coords_into_asu(
             [space_group_indices.shape[0], 3, 3], dtype=paddle.float32
         ),
         space_group_indices=space_group_indices,
+        wyckoff_data=wyckoff_data,
         return_cartesian_coords=False,
         get_primitive_cell=False,
     )
     conventional_cell_frac_coords = conversion_result.coords
     map_conventional_to_asu_coord = conversion_result.map_prim_to_asu
 
-    # supercell expansion + inside/outside test
     supercell_frac_translations = paddle.to_tensor(OFFSET_LIST, dtype=paddle.float32)
-    supercell_frac_coords = (
-        conventional_cell_frac_coords.unsqueeze(1) + supercell_frac_translations.unsqueeze(0)
-    )
+    supercell_frac_coords = conventional_cell_frac_coords.unsqueeze(
+        1
+    ) + supercell_frac_translations.unsqueeze(0)
     hull_eq_expanded = hull_equations[map_conventional_to_asu_coord]
     wyckoff_shape_exists = hull_equations_mask[map_conventional_to_asu_coord]
 
-    supercell_in_wyckoff = (
-        atoms_are_in_hull(supercell_frac_coords, hull_eq_expanded, epsilon=-1e-5)
-        & wyckoff_shape_exists.unsqueeze(1)
-    )
+    supercell_in_wyckoff = atoms_are_in_hull(
+        supercell_frac_coords, hull_eq_expanded, epsilon=-1e-5
+    ) & wyckoff_shape_exists.unsqueeze(1)
 
     supercell_in_any_wyckoff = supercell_in_wyckoff.any(axis=-1)
     conv_atom_has_image_in_asu = supercell_in_any_wyckoff.any(axis=-1)
@@ -438,7 +335,6 @@ def wrap_frac_coords_into_asu(
     )
     assert indices_of_conv_atoms_in_asu.shape[0] == n_asu_atoms
 
-    # select representative conventional atom supercell coords for each ASU atom
     supercell_frac_coords_in_asu = supercell_frac_coords[indices_of_conv_atoms_in_asu]
     asu_atom_is_inside = supercell_in_wyckoff[indices_of_conv_atoms_in_asu]
     supercell_in_any_in_asu = supercell_in_any_wyckoff[indices_of_conv_atoms_in_asu]
@@ -452,11 +348,14 @@ def wrap_frac_coords_into_asu(
         atom_indices, lattice_translation_into_asu_idx
     ]
     wrapped_asu_wyckoff_shape_indices = paddle.argmax(
-        asu_atom_is_inside[atom_indices, lattice_translation_into_asu_idx].cast(paddle.float32),
+        asu_atom_is_inside[atom_indices, lattice_translation_into_asu_idx].cast(
+            paddle.float32
+        ),
         axis=-1,
     )
 
     return wrapped_asu_frac_coords, wrapped_asu_wyckoff_shape_indices
+
 
 @paddle.no_grad()
 def p_asu_wrapped_normal(
@@ -466,24 +365,24 @@ def p_asu_wrapped_normal(
     n_lattice_translations: int = 5,
     sigma: Union[float, paddle.Tensor] = 1.0,
 ) -> paddle.Tensor:
+    """Compute isotropic Gaussian sum over equivalent positions in ASU.
+    Without prefactor 1/(2pi*sigma).
     """
-    Compute isotropic Gaussian sum over equivalent positions in ASU. Without prefactor 1/(2pi*sigma).
-    """
-    t = paddle.arange(-n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32)
+    t = paddle.arange(
+        -n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32
+    )
     translations = paddle.stack(
         paddle.meshgrid(t, t, t, indexing="ij"), axis=-1
     ).reshape([-1, 3])
 
-    noisy_x_minus_gt = (
-        noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(1)
-        - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
-    )
+    noisy_x_minus_gt = noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(
+        1
+    ) - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
 
-    diff_sq = (noisy_x_minus_gt ** 2).sum(axis=-1)
-    gaussian = paddle.exp(-diff_sq / (2 * sigma ** 2))
+    diff_sq = (noisy_x_minus_gt**2).sum(axis=-1)
+    gaussian = paddle.exp(-diff_sq / (2 * sigma**2))
     p = gaussian.sum(axis=1)
 
-    # scatter: conventional -> ASU
     p_asu = scatter(
         src=p,
         index=map_conventional_to_asu_frac_coords,
@@ -492,6 +391,7 @@ def p_asu_wrapped_normal(
         reduce="sum",
     )
     return p_asu
+
 
 @paddle.no_grad()
 def d_log_p_asu_wrapped_normal(
@@ -509,17 +409,18 @@ def d_log_p_asu_wrapped_normal(
     else:
         sigma_conv = sigma[map_conventional_to_asu_frac_coords].unsqueeze(1)
 
-    t = paddle.arange(-n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32)
+    t = paddle.arange(
+        -n_lattice_translations, n_lattice_translations + 1, dtype=paddle.float32
+    )
     translations = paddle.stack(
         paddle.meshgrid(t, t, t, indexing="ij"), axis=-1
     ).reshape([-1, 3])
 
-    noisy_x_minus_gt = (
-        noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(1)
-        - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
-    )
+    noisy_x_minus_gt = noisy_frac_coord[map_conventional_to_asu_frac_coords].unsqueeze(
+        1
+    ) - (conventional_frac_coords.unsqueeze(1) + translations.unsqueeze(0))
 
-    diff_sq = (noisy_x_minus_gt ** 2).sum(axis=-1, keepdim=True)
+    diff_sq = (noisy_x_minus_gt**2).sum(axis=-1, keepdim=True)
     gaussian = paddle.exp(-diff_sq / (2 * sigma_conv.unsqueeze(-1) ** 2))
     numerator = -(gaussian * noisy_x_minus_gt).sum(axis=1)
 
@@ -536,14 +437,18 @@ def d_log_p_asu_wrapped_normal(
         reduce="sum",
     ).reshape([n_asu_atoms, 3])
 
-    denominator = p_asu_wrapped_normal(
-        noisy_frac_coord,
-        conventional_frac_coords,
-        map_conventional_to_asu_frac_coords,
-        n_lattice_translations,
-        sigma_conv,
-    ) * sigma ** 2
+    denominator = (
+        p_asu_wrapped_normal(
+            noisy_frac_coord,
+            conventional_frac_coords,
+            map_conventional_to_asu_frac_coords,
+            n_lattice_translations,
+            sigma_conv,
+        )
+        * sigma**2
+    )
     return numerator_asu / denominator.unsqueeze(-1)
+
 
 def get_space_group_ops_and_conventional_atoms(
     frac_coords: paddle.Tensor,
@@ -551,20 +456,29 @@ def get_space_group_ops_and_conventional_atoms(
     wyckoff_indices: paddle.Tensor,
     space_group_indices: paddle.Tensor,
     n_atoms_per_xtal: paddle.Tensor,
+    wyckoff_data: "WyckoffData",
 ) -> tuple:
-    """
-    Get space group operations (mod lattice translation) and de-duplicated conventional cell atoms.
+    """Get space group operations (mod lattice translation) and
+    de-duplicated conventional cell atoms.
     """
     padded_gc_mats = wyckoff_data.padded_general_wyckoff_matrices[space_group_indices]
-    padded_gc_inv_mats = wyckoff_data.padded_inverse_general_wyckoff_matrices[space_group_indices]
-    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[space_group_indices]
+    padded_gc_inv_mats = wyckoff_data.padded_inverse_general_wyckoff_matrices[
+        space_group_indices
+    ]
+    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[
+        space_group_indices
+    ]
     padded_gc_mask = wyckoff_data.padded_general_wyckoff_ops_mask[space_group_indices]
 
     general_wyckoff_multiplicity = padded_gc_mask.cast(paddle.int64).sum(axis=1)
 
     padded_gc_mats = paddle.repeat_interleave(padded_gc_mats, n_atoms_per_xtal, axis=0)
-    padded_gc_inv_mats = paddle.repeat_interleave(padded_gc_inv_mats, n_atoms_per_xtal, axis=0)
-    padded_gc_trans = paddle.repeat_interleave(padded_gc_trans, n_atoms_per_xtal, axis=0)
+    padded_gc_inv_mats = paddle.repeat_interleave(
+        padded_gc_inv_mats, n_atoms_per_xtal, axis=0
+    )
+    padded_gc_trans = paddle.repeat_interleave(
+        padded_gc_trans, n_atoms_per_xtal, axis=0
+    )
     padded_gc_mask = paddle.repeat_interleave(
         padded_gc_mask.cast(paddle.int32), n_atoms_per_xtal, axis=0
     ).cast(paddle.bool)
@@ -575,7 +489,9 @@ def get_space_group_ops_and_conventional_atoms(
         padded_gc_mask.unsqueeze(-1).unsqueeze(-1).expand_as(padded_gc_trans)
     ].reshape([-1, 1, 3])
 
-    mult_per_asu_atom = general_wyckoff_multiplicity.repeat_interleave(n_atoms_per_xtal, axis=0)
+    mult_per_asu_atom = general_wyckoff_multiplicity.repeat_interleave(
+        n_atoms_per_xtal, axis=0
+    )
 
     frac_coords_repeated = frac_coords.repeat_interleave(
         mult_per_asu_atom, axis=0
@@ -586,22 +502,24 @@ def get_space_group_ops_and_conventional_atoms(
     ) % 1.0
     conventional_frac_coords = conventional_frac_coords_with_dupes.reshape([-1, 3])
 
-    # de-duplicate
     unique_non_overlapping_atom_indices, inverse_indices = _deduplicate_orbit_coords(
         conventional_frac_coords, mult_per_asu_atom, return_inverse=True
     )
-    conventional_frac_coords = conventional_frac_coords[unique_non_overlapping_atom_indices]
+    conventional_frac_coords = conventional_frac_coords[
+        unique_non_overlapping_atom_indices
+    ]
 
     map_conv_to_asu_with_dupes = paddle.arange(frac_coords.shape[0]).repeat_interleave(
         mult_per_asu_atom, axis=0
     )
-    map_conventional_to_asu_atom = map_conv_to_asu_with_dupes[unique_non_overlapping_atom_indices]
+    map_conventional_to_asu_atom = map_conv_to_asu_with_dupes[
+        unique_non_overlapping_atom_indices
+    ]
     conventional_wyckoff_indices = wyckoff_indices[map_conventional_to_asu_atom]
     conventional_element_indices = element_indices[map_conventional_to_asu_atom]
 
     return _SpaceGroupOpsResult(
         A_inv_ops=stacked_inv_mats,
-        t_ops=stacked_trans,
         inverse_indices=inverse_indices,
         map_conventional_to_asu_atom=map_conv_to_asu_with_dupes,
         conventional_wyckoff_indices=conventional_wyckoff_indices,
@@ -610,12 +528,14 @@ def get_space_group_ops_and_conventional_atoms(
         unique_non_overlapping_atom_indices=unique_non_overlapping_atom_indices,
     )
 
+
 def get_wyckoff_projected_gaussian_noise(
     space_group_indices: paddle.Tensor,
     wyckoff_indices: paddle.Tensor,
     wyckoff_shape_indices: paddle.Tensor,
     n_atoms_per_xtal: paddle.Tensor,
     sigma: Union[float, paddle.Tensor],
+    wyckoff_data: "WyckoffData",
 ) -> paddle.Tensor:
     """
     Generate Gaussian noise projected onto Wyckoff subspace.
@@ -635,6 +555,7 @@ def get_wyckoff_projected_gaussian_noise(
 def get_orbit_from_single_asu_position(
     asu_frac_coord: paddle.Tensor,
     space_group_number: int,
+    wyckoff_data: "WyckoffData",
 ) -> paddle.Tensor:
     """Expand one ASU fractional coordinate into its full Wyckoff orbit.
 
@@ -649,7 +570,9 @@ def get_orbit_from_single_asu_position(
     """
     sg_idx = space_group_number - 1
     rotations = wyckoff_data.padded_general_wyckoff_matrices[sg_idx]
-    translations = wyckoff_data.padded_general_wyckoff_translations[sg_idx].reshape([-1, 3])
+    translations = wyckoff_data.padded_general_wyckoff_translations[sg_idx].reshape(
+        [-1, 3]
+    )
     ops_mask = wyckoff_data.padded_general_wyckoff_ops_mask[sg_idx]
     rotations = rotations[ops_mask]
     translations = translations[ops_mask]
@@ -671,7 +594,9 @@ def get_orbit_from_single_asu_position(
     return orbit[unique_atom_idxs]
 
 
-def asu_to_pymatgen_structure(asu: ASUCrystal) -> Structure:
+def asu_to_pymatgen_structure(
+    asu: ASUCrystal, wyckoff_data: "WyckoffData"
+) -> Structure:
     """Expand an ASU crystal into a full conventional-cell pymatgen Structure."""
     lengths = asu.conventional_lattice_lengths.reshape([1, 3])
     angles = asu.conventional_lattice_angles.reshape([1, 3])
@@ -680,12 +605,11 @@ def asu_to_pymatgen_structure(asu: ASUCrystal) -> Structure:
 
     conventional_frac_coords = []
     conventional_atomic_numbers = []
-    for frac_coord, atom_type in zip(
-        asu.conventional_frac_coords, asu.element_indices
-    ):
+    for frac_coord, atom_type in zip(asu.conventional_frac_coords, asu.element_indices):
         orbit = get_orbit_from_single_asu_position(
             frac_coord,
             space_group_number=int(asu.space_group_number),
+            wyckoff_data=wyckoff_data,
         )
         conventional_frac_coords.append(orbit.numpy())
         conventional_atomic_numbers.extend([int(atom_type) + 1] * orbit.shape[0])

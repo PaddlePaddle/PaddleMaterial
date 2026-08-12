@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import itertools
 import warnings
 from collections import Counter
@@ -7,7 +21,6 @@ import paddle
 import smact
 from matminer.featurizers.composition.composite import ElementProperty
 from matminer.featurizers.site.fingerprint import CrystalNNFingerprint
-from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Element
 from pymatgen.core.composition import Composition
 from pymatgen.core.lattice import Lattice
@@ -207,13 +220,21 @@ def get_crys_from_cif(cif, polar_decompose=False):
     return Crystal(crys_array_dict)
 
 
-class StandardScaler:
-    """Standardize features along axis 0 (fit/transform/inverse_transform)."""
+class FingerprintScaler:
+    """Z-score scaler for fingerprint features used by metric computation.
 
-    def __init__(self, means=None, stds=None, replace_nan_token=None):
+    Numpy implementation; intentionally separate from
+    ``mattergen.property_embeddings.StandardScalerPaddle`` (a paddle.nn.Layer
+    used during training). Migrated from CDVAE/DiffCSP common utils.
+
+    Handles NaN means/stds and zero-std columns: missing values fall back to
+    0 / 1 after standardization, and constant columns keep the raw value.
+    """
+
+    def __init__(self, means=None, stds=None, nan_replacement=None):
         self.means = means
         self.stds = stds
-        self.replace_nan_token = replace_nan_token
+        self.nan_replacement = nan_replacement
 
     def fit(self, X):
         X = np.array(X).astype(float)
@@ -227,18 +248,18 @@ class StandardScaler:
     def transform(self, X):
         X = np.array(X).astype(float)
         transformed = (X - self.means) / self.stds
-        if self.replace_nan_token is not None:
+        if self.nan_replacement is not None:
             transformed = np.where(
-                np.isnan(transformed), self.replace_nan_token, transformed
+                np.isnan(transformed), self.nan_replacement, transformed
             )
         return transformed
 
     def inverse_transform(self, X):
         X = np.array(X).astype(float)
         transformed = X * self.stds + self.means
-        if self.replace_nan_token is not None:
+        if self.nan_replacement is not None:
             transformed = np.where(
-                np.isnan(transformed), self.replace_nan_token, transformed
+                np.isnan(transformed), self.nan_replacement, transformed
             )
         return transformed
 
@@ -329,7 +350,7 @@ def compute_cov(crys, gt_crys, struc_cutoff, comp_cutoff, num_gen_crystals=None)
     struc_fps, comp_fps = filter_fingerprints(struc_fps, comp_fps)
     gt_struc_fps, gt_comp_fps = filter_fingerprints(gt_struc_fps, gt_comp_fps)
 
-    scaler = StandardScaler(replace_nan_token=0.0).fit(gt_comp_fps)
+    scaler = FingerprintScaler(nan_replacement=0.0).fit(gt_comp_fps)
     comp_fps = scaler.transform(comp_fps)
     gt_comp_fps = scaler.transform(gt_comp_fps)
 

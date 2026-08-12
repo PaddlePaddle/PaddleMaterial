@@ -17,35 +17,32 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distribution import Categorical
 
-from ppmat.models.sgequidiff.diffusion_model import (
-    EquivariantDiffusionModel,
-    EquivariantDiffusionModelConfig,
-)
-from ppmat.utils.asu_crystal import ASUCrystal
-from ppmat.utils.asu_data import lattice_parameter_ranges
-from ppmat.utils.asu_math import asu_to_pymatgen_structure
-from ppmat.utils.crystal import chemical_symbols
-from ppmat.models.sgequidiff.drift_modules import set_global_embedding_tools
-from ppmat.models.sgequidiff.lattice_sampler import (
-    LatticeSamplerConfig,
-    TelescopingDiscreteLatticeSampler,
-)
-from ppmat.models.sgequidiff.drift_modules import (
-    GNNConfig,
-    CSPNetConfig,
-)
-from ppmat.models.sgequidiff.wyckoff_transformer import (
-    WyckoffElementTransformer,
-    WyckoffElementTransformerConfig,
-)
+from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
+from ppmat.models.sgequidiff.asu_math import asu_to_pymatgen_structure
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
+from ppmat.models.sgequidiff.drift_modules import CSPNetConfig
+from ppmat.models.sgequidiff.drift_modules import GNNConfig
+from ppmat.models.sgequidiff.lattice_sampler import LatticeSamplerConfig
+from ppmat.models.sgequidiff.lattice_sampler import TelescopingDiscreteLatticeSampler
+from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
+from ppmat.models.sgequidiff.vocabs import build_embedding_tools
+from ppmat.models.sgequidiff.wyckoff_data import build_wyckoff_data
+from ppmat.models.sgequidiff.wyckoff_transformer import WyckoffElementTransformer
+from ppmat.models.sgequidiff.wyckoff_transformer import WyckoffElementTransformerConfig
 from ppmat.utils import logger
+from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
+from ppmat.utils.asu_dataset_meta import chemical_symbols
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
@@ -111,13 +108,29 @@ class SGEQuiDiff(nn.Layer):
         temperature: Sampling temperature.
         num_timesteps: Number of diffusion timesteps.
         noise_scheduler_num_monte_carlo_samples: MC samples for sigma norms.
-        num_wn_lattice_translations: Lattice translations for ASU-wrapped noise.
+        num_lattice_translations: Lattice-translation neighbors for the
+            wrapped-normal noise model.
+        sigma_min: Lower bound of the VE-SDE noise schedule.
+        sigma_max: Upper bound of the VE-SDE noise schedule.
         model_type: Coordinate drift backbone type (``"gnn"``/``"mlp"``/``"cspnet"``).
         time_emb_dim: Time embedding dimension.
         num_plane_wave_freqs: Number of plane wave frequencies.
         gnn_config: GNN backbone config (dict or ``GNNConfig``).
         cspnet_config: CSPNet backbone config (dict or ``CSPNetConfig``).
         noise_scheduler_cfg: Noise scheduler config dict.
+        lattice_length_noise: Noise added to lattice lengths during training.
+        lattice_angle_noise: Noise added to lattice angles during training.
+        space_group_grad_weight: Loss weight for the space-group log-prob.
+        lattice_grad_weight: Loss weight for the lattice log-prob.
+        wyckoff_element_grad_weight: Loss weight for the wyckoff/element log-prob.
+        frac_coord_grad_weight: Loss weight for the coordinate score matching.
+        lattice_sampler_config: Overrides for ``LatticeSamplerConfig`` fields.
+            Keys must be valid field names of ``LatticeSamplerConfig``; unknown
+            keys raise a ``TypeError``. ``None`` uses the dataclass defaults,
+            which match the released checkpoint structure.
+        wyckoff_element_transformer_config: Overrides for
+            ``WyckoffElementTransformerConfig`` fields, same semantics as
+            ``lattice_sampler_config``.
     """
 
     def __init__(
@@ -127,7 +140,9 @@ class SGEQuiDiff(nn.Layer):
         temperature: float = 1.0,
         num_timesteps: int = 1000,
         noise_scheduler_num_monte_carlo_samples: int = 2500,
-        num_wn_lattice_translations: int = 3,
+        num_lattice_translations: int = 3,
+        sigma_min: float = 0.002,
+        sigma_max: float = 0.5,
         model_type: str = "gnn",
         time_emb_dim: int = 128,
         num_plane_wave_freqs: int = 96,
@@ -140,7 +155,8 @@ class SGEQuiDiff(nn.Layer):
         lattice_grad_weight: Optional[float] = 1.0,
         wyckoff_element_grad_weight: Optional[float] = 1.0,
         frac_coord_grad_weight: Optional[float] = 1.0,
-        **kwargs,
+        lattice_sampler_config: Optional[Dict[str, Any]] = None,
+        wyckoff_element_transformer_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.dataset_name = dataset_name
@@ -152,18 +168,7 @@ class SGEQuiDiff(nn.Layer):
         )
 
         if gnn_config is None:
-            gnn_cfg = GNNConfig(
-                num_plane_wave_freqs=96,
-                num_cartesian_distance_gaussians=96,
-                edge_hidden_dim=128,
-                atom_hidden_dim=256,
-                use_vpa=True,
-                use_graph_norm=True,
-                num_msg_pass_steps=5,
-                cutoff=10.0,
-                use_frac_coords_in_node_emb=True,
-                dataset_name=dataset_name,
-            )
+            gnn_cfg = GNNConfig(dataset_name=dataset_name)
         elif isinstance(gnn_config, dict):
             gnn_cfg = GNNConfig(**gnn_config)
         else:
@@ -180,36 +185,28 @@ class SGEQuiDiff(nn.Layer):
             model_type=model_type,
             num_timesteps=num_timesteps,
             noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
-            num_wn_lattice_translations=num_wn_lattice_translations,
-            sigma_min=0.002,
-            sigma_max=0.5,
+            num_lattice_translations=num_lattice_translations,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
             time_emb_dim=time_emb_dim,
             num_plane_wave_freqs=num_plane_wave_freqs,
             gnn_config=gnn_cfg,
             cspnet_config=cspnet_cfg,
             noise_scheduler_cfg=noise_scheduler_cfg,
         )
-        lattice_cfg = LatticeSamplerConfig(
-            input_dimension=128,
-            hidden_dimension=256,
-            min_lattice_length=lr["min_lattice_length"],
-            max_lattice_length=lr["max_lattice_length"],
-            min_lattice_angle=lr["min_lattice_angle"],
-            max_lattice_angle=lr["max_lattice_angle"],
-            lattice_param_dim=32,
-            n_emb_layers=2,
-            lattice_length_bin_embedder_fourier_scale=2.0,
-            lattice_angle_bin_embedder_fourier_scale=1.0,
-            lattice_length_embedder_fourier_scale=5.0,
-            lattice_angle_embedder_fourier_scale=1.0,
-        )
-        we_cfg = WyckoffElementTransformerConfig(
-            hidden_dim=256,
-            dataset_name=dataset_name,
-            num_heads=2,
-            num_hidden_layers=4,
-            dropout_rate=0.1,
-        )
+        lattice_kwargs = {
+            "min_lattice_length": lr["min_lattice_length"],
+            "max_lattice_length": lr["max_lattice_length"],
+            "min_lattice_angle": lr["min_lattice_angle"],
+            "max_lattice_angle": lr["max_lattice_angle"],
+        }
+        if lattice_sampler_config is not None:
+            lattice_kwargs.update(lattice_sampler_config)
+        lattice_cfg = LatticeSamplerConfig(**lattice_kwargs)
+        we_kwargs = {"dataset_name": dataset_name}
+        if wyckoff_element_transformer_config is not None:
+            we_kwargs.update(wyckoff_element_transformer_config)
+        we_cfg = WyckoffElementTransformerConfig(**we_kwargs)
         sampler_cfg = SGEQuiDiffConfig(
             diffusion_model_config=diff_cfg,
             lattice_model_config=lattice_cfg,
@@ -223,21 +220,24 @@ class SGEQuiDiff(nn.Layer):
         )
         self.config = sampler_cfg
 
-        set_global_embedding_tools(
-            element_embedding_json_path="cgcnn_atom_init.json",
-            space_group_embedding_json_path="init_tokens/space_group_features/space_group_embeddings_62dim.json",
-            wyckoff_embedding_json_path="init_tokens/wyckoff_features/wyckoff_embeddings_231dim.json",
-        )
+        # Build static resources explicitly (no global singletons).
+        self.wyckoff_data = build_wyckoff_data()
+        self.embedding_tools = build_embedding_tools()
 
         self.atom_coord_diffusion_model = EquivariantDiffusionModel(
-            **dataclasses.asdict(sampler_cfg.diffusion_model_config)
+            sampler_cfg.diffusion_model_config,
+            wyckoff_data=self.wyckoff_data,
+            embedding_tools=self.embedding_tools,
         )
         self.space_group_sampler = SpaceGroupSampler()
         self.lattice_sampler = TelescopingDiscreteLatticeSampler(
             sampler_cfg.lattice_model_config,
+            embedding_tools=self.embedding_tools,
         )
         self.wyckoff_and_element_sampler = WyckoffElementTransformer(
             sampler_cfg.transformer_config,
+            wyckoff_data=self.wyckoff_data,
+            embedding_tools=self.embedding_tools,
         )
 
         logger.info(
@@ -260,18 +260,16 @@ class SGEQuiDiff(nn.Layer):
         space_group_indices = _as_tensor(batch_data["space_group_indices"])
         lattice_lengths = _as_tensor(batch_data["lattice_lengths"], paddle.float32)
         lattice_angles = _as_tensor(batch_data["lattice_angles"], paddle.float32)
-        lattice_matrices = _as_tensor(
-            batch_data.get(
-                "lattice_matrices",
-                lattice_params_to_matrix_paddle(lattice_lengths, lattice_angles),
-            ),
-            paddle.float32,
-        )
+        if "lattice_matrices" in batch_data:
+            lattice_matrices = batch_data["lattice_matrices"]
+        else:
+            lattice_matrices = lattice_params_to_matrix_paddle(
+                lattice_lengths, lattice_angles
+            )
+        lattice_matrices = _as_tensor(lattice_matrices, paddle.float32)
         element_indices = _as_tensor(batch_data["element_indices"], paddle.int64)
         wyckoff_indices = _as_tensor(batch_data["wyckoff_indices"], paddle.int64)
-        n_asu_atoms_per_xtal = _as_tensor(
-            batch_data["n_atoms_per_asu"], paddle.int64
-        )
+        n_asu_atoms_per_xtal = _as_tensor(batch_data["n_atoms_per_asu"], paddle.int64)
         wyckoff_shape_indices = _as_tensor(
             batch_data["wyckoff_shape_indices"], paddle.int64
         )
@@ -280,10 +278,11 @@ class SGEQuiDiff(nn.Layer):
         if self.training and (
             self.config.lattice_length_noise > 0 or self.config.lattice_angle_noise > 0
         ):
-            noisy_lattice_lengths, noisy_lattice_angles = (
-                self.get_noisy_lattice_lengths_and_angles(
-                    lattice_lengths, lattice_angles, space_group_indices
-                )
+            (
+                noisy_lattice_lengths,
+                noisy_lattice_angles,
+            ) = self.get_noisy_lattice_lengths_and_angles(
+                lattice_lengths, lattice_angles, space_group_indices
             )
         else:
             noisy_lattice_lengths = lattice_lengths
@@ -297,15 +296,17 @@ class SGEQuiDiff(nn.Layer):
             noisy_lattice_lengths,
             noisy_lattice_angles,
         )
-        elements_log_prob, wyckoffs_log_prob, termination_log_prob = (
-            self.element_and_wyckoff_log_probs(
-                element_indices,
-                wyckoff_indices,
-                n_asu_atoms_per_xtal,
-                noisy_lattice_lengths,
-                noisy_lattice_angles,
-                space_group_indices,
-            )
+        (
+            elements_log_prob,
+            wyckoffs_log_prob,
+            termination_log_prob,
+        ) = self.element_and_wyckoff_log_probs(
+            element_indices,
+            wyckoff_indices,
+            n_asu_atoms_per_xtal,
+            noisy_lattice_lengths,
+            noisy_lattice_angles,
+            space_group_indices,
         )
         score_matching_loss = self.atom_coord_diffusion_model.compute_loss(
             asu_frac_coords,
@@ -359,7 +360,9 @@ class SGEQuiDiff(nn.Layer):
         )
         return nll + score_matching_loss, artifacts
 
-    def space_group_log_probs(self, space_group_indices: paddle.Tensor) -> paddle.Tensor:
+    def space_group_log_probs(
+        self, space_group_indices: paddle.Tensor
+    ) -> paddle.Tensor:
         """Log probabilities of the given space group indices."""
         return self.space_group_sampler.log_prob(space_group_indices)
 
@@ -371,7 +374,7 @@ class SGEQuiDiff(nn.Layer):
         noisy_lattice_lengths: paddle.Tensor = None,
         noisy_lattice_angles: paddle.Tensor = None,
     ) -> paddle.Tensor:
-        log_probs, _ = self.lattice_sampler.log_prob(
+        log_probs = self.lattice_sampler.log_prob(
             lattice_lengths,
             lattice_angles,
             space_group_indices,
@@ -404,14 +407,22 @@ class SGEQuiDiff(nn.Layer):
         lattice_angles: paddle.Tensor,
         space_group_indices: paddle.Tensor,
     ):
-        """Rejection-sample noisy lattice parameters under Bravais constraints."""
+        """Rejection-sample noisy lattice parameters under Bravais constraints.
+
+        NOTE: only invoked when ``lattice_length_noise`` or ``lattice_angle_noise``
+        is > 0 (see ``compute_loss``); the default config (0.0) skips this path.
+        The while-loop checks ``.item()`` every iteration, forcing a GPU sync;
+        this matches the upstream algorithm and is kept for parity.
+        """
         batch_size = space_group_indices.shape[0]
         lattice_sampler = self.lattice_sampler
         MIN_LATTICE_LENGTH = lattice_sampler.MIN_LATTICE_LENGTH
         MAX_LATTICE_LENGTH = lattice_sampler.MAX_LATTICE_LENGTH
         MIN_LATTICE_ANGLE = lattice_sampler.MIN_LATTICE_ANGLE
         MAX_LATTICE_ANGLE = lattice_sampler.MAX_LATTICE_ANGLE
-        length_transforms = lattice_sampler.bravais_length_transforms[space_group_indices]
+        length_transforms = lattice_sampler.bravais_length_transforms[
+            space_group_indices
+        ]
         angle_transforms = lattice_sampler.bravais_angle_transforms[space_group_indices]
         angle_offsets = lattice_sampler.bravais_angle_offsets[space_group_indices]
         lattice_angle_bounds = paddle.to_tensor(
@@ -435,12 +446,15 @@ class SGEQuiDiff(nn.Layer):
         accepted_noisy_lattice_parameters = paddle.full(
             [batch_size, 6], fill_value=-1.0, dtype=paddle.float32
         )
+        # NOTE: .item() per iteration forces a GPU->CPU sync; only active when
+        # lattice noise > 0, inherited from the upstream rejection-sampling loop.
         while not paddle.all(lattice_param_is_done).item():
             iteration += 1
             if iteration > max_iters:
                 raise RuntimeError(
                     "Failed to sample valid noisy lattice parameters after "
-                    f"{max_iters} iterations: {int((~lattice_param_is_done).all(axis=-1).sum())} "
+                    f"{max_iters} iterations: "
+                    f"{int((~lattice_param_is_done).all(axis=-1).sum())} "
                     f"of {batch_size} lattices still incomplete"
                 )
             lattice_is_done = paddle.all(lattice_param_is_done, axis=-1)
@@ -448,7 +462,8 @@ class SGEQuiDiff(nn.Layer):
             unfinished_angles = lattice_angles[~lattice_is_done]
             num_lattices_left_to_noise = unfinished_angles.shape[0]
             noise = lattice_noise_magnitude[None, None, :] * (
-                2.0 * paddle.rand([num_lattices_left_to_noise, num_samples_per_iter, 6]) - 1.0
+                2.0 * paddle.rand([num_lattices_left_to_noise, num_samples_per_iter, 6])
+                - 1.0
             )
             noisy_lengths = noise[:, :, :3] + unfinished_lengths[:, None, :]
             noisy_angles = noise[:, :, 3:] + unfinished_angles[:, None, :]
@@ -462,18 +477,19 @@ class SGEQuiDiff(nn.Layer):
             lengths_are_valid = (noisy_lengths >= MIN_LATTICE_LENGTH) & (
                 noisy_lengths <= MAX_LATTICE_LENGTH
             )
-            min_gamma_angle, max_gamma_angle = (
-                lattice_sampler.get_valid_gamma_angle_interval(
-                    alpha_and_beta_angles=noisy_angles[:, :, :2].reshape([-1, 2])
-                )
+            (
+                min_gamma_angle,
+                max_gamma_angle,
+            ) = lattice_sampler.get_valid_gamma_angle_interval(
+                alpha_and_beta_angles=noisy_angles[:, :, :2].reshape([-1, 2])
             )
             min_gamma_angle = min_gamma_angle + 0.01
             max_gamma_angle = max_gamma_angle - 0.01
             min_allowed_angles = paddle.concat(
                 [
-                    lattice_angle_bounds[0].reshape([1, 1, 1]).expand(
-                        [num_lattices_left_to_noise, num_samples_per_iter, 2]
-                    ),
+                    lattice_angle_bounds[0]
+                    .reshape([1, 1, 1])
+                    .expand([num_lattices_left_to_noise, num_samples_per_iter, 2]),
                     min_gamma_angle.reshape(
                         [num_lattices_left_to_noise, num_samples_per_iter, 1]
                     ),
@@ -482,9 +498,9 @@ class SGEQuiDiff(nn.Layer):
             )
             max_allowed_angles = paddle.concat(
                 [
-                    lattice_angle_bounds[1].reshape([1, 1, 1]).expand(
-                        [num_lattices_left_to_noise, num_samples_per_iter, 2]
-                    ),
+                    lattice_angle_bounds[1]
+                    .reshape([1, 1, 1])
+                    .expand([num_lattices_left_to_noise, num_samples_per_iter, 2]),
                     max_gamma_angle.reshape(
                         [num_lattices_left_to_noise, num_samples_per_iter, 1]
                     ),
@@ -516,9 +532,7 @@ class SGEQuiDiff(nn.Layer):
                     first_accepted_length_idx = paddle.argmax(
                         sample_is_valid.cast("float32"), axis=-1
                     )[accept_sample_mask][:, None]
-                    accepted_noisy_lattice_parameters[
-                        update_lattice_params_mask
-                    ] = (
+                    accepted_noisy_lattice_parameters[update_lattice_params_mask] = (
                         noisy_lengths[:, :, i][accept_sample_mask]
                         .take_along_axis(first_accepted_length_idx, axis=1)
                         .reshape([-1])
@@ -535,7 +549,7 @@ class SGEQuiDiff(nn.Layer):
             )
             update_lattice_angles_mask[
                 ~lattice_is_done[:, None] & update_lattice_angles_mask
-            ] = accept_sample_mask[:, None].tile([1, 3]).reshape([-1])
+            ] = (accept_sample_mask[:, None].tile([1, 3]).reshape([-1]))
             first_accepted_angles_idx = paddle.argmax(
                 sample_is_valid.cast("float32"), axis=-1
             )[accept_sample_mask]
@@ -544,7 +558,9 @@ class SGEQuiDiff(nn.Layer):
                 update_lattice_angles_mask
             ] = noisy_angles[accept_sample_mask][
                 _lattice_idx, first_accepted_angles_idx
-            ].reshape([-1])
+            ].reshape(
+                [-1]
+            )
             lattice_param_is_done[update_lattice_angles_mask] = True
         noisy_lattice_lengths = accepted_noisy_lattice_parameters[:, :3]
         noisy_lattice_angles = accepted_noisy_lattice_parameters[:, 3:]
@@ -624,22 +640,26 @@ class SGEQuiDiff(nn.Layer):
         """Full crystal sampling pipeline."""
 
         if space_group_numbers is None:
-            space_group_indices, _ = (
-                self.sample_and_log_prob_space_group(batch_size, temperature)
+            space_group_indices, _ = self.sample_and_log_prob_space_group(
+                batch_size, temperature
             )
         else:
             assert space_group_numbers.shape[0] == batch_size
             space_group_indices = space_group_numbers - 1
 
         if lattice_parameters is None:
-            lattice_lengths, lattice_angles, _ = (
-                self.sample_and_log_prob_lattice_parameters(space_group_indices)
-            )
+            (
+                lattice_lengths,
+                lattice_angles,
+                _,
+            ) = self.sample_and_log_prob_lattice_parameters(space_group_indices)
         else:
             lattice_lengths = lattice_parameters[:, :3]
             lattice_angles = lattice_parameters[:, 3:]
 
-        lattice_matrices = lattice_params_to_matrix_paddle(lattice_lengths, lattice_angles)
+        lattice_matrices = lattice_params_to_matrix_paddle(
+            lattice_lengths, lattice_angles
+        )
 
         if wyckoff_element_data is None:
             (
@@ -683,9 +703,15 @@ class SGEQuiDiff(nn.Layer):
                     space_group_number=1 + space_group_indices[i],
                     conventional_lattice_lengths=lattice_lengths[i],
                     conventional_lattice_angles=lattice_angles[i],
-                    element_indices=element_indices[atom_offsets[i]:atom_offsets[i + 1]],
-                    wyckoff_indices=wyckoff_indices[atom_offsets[i]:atom_offsets[i + 1]],
-                    conventional_frac_coords=frac_coords[atom_offsets[i]:atom_offsets[i + 1]],
+                    element_indices=element_indices[
+                        atom_offsets[i] : atom_offsets[i + 1]
+                    ],
+                    wyckoff_indices=wyckoff_indices[
+                        atom_offsets[i] : atom_offsets[i + 1]
+                    ],
+                    conventional_frac_coords=frac_coords[
+                        atom_offsets[i] : atom_offsets[i + 1]
+                    ],
                 )
             )
         return asu_crystals
@@ -750,11 +776,18 @@ class SGEQuiDiff(nn.Layer):
             - ``"lengths"``: list[float]  (a, b, c in Angstrom)
             - ``"angles"``: list[float]   (alpha, beta, gamma in degrees)
         """
-        structure_array = batch_data["structure_array"]
-        num_atoms_tensor = structure_array["num_atoms"]
+        structure_array = batch_data.get("structure_array")
+        if structure_array is not None:
+            num_atoms_tensor = structure_array["num_atoms"]
+        else:
+            # sample_by_dataloader passes an ASU dataset batch without
+            # structure_array; SGEQuiDiff is unconditional so the number of
+            # generated crystals is simply the batch size.
+            num_atoms_tensor = paddle.ones(
+                [batch_data["n_atoms_per_asu"].shape[0]], dtype=paddle.int64
+            )
         batch_size = num_atoms_tensor.shape[0]
 
-        # SGEQuiDiff is unconditional: generate from noise
         crystals = self.sample_crystal(
             batch_size=batch_size,
             diffusion_snr=self.diffusion_snr,
@@ -767,9 +800,9 @@ class SGEQuiDiff(nn.Layer):
         for crystal in crystals:
             valid_mask = []
             for i, idx in enumerate(crystal.element_indices.tolist()):
-                if 0 <= idx < len(chemical_symbols):
-                    elem = chemical_symbols[idx]
-                    if elem not in ("X", "X0+", ""):
+                if 0 <= idx < ELEMENT_ENCODING_SIZE:
+                    elem = chemical_symbols[idx + 1]
+                    if elem != "X":
                         valid_mask.append(i)
 
             if len(valid_mask) == 0:
@@ -785,7 +818,7 @@ class SGEQuiDiff(nn.Layer):
                 wyckoff_indices=crystal.wyckoff_indices[mask],
                 conventional_frac_coords=crystal.conventional_frac_coords[mask],
             )
-            structure = asu_to_pymatgen_structure(filtered_crystal)
+            structure = asu_to_pymatgen_structure(filtered_crystal, self.wyckoff_data)
 
             result.append(
                 {
@@ -798,4 +831,3 @@ class SGEQuiDiff(nn.Layer):
             )
 
         return {"result": result}
-

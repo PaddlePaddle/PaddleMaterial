@@ -16,108 +16,12 @@ from typing import Tuple
 
 import numpy as np
 import paddle
-from pymatgen.core import Element
+from pymatgen.core.periodic_table import Element
 
 from ppmat.utils import paddle_aux  # noqa: F401
 from ppmat.utils.paddle_aux import dim2perm
-
-# Element-encoding table size. Not the periodic-table total (118); covers the
-# elements in the supported datasets (max Z=94) with margin. Index 0 is a placeholder.
-ELEMENT_ENCODING_SIZE: int = 98
-
-# Number of crystallographic space groups, indexed 1..230.
-NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS: int = 230
-
-# Max Wyckoff positions per space group; bound for tensor padding.
-MAX_WYCKOFF_POSITIONS: int = 27
-
-# Symbol table for 0-indexed atomic numbers in [0, ELEMENT_ENCODING_SIZE);
-# built from pymatgen to avoid a hand-written table.
-chemical_symbols = ["X"] + [
-    Element.from_Z(atomic_number).symbol
-    for atomic_number in range(1, ELEMENT_ENCODING_SIZE + 1)
-]
-assert len(chemical_symbols) == ELEMENT_ENCODING_SIZE + 1
-
-# Space group number (1-230) -> crystal system / Bravais lattice symbol.
-spgroup_data = {
-    1: "aP", 2: "aP",
-    3: "mP", 4: "mP", 5: "mC", 6: "mP", 7: "mP", 8: "mC", 9: "mC",
-    10: "mP", 11: "mP", 12: "mC", 13: "mP", 14: "mP", 15: "mC",
-    16: "oP", 17: "oP", 18: "oP", 19: "oP", 20: "oC", 21: "oC",
-    22: "oF", 23: "oI", 24: "oI",
-    25: "oP", 26: "oP", 27: "oP", 28: "oP", 29: "oP",
-    30: "oP", 31: "oP", 32: "oP", 33: "oP", 34: "oP",
-    35: "oC", 36: "oC", 37: "oC",
-    38: "oA", 39: "oA", 40: "oA", 41: "oA",
-    42: "oF", 43: "oF",
-    44: "oI", 45: "oI", 46: "oI",
-    47: "oP", 48: "oP", 49: "oP", 50: "oP", 51: "oP",
-    52: "oP", 53: "oP", 54: "oP", 55: "oP",
-    56: "oP", 57: "oP", 58: "oP", 59: "oP", 60: "oP", 61: "oP", 62: "oP",
-    63: "oC", 64: "oC", 65: "oC", 66: "oC", 67: "oC", 68: "oC",
-    69: "oF", 70: "oF",
-    71: "oI", 72: "oI", 73: "oI", 74: "oI",
-    75: "tP", 76: "tP", 77: "tP", 78: "tP",
-    79: "tI", 80: "tI",
-    81: "tP",
-    82: "tI",
-    83: "tP", 84: "tP", 85: "tP", 86: "tP",
-    87: "tI", 88: "tI",
-    89: "tP", 90: "tP", 91: "tP", 92: "tP",
-    93: "tP", 94: "tP", 95: "tP", 96: "tP",
-    97: "tI", 98: "tI",
-    99: "tP", 100: "tP", 101: "tP", 102: "tP",
-    103: "tP", 104: "tP", 105: "tP", 106: "tP",
-    107: "tI", 108: "tI", 109: "tI", 110: "tI",
-    111: "tP", 112: "tP", 113: "tP", 114: "tP",
-    115: "tP", 116: "tP", 117: "tP", 118: "tP",
-    119: "tI", 120: "tI", 121: "tI", 122: "tI",
-    123: "tP", 124: "tP", 125: "tP", 126: "tP",
-    127: "tP", 128: "tP", 129: "tP", 130: "tP",
-    131: "tP", 132: "tP", 133: "tP", 134: "tP",
-    135: "tP", 136: "tP", 137: "tP", 138: "tP",
-    139: "tI", 140: "tI", 141: "tI", 142: "tI",
-    143: "hP", 144: "hP", 145: "hP",
-    146: "hR",
-    147: "hP", 148: "hR",
-    149: "hP", 150: "hP", 151: "hP", 152: "hP",
-    153: "hP", 154: "hP",
-    155: "hR",
-    156: "hP", 157: "hP", 158: "hP", 159: "hP",
-    160: "hR", 161: "hR",
-    162: "hP", 163: "hP", 164: "hP", 165: "hP",
-    166: "hR", 167: "hR",
-    168: "hP", 169: "hP", 170: "hP", 171: "hP",
-    172: "hP", 173: "hP", 174: "hP",
-    175: "hP", 176: "hP",
-    177: "hP", 178: "hP", 179: "hP", 180: "hP",
-    181: "hP", 182: "hP", 183: "hP", 184: "hP",
-    185: "hP", 186: "hP", 187: "hP", 188: "hP",
-    189: "hP", 190: "hP",
-    191: "hP", 192: "hP", 193: "hP", 194: "hP",
-    195: "cP", 196: "cF", 197: "cI",
-    198: "cP", 199: "cI",
-    200: "cP", 201: "cP",
-    202: "cF", 203: "cF",
-    204: "cI",
-    205: "cP",
-    206: "cI",
-    207: "cP", 208: "cP",
-    209: "cF", 210: "cF",
-    211: "cI",
-    212: "cP", 213: "cP",
-    214: "cI",
-    215: "cP",
-    216: "cF",
-    217: "cI",
-    218: "cP",
-    219: "cF",
-    220: "cI",
-    221: "cP", 222: "cP", 223: "cP", 224: "cP",
-    225: "cF", 226: "cF", 227: "cF", 228: "cF",
-    229: "cI", 230: "cI",
-}
+from ppmat.utils.scatter import scatter
+from ppmat.utils.scatter import scatter_min_with_argmin
 
 OFFSET_LIST = [
     [-1, -1, -1],
@@ -188,7 +92,7 @@ def lattice_params_to_matrix_paddle(lengths, angles):
     vector_a = paddle.stack(
         x=[
             lengths[:, 0] * sins[:, 1],
-            paddle.zeros(shape=lengths.shape[0], dtype=lengths.dtype),
+            paddle.zeros(shape=lengths.shape[0]),
             lengths[:, 0] * coses[:, 1],
         ],
         axis=1,
@@ -203,8 +107,8 @@ def lattice_params_to_matrix_paddle(lengths, angles):
     )
     vector_c = paddle.stack(
         x=[
-            paddle.zeros(shape=lengths.shape[0], dtype=lengths.dtype),
-            paddle.zeros(shape=lengths.shape[0], dtype=lengths.dtype),
+            paddle.zeros(shape=lengths.shape[0]),
+            paddle.zeros(shape=lengths.shape[0]),
             lengths[:, 2],
         ],
         axis=1,
@@ -551,47 +455,170 @@ def compute_lattice_polar_decomposition(lattice_matrix: paddle.Tensor) -> paddle
     return symm_lattice_matrix
 
 
-def lattice_transform_and_log_prob_mask(
-    spacegroup: int,
+def build_pbc_graph(
+    cart_coords: paddle.Tensor,
+    lattice_matrix: paddle.Tensor,
+    num_nodes_per_crystal: paddle.Tensor,
+    break_minimum_edge_ties: bool = False,
 ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-    if 1 <= spacegroup <= 2:
-        length_matrix = paddle.eye(3)
-        angle_matrix = paddle.eye(3)
-        angle_vector = paddle.zeros([3])
-        log_prob_mask = paddle.ones([6])
-    elif 3 <= spacegroup <= 15:
-        length_matrix = paddle.eye(3)
-        angle_matrix = paddle.to_tensor(
-            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]
-        )
-        angle_vector = paddle.to_tensor([90.0, 0.0, 90.0])
-        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 1.0, 0.0])
-    elif 16 <= spacegroup <= 74:
-        length_matrix = paddle.eye(3)
-        angle_matrix = paddle.zeros([3, 3])
-        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
-        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
-    elif 75 <= spacegroup <= 142:
-        length_matrix = paddle.to_tensor(
-            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
-        )
-        angle_matrix = paddle.zeros([3, 3])
-        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
-        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
-    elif 143 <= spacegroup <= 194:
-        length_matrix = paddle.to_tensor(
-            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
-        )
-        angle_matrix = paddle.zeros([3, 3])
-        angle_vector = paddle.to_tensor([90.0, 90.0, 120.0])
-        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
-    elif 195 <= spacegroup <= 230:
-        length_matrix = paddle.to_tensor(
-            [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
-        )
-        angle_matrix = paddle.zeros([3, 3])
-        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
-        log_prob_mask = paddle.to_tensor([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    batch_size = num_nodes_per_crystal.shape[0]
+    atom_pos = cart_coords
+
+    num_atoms_per_crystal_sqr = (num_nodes_per_crystal**2).cast(paddle.int64)
+
+    first_node_index_per_crystal = (
+        paddle.cumsum(num_nodes_per_crystal, axis=0) - num_nodes_per_crystal
+    )
+    first_node_index_per_crystal_expand = paddle.repeat_interleave(
+        first_node_index_per_crystal, num_atoms_per_crystal_sqr
+    )
+    num_atoms_per_crystal_expand = paddle.repeat_interleave(
+        num_nodes_per_crystal, num_atoms_per_crystal_sqr
+    )
+
+    num_atom_pairs = paddle.sum(num_atoms_per_crystal_sqr)
+    index_sqr_offset = (
+        paddle.cumsum(num_atoms_per_crystal_sqr, axis=0) - num_atoms_per_crystal_sqr
+    )
+    index_sqr_offset = paddle.repeat_interleave(
+        index_sqr_offset, num_atoms_per_crystal_sqr
+    )
+    atom_count_sqr = paddle.arange(int(num_atom_pairs.item())) - index_sqr_offset
+
+    destination_index = (
+        paddle.floor_divide(atom_count_sqr, num_atoms_per_crystal_expand)
+        + first_node_index_per_crystal_expand
+    )
+    source_index = (
+        atom_count_sqr % num_atoms_per_crystal_expand
+        + first_node_index_per_crystal_expand
+    )
+    map_edge_to_crystal = paddle.arange(batch_size).repeat_interleave(
+        num_atoms_per_crystal_sqr, axis=0
+    )
+
+    n_edges_per_crystal_before_masking = num_atoms_per_crystal_sqr
+
+    source_position = atom_pos[source_index]
+    destination_position = atom_pos[destination_index]
+
+    num_supercell_images = len(OFFSET_LIST)
+    supercell_frac_offsets = paddle.to_tensor(OFFSET_LIST, dtype=paddle.float32)
+    batch_supercell_frac_offsets = supercell_frac_offsets.unsqueeze(0).expand(
+        [batch_size, num_supercell_images, 3]
+    )
+    pbc_frac_offsets_per_source_atom = paddle.repeat_interleave(
+        batch_supercell_frac_offsets, n_edges_per_crystal_before_masking, axis=0
+    )
+
+    pbc_cart_offsets_per_source_atom = paddle.bmm(
+        pbc_frac_offsets_per_source_atom,
+        paddle.repeat_interleave(
+            lattice_matrix, n_edges_per_crystal_before_masking, axis=0
+        ),
+    )
+
+    destination_position = destination_position.unsqueeze(1).expand(
+        [-1, num_supercell_images, -1]
+    )
+    source_position = (
+        source_position.unsqueeze(1).expand([-1, num_supercell_images, -1])
+        + pbc_cart_offsets_per_source_atom
+    )
+
+    source_index = source_index.unsqueeze(1).expand([-1, num_supercell_images])
+    destination_index = destination_index.unsqueeze(1).expand(
+        [-1, num_supercell_images]
+    )
+    map_edge_to_crystal = map_edge_to_crystal.unsqueeze(1).expand(
+        [-1, num_supercell_images]
+    )
+
+    inter_atom_distances = (source_position - destination_position).norm(axis=-1)
+
+    mask = paddle.logical_or(
+        source_index != destination_index,
+        inter_atom_distances > 1e-5,
+    )
+
+    flat_mask = mask.reshape([-1])
+    destination_index = destination_index[mask]
+    source_index = source_index[mask]
+    map_edge_to_crystal = map_edge_to_crystal[mask]
+    pbc_frac_offsets = pbc_frac_offsets_per_source_atom.reshape([-1, 3])[flat_mask]
+    pbc_cart_offsets = pbc_cart_offsets_per_source_atom.reshape([-1, 3])[flat_mask]
+
+    source_position_flat = atom_pos[source_index]
+    destination_position_flat = atom_pos[destination_index]
+    inter_atom_distances = (
+        destination_position_flat - source_position_flat - pbc_cart_offsets
+    ).norm(axis=-1)
+
+    (
+        destination_index,
+        source_index,
+        pbc_frac_offsets,
+        num_edges_per_crystal,
+    ) = get_smallest_edge_per_primal_node_pair(
+        dst_idx=destination_index,
+        src_idx=source_index,
+        map_edge_to_crystal=map_edge_to_crystal,
+        inter_atom_distances=inter_atom_distances,
+        pbc_frac_offsets_per_source_atom=pbc_frac_offsets,
+        num_nodes_per_crystal=num_nodes_per_crystal,
+        break_minimum_edge_ties=break_minimum_edge_ties,
+    )
+    return (
+        destination_index,
+        source_index,
+        pbc_frac_offsets,
+        num_edges_per_crystal,
+    )
+
+
+def get_smallest_edge_per_primal_node_pair(
+    dst_idx: paddle.Tensor,
+    src_idx: paddle.Tensor,
+    map_edge_to_crystal: paddle.Tensor,
+    inter_atom_distances: paddle.Tensor,
+    pbc_frac_offsets_per_source_atom: paddle.Tensor,
+    num_nodes_per_crystal: paddle.Tensor,
+    break_minimum_edge_ties: bool,
+) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    edges = paddle.stack([dst_idx, src_idx], axis=-1)
+    unique_edges, map_edge_to_unique = paddle.unique(edges, axis=0, return_inverse=True)
+
+    min_inter_atom_distances, smallest_edge_idxs = scatter_min_with_argmin(
+        src=inter_atom_distances,
+        index=map_edge_to_unique,
+        dim_size=unique_edges.shape[0],
+    )
+
+    batch_size = num_nodes_per_crystal.shape[0]
+
+    if break_minimum_edge_ties:
+        edges = edges[smallest_edge_idxs]
+        pbc_frac_offsets_per_source_atom = pbc_frac_offsets_per_source_atom[
+            smallest_edge_idxs
+        ]
+        num_edges_per_crystal = (num_nodes_per_crystal**2).cast(paddle.int64)
     else:
-        raise AttributeError(f"Invalid space group: {spacegroup}")
-    return length_matrix, angle_matrix, angle_vector, log_prob_mask
+        cutoff_distances = 1e-4 + min_inter_atom_distances[map_edge_to_unique]
+        keep_edge_mask = inter_atom_distances < cutoff_distances
+        indices_to_keep = paddle.nonzero(keep_edge_mask).reshape([-1])
+
+        edges = edges[indices_to_keep]
+        pbc_frac_offsets_per_source_atom = pbc_frac_offsets_per_source_atom[
+            indices_to_keep
+        ]
+
+        num_edges_per_crystal = scatter(
+            src=paddle.ones([edges.shape[0]], dtype=paddle.float32),
+            index=map_edge_to_crystal[indices_to_keep],
+            dim_size=batch_size,
+            reduce="sum",
+        ).cast(paddle.int64)
+
+    dst_idx = edges[:, 0]
+    src_idx = edges[:, 1]
+    return dst_idx, src_idx, pbc_frac_offsets_per_source_atom, num_edges_per_crystal

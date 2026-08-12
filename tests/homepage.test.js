@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const homepageDir = path.join(__dirname, '..', 'docs');
 const html = readFileSync(path.join(homepageDir, 'index.html'), 'utf8');
+const readme = readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 const script = readFileSync(path.join(homepageDir, 'script.js'), 'utf8');
 
 const trainCommand = 'python property_prediction/train.py -c property_prediction/configs/megnet/megnet_mp2018_train_60k_e_form.yaml';
@@ -16,12 +17,15 @@ const predictFragments = [
   "--save_path='result.csv'",
 ];
 
-test('platform signals include Predictor and Chinese experiment copy', () => {
+test('platform signals use the approved Chinese copy', () => {
   assert.match(html, /<div class="eyebrow"><span class="status-dot"><\/span> Open-source AI infrastructure for materials science\.<\/div>/);
   assert.doesNotMatch(html, /OPEN-SOURCE MATERIALS AI/);
-  assert.match(html, /Model · Dataset · Trainer · Predictor/);
-  assert.match(html, /<small>配置驱动实验<\/small>/);
+  assert.match(html, /<small>预置模型权重和数据集<\/small>/);
   assert.doesNotMatch(html, /Config-driven experiments/);
+  assert.match(html, /连接材料结构、性质、电子结构、谱图与模拟/);
+  assert.doesNotMatch(html, /连接材料结构、性质、电子态、光谱与模拟/);
+  assert.match(html, /<div class="hero-note"><span class="spark">✦<\/span> 从结构到性质，从预测到表征，把研究流程交给模型。<\/div>/);
+  assert.doesNotMatch(html, /从结构到性质，从实验到预测，把研究流程交给模型。/);
 });
 
 test('workflow uses the approved six-step Chinese copy', () => {
@@ -65,21 +69,33 @@ test('all documented task datasets are represented on capability cards', () => {
     'QM9_EC',
     'OMol25_EC',
     'MSD-NMR',
-    'n&lt;15 / 20 / 25 / 35',
     'HAADF STEM',
     'BF STEM',
   ];
   for (const label of labels) assert.ok(html.includes(label), `missing dataset label: ${label}`);
+  assert.match(html, /<h3>机器学习原子间势函数<\/h3>/);
+  assert.doesNotMatch(html, /机器学习原子势/);
+  assert.match(html, /<h3>属性预测<\/h3>[\s\S]*?<span>SphereNet<\/span>/);
+  assert.match(html, /<h3>机器学习原子间势函数<\/h3>[\s\S]*?<span>SphereNet<\/span>/);
+  assert.doesNotMatch(html, /n&lt;15 \/ 20 \/ 25 \/ 35/);
 });
 
 test('quickstart uses complete README training and inference commands', () => {
   assert.ok(html.includes(trainCommand), 'initial training command is incomplete');
-  assert.ok(script.includes(trainCommand), 'training tab command is incomplete');
-  for (const fragment of predictFragments) {
+  const inferenceCommand = "python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/' --save_path='result.csv'";
+  assert.ok(script.includes(inferenceCommand), 'inference command should be represented as one copyable line');
+  for (const fragment of [
+    'property_prediction/predict.py',
+    "--model_name='megnet_mp2018_train_60k_e_form'",
+    "--weights_name='best.pdparams'",
+    "--cif_file_path='./property_prediction/example_data/cifs/'",
+    "--save_path='result.csv'",
+  ]) {
     assert.ok(script.includes(fragment), `missing inference command fragment: ${fragment}`);
   }
   assert.doesNotMatch(script, /command\.slice\(6\)/, 'command rendering must not rely on slicing a multiline command');
-  assert.match(script, /html: String\.raw`<span class=\"token-purple\">python<\/span> property_prediction\/predict\.py/, 'inference display must preserve README line continuations');
+  assert.doesNotMatch(script, /property_prediction\/predict\.py\s*\\\s*\n/, 'inference display should not split the command with line continuations');
+  assert.match(script, /html: String\.raw`<span class=\"token-purple\">python<\/span> property_prediction\/predict\.py/, 'inference display should keep syntax highlighting');
 });
 
 
@@ -93,4 +109,12 @@ test('GitHub Pages homepage is published from docs without a separate assets dir
   assert.match(publishedHtml, /src="\.\/materials-discovery-loop\.png"/);
   assert.doesNotMatch(publishedHtml, /(?:src|href)="\.\/assets\//);
   assert.equal(existsSync(path.join(__dirname, '..', 'homepage', 'assets')), false, 'homepage/assets should be removed');
+});
+
+
+test('README links to the published homepage badge', () => {
+  assert.match(
+    readme,
+    /<a href="https:\/\/paddlepaddle\.github\.io\/PaddleMaterials\/">\s*<img alt="Homepage" src="https:\/\/img\.shields\.io\/badge\/Homepage-PaddleMaterials-[^"]+">\s*<\/a>/,
+  );
 });

@@ -27,16 +27,8 @@ const quickstartCommands = {
   },
   predict: {
     file: 'property_prediction / predict.py',
-    command: String.raw`python property_prediction/predict.py \
-    --model_name='megnet_mp2018_train_60k_e_form' \
-    --weights_name='best.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/' \
-    --save_path='result.csv'`,
-    html: String.raw`<span class="token-purple">python</span> property_prediction/predict.py \
-    --model_name='megnet_mp2018_train_60k_e_form' \
-    --weights_name='best.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/' \
-    --save_path='result.csv'`,
+    command: "python property_prediction/predict.py --model_name='megnet_mp2018_train_60k_e_form' --weights_name='best.pdparams' --cif_file_path='./property_prediction/example_data/cifs/' --save_path='result.csv'",
+    html: String.raw`<span class="token-purple">python</span> property_prediction/predict.py <span class="token-blue">--model_name='megnet_mp2018_train_60k_e_form'</span> <span class="token-blue">--weights_name='best.pdparams'</span> <span class="token-blue">--cif_file_path='./property_prediction/example_data/cifs/'</span> <span class="token-blue">--save_path='result.csv'</span>`,
     status: 'prediction output <span class="mono">·</span> CSV',
   },
 };

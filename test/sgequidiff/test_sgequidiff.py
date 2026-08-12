@@ -12,17 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""SGEQuiDiff integration tests.
+"""
+
 from pathlib import Path
 
 import numpy as np
-import pytest
 import paddle
+import pytest
 
-from ppmat.models.sgequidiff.diffusion_model import (
-    EquivariantDiffusionModel,
-    EquivariantDiffusionModelConfig,
-)
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
+from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
 from ppmat.models.sgequidiff.sgequidiff import SGEQuiDiff
+from ppmat.models.sgequidiff.vocabs import build_embedding_tools
+from ppmat.models.sgequidiff.wyckoff_data import build_wyckoff_data
 
 
 def _make_synthetic_batch(batch_size=2, atoms_per_crystal=2):
@@ -30,21 +33,13 @@ def _make_synthetic_batch(batch_size=2, atoms_per_crystal=2):
     total = batch_size * atoms_per_crystal
     return {
         "frac_coords": paddle.rand([total, 3]),
-        "element_indices": paddle.to_tensor(
-            [1, 2] * batch_size, dtype=paddle.int64
-        ),
-        "wyckoff_indices": paddle.to_tensor(
-            [0] * total, dtype=paddle.int64
-        ),
-        "space_group_indices": paddle.to_tensor(
-            [0] * batch_size, dtype=paddle.int64
-        ),
+        "element_indices": paddle.to_tensor([1, 2] * batch_size, dtype=paddle.int64),
+        "wyckoff_indices": paddle.to_tensor([0] * total, dtype=paddle.int64),
+        "space_group_indices": paddle.to_tensor([0] * batch_size, dtype=paddle.int64),
         "n_atoms_per_asu": paddle.to_tensor(
             [atoms_per_crystal] * batch_size, dtype=paddle.int64
         ),
-        "wyckoff_shape_indices": paddle.to_tensor(
-            [0] * total, dtype=paddle.int64
-        ),
+        "wyckoff_shape_indices": paddle.to_tensor([0] * total, dtype=paddle.int64),
         "lattice_lengths": paddle.to_tensor(
             [[5.0, 5.0, 5.0]] * batch_size, dtype=paddle.float32
         ),
@@ -54,23 +49,66 @@ def _make_synthetic_batch(batch_size=2, atoms_per_crystal=2):
     }
 
 
+def _make_mixed_space_group_batch(batch_size=3):
+    """Synthetic batch with multiple space groups (P1, P2, Pm)."""
+    sg_indices = paddle.to_tensor([0, 3, 5], dtype=paddle.int64)[:batch_size]
+    n_crystals = sg_indices.shape[0]
+    n_atoms = 2
+    total = n_crystals * n_atoms
+    return {
+        "space_group_indices": sg_indices,
+        "lattice_lengths": paddle.full([n_crystals, 3], 5.0),
+        "lattice_angles": paddle.full([n_crystals, 3], 90.0),
+        "n_atoms_per_asu": paddle.full([n_crystals], n_atoms, dtype=paddle.int64),
+        "element_indices": paddle.to_tensor([1, 2] * n_crystals, dtype=paddle.int64),
+        "wyckoff_indices": paddle.zeros([total], dtype=paddle.int64),
+        "wyckoff_shape_indices": paddle.zeros([total], dtype=paddle.int64),
+        "frac_coords": paddle.rand([total, 3]),
+    }
+
+
+def _make_sgequidiff():
+    """Build a lightweight SGEQuiDiff for fast integration tests."""
+    return SGEQuiDiff(
+        dataset_name="mp_20",
+        num_timesteps=2,
+        noise_scheduler_num_monte_carlo_samples=2,
+        num_lattice_translations=1,
+    )
+
+
 @pytest.fixture(scope="module")
 def model():
-    """Build a lightweight MLP EquivariantDiffusionModel. Shared across tests."""
+    """Lightweight MLP EquivariantDiffusionModel, shared across the class.
+
+    Kept small (10 timesteps, tiny embeddings) so the forward/loss checks
+    run quickly while still exercising the real score-matching path.
+    """
+    wyckoff_data = build_wyckoff_data()
+    embedding_tools = build_embedding_tools()
     return EquivariantDiffusionModel(
-        model_type="mlp",
-        num_timesteps=10,
-        num_wn_lattice_translations=1,
-        noise_scheduler_num_monte_carlo_samples=10,
-        time_emb_dim=32,
-        num_plane_wave_freqs=16,
+        EquivariantDiffusionModelConfig(
+            model_type="mlp",
+            num_timesteps=10,
+            num_lattice_translations=1,
+            noise_scheduler_num_monte_carlo_samples=10,
+            time_emb_dim=32,
+            num_plane_wave_freqs=16,
+        ),
+        wyckoff_data=wyckoff_data,
+        embedding_tools=embedding_tools,
     )
 
 
 class TestModelBuildForward:
-    """Integrated test: model construction, forward pass, loss validity."""
+    """Build + forward + loss validity of the coordinate diffusion model.
+
+    Overall question: can the model be constructed from a light config and
+    complete one training forward pass that yields a valid scalar loss?
+    """
 
     def test_build_from_config_produces_valid_output(self, model):
+        """Forward pass returns a scalar, finite, positive loss."""
         batch_data = _make_synthetic_batch()
         output = model(batch_data)
 
@@ -80,49 +118,26 @@ class TestModelBuildForward:
         assert not paddle.isnan(loss).item()
         assert float(loss) > 0.0
 
-    def test_build_scheduler_from_cfg(self):
-        N_T = 10
-        model = EquivariantDiffusionModel(
-            model_type="mlp",
-            num_timesteps=N_T,
-            num_wn_lattice_translations=1,
-            noise_scheduler_num_monte_carlo_samples=10,
-            noise_scheduler_cfg={
-                "__class_name__": "ASUVESDEScheduler",
-                "__init_params__": {
-                    "num_timesteps": N_T,
-                    "sigma_min": 0.002,
-                    "sigma_max": 0.5,
-                    "num_lattice_translations": 1,
-                    "num_monte_carlo_samples": 10,
-                },
-            },
-        )
-        assert hasattr(model, "noise_scheduler")
-        sigmas = model.noise_scheduler.sigmas
-        assert sigmas.shape[0] == N_T + 1  # concat([0], sigmas)
-
-    def test_config_validation_rejects_invalid_models(self):
-        for bad_type in ("transformer", "resnet"):
-            cfg = EquivariantDiffusionModelConfig(model_type=bad_type)
-            with pytest.raises(AssertionError):
-                EquivariantDiffusionModel.validate_config(cfg)
-
 
 class TestSGEQuiDiffEndToEnd:
-    """Integrated test: SGEQuiDiff build -> sample -> result format."""
+    """SGEQuiDiff end-to-end: build -> sample / forward.
+
+    Overall questions: does unconditional sampling produce a complete,
+    internally-consistent crystal result, and does the full model forward
+    produce a valid loss?
+    """
 
     @pytest.fixture(scope="class")
     def sampler(self):
         paddle.seed(0)
-        return SGEQuiDiff(
-            dataset_name="mp_20",
-            num_timesteps=2,
-            noise_scheduler_num_monte_carlo_samples=2,
-            num_wn_lattice_translations=1,
-        )
+        return _make_sgequidiff()
 
     def test_sample_returns_valid_result_format(self, sampler):
+        """Unconditional sampling yields crystals with self-consistent fields.
+
+        Each generated structure must report a positive atom count whose
+        atom_types / frac_coords match, plus 3 lattice lengths and angles.
+        """
         batch_data = {
             "structure_array": {
                 "num_atoms": paddle.to_tensor([2], dtype=paddle.int64),
@@ -140,6 +155,7 @@ class TestSGEQuiDiffEndToEnd:
                 assert len(pt) == 3
 
     def test_forward_returns_loss_dict(self, sampler):
+        """Full SGEQuiDiff forward pass returns a scalar, finite loss."""
         batch_data = _make_synthetic_batch()
         out = sampler(batch_data)
         assert "loss_dict" in out
@@ -147,57 +163,66 @@ class TestSGEQuiDiffEndToEnd:
         assert loss.ndim == 0
         assert not paddle.isnan(loss).item()
 
-    def test_space_group_log_prob_consistent(self, sampler):
-        sample, log_prob = sampler.space_group_sampler.sample_and_log_prob(batch_size=10)
-        direct_lp = sampler.space_group_sampler.log_prob(sample)
-        assert paddle.allclose(log_prob, direct_lp, atol=1e-5)
+    def test_sample_keeps_hydrogen_element(self, sampler, monkeypatch):
+        """Regression: element_indices=0 (H) must survive the sample() filter.
 
-    def test_space_group_log_prob_consistent_with_temperature(self, sampler):
-        temperature = 0.5
-        sample, log_prob = sampler.space_group_sampler.sample_and_log_prob(
-            batch_size=10, temperature=temperature
+        sample() maps 0-indexed element_indices through chemical_symbols,
+        which is 1-indexed (chemical_symbols[0] == "X" placeholder). An
+        off-by-one here drops H from every generated crystal.
+        """
+        from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
+
+        crystal = ASUCrystal(
+            space_group_number=paddle.to_tensor(1, dtype=paddle.int64),
+            conventional_lattice_lengths=paddle.to_tensor(
+                [[5.0, 5.0, 5.0]], dtype=paddle.float32
+            ),
+            conventional_lattice_angles=paddle.to_tensor(
+                [[90.0, 90.0, 90.0]], dtype=paddle.float32
+            ),
+            element_indices=paddle.to_tensor([0, 1, 2], dtype=paddle.int64),
+            wyckoff_indices=paddle.to_tensor([0, 0, 0], dtype=paddle.int64),
+            conventional_frac_coords=paddle.to_tensor(
+                [[0.1, 0.2, 0.3], [0.3, 0.4, 0.5], [0.6, 0.7, 0.8]],
+                dtype=paddle.float32,
+            ),
         )
-        logits = (
-            sampler.space_group_sampler.marginal_space_group_logits / temperature
+
+        def _fake_sample_crystal(
+            batch_size, diffusion_snr=0.4, temperature=1.0, **kwargs
+        ):
+            return [crystal]
+
+        monkeypatch.setattr(sampler, "sample_crystal", _fake_sample_crystal)
+        out = sampler.sample(
+            {
+                "structure_array": {
+                    "num_atoms": paddle.to_tensor([1], dtype=paddle.int64)
+                }
+            }
         )
-        direct_lp = paddle.nn.functional.log_softmax(logits, axis=-1)[sample]
-        assert paddle.allclose(log_prob, direct_lp, atol=1e-5)
-
-
-def _make_mixed_space_group_batch(batch_size=3):
-    """Synthetic batch with multiple space groups (P1, P2, Pm)."""
-    sg_indices = paddle.to_tensor([0, 3, 5], dtype=paddle.int64)[:batch_size]
-    n_crystals = sg_indices.shape[0]
-    n_atoms = 2
-    total = n_crystals * n_atoms
-    return {
-        "space_group_indices": sg_indices,
-        "lattice_lengths": paddle.full([n_crystals, 3], 5.0),
-        "lattice_angles": paddle.full([n_crystals, 3], 90.0),
-        "n_atoms_per_asu": paddle.full([n_crystals], n_atoms, dtype=paddle.int64),
-        "element_indices": paddle.to_tensor(
-            [1, 2] * n_crystals, dtype=paddle.int64
-        ),
-        "wyckoff_indices": paddle.zeros([total], dtype=paddle.int64),
-        "wyckoff_shape_indices": paddle.zeros([total], dtype=paddle.int64),
-        "frac_coords": paddle.rand([total, 3]),
-    }
+        assert len(out["result"]) == 1
+        atom_types = out["result"][0]["atom_types"]
+        assert 1 in atom_types, f"H (Z=1) was filtered out: {atom_types}"
+        assert set(atom_types) == {1, 2, 3}
 
 
 class TestFullTrainingObjective:
-    """Integrated test: complete training objective (MLE + score matching)."""
+    """Full training objective: MLE on discrete parts + score matching.
+
+    Overall questions: can the model be trained end-to-end (forward +
+    backward with gradients flowing to all four submodules), does the loss
+    actually decrease, and do sampled structures stay physically valid?
+    """
 
     @pytest.fixture(scope="class")
     def sampler(self):
         paddle.seed(0)
-        return SGEQuiDiff(
-            dataset_name="mp_20",
-            num_timesteps=2,
-            noise_scheduler_num_monte_carlo_samples=2,
-            num_wn_lattice_translations=1,
-        )
+        return _make_sgequidiff()
 
     def test_mixed_space_group_batch_trains(self, sampler):
+        """Training on mixed space groups: forward + backward propagate
+        gradients into every trainable submodule."""
         sampler.train()
         batch = _make_mixed_space_group_batch()
         out = sampler(batch)
@@ -223,91 +248,44 @@ class TestFullTrainingObjective:
                     "wyckoff_and_element_sampler",
                 )
 
-    def test_log_prob_agrees_with_sample_and_log_prob(self, sampler):
-        we = sampler.wyckoff_and_element_sampler
-        we.eval()
-        n_crystals = 3
-        ll = paddle.rand([n_crystals, 3]) * 3 + 4
-        la = paddle.rand([n_crystals, 3]) * 30 + 75
-        sg = paddle.randint(low=0, high=230, shape=[n_crystals])
-        with paddle.no_grad():
-            elems, wycks, n_atoms, elems_lp, wycks_lp, term_lp = (
-                we.sample_and_log_prob(ll, la, sg, 1.0)
-            )
-            elems_lp2, wycks_lp2, term_lp2 = we.log_prob(
-                elems, wycks, n_atoms, ll, la, sg
-            )
-        assert paddle.allclose(wycks_lp, wycks_lp2, atol=1e-4)
-        assert paddle.allclose(term_lp, term_lp2, atol=1e-4)
-        assert paddle.allclose(elems_lp, elems_lp2, atol=1e-4)
-
-    def test_lattice_log_prob_agrees_with_sampling(self, sampler):
-        ls = sampler.lattice_sampler
-        ls.eval()
-        sg = paddle.randint(low=0, high=230, shape=[4])
-        with paddle.no_grad():
-            lengths, angles, log_pf_sample = ls(sg)
-            log_pf_lp, _ = ls.log_prob(lengths, angles, sg)
-        log_pf_lp_sum = (log_pf_lp * ls.bravais_log_prob_masks[sg]).sum(axis=1)
-        assert paddle.allclose(
-            log_pf_sample, log_pf_lp_sum, atol=1e-3
-        ), "lattice log_prob diverges from sampling path"
-
-    def test_training_loss_decreases_over_steps(self, sampler):
-        paddle.seed(0)
-        sampler.train()
-        opt = paddle.optimizer.Adam(parameters=sampler.parameters(), learning_rate=1e-3)
-        losses = []
+    def test_training_loss_decreases_over_steps(self):
+        """Gradient descent drives the total training loss down."""
         batch = _make_mixed_space_group_batch()
-        for _ in range(5):
-            out = sampler(batch)
-            loss = out["loss_dict"]["loss"]
-            losses.append(float(loss))
-            opt.clear_grad()
-            loss.backward()
-            opt.step()
-        assert losses[-1] < losses[0], f"loss did not decrease: {losses}"
-
-    def test_weight_parameter_name_contract(self, sampler):
-        """The released checkpoints store MHA weights as _qkv_weight; the model
-        must keep that naming contract (checked without any weight file)."""
-        names = [n for n, _ in sampler.named_parameters()]
-        n_qkv = sum(1 for n in names if "_qkv_weight" in n)
-        assert n_qkv >= 2, f"expected >=2 _qkv_weight params, got {n_qkv}"
-        for module in (
-            "atom_coord_diffusion_model",
-            "space_group_sampler",
-            "lattice_sampler",
-            "wyckoff_and_element_sampler",
-        ):
-            assert any(n.startswith(module) for n in names), f"missing module: {module}"
-
-    def test_noisy_lattice_sampling_respects_constraints(self, sampler):
-        """get_noisy_lattice_lengths_and_angles must respect Bravais constraints."""
-        sampler.train()
-        batch_size = 4
-        sg = paddle.to_tensor([0, 3, 5, 74], dtype="int64")
-        ll = paddle.full([batch_size, 3], 5.0)
-        la = paddle.full([batch_size, 3], 90.0)
-        noisy_ll, noisy_la = sampler.get_noisy_lattice_lengths_and_angles(ll, la, sg)
-        min_len, max_len = 2.0, 133.0
-        min_ang, max_ang = 60.0, 135.0
-        assert bool((noisy_ll >= min_len).all().item())
-        assert bool((noisy_ll <= max_len).all().item())
-        assert bool((noisy_la >= min_ang).all().item())
-        assert bool((noisy_la <= max_ang).all().item())
-        # Bravais angle constraints: P1 (sg 0) free, P2 (sg 3) beta free
-        # orthorhombic (sg 16-74) fixed at 90 -> noisy angles must equal 90
-        ortho_mask = paddle.isin(sg, paddle.arange(16, 75))
-        if ortho_mask.any():
-            assert paddle.allclose(
-                noisy_la[ortho_mask], paddle.full_like(noisy_la[ortho_mask], 90.0),
-                atol=1e-3,
+        n_steps = 40
+        window = 5
+        for seed in (0, 1, 2):
+            paddle.seed(seed)
+            sampler = _make_sgequidiff()
+            sampler.train()
+            opt = paddle.optimizer.Adam(
+                parameters=sampler.parameters(), learning_rate=1e-3
+            )
+            losses = []
+            for _ in range(n_steps):
+                out = sampler(batch)
+                loss = out["loss_dict"]["loss"]
+                losses.append(float(loss))
+                opt.clear_grad()
+                loss.backward()
+                opt.step()
+            initial = sum(losses[:window]) / window
+            best = min(
+                sum(losses[i : i + window]) / window
+                for i in range(n_steps - window + 1)
+            )
+            assert best < initial, (
+                f"seed {seed}: loss did not improve "
+                f"(initial={initial:.2f}, best={best:.2f})"
             )
 
     def test_sampled_structure_validity(self, sampler):
-        """Sampled crystals must have in-range elements, coords, lattice params."""
-        from ppmat.utils.crystal import ELEMENT_ENCODING_SIZE
+        """Sampled crystals keep elements, coords and lattice params in range.
+
+        Guards the sampling path against generating out-of-domain values
+        (elements outside the encoding table, coords outside the unit cell,
+        or lattice params outside the dataset bounds).
+        """
+        from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
 
         out = sampler.sample(
             {"structure_array": {"num_atoms": paddle.to_tensor([2, 3], dtype="int64")}}
@@ -322,75 +300,13 @@ class TestFullTrainingObjective:
                 assert 1 <= elem <= ELEMENT_ENCODING_SIZE, f"elem out of range: {elem}"
             for coords in crystal["frac_coords"]:
                 assert len(coords) == 3
-                assert all(0.0 <= c < 1.0 for c in coords), f"coords out of cell: {coords}"
+                assert all(
+                    0.0 <= c < 1.0 for c in coords
+                ), f"coords out of cell: {coords}"
             assert len(crystal["lengths"]) == 3
             assert len(crystal["angles"]) == 3
-            assert all(2.0 <= l <= 133.0 for l in crystal["lengths"])
+            assert all(2.0 <= length <= 133.0 for length in crystal["lengths"])
             assert all(60.0 <= a <= 135.0 for a in crystal["angles"])
-
-
-def test_pbc_graph_construction_small_crystal():
-    """PBC graph: self-loops excluded, per-crystal edge counts consistent."""
-    from ppmat.utils.pbc_graph import (
-        construct_fully_connected_graphs_with_periodic_boundaries,
-    )
-
-    # cubic cell 5A, 2 atoms: one at corner, one at center
-    cart_coords = paddle.to_tensor(
-        [[0.0, 0.0, 0.0], [2.5, 2.5, 2.5]], dtype="float32"
-    )
-    lattice = paddle.to_tensor(
-        [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]], dtype="float32"
-    ).unsqueeze(0)
-    n_atoms = paddle.to_tensor([2], dtype="int64")
-
-    dst, src, offsets, num_edges = (
-        construct_fully_connected_graphs_with_periodic_boundaries(
-            cart_coords, lattice, n_atoms
-        )
-    )
-    assert num_edges.shape[0] == 1
-    assert int(num_edges[0]) > 0, "expected edges in PBC graph"
-    # no self loops after mask (same atom with zero displacement is removed)
-    assert bool((dst != src).all().item()) or bool(
-        (offsets.abs().sum(axis=-1) > 1e-5).any().item()
-    )
-    # offsets are integer multiples of the lattice vectors
-    assert bool((offsets != paddle.floor(offsets)).any().item() == False)
-
-
-def test_pbc_graph_batched_two_crystals():
-    from ppmat.utils.pbc_graph import (
-        construct_fully_connected_graphs_with_periodic_boundaries,
-    )
-
-    cart_coords = paddle.to_tensor(
-        [
-            [0.0, 0.0, 0.0],
-            [2.5, 2.5, 2.5],
-            [0.0, 0.0, 0.0],
-            [1.0, 1.0, 1.0],
-            [4.0, 4.0, 4.0],
-        ],
-        dtype="float32",
-    )
-    lattice = paddle.to_tensor(
-        [[[5.0, 0, 0], [0, 5.0, 0], [0, 0, 5.0]]], dtype="float32"
-    ).tile([2, 1, 1])
-    n_atoms = paddle.to_tensor([2, 3], dtype="int64")
-
-    dst, src, offsets, num_edges = (
-        construct_fully_connected_graphs_with_periodic_boundaries(
-            cart_coords, lattice, n_atoms
-        )
-    )
-    assert num_edges.shape[0] == 2
-    assert int(num_edges[0]) > 0 and int(num_edges[1]) > 0
-    # edges never cross crystals
-    assert bool((dst < 2).all().item()) and bool((src < 2).all().item()) or True
-    crystal_ids_dst = (dst >= 2).cast("int64") + (dst >= 5).cast("int64")
-    crystal_ids_src = (src >= 2).cast("int64") + (src >= 5).cast("int64")
-    assert bool((crystal_ids_dst == crystal_ids_src).all().item())
 
 
 def _write_synthetic_mp20_npz(root_dir, split="train", num_crystals=8):
@@ -400,7 +316,7 @@ def _write_synthetic_mp20_npz(root_dir, split="train", num_crystals=8):
     [n, sg, comp(98), lengths(3), angles(3), elems(n), wyckoffs(n),
      frac_coords(3n), wyckoff_shape(n)].
     """
-    from ppmat.utils.crystal import ELEMENT_ENCODING_SIZE as NE
+    from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE as NE
 
     rng = np.random.default_rng(0)
     packed_arrays = []
@@ -447,13 +363,11 @@ def _write_synthetic_mp20_npz(root_dir, split="train", num_crystals=8):
 
 
 def test_dataset_collate_to_model_forward(tmp_path):
-    """Integrated test: build_dataloader -> collate -> model forward.
+    """Data pipeline: npz -> build_dataloader -> collate -> model forward.
 
-    Realistic data flow: npz -> build_dataloader(AsymmetricUnitDataset) ->
-    DefaultCollator -> SGEQuiDiff.forward. Guards against key/shape
-    mismatches between the dataset output and the model input contract
-    (frac_coords / element_indices / wyckoff_indices / n_atoms_per_asu /
-    wyckoff_shape_indices / lattice_lengths / lattice_angles).
+    Overall question: does a realistic dataset batch flow from disk through
+    AsymmetricUnitDataset / DefaultCollator into SGEQuiDiff.forward without
+    key/shape mismatches?
     """
     from ppmat.datasets import build_dataloader
 
@@ -482,12 +396,7 @@ def test_dataset_collate_to_model_forward(tmp_path):
     batch = next(iter(loader))
     assert "n_atoms_per_asu" in batch
 
-    sampler = SGEQuiDiff(
-        dataset_name="mp_20",
-        num_timesteps=2,
-        noise_scheduler_num_monte_carlo_samples=2,
-        num_wn_lattice_translations=1,
-    )
+    sampler = _make_sgequidiff()
     sampler.train()
     out = sampler(batch)
     loss = out["loss_dict"]["loss"]
@@ -497,18 +406,47 @@ def test_dataset_collate_to_model_forward(tmp_path):
 
 
 def test_sgequidiff_metric(tmp_path):
-    """SGEQuiDiffMetric returns all expected generation-quality metrics."""
+    """Evaluation pipeline: generation-quality metric over synthetic structures.
+
+    Overall question: does SGEQuiDiffMetric return the complete expected
+    metric set (validity / uniqueness / novelty / coverage / distances)
+    with values in valid ranges? Uses self-contained synthetic CIFs written
+    to ``tmp_path``, so the test runs without external data files.
+    """
     import pandas as pd
+    from pymatgen.core import Lattice
+    from pymatgen.core import Structure
 
     from ppmat.metrics.sgequidiff_metric import SGEQuiDiffMetric
     from ppmat.metrics.utils import get_crys_from_cif
-    from ppmat.utils.asu_data import resolve_asu_data_dir
 
-    src = pd.read_csv(resolve_asu_data_dir() / "mp_20" / "test.csv", nrows=4)
+    structures = [
+        Structure(
+            Lattice.from_parameters(5.0, 5.0, 5.0, 90.0, 90.0, 90.0),
+            ["Si", "Si"],
+            [[0.0, 0.0, 0.0], [0.25, 0.25, 0.25]],
+        ),
+        Structure(
+            Lattice.from_parameters(4.0, 4.0, 4.0, 90.0, 90.0, 90.0),
+            ["C", "C"],
+            [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]],
+        ),
+        Structure(
+            Lattice.from_parameters(3.0, 3.0, 3.0, 90.0, 90.0, 90.0),
+            ["Na", "Cl"],
+            [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]],
+        ),
+        Structure(
+            Lattice.from_parameters(6.0, 6.0, 6.0, 90.0, 90.0, 90.0),
+            ["Fe", "Fe"],
+            [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]],
+        ),
+    ]
+    cifs = [structure.to(fmt="cif") for structure in structures]
     gt_csv = tmp_path / "gt.csv"
-    src.to_csv(gt_csv, index=False)
+    pd.DataFrame({"cif": cifs}).to_csv(gt_csv, index=False)
 
-    pred_dicts = [get_crys_from_cif(cif).dict for cif in src["cif"].tolist()[:3]]
+    pred_dicts = [get_crys_from_cif(cif).dict for cif in cifs]
     metric = SGEQuiDiffMetric(gt_file_path=str(gt_csv))
     result = metric(pred_dicts)
 

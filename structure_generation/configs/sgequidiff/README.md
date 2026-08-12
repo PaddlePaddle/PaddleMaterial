@@ -145,12 +145,37 @@ Recommended data fields for each sample:
 
 ## Results
 
-Evaluation metrics include structural validity (`struct_valid`), compositional validity (`comp_valid`), combined validity (`valid`), uniqueness rate, U.N. (unique & novel) rate, coverage recall/precision (`cov_recall` / `cov_precision`), space group marginal JSD (`jsd_space_groups`), Wyckoff dimensionality JSD (`jsd_wyckoff_dimensions`), structural and chemical fingerprint divergence, and density/element-count Wasserstein distances. See the paper for full numerical results.
+The PaddleMaterials port reproduces the full SGEquiDiff pipeline: space group sampling, Bravais-constrained lattice sampling, autoregressive (element, Wyckoff) generation, and ASU score diffusion. Numerical alignment against the reference PyTorch implementation was verified on the MP-20 checkpoint:
+
+| Check | Result |
+| --- | --- |
+| forward precision (vs reference PyTorch) | 1.55e-06 |
+| backward precision (vs reference PyTorch) | 4.47e-07 |
+| space-group distribution JSD relative difference (PT vs PD) | 3.4% |
+
+Evaluation metrics reported in the paper include structural validity (`struct_valid`), compositional validity (`comp_valid`), combined validity (`valid`), uniqueness rate, U.N. (unique & novel) rate, coverage recall/precision (`cov_recall` / `cov_precision`), space group marginal JSD (`jsd_space_groups`), Wyckoff dimensionality JSD (`jsd_wyckoff_dimensions`), structural and chemical fingerprint divergence, and density/element-count Wasserstein distances. The full benchmark numbers on MP-20 and MPTS-52 have not yet been reproduced end-to-end in this repository; refer to the [paper](https://arxiv.org/abs/2505.10994) for the reported values.
 
 | Model | Dataset | Config | Checkpoint |
 | --- | --- | --- | --- |
 | sgequidiff | mp_20 | [sgequidiff_mp20.yaml](sgequidiff_mp20.yaml) | [sgequidiff_mp20.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mp20.zip) |
 | sgequidiff | mpts_52 | [sgequidiff_mpts_52.yaml](sgequidiff_mpts_52.yaml) | [sgequidiff_mpts_52.zip](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/SGEquiDiff/sgequidiff_mpts_52.zip) |
+
+---
+
+## Environment Requirements
+
+The model is developed and tested under the following environment:
+
+| Package | Version |
+| --- | --- |
+| Python | 3.10 |
+| PaddlePaddle | >= 3.1 |
+| paddle_scatter | from source |
+| pymatgen | 2024.10.29 |
+| scipy | 1.13.1 |
+| numpy | 1.26.4 |
+
+Refer to [Install.md](../../../Install.md) for the complete installation instructions.
 
 ---
 
@@ -164,6 +189,29 @@ NPZ data is auto-discovered in this order: `$ASU_DATA_DIR` > `data/data/` > `~/.
 export ASU_DATA_DIR=/path/to/data
 ```
 
+### Runtime caches
+
+On the first run the model generates two cache files under the same data root as the NPZ files (`$ASU_DATA_DIR` > `data/data/` > `~/.asu_data/`):
+
+- `wyckoff_shape_decomposition.pkl`: precomputed Wyckoff site shapes, built from the bundled JSON in `ppmat/models/sgequidiff/vocabs/`.
+- `expected_score_norms_*.pdparams`: Monte Carlo score-norm tables over space groups / Wyckoff sites / timesteps; the filename encodes `sigma_min/max`, `num_timesteps`, MC samples and lattice translations. First computation is heavy (230 space groups); later runs with the same diffusion schedule reuse the file.
+
+### Key Configuration
+
+Key hyperparameters shared by the released configs (`sgequidiff_mp20.yaml` / `sgequidiff_mpts_52.yaml`):
+
+| Parameter | Value | Description |
+| --- | --- | --- |
+| `num_timesteps` | 1000 | diffusion timesteps |
+| `sigma_min` / `sigma_max` | 0.002 / 0.5 | VE-SDE noise schedule bounds |
+| `noise_scheduler_num_monte_carlo_samples` | 2500 | MC samples for the ASU-wrapped sigma-norm table |
+| `num_wn_lattice_translations` | 3 | wrapped-normal lattice translations |
+| `model_type` | `gnn` | non-equivariant backbone (`mlp` / `gnn` / `cspnet`) |
+| `time_emb_dim` | 128 | Fourier time embedding dimension |
+| `batch_size` | 32 (train) / 64 (val, test) | dataloader batch size |
+| optimizer | AdamW, lr 1e-3 | ReduceOnPlateau (factor 0.6, patience 30, min_lr 1e-5) |
+| `max_epochs` | 2000 | total training epochs |
+
 ### Training
 ```bash
 python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml
@@ -171,12 +219,31 @@ python structure_generation/train.py -c structure_generation/configs/sgequidiff/
 
 ### Evaluation
 ```bash
-python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml Global.do_train=False Global.do_eval=True Trainer.pretrained_model_path=/path/to/checkpoint
+# 指向模型包内权重文件（下载后的本地缓存目录，或自定义 checkpoint）
+python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml Global.do_train=False Global.do_eval=True Trainer.pretrained_model_path=/path/to/checkpoints/best.pdparams
 ```
+
+Note: this command reports only the validation loss. Generation-quality metrics
+(`struct_valid` / `comp_valid` / `valid` / uniqueness / U.N. / coverage / JSDs)
+are computed by the Generation-Quality Evaluation command below (`sample.py
+--mode=compute_metric`).
 
 ### Generation
 ```bash
-python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/weight_dir --mode=by_num_atoms --num_atoms=8 --save_path=./sgequidiff_samples
+# Mode 1: 使用已注册预训练模型（自动下载权重）
+python structure_generation/sample.py --model_name='sgequidiff_mp20' --weights_name='best.pdparams' --mode='by_num_atoms' --num_atoms=8 --output_dir='./sgequidiff_samples'
+
+# Mode 2: 使用本地 config 与 checkpoint
+python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=by_num_atoms --num_atoms=8 --output_dir=./sgequidiff_samples
+```
+
+### Generation-Quality Evaluation
+```bash
+# Mode 1: 使用已注册预训练模型（自动下载权重）
+python structure_generation/sample.py --model_name='sgequidiff_mp20' --mode='compute_metric' --output_dir='./sgequidiff_samples'
+
+# Mode 2: 使用本地 config 与 checkpoint
+python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=compute_metric --output_dir=./sgequidiff_samples
 ```
 
 ---
@@ -186,11 +253,11 @@ python structure_generation/sample.py --config_path=structure_generation/configs
 ## Citation
 ```
 @misc{chang2025spacegroupequivariantcrystal,
-      title={Space Group Equivariant Crystal Diffusion}, 
+      title={Space Group Equivariant Crystal Diffusion},
       author={Rees Chang and Angela Pak and Alex Guerra and Ni Zhan and Nick Richardson and Elif Ertekin and Ryan P. Adams},
       year={2025},
       eprint={2505.10994},
       archivePrefix={arXiv},
-      url={https://arxiv.org/abs/2505.10994}, 
+      url={https://arxiv.org/abs/2505.10994},
 }
 ```

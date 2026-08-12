@@ -18,10 +18,11 @@ import pickle
 from fractions import Fraction
 from pathlib import Path
 
-from ppmat.utils import logger
-
 import numpy as np
 from scipy.spatial import ConvexHull
+
+from ppmat.utils import logger
+
 
 def _to_array(region) -> np.ndarray:
     """Convert vertex list to numpy array, supporting fraction strings like "1/2"."""
@@ -62,6 +63,7 @@ def _fan_triangulate_convex_polygon_3d(vertices_3d: np.ndarray):
         areas.append(area)
     return np.array(triangles, dtype=np.float64), np.array(areas, dtype=np.float64)
 
+
 def _compute_3d_convex_hull_volume(vertices: np.ndarray) -> float:
     """Compute volume of a 3D convex polytope."""
     if len(vertices) < 4:
@@ -73,7 +75,8 @@ def _compute_3d_convex_hull_volume(vertices: np.ndarray) -> float:
         # degenerate case (all points coplanar, etc.)
         return 0.0
 
-def build_wyckoff_shape_decomposition_dict(
+
+def build_shape_decomp_dict(
     output_path: str,
     asu_dict_path: str,
 ) -> None:
@@ -84,7 +87,7 @@ def build_wyckoff_shape_decomposition_dict(
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"[wyckoff_shape_decomp_builder] building {output_path} ...")
+    logger.info(f"[wyckoff_shape_decomp] building {output_path} ...")
 
     with open(asu_dict_path, "r") as f:
         asu_dict = json.load(f)
@@ -138,7 +141,10 @@ def build_wyckoff_shape_decomposition_dict(
                 wyckoff_shapes_info["volumes"].append(vol)
 
             else:
-                raise ValueError(f"Wyckoff site dimensionality must be in [0, 1, 2, 3], got: {site_dim}")
+                raise ValueError(
+                    f"Wyckoff site dimensionality must be in [0, 1, 2, 3], "
+                    f"got: {site_dim}"
+                )
 
             sg_shape_info[wyckoff_letter] = wyckoff_shapes_info
 
@@ -147,4 +153,4 @@ def build_wyckoff_shape_decomposition_dict(
     with open(output, "wb") as f:
         pickle.dump(shape_decomposition_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    logger.info(f"[wyckoff_shape_decomp_builder] done -> {output}")
+    logger.info(f"[wyckoff_shape_decomp] done -> {output}")

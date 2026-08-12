@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Asymmetric Unit (ASU) dataset. Pure data loader, no model-specific imports."""
+"""Asymmetric Unit (ASU) dataset. """
 
 from pathlib import Path
 from typing import Optional
@@ -21,9 +21,9 @@ import numpy as np
 from paddle.io import Dataset
 
 from ppmat.datasets.custom_data_type import ConcatData
-from ppmat.utils.asu_data import SUPPORTED_DATASETS
-from ppmat.utils.asu_data import resolve_asu_data_dir
-from ppmat.utils.crystal import ELEMENT_ENCODING_SIZE as _NUM_ELEMENTS
+from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE as _NUM_ELEMENTS
+from ppmat.utils.asu_dataset_meta import SUPPORTED_DATASETS
+from ppmat.utils.asu_dataset_meta import resolve_asu_data_dir
 
 # Supported data splits for ASU datasets (each has a corresponding NPZ archive).
 SUPPORTED_SPLITS = ("train", "val", "test")
@@ -53,12 +53,14 @@ def _parse_flat(flat: np.ndarray):
     comp = flat[_IDX_COMP:_IDX_LENGTHS].astype(np.float32)
     lengths = flat[_IDX_LENGTHS:_IDX_ANGLES].astype(np.float32)
     angles = flat[_IDX_ANGLES:_IDX_ATOMS].astype(np.float32)
-    elems = flat[_IDX_ATOMS:_IDX_ATOMS + n].astype(np.int64)
-    wycks = flat[_IDX_ATOMS + n:_IDX_ATOMS + 2 * n].astype(np.int64)
-    fracs = flat[_IDX_ATOMS + 2 * n:_IDX_ATOMS + 5 * n].reshape(n, 3).astype(np.float32)
+    elems = flat[_IDX_ATOMS : _IDX_ATOMS + n].astype(np.int64)
+    wycks = flat[_IDX_ATOMS + n : _IDX_ATOMS + 2 * n].astype(np.int64)
+    fracs = (
+        flat[_IDX_ATOMS + 2 * n : _IDX_ATOMS + 5 * n].reshape(n, 3).astype(np.float32)
+    )
     wsi = None
     if len(flat) > _IDX_ATOMS + 5 * n:
-        wsi = flat[_IDX_ATOMS + 5 * n:_IDX_ATOMS + 6 * n].astype(np.int64)
+        wsi = flat[_IDX_ATOMS + 5 * n : _IDX_ATOMS + 6 * n].astype(np.int64)
     return sg, comp, lengths, angles, n, elems, wycks, fracs, wsi
 
 

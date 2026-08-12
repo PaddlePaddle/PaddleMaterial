@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SGEQuiDiff generation quality metrics (validity / uniqueness / novelty / coverage)."""
+"""SGEQuiDiff generation quality metrics (validity / uniqueness /
+novelty / coverage)."""
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any
+from typing import List
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -58,9 +61,7 @@ class SGEQuiDiffMetric:
         if self._gt_crys is None:
             assert self.gt_file_path, "gt_file_path is required when gt_data is None"
             csv = pd.read_csv(self.gt_file_path)
-            self._gt_crys = [
-                get_crys_from_cif(cif) for cif in csv["cif"].tolist()
-            ]
+            self._gt_crys = [get_crys_from_cif(cif) for cif in csv["cif"].tolist()]
         return self._gt_crys
 
     def __call__(self, pred_data: Any, gt_data: Any = None) -> dict:

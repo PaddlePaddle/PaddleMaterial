@@ -22,14 +22,64 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distribution import Categorical
 
-from ppmat.utils.crystal import lattice_transform_and_log_prob_mask
-from ppmat.models.sgequidiff.drift_modules import FourierLinear, SpaceGroupEncoder
+from ppmat.models.sgequidiff.shared import FourierLinear
+from ppmat.models.sgequidiff.shared import SpaceGroupEncoder
+from ppmat.models.sgequidiff.vocabs import EmbeddingTools
+
+# Number of lattice parameters per crystal: 3 lengths + 3 angles.
+_NUM_LATTICE_PARAMS: int = 6
+
+
+def lattice_transform_and_log_prob_mask(
+    spacegroup: int,
+) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    if 1 <= spacegroup <= 2:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.eye(3)
+        angle_vector = paddle.zeros([3])
+        log_prob_mask = paddle.ones([6])
+    elif 3 <= spacegroup <= 15:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.to_tensor(
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]
+        )
+        angle_vector = paddle.to_tensor([90.0, 0.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 1.0, 0.0])
+    elif 16 <= spacegroup <= 74:
+        length_matrix = paddle.eye(3)
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
+    elif 75 <= spacegroup <= 142:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+    elif 143 <= spacegroup <= 194:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 120.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+    elif 195 <= spacegroup <= 230:
+        length_matrix = paddle.to_tensor(
+            [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        )
+        angle_matrix = paddle.zeros([3, 3])
+        angle_vector = paddle.to_tensor([90.0, 90.0, 90.0])
+        log_prob_mask = paddle.to_tensor([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    else:
+        raise ValueError(f"Invalid space group: {spacegroup}")
+    return length_matrix, angle_matrix, angle_vector, log_prob_mask
 
 
 @dataclasses.dataclass
 class LatticeSamplerConfig:
-    input_dimension: int
-    hidden_dimension: int
+    input_dimension: int = 128
+    hidden_dimension: int = 256
     min_lattice_length: float = 2.0
     max_lattice_length: float = 133.0
     min_lattice_angle: float = 60.0
@@ -37,24 +87,31 @@ class LatticeSamplerConfig:
     gradient_attenuation_factor: float = 1.0
     n_bins: int = 100
     n_telescopes: int = 2
-    lattice_length_bin_embedder_fourier_scale: float = 10.0
-    lattice_angle_bin_embedder_fourier_scale: float = 10.0
-    lattice_length_embedder_fourier_scale: float = 20.0
+    lattice_length_bin_embedder_fourier_scale: float = 2.0
+    lattice_angle_bin_embedder_fourier_scale: float = 1.0
+    lattice_length_embedder_fourier_scale: float = 5.0
     lattice_angle_embedder_fourier_scale: float = 1.0
-    lattice_param_dim: int = 112
-    n_emb_layers: int = 4
+    lattice_param_dim: int = 32
+    n_emb_layers: int = 2
     space_group_encoder_hidden_channels: int = 256
+    num_fourier_frequencies: int = 128
+    length_fourier_output_dim: int = 512
+    angle_fourier_output_dim: int = 256
+    bin_fourier_output_dim: int = 256
+
 
 class TelescopingDiscreteLatticeSampler(nn.Layer):
-    def __init__(self, config: LatticeSamplerConfig):
+    def __init__(
+        self,
+        config: LatticeSamplerConfig,
+        embedding_tools: "EmbeddingTools",
+    ):
         super().__init__()
         self.config = config
         self.MAX_LATTICE_LENGTH = config.max_lattice_length
         self.MIN_LATTICE_LENGTH = config.min_lattice_length
         self.MAX_LATTICE_ANGLE = config.max_lattice_angle
         self.MIN_LATTICE_ANGLE = config.min_lattice_angle
-        self.length_transform = lambda x: x
-        self.inv_length_transform = lambda x: x
 
         bravais_data = [lattice_transform_and_log_prob_mask(sg) for sg in range(1, 231)]
         bravais_length_transforms = paddle.stack([d[0] for d in bravais_data], axis=0)
@@ -72,6 +129,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         self.max_bin_edge = 4.0
 
         self.space_group_encoder = SpaceGroupEncoder(
+            embedding_tools=embedding_tools,
             hidden_channels=self.config.space_group_encoder_hidden_channels,
             space_group_embedding_dim=self.config.input_dimension,
         )
@@ -81,57 +139,59 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         self.lattice_length_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=1,
-                num_fourier_frequencies=128,
+                num_fourier_frequencies=self.config.num_fourier_frequencies,
                 scale=self.config.lattice_length_embedder_fourier_scale,
                 num_layers=self.config.n_emb_layers,
-                output_dim=512,
+                output_dim=self.config.length_fourier_output_dim,
                 use_bias=True,
             ),
-            nn.Linear(512, self.lattice_param_dim),
+            nn.Linear(self.config.length_fourier_output_dim, self.lattice_param_dim),
             nn.Silu(),
         )
 
         self.lattice_angle_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=1,
-                num_fourier_frequencies=128,
+                num_fourier_frequencies=self.config.num_fourier_frequencies,
                 scale=self.config.lattice_angle_embedder_fourier_scale,
                 num_layers=self.config.n_emb_layers,
-                output_dim=256,
+                output_dim=self.config.angle_fourier_output_dim,
                 use_bias=True,
             ),
-            nn.Linear(256, self.lattice_param_dim),
+            nn.Linear(self.config.angle_fourier_output_dim, self.lattice_param_dim),
             nn.Silu(),
         )
 
         self.length_bin_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=2,
-                num_fourier_frequencies=128,
+                num_fourier_frequencies=self.config.num_fourier_frequencies,
                 scale=self.config.lattice_length_bin_embedder_fourier_scale,
-                output_dim=256,
+                output_dim=self.config.bin_fourier_output_dim,
                 num_layers=self.config.n_emb_layers,
                 use_bias=True,
             ),
-            nn.Linear(256, self.config.hidden_dimension),
+            nn.Linear(self.config.bin_fourier_output_dim, self.config.hidden_dimension),
             nn.Silu(),
         )
 
         self.angle_bin_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=2,
-                num_fourier_frequencies=128,
+                num_fourier_frequencies=self.config.num_fourier_frequencies,
                 scale=self.config.lattice_angle_bin_embedder_fourier_scale,
-                output_dim=256,
+                output_dim=self.config.bin_fourier_output_dim,
                 num_layers=self.config.n_emb_layers,
                 use_bias=True,
             ),
-            nn.Linear(256, self.config.hidden_dimension),
+            nn.Linear(self.config.bin_fourier_output_dim, self.config.hidden_dimension),
             nn.Silu(),
         )
 
         self.bin_conditioning_info_dim = (
-            self.config.input_dimension + 6 * self.lattice_param_dim + 6
+            self.config.input_dimension
+            + _NUM_LATTICE_PARAMS * self.lattice_param_dim
+            + _NUM_LATTICE_PARAMS
         )
 
         self.bin_logit_head = nn.Sequential(
@@ -140,14 +200,13 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 self.config.hidden_dimension,
             ),
             nn.Silu(),
-            nn.Linear(self.config.hidden_dimension, 6),
+            nn.Linear(self.config.hidden_dimension, _NUM_LATTICE_PARAMS),
         )
 
         self.register_buffer("grid_pts", paddle.linspace(0, 1, self.n_bins + 1))
 
-
         angle_offsets = self.bravais_angle_offsets.clone()
-        unconstrained_angle_mask = (angle_offsets == 0.0)
+        unconstrained_angle_mask = angle_offsets == 0.0
         angle_offsets[unconstrained_angle_mask] = self.MIN_LATTICE_ANGLE
         _normed_params = self._get_normed_lattice_parameters(
             self.MIN_LATTICE_LENGTH * paddle.ones_like(self.bravais_angle_offsets),
@@ -159,7 +218,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         _discretized_normed_params = self.get_discretized_normed_lattice_params(
             _normed_params, angle_offsets[:, :2]
         )
-        _discretized_normed_angle_offsets = _discretized_normed_params[:, 3:]
+        _discretized_normed_angle_offsets = _discretized_normed_params[:, 3:].clone()
         _discretized_normed_angle_offsets[unconstrained_angle_mask] = 0.0
         self.register_buffer(
             "discretized_normed_bravais_angle_offsets",
@@ -179,8 +238,8 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         normed_lattice_lengths = (
             normed_param_range
             * (
-                (self.length_transform(lattice_lengths) - self.length_transform(self.MIN_LATTICE_LENGTH))
-                / (self.length_transform(self.MAX_LATTICE_LENGTH) - self.length_transform(self.MIN_LATTICE_LENGTH))
+                (lattice_lengths - self.MIN_LATTICE_LENGTH)
+                / (self.MAX_LATTICE_LENGTH - self.MIN_LATTICE_LENGTH)
             )
             + min_normed_param
         )
@@ -215,21 +274,30 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
     def get_valid_gamma_angle_interval(self, alpha_and_beta_angles):
         cos_alpha = paddle.cos(alpha_and_beta_angles[:, 0] * math.pi / 180.0)
         cos_beta = paddle.cos(alpha_and_beta_angles[:, 1] * math.pi / 180.0)
-        cos_alpha_sq = cos_alpha ** 2
-        cos_beta_sq = cos_beta ** 2
+        cos_alpha_sq = cos_alpha**2
+        cos_beta_sq = cos_beta**2
         term1 = cos_alpha * cos_beta
         inner = 4 * cos_alpha_sq * cos_beta_sq - 4 * (cos_alpha_sq + cos_beta_sq - 1)
         inner = paddle.clip(inner, min=0.0)
         term2 = 0.5 * paddle.sqrt(inner)
-        gamma_min = paddle.acos(paddle.clip(term1 + term2, min=-1.0, max=1.0)) * 180.0 / math.pi
-        gamma_max = paddle.acos(paddle.clip(term1 - term2, min=-1.0, max=1.0)) * 180.0 / math.pi
+        gamma_min = (
+            paddle.acos(paddle.clip(term1 + term2, min=-1.0, max=1.0)) * 180.0 / math.pi
+        )
+        gamma_max = (
+            paddle.acos(paddle.clip(term1 - term2, min=-1.0, max=1.0)) * 180.0 / math.pi
+        )
         return (
-            paddle.clip(gamma_min, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
-            paddle.clip(gamma_max, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE),
+            paddle.clip(
+                gamma_min, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE
+            ),
+            paddle.clip(
+                gamma_max, min=self.MIN_LATTICE_ANGLE, max=self.MAX_LATTICE_ANGLE
+            ),
         )
 
     def _angle_to_normed(self, angle: paddle.Tensor) -> paddle.Tensor:
-        """Map an angle (degrees) in [MIN_LATTICE_ANGLE, MAX_LATTICE_ANGLE] to normed bin coords."""
+        """Map an angle (degrees) in [MIN_LATTICE_ANGLE, MAX_LATTICE_ANGLE]
+        to normed bin coords."""
         return (self.max_bin_edge - self.min_bin_edge) * (
             (angle - self.MIN_LATTICE_ANGLE)
             / (self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE)
@@ -239,17 +307,20 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         self, min_bin_edge: paddle.Tensor, max_bin_edge: paddle.Tensor
     ) -> paddle.Tensor:
         """Build per-sample bin edges from [min, max] range over self.grid_pts."""
-        return (
-            min_bin_edge.unsqueeze(-1)
-            + (max_bin_edge - min_bin_edge).unsqueeze(-1) * self.grid_pts.unsqueeze(0)
-        )
+        return min_bin_edge.unsqueeze(-1) + (max_bin_edge - min_bin_edge).unsqueeze(
+            -1
+        ) * self.grid_pts.unsqueeze(0)
 
     @paddle.no_grad()
-    def get_discretized_normed_lattice_params(self, normed_lattice_parameters, raw_alpha_and_beta_angles):
+    def get_discretized_normed_lattice_params(
+        self, normed_lattice_parameters, raw_alpha_and_beta_angles
+    ):
         batch_size = normed_lattice_parameters.shape[0]
         _batch_idxs = paddle.arange(batch_size)
-        discretized_normed_lattice_parameters = paddle.zeros_like(normed_lattice_parameters)
-        for i in range(6):
+        discretized_normed_lattice_parameters = paddle.zeros_like(
+            normed_lattice_parameters
+        )
+        for i in range(_NUM_LATTICE_PARAMS):
             min_bin_edge = self.min_bin_edge * paddle.ones([batch_size])
             max_bin_edge = self.max_bin_edge * paddle.ones([batch_size])
             x = normed_lattice_parameters[:, i]
@@ -262,29 +333,47 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 chosen_bins = bins[_batch_idxs, bin_idxs]
                 min_bin_edge = chosen_bins[:, 0]
                 max_bin_edge = chosen_bins[:, 1]
-            discretized_normed_lattice_parameters[:, i] = paddle.mean(chosen_bins, axis=-1)
+            discretized_normed_lattice_parameters[:, i] = paddle.mean(
+                chosen_bins, axis=-1
+            )
 
-        min_gamma, max_gamma = self.get_valid_gamma_angle_interval(raw_alpha_and_beta_angles)
+        min_gamma, max_gamma = self.get_valid_gamma_angle_interval(
+            raw_alpha_and_beta_angles
+        )
         min_normed_gamma = self._angle_to_normed(min_gamma)
         max_normed_gamma = self._angle_to_normed(max_gamma)
         gammas_lt_min = discretized_normed_lattice_parameters[:, -1] < min_normed_gamma
         gammas_gt_max = discretized_normed_lattice_parameters[:, -1] > max_normed_gamma
 
         if paddle.any(gammas_lt_min | gammas_gt_max):
-            bin_edges = (
-                (self.max_bin_edge - self.min_bin_edge)
-                * paddle.linspace(0, 1, self.n_telescopes * self.n_bins + 1)
-                + self.min_bin_edge
+            bin_edges = (self.max_bin_edge - self.min_bin_edge) * paddle.linspace(
+                0, 1, self.n_telescopes * self.n_bins + 1
+            ) + self.min_bin_edge
+            bin_midpoints = paddle.mean(
+                paddle.stack([bin_edges[:-1], bin_edges[1:]], axis=-1), axis=-1
             )
-            bin_midpoints = paddle.mean(paddle.stack([bin_edges[:-1], bin_edges[1:]], axis=-1), axis=-1)
             if paddle.any(gammas_lt_min):
                 valid_bin_indices = paddle.argmax(
-                    (bin_midpoints.unsqueeze(0) > min_normed_gamma[gammas_lt_min].unsqueeze(-1)).cast("int32"), axis=-1)
-                discretized_normed_lattice_parameters[:, -1][gammas_lt_min] = bin_midpoints[valid_bin_indices]
+                    (
+                        bin_midpoints.unsqueeze(0)
+                        > min_normed_gamma[gammas_lt_min].unsqueeze(-1)
+                    ).cast("int32"),
+                    axis=-1,
+                )
+                discretized_normed_lattice_parameters[
+                    gammas_lt_min, -1
+                ] = bin_midpoints[valid_bin_indices]
             if paddle.any(gammas_gt_max):
                 valid_bin_indices = paddle.argmax(
-                    (bin_midpoints.unsqueeze(0) < max_normed_gamma[gammas_gt_max].unsqueeze(-1)).cast("int32"), axis=-1)
-                discretized_normed_lattice_parameters[:, -1][gammas_gt_max] = bin_midpoints[valid_bin_indices]
+                    (
+                        bin_midpoints.unsqueeze(0)
+                        < max_normed_gamma[gammas_gt_max].unsqueeze(-1)
+                    ).cast("int32"),
+                    axis=-1,
+                )
+                discretized_normed_lattice_parameters[
+                    gammas_gt_max, -1
+                ] = bin_midpoints[valid_bin_indices]
         return discretized_normed_lattice_parameters
 
     def log_prob(
@@ -294,10 +383,10 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         space_group_indices: paddle.Tensor,
         noisy_lattice_lengths: paddle.Tensor = None,
         noisy_lattice_angles: paddle.Tensor = None,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> paddle.Tensor:
         """Log forward probability of sampling the given lattice parameters."""
         batch_size = lattice_lengths.shape[0]
-        num_lattice_parameters = 6
+        num_lattice_parameters = _NUM_LATTICE_PARAMS
         noisy_lattice_lengths = (
             noisy_lattice_lengths
             if self.training and noisy_lattice_lengths is not None
@@ -335,34 +424,24 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
             if self.training
             else normed_lattice_parameters
         )
-        _normed_gt_and_noisy_lattice_params = self.get_discretized_normed_lattice_params(
+        discretize_lattice_params = self.get_discretized_normed_lattice_params
+        _normed_gt_and_noisy_lattice_params = discretize_lattice_params(
             paddle.concat(
-                [normed_lattice_parameters, normed_noisy_lattice_parameters], axis=0
+                [normed_lattice_parameters, normed_noisy_lattice_parameters],
             ),
             # get_valid_gamma_angle_interval expects alpha/beta angles [:, :2].
-            #
-            # DEV NOTE (intentional divergence from the upstream PyTorch code):
-            # upstream passed lattice_angles[:, 1:] (beta/gamma) here, which
-            # computes a wrong valid-gamma interval for the discretized gamma
-            # bins in log_prob(). The forward() sampling path always used
-            # [:, :2] (alpha/beta), so the upstream training loss and the
-            # sampling path disagreed.
-            #
-            # Impact on this port:
-            # - Sampling / inference with the released weights is unaffected:
-            #   this fix only touches log_prob(), which is never called on the
-            #   sampling path (forward()).
-            # - Training / fine-tuning computes the corrected (alpha, beta)-
-            #   based gamma interval in the loss, intentionally differing from
-            #   the upstream buggy loss values.
+            # DEV NOTE (intentional divergence from legacy): legacy code passed
+            # lattice_angles[:, 1:] (beta/gamma), computing a wrong gamma interval
+            # in log_prob(); forward() always used [:, :2]. Sampling is unaffected.
             paddle.concat([lattice_angles[:, :2], noisy_lattice_angles[:, :2]], axis=0),
         )
         normed_lattice_parameters = _normed_gt_and_noisy_lattice_params[:batch_size]
-        normed_noisy_lattice_parameters = _normed_gt_and_noisy_lattice_params[batch_size:]
+        normed_noisy_lattice_parameters = _normed_gt_and_noisy_lattice_params[
+            batch_size:
+        ]
 
         log_pfs = []
-        regularizer = paddle.zeros([batch_size])
-        lattice_mask = paddle.ones([6])
+        lattice_mask = paddle.ones([_NUM_LATTICE_PARAMS])
         current_lattice_embedding = paddle.concat(
             [
                 self.lattice_length_embedder(
@@ -384,13 +463,15 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 [
                     sg_features,
                     current_lattice_embedding,
-                    lattice_mask[None, :].expand([batch_size, 6]),
+                    lattice_mask[None, :].expand([batch_size, _NUM_LATTICE_PARAMS]),
                 ],
                 axis=1,
             )[:, None, :].expand([-1, self.n_bins, -1])
             _, log_prob = self._sample_and_log_prob(
                 lattice_param_index=i,
-                bin_embedder=self.length_bin_embedder if i < 3 else self.angle_bin_embedder,
+                bin_embedder=self.length_bin_embedder
+                if i < 3
+                else self.angle_bin_embedder,
                 batch_size=batch_size,
                 x=next_normed_lattice_parameter,
                 z=current_state_features,
@@ -410,7 +491,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 - self.config.gradient_attenuation_factor * log_pfs_detach
                 + log_pfs_detach
             )
-        return log_pfs, regularizer
+        return log_pfs
 
     @paddle.no_grad()
     def forward(self, space_group_indices):
@@ -435,8 +516,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         lattice_params_transform = paddle.concat(
             (
                 paddle.to_tensor(
-                    [self.length_transform(self.MAX_LATTICE_LENGTH)
-                     - self.length_transform(self.MIN_LATTICE_LENGTH)]
+                    [self.MAX_LATTICE_LENGTH - self.MIN_LATTICE_LENGTH]
                 ).expand([batch_size, num_lengths]),
                 paddle.to_tensor(
                     [self.MAX_LATTICE_ANGLE - self.MIN_LATTICE_ANGLE]
@@ -447,22 +527,22 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
 
         lattice_params_offset = paddle.concat(
             (
-                paddle.to_tensor(
-                    [self.length_transform(self.MIN_LATTICE_LENGTH)]
-                ).expand([batch_size, num_lengths]),
-                paddle.to_tensor(
-                    [self.MIN_LATTICE_ANGLE]
-                ).expand([batch_size, num_angles]),
+                paddle.to_tensor([self.MIN_LATTICE_LENGTH]).expand(
+                    [batch_size, num_lengths]
+                ),
+                paddle.to_tensor([self.MIN_LATTICE_ANGLE]).expand(
+                    [batch_size, num_angles]
+                ),
             ),
             axis=1,
         )
 
         normed_lattice_parameters = paddle.zeros([batch_size, num_lattice_parameters])
         current_lattice_embedding = paddle.zeros(
-            [batch_size, 6 * self.lattice_param_dim]
+            [batch_size, _NUM_LATTICE_PARAMS * self.lattice_param_dim]
         )
         log_pfs = []
-        lattice_mask = paddle.zeros([6])
+        lattice_mask = paddle.zeros([_NUM_LATTICE_PARAMS])
         alpha_and_beta_angles = None
         bravais_length_transforms = self.bravais_length_transforms[space_group_indices]
         bravais_angle_transforms = self.bravais_angle_transforms[space_group_indices]
@@ -474,13 +554,13 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
             if i > 0:
                 if i < 4:
                     current_lattice_embedding[
-                        :, self.lattice_param_dim * (i - 1):self.lattice_param_dim * i
+                        :, self.lattice_param_dim * (i - 1) : self.lattice_param_dim * i
                     ] = self.lattice_length_embedder(
                         normed_lattice_parameters[:, i - 1].unsqueeze(-1)
                     )
                 else:
                     current_lattice_embedding[
-                        :, self.lattice_param_dim * (i - 1):self.lattice_param_dim * i
+                        :, self.lattice_param_dim * (i - 1) : self.lattice_param_dim * i
                     ] = self.lattice_angle_embedder(
                         normed_lattice_parameters[:, i - 1].unsqueeze(-1)
                     )
@@ -489,8 +569,9 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 [
                     sg_features,
                     current_lattice_embedding,
-                    lattice_mask.unsqueeze(0).expand([batch_size, 6])
-                ], axis=1
+                    lattice_mask.unsqueeze(0).expand([batch_size, _NUM_LATTICE_PARAMS]),
+                ],
+                axis=1,
             )[:, None, :].expand([batch_size, self.n_bins, -1])
 
             if i == 5:
@@ -501,7 +582,9 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
 
             sample, log_prob = self._sample_and_log_prob(
                 lattice_param_index=i,
-                bin_embedder=self.length_bin_embedder if i < 3 else self.angle_bin_embedder,
+                bin_embedder=self.length_bin_embedder
+                if i < 3
+                else self.angle_bin_embedder,
                 batch_size=batch_size,
                 z=current_state_features,
                 alpha_and_beta_angles=alpha_and_beta_angles,
@@ -512,17 +595,19 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
             lattice_mask[i] = 1.0
             log_pfs.append(log_prob)
 
-            # Apply Bravais lattice constraints
             if i < 3:
                 normed_lattice_parameters[:, :3] = paddle.bmm(
                     normed_lattice_parameters[:, :3].unsqueeze(1),
-                    bravais_length_transforms
+                    bravais_length_transforms,
                 ).squeeze(1)
             else:
-                normed_lattice_parameters[:, 3:] = paddle.bmm(
-                    normed_lattice_parameters[:, 3:].unsqueeze(1),
-                    bravais_angle_transforms
-                ).squeeze(1) + discretized_normed_bravais_angle_offsets
+                normed_lattice_parameters[:, 3:] = (
+                    paddle.bmm(
+                        normed_lattice_parameters[:, 3:].unsqueeze(1),
+                        bravais_angle_transforms,
+                    ).squeeze(1)
+                    + discretized_normed_bravais_angle_offsets
+                )
 
         log_pfs = paddle.stack(log_pfs, axis=1)
 
@@ -531,7 +616,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
             / (self.max_bin_edge - self.min_bin_edge)
         ) * lattice_params_transform + lattice_params_offset
 
-        lengths = self.inv_length_transform(lattice_parameters[:, :num_lengths])
+        lengths = lattice_parameters[:, :num_lengths]
         angles = lattice_parameters[:, num_lengths:]
 
         log_pf_masks = self.bravais_log_prob_masks[space_group_indices]
@@ -557,7 +642,7 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         alpha_and_beta_angles=None,
         enforce_gamma_bounds: bool = False,
     ):
-        assert 0 <= lattice_param_index < 6
+        assert 0 <= lattice_param_index < _NUM_LATTICE_PARAMS
         if z is None:
             z = paddle.zeros([batch_size, self.n_bins, self.bin_conditioning_info_dim])
 
@@ -586,29 +671,31 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
                 [batch_size, self.n_bins, -1]
             )
 
-            bin_logits = self.bin_logit_head(
-                paddle.concat([bin_emb, z], axis=-1)
-            )[:, :, lattice_param_index]
+            bin_logits = self.bin_logit_head(paddle.concat([bin_emb, z], axis=-1))[
+                :, :, lattice_param_index
+            ]
 
             if enforce_gamma_bounds:
                 if j < self.n_telescopes - 1:
                     epsilon = (bin_edges[0, 1] - bin_edges[0, 0]) / self.n_bins
                     zero_prob_bins_mask = (
-                        (bins[:, :, 1] - epsilon < min_normed_gamma)
-                        | (bins[:, :, 0] + epsilon > max_normed_gamma)
-                    )
+                        bins[:, :, 1] - epsilon < min_normed_gamma
+                    ) | (bins[:, :, 0] + epsilon > max_normed_gamma)
                 else:
                     bin_midpoints = paddle.mean(bins, axis=-1)
-                    zero_prob_bins_mask = (
-                        (bin_midpoints < min_normed_gamma)
-                        | (bin_midpoints > max_normed_gamma)
+                    zero_prob_bins_mask = (bin_midpoints < min_normed_gamma) | (
+                        bin_midpoints > max_normed_gamma
                     )
 
                 if paddle.any(paddle.all(zero_prob_bins_mask, axis=-1)):
                     raise NotImplementedError("All bins were invalid")
 
                 bin_logits = bin_logits + zero_prob_bins_mask.cast("float32") * (
-                    paddle.where(zero_prob_bins_mask, paddle.to_tensor(-float('inf')), paddle.to_tensor(0.0))
+                    paddle.where(
+                        zero_prob_bins_mask,
+                        paddle.to_tensor(-float("inf")),
+                        paddle.to_tensor(0.0),
+                    )
                 )
 
             if x is None:
