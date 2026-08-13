@@ -15,10 +15,10 @@
 import os
 import os.path as osp
 from collections import defaultdict
+from typing import Mapping
 from typing import Optional
 from typing import Sequence
 
-import paddle
 import pandas as pd
 from pymatgen.core import Structure
 from tqdm import tqdm
@@ -87,98 +87,79 @@ class PropertyPredictor(BasePredictor):
         data = self.graph_converter(structures)
         return self._run_model(data)
 
+    def from_molecule(self, molecule):
+        data = self.graph_converter(molecule)
+        return self._run_model(data)
+
+    def from_smiles(self, smiles: str):
+        """Build a 3D molecule from SMILES and predict its properties."""
+        from rdkit.Chem import AllChem
+
+        molecule = BuildMolecule(format="smiles", add_hs=True)(smiles)
+        if molecule is None:
+            raise ValueError(f"Failed to parse SMILES: {smiles}")
+        if AllChem.EmbedMolecule(molecule, randomSeed=42) != 0:
+            raise ValueError(f"Failed to generate a 3D conformer for SMILES: {smiles}")
+        AllChem.MMFFOptimizeMolecule(molecule)
+        return self.from_molecule(molecule)
+
+    def from_graph(self, graph: Mapping):
+        """Build a molecule from atomic numbers and positions and predict.
+
+        Args:
+            graph: Mapping containing ``atomic_numbers`` and ``positions``.
+        """
+        molecule = BuildMolecule(format="dict", sanitize=False)(graph)
+        if molecule is None:
+            raise ValueError("Failed to build a molecule from graph data.")
+        return self.from_molecule(molecule)
+
     def from_cif_file(self, cif_file_path, save_path=None):
+        """Predict crystal properties from CIF file(s).
+
+        Args:
+            cif_file_path: Path to a single ``.cif`` file or a directory
+                of ``.cif`` files.
+            save_path: Optional CSV path.
+
+        Returns:
+            List of prediction dictionaries.
+        """
         if save_path is not None:
             assert save_path.endswith(".csv"), "save_path must end with .csv"
+
         if osp.isdir(cif_file_path):
-            cif_files = [
-                osp.join(cif_file_path, f)
-                for f in os.listdir(cif_file_path)
-                if f.endswith(".cif")
-            ]
-            results = []
-            for cif_file in tqdm(cif_files):
-                structure = Structure.from_file(cif_file)
-                result = self.from_structures(structure)
-                results.append(result)
-            if save_path is not None:
-
-                keys = list(results[0].keys())
-                result_properties = defaultdict(list)
-                for key in keys:
-                    for r in results:
-                        result_properties[key].append(r[key])
-
-                # save cif_files and result to csv file
-                df = pd.DataFrame({"cif_file": cif_files, **result_properties})
-                df.to_csv(save_path, index=False)
-                logger.info(f"Saved the prediction result to {save_path}")
-
-            return results
+            cif_files = sorted(
+                osp.join(cif_file_path, file_name)
+                for file_name in os.listdir(cif_file_path)
+                if file_name.endswith(".cif")
+            )
         else:
-            structure = Structure.from_file(cif_file_path)
-            result = self.from_structures(structure)
+            cif_files = [cif_file_path]
 
-            keys = list(result.keys())
+        results = []
+        for cif_file in tqdm(cif_files, desc="Predict"):
+            structure = Structure.from_file(cif_file)
+            results.append(self.from_structures(structure))
+
+        if save_path is not None and results:
+            keys = list(results[0].keys())
             result_properties = defaultdict(list)
             for key in keys:
-                result_properties[key].append(result[key])
+                for result in results:
+                    result_properties[key].append(result[key])
 
-            if save_path is not None:
-                df = pd.DataFrame({"cif_file": [cif_file_path], **result_properties})
-                df.to_csv(save_path, index=False)
-                logger.info(f"Saved the prediction result to {save_path}")
+            df = pd.DataFrame({"cif_file": cif_files, **result_properties})
+            df.to_csv(save_path, index=False)
+            logger.info(f"Saved the prediction result to {save_path}")
 
-            return result
-
-    def from_molecule(self, molecule_data, molecule_format):
-        """Predict properties from molecular data.
-
-        Follows the standard PaddleMaterials molecular pipeline:
-        ``BuildMolecule -> graph_converter -> predict``.
-        """
-        mol = BuildMolecule(format=molecule_format)(molecule_data)
-
-        try:
-            conf = mol.GetConformer()
-        except ValueError:
-            conf = None
-        if conf is None or not conf.Is3D():
-            from rdkit import Chem as RDChem
-            from rdkit.Chem import AllChem
-
-            if molecule_format == "smiles":
-                mol = RDChem.AddHs(mol)
-            AllChem.EmbedMolecule(mol, randomSeed=42)
-            AllChem.MMFFOptimizeMolecule(mol)
-
-        if self.graph_converter_fn is not None:
-            data = self.graph_converter_fn(mol)
-        else:
-            conf = mol.GetConformer()
-            num_atoms = mol.GetNumAtoms()
-            z = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
-            pos = [
-                [
-                    conf.GetAtomPosition(i).x,
-                    conf.GetAtomPosition(i).y,
-                    conf.GetAtomPosition(i).z,
-                ]
-                for i in range(num_atoms)
-            ]
-            data = {
-                "z": paddle.to_tensor(z, dtype=paddle.int64),
-                "pos": paddle.to_tensor(pos, dtype=paddle.get_default_dtype()),
-                "batch": paddle.zeros([num_atoms], dtype=paddle.int64),
-            }
-
-        return self._run_model(data)
+        return results
 
     def from_xyz_file(self, xyz_file_path, save_path=None):
         """Predict molecular properties from XYZ file(s).
 
-        Reads each ``.xyz`` file via RDKit, then delegates to
-        :meth:`from_molecule` (``BuildMolecule → graph_converter → predict``).
+        Builds each ``.xyz`` file with :class:`BuildMolecule`, then delegates
+        to :meth:`from_molecule`.
 
         Args:
             xyz_file_path: Path to a single ``.xyz`` file or a directory
@@ -186,10 +167,8 @@ class PropertyPredictor(BasePredictor):
             save_path: Optional CSV path.
 
         Returns:
-            Single result dict or list of result dicts.
+            List of prediction dictionaries.
         """
-        from rdkit import Chem
-
         if save_path is not None:
             assert save_path.endswith(".csv"), "save_path must end with .csv"
 
@@ -206,24 +185,22 @@ class PropertyPredictor(BasePredictor):
 
         results = []
         for xyz_path in tqdm(xyz_files, desc="Predict"):
-            with open(xyz_path, "r") as f:
-                xyz_block = f.read()
-            mol = Chem.MolFromXYZBlock(xyz_block)
-            if mol is None:
+            molecule = BuildMolecule(format="xyz_file", sanitize=False)(xyz_path)
+            if molecule is None:
                 raise ValueError(f"Failed to parse XYZ file: {xyz_path}")
-            out = self.from_molecule(mol, "rdmol")
+            out = self.from_molecule(molecule)
             results.append(out)
 
         if save_path is not None and results:
             keys = list(results[0].keys())
             props = defaultdict(list)
             for key in keys:
-                for r in results:
-                    props[key].append(r[key])
+                for result in results:
+                    props[key].append(result[key])
             df = pd.DataFrame(
-                {"xyz_file": [osp.basename(f) for f in xyz_files], **props}
+                {"xyz_file": [osp.basename(path) for path in xyz_files], **props}
             )
             df.to_csv(save_path, index=False)
             logger.info(f"Saved prediction results to {save_path}")
 
-        return results if len(results) > 1 else results[0]
+        return results

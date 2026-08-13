@@ -504,14 +504,20 @@ class SphereNet(paddle.nn.Layer):
 
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
-    def predict(self, graphs):
+    def predict(self, samples):
         """Inference interface for batch dicts or PGL graphs."""
-        if isinstance(graphs, list):
-            return [self.predict(graph) for graph in graphs]
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
 
-        data = graphs if isinstance(graphs, dict) else {"graph": graphs}
-        result = self.forward(data, return_loss=False, return_prediction=True)
-        return {
-            key: value.numpy() if isinstance(value, paddle.Tensor) else value
-            for key, value in result["pred_dict"].items()
-        }
+        results = []
+        for sample in samples:
+            data = sample if isinstance(sample, dict) else {"graph": sample}
+            result = self.forward(data, return_loss=False, return_prediction=True)
+            results.append(
+                {
+                    key: value.numpy() if isinstance(value, paddle.Tensor) else value
+                    for key, value in result["pred_dict"].items()
+                }
+            )
+
+        return results if is_list else results[0]

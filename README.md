@@ -170,7 +170,7 @@ Enhance STEM images using a pretrained SFIN model:
 python spectrum_enhancement/predict.py \
     --model_name='sfin_haadf_enhance' \
     --weights_name='best.pdparams' \
-    --input_path='path/to/noisy_image.png' \
+    --input_path='spectrum_enhancement/example_data/sfin_haadf.png' \
     --output_dir='result_sfin/'
 ```
 
