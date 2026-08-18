@@ -153,7 +153,7 @@ python electronic_structure/predict.py \
 See the [InfGCN prediction guide](electronic_structure/configs/infgcn/README.md#prediction)
 for registered-model and local-checkpoint inference from MOL, CUBE, CHGCAR, and
 density JSON inputs. Real test-split field examples are bundled under
-`electronic_structure/example_data/infgcn/`.
+`electronic_structure/example_data/`.
 
 #### Spectrum Elucidation
 

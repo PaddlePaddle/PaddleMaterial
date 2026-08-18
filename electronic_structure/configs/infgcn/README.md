@@ -249,21 +249,21 @@ python electronic_structure/predict.py \
 python electronic_structure/predict.py \
   --model_name infgcn_qm9 \
   --weights_name best.pdparams \
-  --input_format=chgcar --input_path electronic_structure/example_data/infgcn/000002.CHGCAR.lz4 \
+  --input_format=chgcar --input_path electronic_structure/example_data/ammonia.CHGCAR.lz4 \
   --output_path output/infgcn_qm9/chgcar
 
 # 6) Reuse the structure and periodic grid from an MP density JSON test sample.
 python electronic_structure/predict.py \
   --model_name infgcn_mp \
   --weights_name best.pdparams \
-  --input_format=json --input_path electronic_structure/example_data/infgcn/mp-1546.json.xz \
+  --input_format=json --input_path electronic_structure/example_data/mg3dy_mp-1546.json.xz \
   --output_path output/infgcn_mp/json
 
 # 7) Reuse the structure and native grid from an OMol25 CUBE test sample.
 python electronic_structure/predict.py \
   --model_name infgcn_omol25_mc_5k_trimmed \
   --weights_name best.pdparams \
-  --input_format=cube --input_path electronic_structure/example_data/infgcn/004437.cube.lz4 \
+  --input_format=cube --input_path electronic_structure/example_data/c38h40eun9op.cube.lz4 \
   --output_path output/infgcn_omol25/cube
 ```
 
@@ -298,9 +298,9 @@ The bundled field examples are the first entries of their published test splits:
 
 | Dataset | Test entry | Bundled input |
 |---|---:|---|
-| QM9 ES | `1` → `000002` | `000002.CHGCAR.lz4` |
-| MP ES cubic | `mp-1546` | `mp-1546.json.xz` |
-| OMol25 MC 5k | `4437` | `004437.cube.lz4` |
+| QM9 ES | `1` → `000002` | `ammonia.CHGCAR.lz4` |
+| MP ES cubic | `mp-1546` | `mg3dy_mp-1546.json.xz` |
+| OMol25 MC 5k | `4437` | `c38h40eun9op.cube.lz4` |
 
 ---
 
