@@ -14,29 +14,25 @@
 
 
 import copy
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
-from typing import Optional
-from typing import Sequence
 
 import numpy as np
 import paddle
-from cvve import GridField
-from cvve import GridSpec
-from cvve import Structure
+from ase.units import Bohr
+from cvve import GridField, GridSpec, Structure
 from pymatgen.core import Element
 from tqdm import tqdm
 
-import ppmat.datasets as datasets
-from ppmat.datasets import DensityDataset
-from ppmat.datasets import MD17DensityDataset
+from ppmat import datasets
+from ppmat.datasets import DensityDataset, MD17DensityDataset
 from ppmat.datasets.build_field import BuildField
 from ppmat.datasets.build_molecule import BuildMolecule
 from ppmat.models import build_graph_converter
 from ppmat.predictor.base import BasePredictor
 from ppmat.utils import logger
-from ppmat.utils.crystal import atomic_number_from_symbol
+from ppmat.utils.crystal import atomic_number_from_symbol, normalize_coordinate_unit
 from ppmat.utils.io import write_cube
 from ppmat.utils.misc import set_random_seed
 from ppmat.visualization import VolumeVisualizer
@@ -58,21 +54,27 @@ def read_cube_density(path, field_converter):
     )(path, validate_coordinate_unit=False)
     grid = field.grid
     structure = field.structure
+    coordinate_unit = normalize_coordinate_unit(grid.length_unit)
+    to_angstrom = 1.0 if coordinate_unit == "angstrom" else Bohr
     return (
         np.asarray(field.flat, dtype=np.float32),
-        np.asarray(grid.cartesian_coordinates(), dtype=np.float32),
+        np.asarray(
+            grid.cartesian_coordinates() * to_angstrom,
+            dtype=np.float32,
+        ),
         {
             "shape": list(grid.shape),
-            "cell": np.asarray(grid.cell_vectors, dtype=np.float32),
-            "origin": np.asarray(grid.origin, dtype=np.float32),
+            "cell": np.asarray(grid.cell_vectors * to_angstrom, dtype=np.float32),
+            "origin": np.asarray(grid.origin * to_angstrom, dtype=np.float32),
             "atom_numbers": np.asarray(
                 [atomic_number_from_symbol(symbol) for symbol in structure.symbols],
                 dtype=np.int64,
             ),
             "atom_coord_ref": np.asarray(
-                structure.cartesian_positions(), dtype=np.float32
+                structure.cartesian_positions() * to_angstrom,
+                dtype=np.float32,
             ),
-            "coordinate_unit": grid.length_unit,
+            "coordinate_unit": "angstrom",
             "density_unit": grid.value_unit,
         },
     )
@@ -365,12 +367,12 @@ class FieldPredictor(BasePredictor):
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        weights_name: Optional[str] = None,
-        config_path: Optional[str] = None,
-        checkpoint_path: Optional[str] = None,
-        device: Optional[str] = None,
-        config_overrides: Optional[Sequence[str]] = None,
+        model_name: str | None = None,
+        weights_name: str | None = None,
+        config_path: str | None = None,
+        checkpoint_path: str | None = None,
+        device: str | None = None,
+        config_overrides: Sequence[str] | None = None,
         seed: int = 42,
     ):
         super().__init__(
@@ -412,8 +414,7 @@ class FieldPredictor(BasePredictor):
             float(model_cutoff),
         ):
             raise ValueError(
-                "Predict build_graph_cfg cutoff must match the model "
-                "atom_graph_cutoff."
+                "Predict build_graph_cfg cutoff must match the model atom_graph_cutoff."
             )
         if self.field_converter.name != self.target_name:
             raise ValueError(
@@ -442,7 +443,7 @@ class FieldPredictor(BasePredictor):
             )
         return split
 
-    def _resolve_grid_batch_size(self, grid_batch_size: Optional[int]) -> int:
+    def _resolve_grid_batch_size(self, grid_batch_size: int | None) -> int:
         if grid_batch_size is None:
             grid_batch_size = self.predict_config.get("grid_batch_size", 4096)
         grid_batch_size = int(grid_batch_size)
@@ -533,7 +534,7 @@ class FieldPredictor(BasePredictor):
         grid_coord,
         info,
         density=None,
-        grid_batch_size: Optional[int] = None,
+        grid_batch_size: int | None = None,
     ):
         """Predict one field sample already represented as graph and grid data.
 
@@ -645,7 +646,7 @@ class FieldPredictor(BasePredictor):
             dataset_class,
             (DensityDataset, MD17DensityDataset),
         ):
-            raise ValueError(f"Unsupported field dataset class: {class_name}")
+            raise TypeError(f"Unsupported field dataset class: {class_name}")
         return dataset_class(**dataset_params)
 
     def _get_cube_writer(self, dataset):
@@ -658,10 +659,10 @@ class FieldPredictor(BasePredictor):
         self,
         split: str = "test",
         index: int = 0,
-        save_path: Optional[str] = None,
-        data_root: Optional[str] = None,
-        split_file_path: Optional[str] = None,
-        grid_batch_size: Optional[int] = None,
+        save_path: str | None = None,
+        data_root: str | None = None,
+        split_file_path: str | None = None,
+        grid_batch_size: int | None = None,
         save_true_cube: bool = False,
         visualize: bool = False,
         save_html: bool = False,
@@ -732,11 +733,11 @@ class FieldPredictor(BasePredictor):
     def from_mol_file(
         self,
         mol_file_path: str,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         grid_shape="80,80,80",
         grid_padding: float = 6.0,
-        reference_cube_dir: Optional[str] = None,
-        grid_batch_size: Optional[int] = None,
+        reference_cube_dir: str | None = None,
+        grid_batch_size: int | None = None,
         save_true_cube: bool = False,
         visualize: bool = False,
         save_html: bool = False,
@@ -794,8 +795,7 @@ class FieldPredictor(BasePredictor):
                 info["file_name"] = mol_path.name
                 info["reference_cube_file"] = str(reference_cube_path)
                 logger.info(
-                    f"Using reference CUBE for {mol_path.name}: "
-                    f"{reference_cube_path}"
+                    f"Using reference CUBE for {mol_path.name}: {reference_cube_path}"
                 )
             elif reference_cube_dir is not None:
                 logger.warning(f"No matching reference CUBE for {mol_path.name}.")

@@ -141,7 +141,7 @@ model:
 python electronic_structure/predict.py \
     --model_name='infgcn_qm9' \
     --weights_name='best.pdparams' \
-    --mol_file_path='electronic_structure/configs/infgcn/example/methane.mol' \
+    --mol_file_path='electronic_structure/example_data/methane.mol' \
     --grid_shape=8 \
     --grid_batch_size=4096 \
     --save_path='output/infgcn_qm9/methane'
