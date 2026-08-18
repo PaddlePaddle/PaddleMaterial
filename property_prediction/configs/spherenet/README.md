@@ -240,15 +240,15 @@ python property_prediction/train.py \
 # Using a registered QM9 model
 python property_prediction/predict.py \
   --model_name spherenet_qm9_mu \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
-  --save_path ./output/spherenet_qm9_mu_prediction.csv
+  --input_format=xyz --input_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
+  --output_path ./output/spherenet_qm9_mu_prediction
 
 # Using a local checkpoint
 python property_prediction/predict.py \
   --config_path ./property_prediction/configs/spherenet/spherenet_qm9_mu.yaml \
   --checkpoint_path 'your_model.pdparams' \
-  --xyz_file_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
-  --save_path ./output/spherenet_qm9_mu_prediction.csv
+  --input_format=xyz --input_path ./property_prediction/example_data/molecules/isoguvacine.xyz \
+  --output_path ./output/spherenet_qm9_mu_prediction
 ```
 
 ## Citation

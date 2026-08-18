@@ -23,16 +23,19 @@ import os
 import os.path as osp
 import shutil
 import tempfile
-from collections.abc import Mapping
 from contextlib import contextmanager
 from contextlib import nullcontext
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Iterator
 from typing import List
 from typing import Optional
 from typing import TextIO
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from cvve import GridSpec
 
 
 def open_text(path: str | os.PathLike[str], mode: str = "rt") -> TextIO:
@@ -87,20 +90,19 @@ def write_cube(
     atom_numbers,
     atom_coord,
     density,
-    info: Mapping,
+    grid: "GridSpec",
 ) -> None:
     """Write one scalar Gaussian CUBE file with ASE.
 
-    Input geometry follows ``info["coordinate_unit"]``. ASE serializes CUBE
+    Input geometry follows ``grid.length_unit``. ASE serializes CUBE
     geometry in Bohr, while field values are written without unit scaling.
 
     Args:
         destination: Plain CUBE output path.
         atom_numbers: Atomic numbers with shape ``[num_atoms]``.
         atom_coord: Atomic coordinates with shape ``[num_atoms, 3]``.
-        density: Flattened scalar values matching ``info["shape"]``.
-        info: Grid metadata containing ``shape``, ``cell``, and
-            ``coordinate_unit``; ``origin`` defaults to zero.
+        density: Flattened scalar values matching ``grid.shape``.
+        grid: Grid geometry and coordinate-unit metadata.
     """
 
     from ase import Atoms
@@ -109,39 +111,29 @@ def write_cube(
 
     from ppmat.utils.crystal import normalize_coordinate_unit
 
-    shape = tuple(int(size) for size in info["shape"])
-    if len(shape) != 3 or any(size <= 0 for size in shape):
-        raise ValueError(f"CUBE shape must contain three positive sizes: {shape}.")
-
     destination = Path(destination)
     if destination.suffix.lower() in {".gz", ".xz", ".lz4"}:
         raise ValueError("ASE CUBE output requires an uncompressed path.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
 
-    cell = np.asarray(info["cell"], dtype=float)
-    if cell.shape != (3, 3):
-        raise ValueError(f"CUBE cell must have shape [3, 3], but got {cell.shape}.")
-    origin = np.asarray(info.get("origin", np.zeros(3)), dtype=float)
-    if origin.shape != (3,):
-        raise ValueError(f"CUBE origin must have shape [3], but got {origin.shape}.")
-
-    coordinate_unit = normalize_coordinate_unit(info["coordinate_unit"])
+    coordinate_unit = normalize_coordinate_unit(grid.length_unit)
     to_angstrom = 1.0 if coordinate_unit == "angstrom" else Bohr
 
     atom_numbers = np.asarray(atom_numbers, dtype=np.int64).reshape(-1)
     atom_coord = np.asarray(atom_coord, dtype=float)
-    density = np.asarray(density, dtype=float).reshape(shape)
+    density = np.asarray(density, dtype=float).reshape(grid.shape)
 
     atoms = Atoms(
         numbers=atom_numbers,
         positions=atom_coord * to_angstrom,
-        cell=cell * to_angstrom,
+        cell=grid.cell_vectors * to_angstrom,
     )
     ase_write(
         destination,
         atoms,
         format="cube",
         data=density,
-        origin=origin * to_angstrom,
+        origin=grid.origin * to_angstrom,
     )
 
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 import os.path as osp
 from pathlib import Path
 
@@ -36,7 +37,7 @@ def parse_args(argv=None):
         help="Noisy image file or directory.",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output_path",
         help="Directory used to save enhanced spectrum images.",
     )
     parser.add_argument(
@@ -64,7 +65,7 @@ def main():
         config_overrides=config_overrides,
     )
 
-    save_path = args.output_dir
+    save_path = args.output_path
     if save_path is None:
         trainer_output_dir = predictor.config.get("Trainer", {}).get("output_dir")
         if trainer_output_dir:
@@ -74,6 +75,7 @@ def main():
         else:
             save_path = osp.join("./output", args.model_name, "predictions")
 
+    os.makedirs(save_path, exist_ok=True)
     predictor.from_image_file(args.input_path, save_path)
 
 

@@ -73,7 +73,7 @@ class GCNLayer(paddle.nn.Layer):
         :param path_normalization: path normalization passed to the
             `o3.FullyConnectedTensorProduct`
         """
-        super(GCNLayer, self).__init__()
+        super().__init__()
         self.irreps_in = o3.Irreps(irreps_in)
         self.irreps_out = o3.Irreps(irreps_out)
         self.irreps_edge = o3.Irreps(irreps_edge)
@@ -207,7 +207,7 @@ class InfGCN(paddle.nn.Layer):
             needed — only effective when ``budget // batch_size`` exceeds this
             cap (typically batch_size ≤ 3).
         """
-        super(InfGCN, self).__init__()
+        super().__init__()
         self.vocab = vocab
         n_atom_type = vocab["atom"]["num_embeddings"]
         self.n_atom_type = n_atom_type
@@ -301,8 +301,9 @@ class InfGCN(paddle.nn.Layer):
 
         Args:
             data: Collated field sample containing ``graph``, ``grid_coord``,
-                optional ``density_mask`` and ``info``, and the supervised
-                target under :attr:`target_name` when loss is requested.
+                optional ``density_mask``, ``info`` and ``grid_batch_size``, and
+                the supervised target under :attr:`target_name` when loss is
+                requested.
             return_loss: Whether to compute and return the supervised loss.
             return_prediction: Whether to expose the predicted field.
         """
@@ -331,7 +332,9 @@ class InfGCN(paddle.nn.Layer):
             atom_coord,
             atom_edges,
         )
-        chunk_size = self._inference_chunk_size(grid.shape[0], grid.shape[1])
+        chunk_size = data.get("grid_batch_size")
+        if chunk_size is None:
+            chunk_size = self._inference_chunk_size(grid.shape[0], grid.shape[1])
         if not self.training and chunk_size and grid.shape[1] > chunk_size:
             pred = paddle.concat(
                 [
@@ -392,6 +395,36 @@ class InfGCN(paddle.nn.Layer):
         if return_prediction:
             pred_dict[self.target_name] = masked_pred
         return {"loss_dict": loss_dict, "pred_dict": pred_dict}
+
+    @paddle.no_grad()
+    def predict(self, samples):
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
+
+        results = []
+        for sample in samples:
+            sample = dict(sample)
+            grid = sample.pop("grid", None)
+            if grid is not None:
+                sample["grid_coord"] = paddle.to_tensor(
+                    grid.cartesian_coordinates(),
+                    dtype="float32",
+                ).reshape([1, -1, 3])
+                sample["info"] = {
+                    "cell": paddle.to_tensor(grid.cell_vectors, dtype="float32")
+                }
+            output = self.forward(
+                sample,
+                return_loss=False,
+                return_prediction=True,
+            )
+            result = output["pred_dict"]
+            result[self.target_name] = (
+                result[self.target_name].reshape([-1]).detach().cpu()
+            )
+            results.append(result)
+
+        return results if is_list else results[0]
 
     def _prepare_cell(self, info):
         if self.periodic_mode == "none":
@@ -531,9 +564,7 @@ class InfGCN(paddle.nn.Layer):
         density = (orbital * feat.unsqueeze(axis=1)).sum(
             axis=-1
         )  # linear combination [n_atom, n_grid]
-        density = _scatter_sum(
-            density, batch, n_graph
-        )  # molecular/cell density
+        density = _scatter_sum(density, batch, n_graph)  # molecular/cell density
 
         if self.residual:
             density = density + residue.view(*tuple(density.shape))

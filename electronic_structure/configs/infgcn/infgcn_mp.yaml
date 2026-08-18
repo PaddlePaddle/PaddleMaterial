@@ -3,7 +3,7 @@ Global:
   do_eval: True
   do_test: True
   use_voxel: False
-  build_graph_cfg:
+  graph_converter:
     __class_name__: RadiusGraphConverter
     __init_params__:
       cutoff: 5.0
@@ -119,7 +119,7 @@ Dataset:
         path: ./data/crystal_data_split.json
         split: "train"
         build_field_cfg: ${Global.build_field_cfg}
-        build_graph_cfg: ${Global.build_graph_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
         grid_sampler_cfg:
@@ -142,7 +142,7 @@ Dataset:
         path: ./data/crystal_data_split.json
         split: "validation"
         build_field_cfg: ${Global.build_field_cfg}
-        build_graph_cfg: ${Global.build_graph_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
         grid_sampler_cfg:
@@ -165,7 +165,7 @@ Dataset:
         path: ./data/crystal_data_split.json
         split: "test"
         build_field_cfg: ${Global.build_field_cfg}
-        build_graph_cfg: ${Global.build_graph_cfg}
+        build_graph_cfg: ${Global.graph_converter}
         cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
     sampler:
@@ -179,6 +179,6 @@ Dataset:
       use_shared_memory: False
       collate_fn: DensityCollator
 Predict:
-  build_graph_cfg: ${Global.build_graph_cfg}
+  graph_converter: ${Global.graph_converter}
   build_field_cfg: ${Global.build_field_cfg}
   grid_batch_size: 4096

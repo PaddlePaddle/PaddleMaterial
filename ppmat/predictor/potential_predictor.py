@@ -15,14 +15,13 @@
 import os
 import os.path as osp
 from collections import defaultdict
-from typing import Optional
-from typing import Sequence
+from collections.abc import Sequence
 
 import pandas as pd
-from pymatgen.core import Structure
 from tqdm import tqdm
 
 from ppmat.datasets.build_molecule import BuildMolecule
+from ppmat.datasets.build_structure import BuildStructure
 from ppmat.predictor.base import BasePredictor
 from ppmat.utils import logger
 
@@ -64,12 +63,12 @@ class PotentialPredictor(BasePredictor):
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        weights_name: Optional[str] = None,
-        config_path: Optional[str] = None,
-        checkpoint_path: Optional[str] = None,
-        device: Optional[str] = None,
-        config_overrides: Optional[Sequence[str]] = None,
+        model_name: str | None = None,
+        weights_name: str | None = None,
+        config_path: str | None = None,
+        checkpoint_path: str | None = None,
+        device: str | None = None,
+        config_overrides: Sequence[str] | None = None,
     ):
         super().__init__(
             model_name=model_name,
@@ -89,8 +88,9 @@ class PotentialPredictor(BasePredictor):
     def from_molecule(self, molecule):
         data = self.graph_converter(molecule)
         return self._run_model(data)
+
     def from_cif_file(self, cif_file_path, save_path=None):
-        """Predict potential properties from CIF file(s).
+        """Predict crystal properties from CIF file(s).
 
         Args:
             cif_file_path: Path to a single ``.cif`` file or a directory
@@ -114,7 +114,12 @@ class PotentialPredictor(BasePredictor):
 
         results = []
         for cif_file in tqdm(cif_files, desc="Predict"):
-            structure = Structure.from_file(cif_file)
+            structure = BuildStructure(
+                format="cif_file",
+                primitive=False,
+                niggli=False,
+                canocial=False,
+            )(cif_file)
             results.append(self.from_structures(structure))
 
         if save_path is not None and results:
@@ -131,7 +136,7 @@ class PotentialPredictor(BasePredictor):
         return results
 
     def from_xyz_file(self, xyz_file_path, save_path=None):
-        """Predict atomic energy and forces from XYZ file(s).
+        """Predict molecular properties from XYZ file(s).
 
         Builds each ``.xyz`` file with :class:`BuildMolecule`, then delegates
         to :meth:`from_molecule`.
@@ -161,10 +166,8 @@ class PotentialPredictor(BasePredictor):
         results = []
         for xyz_path in tqdm(xyz_files, desc="Predict"):
             molecule = BuildMolecule(format="xyz_file", sanitize=False)(xyz_path)
-            if molecule is None:
-                raise ValueError(f"Failed to parse XYZ file: {xyz_path}")
-            out = self.from_molecule(molecule)
-            results.append(out)
+            result = self.from_molecule(molecule)
+            results.append(result)
 
         if save_path is not None and results:
             keys = list(results[0].keys())
