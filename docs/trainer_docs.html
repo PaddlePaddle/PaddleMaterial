@@ -117,7 +117,7 @@ python structure_generation/train.py -c structure_generation/configs/diffcsp/dif
 
 # 临时覆盖配置项（命令行追加 Key=Value）
 python &lt;task&gt;/train.py -c &lt;config.yaml&gt; Trainer.max_epochs=50</code></pre>
-<div class="note">6 个任务入口：<code>property_prediction/</code>（DimeNet++/MEGNet/SphereNet/iComformer）、<code>interatomic_potentials/</code>（CHGNet/M3GNet/SphereNet）、<code>electronic_structure/</code>（InfGCN/MatENO）、<code>spectrum_enhancement/</code>（SFIN）、<code>spectrum_elucidation/</code>（DiffNMR 系）、<code>structure_generation/</code>（DiffCSP/MatterGen）。完整模型清单见 <a href="models_overview.html" style="color:var(--accent);">全任务模型总览</a>。</div>
+<div class="note">6 个任务入口：<code>property_prediction/</code>（DimeNet++/MEGNet/SphereNet/iComformer）、<code>interatomic_potentials/</code>（CHGNet/M3GNet/SphereNet）、<code>electronic_structure/</code>（InfGCN）、<code>spectrum_enhancement/</code>（SFIN）、<code>spectrum_elucidation/</code>（DiffNMR 系）、<code>structure_generation/</code>（DiffCSP/MatterGen）。完整模型清单见 <a href="models_overview.html" style="color:var(--accent);">全任务模型总览</a>。</div>
 <div class="tip"><strong>预测式 vs 生成式</strong>：前 4 个任务是<strong>预测式</strong>（train+eval 走 BaseTrainer，推理走 <code>predict.py</code>）；后 2 个是<strong>生成式</strong>（train 走 BaseTrainer，生成走 <code>sample.py</code> + Sampler）。两者模型契约不同，见 §2.3。</div>
 
 <h2 id="u-which">1.2 我想做哪件事</h2>

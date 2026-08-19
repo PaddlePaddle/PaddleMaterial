@@ -21,12 +21,7 @@ from ppmat.models.common.e3nn.math import soft_one_hot_linspace
 from ppmat.models.common.e3nn.nn import FullyConnectedNet
 from ppmat.models.common.orbital import GaussianOrbital
 from ppmat.models.infgcn.graph_converter import AtomGridRadiusGraphConverter
-
-
-def _scatter_sum(src, index, dim_size):
-    """Aggregate InfGCN messages with memory linear in the edge count."""
-    out = paddle.zeros([dim_size, *src.shape[1:]], dtype=src.dtype)
-    return paddle.scatter_nd_add(out, index.reshape([-1, 1]), src)
+from ppmat.utils.scatter import scatter_sum_first_order
 
 
 class GCNLayer(paddle.nn.Layer):
@@ -129,24 +124,11 @@ class GCNLayer(paddle.nn.Layer):
             node_feat[src], edge_feat, weight=weight
         )  # Tensor Product [num_edges, tp.irreps_out.dim]
 
-        out = _scatter_sum(out, dst, dim_size)  # message aggregation
+        out = scatter_sum_first_order(out, dst, dim_size)  # message aggregation
 
         if self.use_sc:
             out = out + self.sc(node_feat)
         return out
-
-
-def pbc_vec(vec, cell):
-    """
-    Apply periodic boundary condition to the vector
-    :param vec: original vector of (N, K, 3)
-    :param cell: cell frame of (N, 3, 3)
-    :return: shortest vector of (N, K, 3)
-    """
-    coord = vec @ paddle.linalg.inv(x=cell)
-    coord = coord - paddle.round(coord)
-    pbc_vec = coord @ cell
-    return pbc_vec.detach()
 
 
 class InfGCN(paddle.nn.Layer):
@@ -168,7 +150,6 @@ class InfGCN(paddle.nn.Layer):
         residual=True,
         periodic_mode="none",
         inference_grid_point_budget=None,
-        max_inference_grid_chunk_size=None,
         target_name="density",
         loss_eps=1e-8,
         **kwargs,
@@ -202,10 +183,6 @@ class InfGCN(paddle.nn.Layer):
             affects ``trainer.eval()``; ``predict.py`` is controlled by
             ``grid_batch_size`` instead. Bounds peak decoder memory regardless
             of batch size (peak ≈ avg_atoms × budget × orbital_dims).
-        :param max_inference_grid_chunk_size: optional per-sample cap applied to
-            the chunk size derived from ``inference_grid_point_budget``. Rarely
-            needed — only effective when ``budget // batch_size`` exceeds this
-            cap (typically batch_size ≤ 3).
         """
         super().__init__()
         self.vocab = vocab
@@ -237,9 +214,6 @@ class InfGCN(paddle.nn.Layer):
         self.periodic_mode = periodic_mode
         self.inference_grid_point_budget = self._validate_optional_positive_int(
             inference_grid_point_budget, "inference_grid_point_budget"
-        )
-        self.max_inference_grid_chunk_size = self._validate_optional_positive_int(
-            max_inference_grid_chunk_size, "max_inference_grid_chunk_size"
         )
         self.target_name = target_name
         self.loss_eps = loss_eps
@@ -296,23 +270,7 @@ class InfGCN(paddle.nn.Layer):
         )
         self._criterion = paddle.nn.MSELoss(reduction="mean")
 
-    def forward(self, data, return_loss=True, return_prediction=True):
-        """Run field prediction through the PaddleMaterials model protocol.
-
-        Args:
-            data: Collated field sample containing ``graph``, ``grid_coord``,
-                optional ``density_mask``, ``info`` and ``grid_batch_size``, and
-                the supervised target under :attr:`target_name` when loss is
-                requested.
-            return_loss: Whether to compute and return the supervised loss.
-            return_prediction: Whether to expose the predicted field.
-        """
-
-        assert (
-            return_loss or return_prediction
-        ), "At least one of return_loss or return_prediction must be True."
-
-        mask = data.get("density_mask")
+    def _forward(self, data):
         grid = data["grid_coord"]
         info = data.get("info")
 
@@ -358,7 +316,17 @@ class InfGCN(paddle.nn.Layer):
                 cell,
             )
 
-        # Mask padded grid positions consistently for loss and prediction.
+        return pred
+
+    def forward(self, data, return_loss=True, return_prediction=True):
+        """Run field prediction through the PaddleMaterials model protocol."""
+
+        assert (
+            return_loss or return_prediction
+        ), "At least one of return_loss or return_prediction must be True."
+
+        pred = self._forward(data)
+        mask = data.get("density_mask")
         masked_pred = pred
         if mask is not None:
             mask = mask.astype(pred.dtype)
@@ -413,51 +381,29 @@ class InfGCN(paddle.nn.Layer):
                 sample["info"] = {
                     "cell": paddle.to_tensor(grid.cell_vectors, dtype="float32")
                 }
-            output = self.forward(
-                sample,
-                return_loss=False,
-                return_prediction=True,
-            )
-            result = output["pred_dict"]
-            result[self.target_name] = (
-                result[self.target_name].reshape([-1]).detach().cpu()
-            )
-            results.append(result)
+            result = self._forward(sample).reshape([-1]).detach().cpu()
+            results.append({self.target_name: result})
 
         return results if is_list else results[0]
 
     def _prepare_cell(self, info):
         if self.periodic_mode == "none":
             return None
-        if info is None or "cell" not in info:
-            raise KeyError("Periodic InfGCN input requires info['cell'].")
         cell = info["cell"]
-        if len(cell.shape) == 2:
-            cell = cell.unsqueeze(0)
-        if len(cell.shape) != 3 or list(cell.shape[-2:]) != [3, 3]:
-            raise ValueError(
-                "info['cell'] must have shape [batch_size, 3, 3], but got "
-                f"{list(cell.shape)}."
-            )
-        return cell
+        return cell.unsqueeze(0) if cell.ndim == 2 else cell
 
     @staticmethod
     def _validate_optional_positive_int(value, name):
-        if value is None:
-            return None
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        ):
             raise ValueError(f"{name} must be a positive integer or None.")
         return value
 
     def _inference_chunk_size(self, batch_size, num_grid_points):
-        if self.training:
+        if self.training or self.inference_grid_point_budget is None:
             return None
-        if self.inference_grid_point_budget is not None:
-            chunk_size = max(1, self.inference_grid_point_budget // int(batch_size))
-            if self.max_inference_grid_chunk_size is not None:
-                chunk_size = min(chunk_size, self.max_inference_grid_chunk_size)
-        else:
-            return None
+        chunk_size = max(1, self.inference_grid_point_budget // int(batch_size))
         return min(chunk_size, int(num_grid_points))
 
     def _encode_atoms(self, atom_types, atom_coord, atom_edges):
@@ -556,7 +502,9 @@ class InfGCN(paddle.nn.Layer):
         # shape [num_atoms, num_grid_points, 3].
         sample_vec = grid[batch] - atom_coord.unsqueeze(axis=-2)
         if cell is not None:
-            sample_vec = pbc_vec(sample_vec, cell[batch])
+            cell = cell[batch]
+            sample_vec = sample_vec @ paddle.linalg.inv(cell)
+            sample_vec = (sample_vec - paddle.round(sample_vec)) @ cell
 
         # Expand displacement vectors in the Gaussian-type orbital basis:
         # [num_atoms, num_grid_points, (lmax + 1)^2 * num_gaussians].
@@ -564,7 +512,9 @@ class InfGCN(paddle.nn.Layer):
         density = (orbital * feat.unsqueeze(axis=1)).sum(
             axis=-1
         )  # linear combination [n_atom, n_grid]
-        density = _scatter_sum(density, batch, n_graph)  # molecular/cell density
+        density = scatter_sum_first_order(
+            density, batch, n_graph
+        )  # molecular/cell density
 
         if self.residual:
             density = density + residue.view(*tuple(density.shape))

@@ -22,6 +22,7 @@ from ppmat.models.common.spherical_fourier_bessel import DistEmbedding
 from ppmat.models.common.spherical_fourier_bessel import SphericalFourierBesselEmbedding
 from ppmat.models.spherenet.geometry import compute_geometry
 from ppmat.utils.scatter import scatter_sum
+from ppmat.utils.scatter import scatter_sum_first_order
 
 
 def _swish(x):
@@ -35,10 +36,7 @@ def _aggregate(src, index, dim_size, require_second_order):
         # scatter_nd_add lacks the second derivative required by force loss.
         return scatter_sum(src, index, dim=0, dim_size=dim_size)
 
-    if dim_size is None:
-        dim_size = int(index.max()) + 1
-    out = paddle.zeros([dim_size, *src.shape[1:]], dtype=src.dtype)
-    return paddle.scatter_nd_add(out, index.reshape([-1, 1]), src)
+    return scatter_sum_first_order(src, index, dim_size)
 
 
 class SphereNetEmbedding(paddle.nn.Layer):

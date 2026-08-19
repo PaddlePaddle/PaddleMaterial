@@ -74,7 +74,7 @@
   <div class="card">
     <h4>electronic_structure/</h4>
     <p>电子密度场预测</p>
-    <p><span class="tag pred">预测式</span> &nbsp; <code>InfGCN</code> · <code>MatENO</code></p>
+    <p><span class="tag pred">预测式</span> &nbsp; <code>InfGCN</code></p>
     <div class="entry"><code>train.py</code> → BaseTrainer<br><code>predict.py</code> → FieldPredictor</div>
   </div>
   <div class="card">
@@ -131,7 +131,6 @@ flowchart LR
 <table>
 <tr><th>模型</th><th>任务</th><th>输入 <code>data</code></th><th>输出 <code>pred_dict</code></th></tr>
 <tr><td><code>InfGCN</code></td><td>电子密度</td><td>graph + grid_coord</td><td><code>density</code>（体网格密度场）</td></tr>
-<tr><td><code>MatENO</code></td><td>电子密度</td><td>graph + grid_coord</td><td><code>density</code></td></tr>
 <tr><td><code>DimeNetPlusPlus</code></td><td>性质</td><td>graph（分子/晶体）</td><td>标量性质（如形成能）</td></tr>
 <tr><td><code>iComformer</code></td><td>性质</td><td>graph（晶体）</td><td>标量性质</td></tr>
 <tr><td><code>MEGNetPlus</code></td><td>性质</td><td>graph（分子/晶体）</td><td>标量性质（<code>property_name</code>）</td></tr>
@@ -189,7 +188,7 @@ flowchart TD
 <tr><th>你的目标</th><th>推荐模型</th><th>理由</th></tr>
 <tr><td>预测分子/晶体标量性质</td><td><code>SphereNet</code> · <code>MEGNetPlus</code> · <code>DimeNetPlusPlus</code></td><td>成熟的 3D GNN，SE(3) 等变或消息传递</td></tr>
 <tr><td>预测能量/力/应力（势）</td><td><code>CHGNet</code> · <code>M3GNet</code>（MatterSim） · <code>SphereNet</code></td><td>含力/应力输出，适合 MD</td></tr>
-<tr><td>预测电子密度场</td><td><code>InfGCN</code> · <code>MatENO</code></td><td>连续场算子学习，SE(3) 等变</td></tr>
+<tr><td>预测电子密度场</td><td><code>InfGCN</code></td><td>连续场算子学习，SE(3) 等变</td></tr>
 <tr><td>图像增强（STEM）</td><td><code>SFIN</code></td><td>专门的频谱图像增强网络</td></tr>
 <tr><td>从 NMR 谱生成分子</td><td><code>DiffNMR</code></td><td>扩散 + CLIP 条件</td></tr>
 <tr><td>生成晶体结构</td><td><code>MatterGen</code>（条件）/ <code>DiffCSP</code></td><td>扩散模型，支持条件生成</td></tr>

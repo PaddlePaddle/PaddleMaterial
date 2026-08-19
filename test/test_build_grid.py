@@ -58,6 +58,46 @@ def test_build_bounding_box_grid():
     np.testing.assert_allclose(grid.cell_vectors, np.diag([4.0, 6.0, 8.0]))
 
 
+def test_build_grid_batch():
+    array_builder = BuildGrid(format="array", num_cpus=1)
+    array_grids = array_builder(
+        [
+            {
+                "shape": (2, 2, 2),
+                "voxel_vectors": np.eye(3),
+            },
+            {
+                "shape": (3, 3, 3),
+                "voxel_vectors": np.eye(3) * 0.5,
+            },
+        ]
+    )
+    assert [grid.shape for grid in array_grids] == [(2, 2, 2), (3, 3, 3)]
+
+    bounding_box_builder = BuildGrid(
+        format="bounding_box",
+        shape=(4, 4, 4),
+        num_cpus=1,
+    )
+    coordinate_grids = bounding_box_builder(
+        [
+            np.asarray([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
+            np.asarray([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]),
+        ]
+    )
+    assert len(coordinate_grids) == 2
+    assert all(grid.shape == (4, 4, 4) for grid in coordinate_grids)
+
+
+def test_build_bounding_box_grid_from_coordinate_list():
+    grid = BuildGrid(format="bounding_box", shape=(2, 2, 2))(
+        [[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]]
+    )
+
+    assert grid.shape == (2, 2, 2)
+    np.testing.assert_allclose(grid.origin, [0.0, 0.0, 0.0])
+
+
 def test_write_cube_uses_grid_geometry(tmp_path):
     grid = BuildGrid(format="array")(
         {
