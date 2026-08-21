@@ -25,6 +25,8 @@ structures with total-energy and atomic-force labels. Data are read through
 
 Dataset download and checksum handling are implemented by the dataset class.
 The dataset path in a configuration may also point to an existing ASE database.
+The prepared OMat24 and OC20 data used by the supplied configurations are
+available in the [PaddleMaterials UMA dataset package](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/UMA/uma_datasets.zip).
 
 ## Models
 
@@ -42,6 +44,15 @@ and an equivariant L=1 head predicts forces directly.
 
 The model uses Paddle-format precomputed Wigner-d coefficients stored in
 `ppmat/models/uma/Jd.pdparams`.
+
+Pretrained model packages follow the PaddleMaterials `MODEL_REGISTRY` naming
+convention. Both packages are provided in the shared
+[UMA checkpoint archive](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/uma/uma_checkpoints.zip):
+
+| Registered model name | Configuration | Weight |
+| :-- | :-- | :-- |
+| `uma_oc20_200k_s2ef` | `uma_oc20_200k_s2ef.yaml` | `checkpoints/best.pdparams` |
+| `uma_omat24_r500_s2ef` | `uma_omat24_r500_s2ef.yaml` | `checkpoints/best.pdparams` |
 
 ## Results
 
@@ -83,9 +94,11 @@ python interatomic_potentials/train.py \
 
 ```bash
 python interatomic_potentials/predict.py \
-  --config_path interatomic_potentials/configs/uma/uma_omat24_r500_s2ef.yaml \
-  --checkpoint_path path/to/checkpoint.pdparams \
-  --cif_file_path path/to/structure.cif
+  --model_name uma_omat24_r500_s2ef \
+  --weights_name best.pdparams \
+  --input_path path/to/structure.cif \
+  --input_format cif \
+  --output_path results
 ```
 
 ## Citation
