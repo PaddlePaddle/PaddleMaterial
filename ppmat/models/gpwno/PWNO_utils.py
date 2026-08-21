@@ -20,7 +20,7 @@ class SpectralConv3d(paddle.nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2, modes3):
         super(SpectralConv3d, self).__init__()
         """
-        3D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        3D Fourier layer. It does FFT, linear transform, and Inverse FFT.
         """
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -126,7 +126,9 @@ class SpectralConv3d_FFNO(paddle.nn.Module):
         self.modes_z = modes3
         self.fourier_weight = paddle.nn.ParameterList(parameters=[])
         for n_modes in [self.modes_x, self.modes_y, self.modes_z]:
-            weight = paddle.randn([in_channels, out_channels, n_modes, 2], dtype=paddle.float32)
+            weight = paddle.randn(
+                [in_channels, out_channels, n_modes, 2], dtype=paddle.float32
+            )
             paddle.nn.init.xavier_normal_(weight)
             self.fourier_weight.append(paddle.nn.Parameter(weight))
 
@@ -134,32 +136,50 @@ class SpectralConv3d_FFNO(paddle.nn.Module):
         B, I, S1, S2, S3 = x.shape  # [batch, in_ch, x, y, z]
 
         # Spectral convolution along the z axis.
-        x_ftz = paddle.fft.rfftn(x, dim=[-1,], norm="ortho")
+        x_ftz = paddle.fft.rfftn(
+            x,
+            dim=[
+                -1,
+            ],
+            norm="ortho",
+        )
         out_ft = x_ftz.new_zeros(B, I, S1, S2, S3 // 2 + 1)
         out_ft[:, :, :, :, : self.modes_z] = paddle.einsum(
             "bixyz,ioz->boxyz",
             x_ftz[:, :, :, :, : self.modes_z],
-            paddle.view_as_complex(self.fourier_weight[2])
+            paddle.view_as_complex(self.fourier_weight[2]),
         )
         xz = paddle.fft.irfft(out_ft, n=S3, dim=-1, norm="ortho")
 
         # Spectral convolution along the y axis.
-        x_fty = paddle.fft.rfftn(x, dim=[-2,], norm="ortho")
+        x_fty = paddle.fft.rfftn(
+            x,
+            dim=[
+                -2,
+            ],
+            norm="ortho",
+        )
         out_ft = x_ftz.new_zeros(B, I, S1, S2 // 2 + 1, S3)
         out_ft[:, :, :, : self.modes_y, :] = paddle.einsum(
             "bixyz,ioy->boxyz",
             x_fty[:, :, :, : self.modes_y, :],
-            paddle.view_as_complex(self.fourier_weight[1])
+            paddle.view_as_complex(self.fourier_weight[1]),
         )
         xy = paddle.fft.irfft(out_ft, n=S2, dim=-2, norm="ortho")
 
         # Spectral convolution along the x axis.
-        x_ftx = paddle.fft.rfftn(x, dim=[-3,], norm="ortho")
+        x_ftx = paddle.fft.rfftn(
+            x,
+            dim=[
+                -3,
+            ],
+            norm="ortho",
+        )
         out_ft = x_ftz.new_zeros(B, I, S1 // 2 + 1, S2, S3)
         out_ft[:, :, : self.modes_x, :, :] = paddle.einsum(
             "bixyz,iox->boxyz",
             x_ftx[:, :, : self.modes_x, :, :],
-            paddle.view_as_complex(self.fourier_weight[0])
+            paddle.view_as_complex(self.fourier_weight[0]),
         )
         xx = paddle.fft.irfft(out_ft, n=S1, dim=-3, norm="ortho")
 

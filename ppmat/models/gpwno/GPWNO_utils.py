@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import paddle
-from ..common.e3nn import o3
-from ..common.e3nn.nn import Activation, Extract, FullyConnectedNet
+
 # from torch_scatter import scatter
 from paddle_scatter.scatter import scatter
 
+from ..common.e3nn import o3
+from ..common.e3nn.nn import Activation
+from ..common.e3nn.nn import Extract
+from ..common.e3nn.nn import FullyConnectedNet
 
 
 class ScalarActivation(paddle.nn.Module):

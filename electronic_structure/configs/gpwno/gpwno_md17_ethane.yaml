@@ -3,6 +3,17 @@ Global:
   do_eval: True
   do_test: True
   use_voxel: False
+  graph_converter:
+    __class_name__: RadiusGraphConverter
+    __init_params__:
+      cutoff: 3.0
+      max_num_neighbors: 32
+      inclusive_cutoff: true
+      include_distance: false
+  build_field_cfg:
+    format: cube
+    name: density
+    num_cpus: 10
 
 Trainer:
   # Keep the epoch ceiling above the official 4,000-step training budget.
@@ -66,6 +77,8 @@ Model:
     scalar_mask: true
     mask_cutoff: 3.0
 
+Vocabulary: infgcn_md17
+
 Optimizer:
   __class_name__: Adam
   __init_params__:
@@ -86,11 +99,14 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: SmallDensityDataset
+      __class_name__: MD17DensityDataset
       __init_params__:
-        root: ./data/data_md
-        mol_name: ethane
+        path: ./data/data_md/ethane/ethane_train
         split: "train"
+        build_graph_cfg: ${Global.graph_converter}
+        grid_sampler_cfg:
+          n_samples: 1024
+          sampling_mode: random
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -101,15 +117,16 @@ Dataset:
       num_workers: 4
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 1024
   val:
     dataset:
-      __class_name__: SmallDensityDataset
+      __class_name__: MD17DensityDataset
       __init_params__:
-        root: ./data/data_md
-        mol_name: ethane
+        path: ./data/data_md/ethane/ethane_test
         split: "validation"
+        build_graph_cfg: ${Global.graph_converter}
+        grid_sampler_cfg:
+          n_samples: 2048
+          sampling_mode: random
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -120,30 +137,25 @@ Dataset:
       num_workers: 8
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 2048
   test:
     dataset:
-      __class_name__: SmallDensityDataset
+      __class_name__: MD17DensityDataset
       __init_params__:
-        root: ./data/data_md
-        mol_name: ethane
+        path: ./data/data_md/ethane/ethane_test
         split: "test"
+        build_graph_cfg: ${Global.graph_converter}
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: True
+        shuffle: False
         drop_last: False
         batch_size: 1
     loader:
       num_workers: 2
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 2048
 
 Predict:
-  eval_with_no_grad: True
-  num_infer: null
-  num_vis: 2
-  inf_samples: 4096
+  graph_converter: ${Global.graph_converter}
+  build_field_cfg: ${Global.build_field_cfg}
+  grid_batch_size: 4096

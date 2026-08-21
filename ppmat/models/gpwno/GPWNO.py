@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
 import numpy as np
 import paddle
-from ..common.e3nn import o3
-from ..common.e3nn.math import soft_one_hot_linspace
-from ..common.e3nn.nn import Activation, Extract, FullyConnectedNet
-from .GPWNO_utils import *
-from ..common.orbital import GaussianOrbital
-from .PWNO_utils import *
-from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
-from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
+
 # from ....paddle_geometric.paddle_geometric.nn import radius, radius_graph
 from paddle_scatter.scatter import scatter
+
+from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
+from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
+
+from ..common.e3nn import o3
+from ..common.e3nn.math import soft_one_hot_linspace
+from ..common.orbital import GaussianOrbital
+from .GPWNO_utils import GCNLayer
+from .GPWNO_utils import NormActivation
+from .GPWNO_utils import ScalarActivation
+from .PWNO_utils import SpectralConv3d
+from .PWNO_utils import SpectralConv3d_FFNO
 
 
 def pbc_vec(vec, cell):
@@ -59,7 +63,7 @@ class PWNO(paddle.nn.Module):
         2. 4 layers of the integral operators u' = (W + K)(u).
             W defined by self.w; K defined by self.conv .
         3. Project from the channel space to the output space by self.fc1 and self.fc2 .
-        
+
         input: the solution of the first 10 timesteps + 3 locations (u(1, x, y), ..., u(10, x, y),  x, y, t). It's a constant function in time, except for the last index.
         input shape: (batchsize, x=64, y=64, t=40, c=13)
         output: the solution of the next 40 timesteps
@@ -167,6 +171,9 @@ class GPWNO(paddle.nn.Layer):
         input_dist=False,
         atom_info=None,
         fourier_mode=0,
+        vocab=None,
+        target_name="density",
+        loss_eps=1e-8,
         *args,
         **kwargs,
     ):
@@ -191,6 +198,9 @@ class GPWNO(paddle.nn.Layer):
         """
         super(GPWNO, self).__init__(*args, **kwargs)
         self.n_atom_type = n_atom_type
+        self.vocab = vocab
+        self.target_name = target_name
+        self.loss_eps = loss_eps
         self.num_radial = num_radial
         self.num_spherical = num_spherical
         self.radial_embed_size = radial_embed_size
@@ -324,7 +334,7 @@ class GPWNO(paddle.nn.Layer):
         )
         self.scalar_field_gcn = GCNLayer(
             f"{self.width}x0e",
-            f"0e",
+            "0e",
             self.irreps_sh_RNO,
             radial_embed_size,
             num_radial_layer,
@@ -344,68 +354,117 @@ class GPWNO(paddle.nn.Layer):
             atom_radius = [info["radius"] for info in atom_info]
             self.atom_radius = [radius for idx, radius in enumerate(atom_radius)]
             self.atom_radius = paddle.FloatTensor(self.atom_radius)
-            
-    def forward(self, batch_idx):
-        """
-        ppmat-style forward
 
-        batch_idx:
-            graph: PGL graph, with x / pos / batch_idx
-            grid_coord: [B, K, 3]
-            density: optional, [B, K]
-            density_mask: optional, [B, K]
-            infos: optional, list[dict], may contain 'cell'
-        """
-        graph = batch_idx["graph"]
-        grid = batch_idx["grid_coord"]
-        infos = batch_idx.get("infos", None)
+    def _forward(self, data):
+        grid = data["grid_coord"]
+        graph = data["graph"].tensor()
+        atom_types = graph.node_feat["x"]
+        atom_coord = graph.node_feat["cart_coords"]
+        graph_batch = graph.graph_node_id.astype("int64")
+        info = data.get("info")
 
-        density_gt = batch_idx.get("density", None)
-        mask = batch_idx.get("density_mask", None)
+        chunk_size = data.get("grid_batch_size")
+        if not self.training and chunk_size and grid.shape[1] > chunk_size:
+            predictions = []
+            aux = {}
+            for start in range(0, grid.shape[1], chunk_size):
+                prediction, aux = self._forward_density(
+                    atom_types,
+                    atom_coord,
+                    grid[:, start : start + chunk_size],
+                    graph_batch,
+                    info,
+                )
+                predictions.append(prediction)
+            return paddle.concat(predictions, axis=1), aux
 
-        pred, aux = self._forward_density(
-            atom_types=graph.x,
-            atom_coord=graph.pos,
-            grid=grid,
-            batch_idx=graph.batch,
-            infos=infos,
+        return self._forward_density(
+            atom_types,
+            atom_coord,
+            grid,
+            graph_batch,
+            info,
         )
 
+    def forward(self, data, return_loss=True, return_prediction=True):
+        """Run field prediction through the PaddleMaterials model protocol."""
+
+        assert (
+            return_loss or return_prediction
+        ), "At least one of return_loss or return_prediction must be True."
+
+        pred, aux = self._forward(data)
+        density_gt = data.get(self.target_name)
+        mask = data.get("density_mask")
+        masked_pred = pred if mask is None else pred * mask.astype(pred.dtype)
+
         loss_dict = {}
-        if density_gt is not None:
+        if return_loss:
+            if density_gt is None:
+                raise ValueError(
+                    f"data[{self.target_name!r}] must not be None when "
+                    "return_loss is True."
+                )
             loss, mae = self._compute_loss(pred, density_gt, mask)
             loss_dict["loss"] = loss
             loss_dict["mae"] = mae
 
+        pred_dict = {}
+        if return_prediction:
+            pred_dict[self.target_name] = masked_pred
         return {
             "loss_dict": loss_dict,
-            "pred_dict": {"density": pred},
+            "pred_dict": pred_dict,
             "aux_dict": aux,
         }
-        
+
+    @paddle.no_grad()
+    def predict(self, samples):
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
+
+        results = []
+        for sample in samples:
+            sample = dict(sample)
+            grid = sample.pop("grid", None)
+            if grid is not None:
+                sample["grid_coord"] = paddle.to_tensor(
+                    grid.cartesian_coordinates(), dtype="float32"
+                ).reshape([1, -1, 3])
+                sample["info"] = {
+                    "cell": paddle.to_tensor(grid.cell_vectors, dtype="float32")
+                }
+            prediction, _ = self._forward(sample)
+            results.append({self.target_name: prediction.reshape([-1]).detach().cpu()})
+
+        return results if is_list else results[0]
+
     def _compute_loss(self, pred, label, mask=None):
         if mask is not None:
             pred = pred * mask
             label = label * mask
-            denom = paddle.sum(mask) + 1e-8
+            denom = paddle.sum(mask) + self.loss_eps
             loss = paddle.sum((pred - label) ** 2) / denom
             mae = paddle.sum(paddle.abs(pred - label)) / (
-                paddle.sum(label) + 1e-8
+                paddle.sum(paddle.abs(label)) + self.loss_eps
             )
         else:
             loss = paddle.mean((pred - label) ** 2)
             mae = paddle.sum(paddle.abs(pred - label)) / (
-                paddle.sum(label) + 1e-8
+                paddle.sum(paddle.abs(label)) + self.loss_eps
             )
         return loss, mae
-    
-    def _forward_density(self,atom_types,atom_coord,grid,batch_idx,infos,):
-        
+
+    def _forward_density(self, atom_types, atom_coord, grid, batch_idx, info):
+
         device = atom_coord.place
 
         cell = None
-        if infos is not None and "cell" in infos[0]:
-            cell = paddle.stack([info["cell"] for info in infos], axis=0).to(device)
+        if info is not None and "cell" in info:
+            cell = paddle.to_tensor(info["cell"], dtype=atom_coord.dtype)
+            if cell.ndim == 2:
+                cell = cell.unsqueeze(0)
+            cell = cell.to(device)
 
         atom_types = atom_types.to(device)
         grid = grid.to(device)
@@ -507,8 +566,10 @@ class GPWNO(paddle.nn.Layer):
                 new_cell = paddle.stack(new_cell, dim=0)
                 max_cell = new_cell * self.max_cell_size
             else:
-                max_cell_tensor = np.eyes(3) * self.max_cell_size
-                max_cell = paddle.FloatTensor(self.max_cell_size).to(atom_coord.place)
+                max_cell_tensor = np.eye(3) * self.max_cell_size
+                max_cell = paddle.to_tensor(
+                    max_cell_tensor, dtype=atom_coord.dtype
+                ).to(atom_coord.place)
                 max_cell = max_cell.unsqueeze(0).repeat(grid.size(0), 1, 1)
             cell_inp = max_cell
         probe = paddle.einsum("ijkl,blm->bijkm", probe, cell_inp).detach()
@@ -858,7 +919,7 @@ class GPWNO(paddle.nn.Layer):
         else:
             density = (orbital * feat.unsqueeze(1)).sum(dim=-1)
         density = scatter(density, batch_idx, dim=0, reduce="sum")
-        #scalar_field = scalar_field_gcn.reshape(grid.size(0), grid.size(1)).real()
+        # scalar_field = scalar_field_gcn.reshape(grid.size(0), grid.size(1)).real()
         scalar_field = scalar_field_gcn.reshape([grid.shape[0], grid.shape[1]])
         if self.residual:
             density = density + residue.view(*density.size())
@@ -893,7 +954,6 @@ class GPWNO(paddle.nn.Layer):
         }
 
         return density, aux
-
 
     def get_grid(self, shape, device):
         batchsize, size_x, size_y, size_z = shape[0], shape[1], shape[2], shape[3]

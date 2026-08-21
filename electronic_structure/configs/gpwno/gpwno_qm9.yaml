@@ -3,6 +3,18 @@ Global:
   do_eval: True
   do_test: True
   use_voxel: False
+  graph_converter:
+    __class_name__: RadiusGraphConverter
+    __init_params__:
+      cutoff: 3.0
+      max_num_neighbors: 32
+      inclusive_cutoff: true
+      include_distance: false
+  build_field_cfg:
+    format: chgcar
+    name: density
+    num_cpus: 10
+  cache_num_workers: 8
 
 Trainer:
   # Keep the epoch ceiling above the official 80,000-step training budget.
@@ -66,6 +78,8 @@ Model:
     scalar_mask: true
     mask_cutoff: 3.0
 
+Vocabulary: infgcn_qm9
+
 Optimizer:
   __class_name__: Adam
   __init_params__:
@@ -86,17 +100,17 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: QM9DensityDataset
       __init_params__:
-        root: ./data/data_qm9
-        split_file: qm9_data_split.json
-        atom_file: ./data/data_qm9/qm9.json
-        extension: CHGCAR
-        compression: lz4
-        pbc: false
+        path: ./data/qm9_data_split.json
         split: "train"
-        enable_cache: false
+        build_field_cfg: ${Global.build_field_cfg}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
+        grid_sampler_cfg:
+          n_samples: 1024
+          sampling_mode: random
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -107,62 +121,51 @@ Dataset:
       num_workers: 4
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 1024
   val:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: QM9DensityDataset
       __init_params__:
-        root: ./data/data_qm9
-        split_file: qm9_data_split.json
-        atom_file: ./data/data_qm9/qm9.json
-        extension: CHGCAR
-        compression: lz4
-        pbc: false
+        path: ./data/qm9_data_split.json
         split: "validation"
-        enable_cache: false
+        build_field_cfg: ${Global.build_field_cfg}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
+        grid_sampler_cfg:
+          n_samples: 2048
+          sampling_mode: random
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: True
+        shuffle: False
         drop_last: False
         batch_size: 32
     loader:
       num_workers: 4
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 2048
   test:
     dataset:
-      __class_name__: DensityDataset
+      __class_name__: QM9DensityDataset
       __init_params__:
-        root: ./data/data_qm9
-        split_file: qm9_data_split.json
-        atom_file: ./data/data_qm9/qm9.json
-        extension: CHGCAR
-        compression: lz4
-        pbc: false
+        path: ./data/qm9_data_split.json
         split: "test"
-        rotate: false
-        enable_cache: false
+        build_field_cfg: ${Global.build_field_cfg}
+        build_graph_cfg: ${Global.graph_converter}
+        cache_num_workers: ${Global.cache_num_workers}
         overwrite: false
     sampler:
       __class_name__: BatchSampler
       __init_params__:
-        shuffle: True
+        shuffle: False
         drop_last: False
         batch_size: 8
     loader:
       num_workers: 4
       use_shared_memory: False
       collate_fn: DensityCollator
-      collate_params:
-        n_samples: 2048
 
 Predict:
-  eval_with_no_grad: True
-  num_infer: 100
-  num_vis: 2
-  inf_samples: 4096
+  graph_converter: ${Global.graph_converter}
+  build_field_cfg: ${Global.build_field_cfg}
+  grid_batch_size: 4096

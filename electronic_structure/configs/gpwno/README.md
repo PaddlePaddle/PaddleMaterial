@@ -210,8 +210,17 @@ python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno
 ### Prediction
 
 ```bash
-python electronic_structure/predict.py -c electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml Trainer.pretrained_model_path='path/to/model.pdparams'
+python electronic_structure/predict.py \
+  --config_path electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml \
+  --checkpoint_path path/to/model.pdparams \
+  --input_path path/to/molecule.mol \
+  --input_format mol \
+  --output_path ./results
 ```
+
+The unified `FieldPredictor` also accepts `xyz`, `cif`, `cube`, `chgcar`, and
+`json` inputs. Use `--grid_batch_size` to limit the number of field points in
+each inference pass when needed.
 
 ---
 
