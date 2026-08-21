@@ -106,21 +106,21 @@ python structure_generation/train.py -c structure_generation/configs/miad/miad_m
 # This command is used to sample crystal structures using a trained model.
 # Mode 1: Use a pre-trained model (downloads automatically).
 # Mode 2: Use a custom configuration file and checkpoint.
-# Results are saved to the folder specified by --output_dir (default: results).
+# Results are saved to the folder specified by --output_path (default: results).
 
 # Mode 1: pre-trained model, sample by number of atoms
 # num_atoms is the maximum number of atoms (mirage infusion): the model decides
 # how many become real elements, and mirage atoms (type 0) are filtered out.
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='by_num_atoms' --num_atoms=20
+python structure_generation/sample.py --model_name='miad_mp20' --output_path='result_miad/' --mode='by_num_atoms' --num_atoms=20
 
 # Mode 1: pre-trained model, sample by dataloader (reads test.csv)
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='miad_mp20' --output_path='result_miad/' --mode='by_dataloader'
 
 # Mode 2: custom config + checkpoint, sample by number of atoms
-python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_dir='result_miad/' --mode='by_num_atoms' --num_atoms=20
+python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_path='result_miad/' --mode='by_num_atoms' --num_atoms=20
 
 # Mode 2: custom config + checkpoint, sample by dataloader
-python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_dir='result_miad/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_path='result_miad/' --mode='by_dataloader'
 ```
 
 ### Evaluation (S.U.N.)
@@ -129,7 +129,7 @@ python structure_generation/sample.py --config_path='structure_generation/config
 # Sample on the test dataloader and evaluate with SUNMetric.
 # Reports Stability / Uniqueness / Novelty rates following the official MiAD
 # semantics (novelty references the *training* split, train.csv).
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='compute_metric'
+python structure_generation/sample.py --model_name='miad_mp20' --output_path='result_miad/' --mode='compute_metric'
 ```
 
 **S.U.N. metric status**:
