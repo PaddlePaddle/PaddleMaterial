@@ -18,6 +18,7 @@ novelty / coverage)."""
 from __future__ import annotations
 
 from typing import Any
+from typing import Dict
 from typing import List
 from typing import Optional
 
@@ -25,6 +26,7 @@ import numpy as np
 import pandas as pd
 from pymatgen.analysis.structure_matcher import StructureMatcher
 
+from ppmat.metrics.streaming_base import StreamingMetricBase
 from ppmat.metrics.utils import Crystal
 from ppmat.metrics.utils import compute_cov
 from ppmat.metrics.utils import get_crys_from_cif
@@ -32,8 +34,34 @@ from ppmat.metrics.utils import get_novel_structures
 from ppmat.metrics.utils import get_unique_structures
 
 
-class SGEQuiDiffMetric:
-    """Generation-quality metrics for SGEQuiDiff.
+def _extract_samples(result: Any) -> Optional[List[Dict[str, Any]]]:
+    """Extract a list of crystal dicts from a sampling result container.
+
+    Accepted shapes:
+      - a plain list of crystal dicts,
+      - {"result": [...]},
+      - {"samples": [...]} / {"samples": {"result": [...]}}.
+    """
+    samples = result
+    if isinstance(samples, dict):
+        samples = samples.get("samples")
+        if samples is None:
+            samples = result.get("result")
+    if isinstance(samples, dict) and "result" in samples:
+        samples = samples["result"]
+    if isinstance(samples, list) and len(samples) > 0:
+        return samples
+    return None
+
+
+class SGEQuiDiffMetric(StreamingMetricBase):
+    """Generation-quality metrics for SGEQuiDiff (streaming compatible).
+
+    Implements the ``StreamingMetricBase`` contract: generated structures are
+    collected per ``update_step`` (``stage == "sample"``) and the full metric
+    set (validity / uniqueness / novelty / coverage) is computed in
+    ``compute_epoch``. The legacy batch interface ``__call__(pred_data,
+    gt_data)`` remains available.
 
     Args:
         gt_file_path: Optional CSV with a ``"cif"`` column used as ground truth
@@ -50,12 +78,14 @@ class SGEQuiDiffMetric:
         comp_cutoff: float = 10.0,
         n_structures: Optional[int] = None,
     ):
+        super().__init__()
         self.gt_file_path = gt_file_path
         self.matcher = StructureMatcher(stol=0.5, angle_tol=10, ltol=0.3)
         self.struc_cutoff = struc_cutoff
         self.comp_cutoff = comp_cutoff
         self.n_structures = n_structures
         self._gt_crys: Optional[List[Crystal]] = None
+        self.reset()
 
     def _load_gt_crys(self) -> List[Crystal]:
         if self._gt_crys is None:
@@ -64,14 +94,34 @@ class SGEQuiDiffMetric:
             self._gt_crys = [get_crys_from_cif(cif) for cif in csv["cif"].tolist()]
         return self._gt_crys
 
+    # ---- streaming interface ----
+    def reset(self):
+        self._pred_data: List[Dict[str, Any]] = []
+
+    def update_step(self, *, result: Any, batch: Any, stage: str):
+        if stage != "sample" or result is None:
+            return
+        samples = _extract_samples(result)
+        if samples is not None:
+            self._pred_data.extend(samples)
+
+    def compute_epoch(self, *, stage: str) -> Dict[str, float]:
+        if stage != "sample" or not self._pred_data:
+            return {}
+        return self._compute(self._pred_data)
+
+    # ---- batch interface ----
     def __call__(self, pred_data: Any, gt_data: Any = None) -> dict:
-        """Score generated structures against ground truth.
+        """Score generated structures against ground truth (batch interface).
 
         Args:
             pred_data: list of dicts (``num_atoms`` / ``atom_types`` /
                 ``frac_coords`` / ``lengths`` / ``angles``).
             gt_data: optional list of dicts; falls back to ``gt_file_path``.
         """
+        return self._compute(pred_data, gt_data)
+
+    def _compute(self, pred_data: Any, gt_data: Any = None) -> dict:
         pred_crys = [Crystal(d) for d in pred_data]
         if self.n_structures is not None:
             pred_crys = pred_crys[: self.n_structures]
@@ -106,8 +156,8 @@ class SGEQuiDiffMetric:
         )
 
         return {
-            "validity": validity,
-            "uniqueness": uniqueness,
-            "novelty": novelty,
-            **cov_metrics,
+            "validity": float(validity),
+            "uniqueness": float(uniqueness),
+            "novelty": float(novelty),
+            **{k: float(v) for k, v in cov_metrics.items()},
         }

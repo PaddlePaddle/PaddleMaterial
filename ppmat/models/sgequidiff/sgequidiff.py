@@ -246,9 +246,39 @@ class SGEQuiDiff(nn.Layer):
         )
 
     def forward(self, batch_data: Dict) -> Dict:
-        """Training entry: MLE on discrete variables + score matching on coords."""
+        """Training entry: MLE on discrete variables + score matching on coords.
+
+        Returns:
+            loss_dict : total loss (``loss_dict["loss"]`` is backpropagated).
+            pred_dict : detached per-component log-probs / losses, tracked in
+                training logs only. SGEQuiDiff is an unconditional generative
+                model: its training forward has no per-attribute predictions
+                aligned with batch labels, so **non-streaming
+                ``compute_metric_func_dict`` metrics are not applicable** here.
+                Generations are scored with the streaming
+                ``SGEQuiDiffMetric`` (``stage == "sample"``).
+            label_dict : supervision fields passed through with keys identical
+                to the corresponding ``batch_data`` labels, so per-key
+                pred/label lookups stay aligned when a streaming metric needs
+                them.
+        """
         loss, artifacts = self.compute_loss(batch_data)
-        return {"loss_dict": {"loss": loss}, "pred_dict": artifacts}
+        label_keys = (
+            "space_group_indices",
+            "lattice_lengths",
+            "lattice_angles",
+            "n_atoms_per_asu",
+            "element_indices",
+            "wyckoff_indices",
+            "wyckoff_shape_indices",
+            "frac_coords",
+        )
+        label_dict = {k: batch_data[k] for k in label_keys if k in batch_data}
+        return {
+            "loss_dict": {"loss": loss},
+            "pred_dict": artifacts,
+            "label_dict": label_dict,
+        }
 
     def compute_loss(self, batch_data: Dict):
         """MLE on discrete variables, score matching on atom coordinates.

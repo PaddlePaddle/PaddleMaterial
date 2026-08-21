@@ -21,6 +21,7 @@ import numpy as np
 import paddle
 import pytest
 
+from ppmat.metrics.streaming_base import StreamingMetricBase
 from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
 from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
 from ppmat.models.sgequidiff.sgequidiff import SGEQuiDiff
@@ -404,6 +405,24 @@ def test_dataset_collate_to_model_forward(tmp_path):
     assert not paddle.isnan(loss).item()
     assert float(loss) > 0.0
 
+    # Contract-8: label_dict must expose label keys identical to batch_data.
+    label_keys = (
+        "space_group_indices",
+        "lattice_lengths",
+        "lattice_angles",
+        "n_atoms_per_asu",
+        "element_indices",
+        "wyckoff_indices",
+        "wyckoff_shape_indices",
+        "frac_coords",
+    )
+    assert "label_dict" in out
+    for key in label_keys:
+        assert key in out["label_dict"], f"missing label key: {key}"
+        assert bool(
+            paddle.equal(out["label_dict"][key], batch[key]).all().item()
+        ), f"label_dict[{key}] mismatch with batch label"
+
 
 def test_sgequidiff_metric(tmp_path):
     """Evaluation pipeline: generation-quality metric over synthetic structures.
@@ -465,3 +484,22 @@ def test_sgequidiff_metric(tmp_path):
     assert 0.0 <= result["validity"] <= 1.0
     assert 0.0 <= result["uniqueness"] <= 1.0
     assert 0.0 <= result["novelty"] <= 1.0
+
+    # Streaming contract: per-step accumulation must match the batch interface.
+    assert isinstance(metric, StreamingMetricBase)
+
+    stream_metric = SGEQuiDiffMetric(gt_file_path=str(gt_csv))
+    assert stream_metric.compute_epoch(stage="sample") == {}
+    assert stream_metric.compute_epoch(stage="eval") == {}
+    stream_metric.update_step(
+        result={"samples": {"result": pred_dicts[:4]}}, batch=None, stage="sample"
+    )
+    stream_metric.update_step(
+        result={"result": pred_dicts[4:]}, batch=None, stage="sample"
+    )
+    stream_metric.update_step(result={"result": pred_dicts}, batch=None, stage="eval")
+    streamed = stream_metric.compute_epoch(stage="sample")
+    for key, value in result.items():
+        assert streamed[key] == pytest.approx(value)
+    stream_metric.reset()
+    assert stream_metric.compute_epoch(stage="sample") == {}
