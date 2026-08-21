@@ -27,7 +27,11 @@ def parse_args(argv=None):
     parser.add_argument("--weights_name", help="Weight filename in a model package.")
     parser.add_argument("--checkpoint_path", help="Path to a local checkpoint.")
     parser.add_argument(
-        "--output_dir",
+        "--input_path",
+        help="Dataset path used by by_dataloader or compute_metric mode.",
+    )
+    parser.add_argument(
+        "--output_path",
         default="results",
         help="Directory in which sampling results are saved.",
     )
@@ -41,6 +45,10 @@ def parse_args(argv=None):
         parser.error("--config_path and --checkpoint_path must be provided together")
     if any(value.startswith("-") or "=" not in value for value in config_overrides):
         parser.error("unrecognized arguments: " + " ".join(config_overrides))
+    if args.input_path is not None:
+        config_overrides.append(
+            f"Sampler.data.dataset.__init_params__.path={args.input_path}"
+        )
     return args, config_overrides
 
 
@@ -55,11 +63,11 @@ def main():
         config_overrides=config_overrides,
     )
     if args.mode == "compute_metric":
-        metric_result = sampler.compute_metric(save_path=args.output_dir)
+        metric_result = sampler.compute_metric(save_path=args.output_path)
         for metric_name, metric_value in metric_result.items():
             logger.info(f"{metric_name}: {metric_value}")
     else:
-        sampler.sample_by_dataloader(save_path=args.output_dir)
+        sampler.sample_by_dataloader(save_path=args.output_path)
 
 
 if __name__ == "__main__":

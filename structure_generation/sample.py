@@ -36,7 +36,11 @@ def build_parser():
         help="Path to a local checkpoint file or directory.",
     )
     parser.add_argument(
-        "--output_dir",
+        "--input_path",
+        help="Dataset path used by by_dataloader or compute_metric mode.",
+    )
+    parser.add_argument(
+        "--output_path",
         default="results",
         help="Directory in which generated structures are saved.",
     )
@@ -77,6 +81,10 @@ def main():
     ]
     if invalid_overrides:
         parser.error("unrecognized arguments: " + " ".join(invalid_overrides))
+    if args.input_path is not None:
+        config_overrides.append(
+            f"Sample.data.dataset.__init_params__.path={args.input_path}"
+        )
 
     sampler = StructureSampler(
         model_name=args.model_name,
@@ -86,18 +94,18 @@ def main():
         config_overrides=config_overrides,
     )
     if args.mode == "compute_metric":
-        metric_result = sampler.compute_metric(save_path=args.output_dir)
+        metric_result = sampler.compute_metric(save_path=args.output_path)
         for metric_name, metric_value in metric_result.items():
             logger.info(f"{metric_name}: {metric_value}")
     elif args.mode == "by_chemical_formula":
         sampler.sample_by_chemical_formula(
             chemical_formula=args.chemical_formula,
-            save_path=args.output_dir,
+            save_path=args.output_path,
         )
     elif args.mode == "by_num_atoms":
         sampler.sample_by_num_atoms(
             num_atoms=args.num_atoms,
-            save_path=args.output_dir,
+            save_path=args.output_path,
         )
     elif args.mode == "by_condition":
         conditions = OmegaConf.to_container(
@@ -106,10 +114,10 @@ def main():
         sampler.sample_by_condition(
             num_atoms=args.num_atoms,
             conditions=conditions,
-            save_path=args.output_dir,
+            save_path=args.output_path,
         )
     else:
-        sampler.sample_by_dataloader(save_path=args.output_dir)
+        sampler.sample_by_dataloader(save_path=args.output_path)
 
 
 if __name__ == "__main__":

@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-SFIN: Noise Calibration and Spatial-Frequency Interactive Network for STEM Image Enhancement
-Paper: CVPR 2025 - https://arxiv.org/pdf/2504.02555
-"""
-
 from typing import Dict
 
 import paddle
@@ -293,7 +288,7 @@ class SFIN(nn.Layer):
             bias_attr=_uniform_attr(tail_bias_bound),
         )
 
-    def _forward_tensor(self, x: paddle.Tensor) -> paddle.Tensor:
+    def _forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """
         Tensor-only forward pass of SFIN.
 
@@ -309,6 +304,20 @@ class SFIN(nn.Layer):
         x = x + shortcut
         x = self.tail_conv(x)
         return x
+
+    @staticmethod
+    def _to_tensor(data) -> paddle.Tensor:
+        """Convert image data to a batched Paddle tensor."""
+        if not isinstance(data, paddle.Tensor):
+            data = paddle.to_tensor(data)
+        if data.ndim == 3:
+            data = data.unsqueeze(0)
+        if data.ndim != 4:
+            raise ValueError(
+                "SFIN expects image data with shape [C, H, W] or "
+                f"[B, C, H, W], but got {list(data.shape)}."
+            )
+        return data.astype(paddle.get_default_dtype())
 
     def forward(self, batch):
         """
@@ -328,38 +337,29 @@ class SFIN(nn.Layer):
                     f"{list(batch.keys())}"
                 )
 
-            x = batch[self.input_name]
-            enhanced = self._forward_tensor(x)
+            x = self._to_tensor(batch[self.input_name])
+            enhanced = self._forward(x)
 
             pred_dict = {
                 self.target_name: enhanced,
             }
-            label = batch[self.target_name]
+            label = self._to_tensor(batch[self.target_name])
             loss = self.criterion(enhanced, label) * self.loss_weight
             loss_dict = {"loss": loss}
 
             return {"loss_dict": loss_dict, "pred_dict": pred_dict}
 
-        return self._forward_tensor(batch)
+        return self._forward(self._to_tensor(batch))
 
-    def predict(self, batch: Dict) -> Dict:
-        """
-        Prediction interface for spectrum enhancement predictor entries.
+    @paddle.no_grad()
+    def predict(self, samples):
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
 
-        Args:
-            batch: Dictionary containing the configured input key.
+        results = []
+        for sample in samples:
+            sample = self._to_tensor(sample)
+            enhanced = self._forward(sample)
+            results.append({self.target_name: enhanced})
 
-        Returns:
-            Dictionary containing the configured prediction key
-        """
-        if isinstance(batch, dict):
-            if self.input_name not in batch:
-                raise KeyError(
-                    f"SFIN expects '{self.input_name}' in batch, but got keys: "
-                    f"{list(batch.keys())}"
-                )
-            x = batch[self.input_name]
-            enhanced = self._forward_tensor(x)
-            return {self.target_name: enhanced}
-
-        return self._forward_tensor(batch)
+        return results if is_list else results[0]

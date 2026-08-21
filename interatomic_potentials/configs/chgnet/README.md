@@ -188,7 +188,7 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/chgnet/
 
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python interatomic_potentials/predict.py --model_name='chgnet_mptrj' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python interatomic_potentials/predict.py --model_name='chgnet_mptrj' --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
 python interatomic_potentials/predict.py --config_path='interatomic_potentials/configs/chgnet/chgnet_mptrj.yaml' --checkpoint_path="your checkpoint path(*.pdparams)"

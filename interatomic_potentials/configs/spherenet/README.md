@@ -195,13 +195,13 @@ python interatomic_potentials/train.py \
 # Molecular prediction
 python interatomic_potentials/predict.py \
   --model_name spherenet_md17_aspirin \
-  --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
+  --input_format=xyz --input_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 
 # Using a local checkpoint
 python interatomic_potentials/predict.py \
   --config_path ./interatomic_potentials/configs/spherenet/spherenet_md17_aspirin.yaml \
   --checkpoint_path ./output/spherenet_aspirin/checkpoints/best.pdparams \
-  --xyz_file_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
+  --input_format=xyz --input_path ./interatomic_potentials/example_data/xyz/md17_aspirin.xyz
 ```
 
 ## Citation

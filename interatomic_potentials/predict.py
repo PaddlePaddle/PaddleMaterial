@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import argparse
+import os
+import os.path as osp
 
 from ppmat.predictor import PotentialPredictor
 
@@ -29,11 +31,18 @@ def parse_args(argv=None):
         help="Checkpoint path or URL; defaults to Predict.checkpoint_path in config.",
     )
     parser.add_argument("--device", help="Paddle device, for example cpu or gpu:0.")
-    # Select exactly one structure input: a CIF path or an XYZ path.
-    input_source = parser.add_mutually_exclusive_group(required=True)
-    input_source.add_argument("--cif_file_path", help="CIF file or directory.")
-    input_source.add_argument("--xyz_file_path", help="XYZ file.")
-    parser.add_argument("--save_path", default="result.csv")
+    parser.add_argument("--input_path", required=True, help="Input file or directory.")
+    parser.add_argument(
+        "--input_format",
+        required=True,
+        choices=["cif", "xyz"],
+        help="Input file format.",
+    )
+    parser.add_argument(
+        "--output_path",
+        default="results",
+        help="Directory used to save result.csv.",
+    )
     args, config_overrides = parser.parse_known_args(argv)
     if args.model_name is not None and args.checkpoint_path is not None:
         parser.error("--checkpoint_path cannot be combined with --model_name")
@@ -54,10 +63,12 @@ def main():
         device=args.device,
         config_overrides=config_overrides,
     )
-    if args.xyz_file_path is not None:
-        results = predictor.from_xyz_file(args.xyz_file_path, args.save_path)
+    os.makedirs(args.output_path, exist_ok=True)
+    save_path = osp.join(args.output_path, "result.csv")
+    if args.input_format == "xyz":
+        results = predictor.from_xyz_file(args.input_path, save_path)
     else:
-        results = predictor.from_cif_file(args.cif_file_path, args.save_path)
+        results = predictor.from_cif_file(args.input_path, save_path)
     print(results)
 
 

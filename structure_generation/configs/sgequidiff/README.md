@@ -139,7 +139,7 @@ Recommended data fields for each sample:
 | Dataset | Train | Val | Test | Download |
 | --- | --- | --- | --- | --- |
 | MP-20 | 27,136 | 9,047 | 9,046 | [mp_20.zip](https://drive.google.com/file/d/1avOCeo-OMtkKYPkDO0pz0IY36gBq8-kE/view?usp=sharing) |
-| MPTS-52 | — | — | — | [mpts_52.zip](https://drive.google.com/file/d/1rPMi0HKMtBccAczkgg-S-kCqSS63Jy1T/view?usp=sharing) |
+| MPTS-52 | N/A | N/A | N/A | [mpts_52.zip](https://drive.google.com/file/d/1rPMi0HKMtBccAczkgg-S-kCqSS63Jy1T/view?usp=sharing) |
 
 ---
 
@@ -219,7 +219,7 @@ python structure_generation/train.py -c structure_generation/configs/sgequidiff/
 
 ### Evaluation
 ```bash
-# 指向模型包内权重文件（下载后的本地缓存目录，或自定义 checkpoint）
+# Point to a weight file in the model package (local cache dir after download, or a custom checkpoint)
 python structure_generation/train.py -c structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml Global.do_train=False Global.do_eval=True Trainer.pretrained_model_path=/path/to/checkpoints/best.pdparams
 ```
 
@@ -230,20 +230,20 @@ are computed by the Generation-Quality Evaluation command below (`sample.py
 
 ### Generation
 ```bash
-# Mode 1: 使用已注册预训练模型（自动下载权重）
-python structure_generation/sample.py --model_name='sgequidiff_mp20' --weights_name='best.pdparams' --mode='by_num_atoms' --num_atoms=8 --output_dir='./sgequidiff_samples'
+# Mode 1: use a registered pretrained model (weights downloaded automatically)
+python structure_generation/sample.py --model_name='sgequidiff_mp20' --weights_name='best.pdparams' --mode='by_num_atoms' --num_atoms=8 --output_path='./sgequidiff_samples'
 
-# Mode 2: 使用本地 config 与 checkpoint
-python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=by_num_atoms --num_atoms=8 --output_dir=./sgequidiff_samples
+# Mode 2: use a local config and checkpoint
+python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=by_num_atoms --num_atoms=8 --output_path=./sgequidiff_samples
 ```
 
 ### Generation-Quality Evaluation
 ```bash
-# Mode 1: 使用已注册预训练模型（自动下载权重）
-python structure_generation/sample.py --model_name='sgequidiff_mp20' --mode='compute_metric' --output_dir='./sgequidiff_samples'
+# Mode 1: use a registered pretrained model (weights downloaded automatically)
+python structure_generation/sample.py --model_name='sgequidiff_mp20' --mode='compute_metric' --output_path='./sgequidiff_samples'
 
-# Mode 2: 使用本地 config 与 checkpoint
-python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=compute_metric --output_dir=./sgequidiff_samples
+# Mode 2: use a local config and checkpoint
+python structure_generation/sample.py --config_path=structure_generation/configs/sgequidiff/sgequidiff_mp20.yaml --checkpoint_path=/path/to/checkpoints/best.pdparams --mode=compute_metric --output_path=./sgequidiff_samples
 ```
 
 ---

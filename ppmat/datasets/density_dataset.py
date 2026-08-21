@@ -18,27 +18,23 @@ import multiprocessing as mp
 import os
 import os.path as osp
 import pickle
-import shutil
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
 
 import numpy as np
 import paddle
 import paddle.distributed as dist
 
 from ppmat.datasets.build_field import BuildField
+from ppmat.datasets.build_grid import BuildGrid
 from ppmat.datasets.grid_sampler import DensityGridSampler
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils import misc
-from ppmat.utils.misc import is_equal
 from ppmat.utils.io import write_cube
+from ppmat.utils.misc import is_equal
 
 _DENSITY_CACHE_FIELD_BUILDER = None
 _DENSITY_CACHE_GRAPH_CONVERTER = None
@@ -546,13 +542,12 @@ class MD17DensityDataset(DensityDataset):
         self.source_split = source_split
         self._atom_numbers = np.asarray(atom_numbers, dtype=np.int64)
         self._atom_types = atom_types
-        self._grid_data = BuildField.build_grid_one(
+        self._grid_data = BuildGrid(format="array", coordinate_unit="bohr")(
             {
                 "shape": (n_grid, n_grid, n_grid),
                 "voxel_vectors": np.eye(3, dtype=np.float32) * grid_step,
                 "origin": np.full(3, grid_step, dtype=np.float32),
-            },
-            "bohr",
+            }
         )
         self._cube_dir = f"{path}_n{n_grid}_g{grid_size:g}_cubes"
 
@@ -600,14 +595,6 @@ class MD17DensityDataset(DensityDataset):
         if not all(osp.exists(cube) for cube in cube_paths):
             if rank == 0:
                 os.makedirs(self._cube_dir, exist_ok=True)
-                cell = np.asarray(self._grid_data.cell_vectors, dtype=np.float32)
-                origin = np.asarray(self._grid_data.origin, dtype=np.float32)
-                info = {
-                    "shape": list(shape),
-                    "cell": cell,
-                    "origin": origin,
-                    "coordinate_unit": "bohr",
-                }
                 atom_numbers = self._atom_numbers
                 logger.message(
                     f"Materializing {num_samples} MD17 density CUBE files under "
@@ -618,7 +605,13 @@ class MD17DensityDataset(DensityDataset):
                         np.asarray(densities_fft[i], dtype=np.float32), shape
                     )
                     atom_coord = np.asarray(structures[i], dtype=np.float32)
-                    write_cube(cube_paths[i], atom_numbers, atom_coord, real_space, info)
+                    write_cube(
+                        cube_paths[i],
+                        atom_numbers,
+                        atom_coord,
+                        real_space,
+                        self._grid_data,
+                    )
         if dist.is_initialized():
             dist.barrier()
 

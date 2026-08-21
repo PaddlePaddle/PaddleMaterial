@@ -190,10 +190,19 @@ python spectrum_enhancement/train.py \
 Pretrained prediction is available through registered model names:
 
 ```bash
-# Mode 1: use registered pretrained weights by model name.
+# Mode 1: use registered pretrained weights with the bundled HAADF example.
 python spectrum_enhancement/predict.py \
   --model_name sfin_haadf_enhance \
-  --split val
+  --weights_name best.pdparams \
+  --input_path spectrum_enhancement/example_data/sfin_haadf.png \
+  --output_path ./output/sfin_haadf_predictions
+
+# Use the bundled BF example with the matching BF model.
+python spectrum_enhancement/predict.py \
+  --model_name sfin_bf_enhance \
+  --weights_name best.pdparams \
+  --input_path spectrum_enhancement/example_data/sfin_bf.png \
+  --output_path ./output/sfin_bf_predictions
 ```
 
 Or override the checkpoint and data path explicitly:
@@ -204,13 +213,11 @@ python spectrum_enhancement/predict.py \
   --config_path spectrum_enhancement/configs/sfin/sfin_bf_detect.yaml \
   --checkpoint_path https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/spectrum_enhancement/sfin/sfin_bf_detect.zip \
   --input_path ./sfin_bf/test/noisy \
-  --split val \
-  --output_dir ./output/sfin_predictions
+  --output_path ./output/sfin_predictions
 ```
 
-When `--input_path` is provided, prediction only reads noisy input images and
-does not require the target sub-directory to exist. Without `--input_path`,
-prediction reads the selected split from the config.
+`--input_path` accepts either one noisy image or a directory containing noisy
+images. Prediction does not require a dataset split or target images.
 
 ## References
 

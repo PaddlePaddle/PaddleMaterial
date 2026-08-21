@@ -30,6 +30,7 @@ from cvve import GridSpec
 from cvve import Structure
 from p_tqdm import p_map
 
+from ppmat.datasets.build_grid import BuildGrid
 from ppmat.utils.crystal import normalize_coordinate_unit
 from ppmat.utils.io import materialize_text_path
 from ppmat.utils.io import open_text
@@ -69,17 +70,10 @@ class BuildField:
     ) -> GridSpec:
         """Build one affine grid from an array-style grid mapping."""
 
-        if not isinstance(grid_data, Mapping):
-            raise TypeError("grid data must be a mapping.")
-        missing = {"shape", "voxel_vectors"} - grid_data.keys()
-        if missing:
-            raise ValueError(f"grid data is missing required keys {sorted(missing)}.")
-        return GridSpec(
-            shape=grid_data["shape"],
-            origin=grid_data.get("origin", np.zeros(3)),
-            vectors=grid_data["voxel_vectors"],
-            length_unit=normalize_coordinate_unit(coordinate_unit),
-        )
+        return BuildGrid(
+            format="array",
+            coordinate_unit=coordinate_unit,
+        )(grid_data)
 
     @staticmethod
     def build_one(

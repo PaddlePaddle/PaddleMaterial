@@ -12,7 +12,6 @@ prune docs
 prune electronic_structure
 prune interatomic_potentials
 prune output
-prune paddle_scatter
 prune ppmatSim
 prune property_prediction
 prune research

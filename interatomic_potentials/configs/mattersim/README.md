@@ -61,12 +61,12 @@ python interatomic_potentials/train.py -c interatomic_potentials/configs/matters
 
 
 # Mode 1: Leverage a pre-trained machine learning model for crystal shear moduli prediction. The implementation includes automated model download functionality, eliminating the need for manual configuration.
-python interatomic_potentials/predict.py --model_name='mattersim_1M' --weights_name='mattersim-v1.0.0-1M_model.pdparams' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python interatomic_potentials/predict.py --model_name='mattersim_1M' --weights_name='mattersim-v1.0.0-1M_model.pdparams' --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/'
 
-python interatomic_potentials/predict.py --model_name='mattersim_5M' --weights_name='mattersim-v1.0.0-5M_model.pdparams' --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python interatomic_potentials/predict.py --model_name='mattersim_5M' --weights_name='mattersim-v1.0.0-5M_model.pdparams' --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/'
 
 # Mode2: Use a custom configuration file and checkpoint for crystal shear moduli prediction. This approach allows for more flexibility and customization.
-python interatomic_potentials/predict.py --config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' --checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams" --cif_file_path='./interatomic_potentials/example_data/cifs/'
+python interatomic_potentials/predict.py --config_path='interatomic_potentials/configs/mattersim/mattersim_1M.yaml' --checkpoint_path="/root/host/home/zhangzhimin04/workspaces_123/ppmat/PaddleMaterial_experimental/experimental/output/mattersim_1M/mattersim-v1.0.0-1M_model.pdparams" --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/'
 ```
 
 

@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import argparse
+import os
 import os.path as osp
 from pathlib import Path
 
 from ppmat.predictor import SpectrumPredictor
-from ppmat.utils import logger
 
 
 def parse_args(argv=None):
@@ -31,14 +31,13 @@ def parse_args(argv=None):
         "--checkpoint_path",
         help="Checkpoint path or URL; defaults to Predict.checkpoint_path in config.",
     )
-    parser.add_argument("--input_path", help="Noisy image file or directory.")
     parser.add_argument(
-        "--split",
-        default="test",
-        choices=["train", "val", "validation", "test"],
+        "--input_path",
+        required=True,
+        help="Noisy image file or directory.",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output_path",
         help="Directory used to save enhanced spectrum images.",
     )
     parser.add_argument(
@@ -66,7 +65,7 @@ def main():
         config_overrides=config_overrides,
     )
 
-    save_path = args.output_dir
+    save_path = args.output_path
     if save_path is None:
         trainer_output_dir = predictor.config.get("Trainer", {}).get("output_dir")
         if trainer_output_dir:
@@ -76,11 +75,8 @@ def main():
         else:
             save_path = osp.join("./output", args.model_name, "predictions")
 
-    if args.input_path is not None:
-        saved_paths = predictor.from_image_path(args.input_path, save_path, args.split)
-    else:
-        saved_paths = predictor.from_dataset(args.split, save_path)
-    logger.info(f"Saved {len(saved_paths)} predictions to {save_path}")
+    os.makedirs(save_path, exist_ok=True)
+    predictor.from_image_file(args.input_path, save_path)
 
 
 if __name__ == "__main__":
