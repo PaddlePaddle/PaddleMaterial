@@ -3,6 +3,11 @@ Global:
   do_eval: True
   do_test: False
   prim_eager_enabled: False
+  build_image_cfg:
+    format: image_file
+    mode: L
+    dtype: float32
+    num_cpus: 1
 
 Trainer:
   max_epochs: 500
@@ -75,6 +80,7 @@ Dataset:
         path: "./sfin_haadf"
         split: "train"
         target_subdir: "gt_detect"
+        build_image_cfg: ${Global.build_image_cfg}
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -93,6 +99,7 @@ Dataset:
         path: "./sfin_haadf"
         split: "val"
         target_subdir: "gt_detect"
+        build_image_cfg: ${Global.build_image_cfg}
     sampler:
       __class_name__: BatchSampler
       __init_params__:

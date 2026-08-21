@@ -15,6 +15,7 @@ import copy
 
 import numpy as np
 import paddle
+from pymatgen.core.periodic_table import Element
 
 from ppmat.utils import paddle_aux  # noqa: F401
 from ppmat.utils.paddle_aux import dim2perm
@@ -48,6 +49,29 @@ OFFSET_LIST = [
     [1, 1, 0],
     [1, 1, 1],
 ]
+
+
+def normalize_coordinate_unit(coordinate_unit: str) -> str:
+    """Validate and normalize a supported coordinate unit."""
+
+    if not isinstance(coordinate_unit, str):
+        raise TypeError("coordinate_unit must be a string.")
+    coordinate_unit = coordinate_unit.strip().lower()
+    if coordinate_unit not in {"angstrom", "bohr"}:
+        raise ValueError(
+            "coordinate_unit must be either 'angstrom' or 'bohr', but got "
+            f"{coordinate_unit!r}."
+        )
+    return coordinate_unit
+
+
+def atomic_number_from_symbol(symbol: str) -> int:
+    """Return the atomic number, accepting cvve CUBE ``X{n}`` placeholders."""
+
+    symbol = str(symbol)
+    if symbol.startswith("X") and symbol[1:].isdigit():
+        return int(symbol[1:])
+    return int(Element(symbol).Z)
 
 
 def lattice_params_to_matrix_paddle(lengths, angles):
