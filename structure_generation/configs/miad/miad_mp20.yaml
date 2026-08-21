@@ -2,7 +2,6 @@ Global:
   do_train: True
   do_eval: False
   do_test: False
-  num_train_timesteps: 1000
 
 Trainer:
   max_epochs: 2
@@ -35,6 +34,7 @@ Model:
       latent_dim: 256
       num_layers: 6
       max_atoms: 100
+      mirage_num_atoms: 25
       act_fn: silu
       dis_emb: sin
       num_freqs: 128
@@ -54,9 +54,10 @@ Model:
           __class_name__: DDPMScheduler
           __init_params__:
             num_train_timesteps: 1000
-            beta_schedule: squaredcos_cap_v2
+            beta_schedule: diffcsp_cosine
       frac_diffusion:
         method: wrapped_normal
+        step_lr: 0.00001
         scheduler_cfg:
           __class_name__: ScoreSdeVeSchedulerWrapped
           __init_params__:
@@ -65,23 +66,21 @@ Model:
             sigma_max: 0.5
             sampling_eps: 0.001
       type_diffusion:
-        method: d3pm
+        __class_name__: D3PM
+        __init_params__:
+          loss_scale: 1000
+          scheduler_cfg:
+            __class_name__: D3PMUniformScheduler
+            __init_params__:
+              num_train_timesteps: 1000
+              num_types: 100
 
 Optimizer:
   __class_name__: Adam
   __init_params__:
     beta1: 0.9
     beta2: 0.999
-    lr:
-      __class_name__: ReduceOnPlateau
-      __init_params__:
-        learning_rate: 0.001
-        factor: 0.6
-        by_epoch: True
-        patience: 30
-        min_lr: 0.0001
-        indicator: "train_loss"
-        indicator_name: 'loss'
+    lr: 0.001
 
 Dataset:
   train:
@@ -91,6 +90,8 @@ Dataset:
         path: "./data/mp_20/train.csv"
         build_structure_cfg:
           format: cif_str
+          primitive: true
+          niggli: true
           num_cpus: 10
     loader:
       num_workers: 0
@@ -109,6 +110,8 @@ Dataset:
         path: "./data/mp_20/val.csv"
         build_structure_cfg:
           format: cif_str
+          primitive: true
+          niggli: true
           num_cpus: 10
     sampler:
       __class_name__: BatchSampler
@@ -125,6 +128,8 @@ Dataset:
         path: "./data/mp_20/test.csv"
         build_structure_cfg:
           format: cif_str
+          primitive: true
+          niggli: true
           num_cpus: 10
     sampler:
       __class_name__: DistributedBatchSampler
@@ -143,6 +148,8 @@ Sample:
         path: "./data/mp_20/test.csv"
         build_structure_cfg:
           format: cif_str
+          primitive: true
+          niggli: true
           num_cpus: 10
     sampler:
       __class_name__: BatchSampler
@@ -156,8 +163,10 @@ Sample:
     format: array
     niggli: False
   metrics:
-    __class_name__: CSPMetric
+    __class_name__: SUNMetric
     __init_params__:
-      gt_file_path: "./data/mp_20/test.csv"
+      # Novelty reference follows the official MiAD semantics: compare against
+      # the *training* split (train.csv), not the test split.
+      reference_file_path: "./data/mp_20/train.csv"
   model_sample_params:
     num_inference_steps: 1000

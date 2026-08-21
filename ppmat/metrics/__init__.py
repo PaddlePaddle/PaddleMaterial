@@ -26,9 +26,9 @@ __all__ = [
     "CSPMetric",
     "DiffNMRStreamingAdapter",
     "SFINStreamingAdapter",
+    "SUNMetric",
     # "DiffNMRMetric",
     # "NLL", "CrossEntropyMetric", "SumExceptBatchMetric", "SumExceptBatchKL",
-    "SUNMetric",
 ]
 
 

@@ -6,6 +6,9 @@
 
 MiAD introduces Mirage Infusion, a mechanism that allows diffusion models to dynamically adjust the number of atoms in a crystal structure during the generation trajectory. By treating a variable number of atoms as "mirage" atoms (sentinel states), MiAD achieves state-of-the-art performance in generating stable, unique, and novel (S.U.N.) materials. It uses DiffCsp as the backbone denoising architecture.
 
+
+![Miad Method Scheme](../../docs/miad_method_scheme.png)
+
 ---
 
 ## Model Description
@@ -46,6 +49,8 @@ Atom types use D3PM (uniform transition + cosine schedule) or DDPM with one-hot 
 #### 4) Mirage Infusion
 
 During sampling, atoms with type 0 are treated as mirage atoms. The model dynamically decides which mirage atoms should materialize into real elements, allowing the final structure to have fewer atoms than the initial maximum. This is the core innovation enabling variable-atom-count generation.
+
+During training, every crystal is padded to `model_cfg.mirage_num_atoms` atoms (default 25, matching the official MiAD `add_mirage_atoms_upto25`) by appending type-0 mirage atoms with random fractional coordinates. The coordinate loss masks out mirage atoms and rescales to keep the loss scale.
 
 ---
 
@@ -101,20 +106,42 @@ python structure_generation/train.py -c structure_generation/configs/miad/miad_m
 # This command is used to sample crystal structures using a trained model.
 # Mode 1: Use a pre-trained model (downloads automatically).
 # Mode 2: Use a custom configuration file and checkpoint.
-# Results are saved to the folder specified by --save_path (default: results).
+# Results are saved to the folder specified by --output_dir (default: results).
 
 # Mode 1: pre-trained model, sample by number of atoms
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --save_path='result_miad/' --mode='by_num_atoms' --num_atoms=20
+# num_atoms is the maximum number of atoms (mirage infusion): the model decides
+# how many become real elements, and mirage atoms (type 0) are filtered out.
+python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='by_num_atoms' --num_atoms=20
 
 # Mode 1: pre-trained model, sample by dataloader (reads test.csv)
-python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --save_path='result_miad/' --mode='by_dataloader'
+python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='by_dataloader'
 
 # Mode 2: custom config + checkpoint, sample by number of atoms
-python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --save_path='result_miad/' --mode='by_num_atoms' --num_atoms=20
+python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_dir='result_miad/' --mode='by_num_atoms' --num_atoms=20
 
 # Mode 2: custom config + checkpoint, sample by dataloader
-python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --save_path='result_miad/' --mode='by_dataloader'
+python structure_generation/sample.py --config_path='structure_generation/configs/miad/miad_mp20.yaml' --checkpoint_path='./output/miad_mp20/checkpoints/latest.pdparams' --output_dir='result_miad/' --mode='by_dataloader'
 ```
+
+### Evaluation (S.U.N.)
+
+```bash
+# Sample on the test dataloader and evaluate with SUNMetric.
+# Reports Stability / Uniqueness / Novelty rates following the official MiAD
+# semantics (novelty references the *training* split, train.csv).
+python structure_generation/sample.py --model_name='miad_mp20' --weights_name='miad_mp20.pdparams' --output_dir='result_miad/' --mode='compute_metric'
+```
+
+**S.U.N. metric status**:
+
+- `Uniqueness` and `Novelty` are fully supported with official semantics
+  (`StructureMatcher` with `attempt_supercell=false, symmetric=false`,
+  novelty compared against the MP-20 training split).
+- `Stability` currently reports `0.0`: the official definition requires
+  CHGNet prerelaxation + convex-hull reference (`e_above_hull < 0`), which is
+  not yet migrated. Raw `e_per_atom` is intentionally NOT used as a
+  substitute. The reported S.U.N. rate is therefore a lower bound (stable
+  subset missing) and must not be compared against the paper's 12.21%.
 
 ---
 

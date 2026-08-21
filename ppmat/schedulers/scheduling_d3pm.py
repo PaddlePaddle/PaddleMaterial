@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 from typing import Literal
 from typing import Optional
 from typing import Tuple
@@ -21,6 +23,74 @@ import paddle
 
 from ppmat.utils.misc import aggregate_per_sample
 from ppmat.utils.misc import maybe_expand
+
+
+class D3PMUniformScheduler:
+    """D3PM scheduler with uniform transition matrices.
+
+    Pre-computes Q_t / cumprod_Q_t / Q_{t-1} / cumprod_Q_{t-1} for all
+    timesteps using a cosine schedule (uniform-transition variant, as opposed
+    to the absorbing-state ``D3PMScheduler``).
+    """
+
+    def __init__(
+        self,
+        num_train_timesteps: int = 1000,
+        num_types: int = 100,
+        s: float = 0.008,
+    ):
+        self.num_types = num_types
+
+        discretization = paddle.arange(
+            1, num_train_timesteps + 1, dtype="float64"
+        )
+        f_t = paddle.cos(
+            (discretization / (num_train_timesteps + 1) + s) / (1 + s) * math.pi / 2
+        )
+        f_0 = paddle.cos(
+            (paddle.to_tensor(0.0, dtype="float64") + s) / (1 + s) * math.pi / 2
+        )
+        a_t = f_t / f_0
+        cumprod_alphas_t = a_t
+        cumprod_alphas_t_1 = paddle.concat(
+            [paddle.to_tensor([1.0], dtype="float64"), cumprod_alphas_t[:-1]]
+        )
+        betas_t = 1 - cumprod_alphas_t / cumprod_alphas_t_1
+
+        # Q_t = (1 - beta_t) I + (beta_t / K) J, computed in float64 then cast
+        # to float32; cumprod_Q_t accumulates per-step float32 matmuls.
+        eye64 = paddle.eye(num_types, dtype="float64")
+        ones64 = paddle.ones([1, num_types, num_types], dtype="float64")
+
+        Q_t = (
+            (1 - betas_t)[:, None, None] * eye64[None, :, :]
+            + (betas_t / float(num_types))[:, None, None] * ones64
+        ).cast("float32")
+
+        cumprod_Q_t_list = [Q_t[0]]
+        for t_idx in range(1, num_train_timesteps):
+            cumprod_Q_t_list.append(
+                paddle.matmul(cumprod_Q_t_list[-1], Q_t[t_idx])
+            )
+        cumprod_Q_t = paddle.stack(cumprod_Q_t_list, axis=0)
+
+        Q_t_1 = paddle.concat(
+            [paddle.eye(num_types, dtype="float32").unsqueeze(0), Q_t[:-1]],
+            axis=0,
+        )
+
+        cumprod_Q_t_1 = paddle.concat(
+            [
+                paddle.eye(num_types, dtype="float32").unsqueeze(0),
+                cumprod_Q_t[:-1],
+            ],
+            axis=0,
+        )
+
+        self.Q_t = Q_t.reshape([-1, num_types, num_types])
+        self.Q_t_1 = Q_t_1.reshape([-1, num_types, num_types])
+        self.cumprod_Q_t = cumprod_Q_t.reshape([-1, num_types, num_types])
+        self.cumprod_Q_t_1 = cumprod_Q_t_1.reshape([-1, num_types, num_types])
 
 
 class D3PMScheduler:
