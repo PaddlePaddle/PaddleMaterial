@@ -215,57 +215,92 @@ python electronic_structure/train.py -c electronic_structure/configs/infgcn/infg
 python electronic_structure/predict.py \
   --model_name infgcn_qm9 \
   --weights_name best.pdparams \
-  --mol_file_path electronic_structure/configs/infgcn/example/methane.mol \
+  --input_format=mol --input_path electronic_structure/example_data/methane.mol \
   --grid_shape 8 \
   --grid_batch_size 4096 \
-  --save_path output/infgcn_qm9/methane
+  --output_path output/infgcn_qm9/methane \
+  --save_html
 
-# 2) Predict one sample (selected by --index) from the dataset split configured by the YAML.
-python electronic_structure/predict.py \
-  --config_path electronic_structure/configs/infgcn/infgcn_qm9.yaml \
-  --checkpoint_path path/to/infgcn_qm9.pdparams
-
-# 3) MOL-file inference (single file or directory).
-# This mode predicts electron density from molecular structure files (*.mol),
-# and can export predicted cube + html visualization.
+# 2) MOL-file inference (single file or directory).
+# This mode predicts electron density from molecular structure files (*.mol).
 python electronic_structure/predict.py \
   --config_path electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml \
   --checkpoint_path path/to/infgcn_omol25.pdparams \
-  --mol_file_path path/to/mols_or_mol_file \
-  --save_path output/infgcn_mol \
-  --save_html
+  --input_format=mol --input_path path/to/mols_or_mol_file \
+  --output_path output/infgcn_mol
 
-# 4) MOL-file inference with reference (true) cube files.
-# If --reference_cube_dir provides matching files, the script can additionally
-# write the reference CUBE and true/difference visualizations.
+# 3) XYZ-file inference on a molecular bounding-box grid.
 python electronic_structure/predict.py \
-  --config_path electronic_structure/configs/infgcn/infgcn_omol25_MC_5k_trimmed.yaml \
-  --checkpoint_path path/to/infgcn_omol25.pdparams \
-  --mol_file_path path/to/mols_or_mol_file \
-  --reference_cube_dir path/to/true_cubes \
-  --save_path output/infgcn_reference \
-  --save_true_cube \
-  --save_html
+  --model_name infgcn_omol25_mc_5k_trimmed \
+  --weights_name best.pdparams \
+  --input_format=xyz --input_path property_prediction/example_data/molecules/isoguvacine.xyz \
+  --grid_shape 80 \
+  --output_path output/infgcn_omol25/xyz
+
+# 4) Predict a periodic crystal field from CIF on a full-cell grid.
+python electronic_structure/predict.py \
+  --model_name infgcn_mp \
+  --weights_name best.pdparams \
+  --input_format=cif --input_path property_prediction/example_data/cifs/mp-18767-LiMnO2.cif \
+  --grid_shape 80 \
+  --output_path output/infgcn_mp/cif
+
+# 5) Reuse the structure and native grid from a QM9 CHGCAR test sample.
+python electronic_structure/predict.py \
+  --model_name infgcn_qm9 \
+  --weights_name best.pdparams \
+  --input_format=chgcar --input_path electronic_structure/example_data/ammonia.CHGCAR.lz4 \
+  --output_path output/infgcn_qm9/chgcar
+
+# 6) Reuse the structure and periodic grid from an MP density JSON test sample.
+python electronic_structure/predict.py \
+  --model_name infgcn_mp \
+  --weights_name best.pdparams \
+  --input_format=json --input_path electronic_structure/example_data/mg3dy_mp-1546.json.xz \
+  --output_path output/infgcn_mp/json
+
+# 7) Reuse the structure and native grid from an OMol25 CUBE test sample.
+python electronic_structure/predict.py \
+  --model_name infgcn_omol25_mc_5k_trimmed \
+  --weights_name best.pdparams \
+  --input_format=cube --input_path electronic_structure/example_data/c38h40eun9op.cube.lz4 \
+  --output_path output/infgcn_omol25/cube
 ```
 
 Notes:
 - Replace `path/to/*.pdparams` with a downloaded pretrained checkpoint or a checkpoint produced by training.
 - Model configs keep the recommended `grid_batch_size` and share the configured
   field builder between Dataset and Predict. Input selection, output
-  paths, cube/html export, visualization, and MOL grid settings are runtime
-  command-line options.
-- `--mol_file_path` supports either one `.mol` file or a directory of `.mol`
+  paths, CUBE export, and MOL grid settings are runtime command-line options.
+- `--input_path` with `--input_format=mol` supports either one `.mol` file or a directory of `.mol`
   files. The atom vocabulary declared by `Vocabulary` is downloaded and used
   automatically.
-- `--save_path` is an output directory and always receives the predicted CUBE.
-- Optional MOL grid controls are `--grid_shape` (default `80,80,80`) and
-  `--grid_padding` (default `6.0` Angstrom).
-- MOL input coordinates and `--grid_padding` are interpreted directly in
-  Angstrom. Reference CUBE geometry is read from the unit encoded by the file;
-  its atom order is validated before its grid and atom coordinates are used.
-- If true/reference cube is not provided, only predicted outputs are available (`*_pred.cube`, `*_pred_density.html`).
-- If kaleido/Chrome is unavailable, the script writes interactive `.html` instead of `.png`.
-- If a dataset already exists elsewhere, override its configured dataset path.
+- `--input_path` with `--input_format=xyz` supports one `.xyz` file or a directory and uses the same
+  molecular bounding-box grid controls as MOL input.
+- `--input_path` with `--input_format=cif` supports one `.cif` file or a directory and builds a periodic
+  `GridSpec` spanning the complete unit cell.
+- `--input_path` with `--input_format=cube`, `chgcar`, or `json` also accepts
+  one file or a directory. These paths reuse the source structure and exact
+  `GridSpec`; the reference density values are parsed but are not model inputs.
+- `--output_path` is an output directory and always receives the predicted CUBE.
+- The task-level `predict.py` supports `--visualize` for PNG, `--save_html` for
+  interactive HTML, and `--show_plot` for an interactive Plotly window. It invokes
+  the reusable `ppmat.visualization` package after prediction, while
+  `FieldPredictor` remains independent of visualization.
+- Static PNG export uses Plotly Kaleido and requires Chrome; run
+  `plotly_get_chrome` once if Chrome is not already available.
+- `--grid_shape` controls MOL, XYZ, and CIF grids (default `80,80,80`), while
+  `--grid_padding` applies to molecular bounding-box grids (default `6.0` Angstrom).
+- MOL/XYZ input coordinates and `--grid_padding` are interpreted in Angstrom.
+- File and directory inputs both return a list of prediction dictionaries.
+
+The bundled field examples are the first entries of their published test splits:
+
+| Dataset | Test entry | Bundled input |
+|---|---:|---|
+| QM9 ES | `1` → `000002` | `ammonia.CHGCAR.lz4` |
+| MP ES cubic | `mp-1546` | `mg3dy_mp-1546.json.xz` |
+| OMol25 MC 5k | `4437` | `c38h40eun9op.cube.lz4` |
 
 ---
 

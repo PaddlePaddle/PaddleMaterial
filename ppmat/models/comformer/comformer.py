@@ -489,25 +489,13 @@ class iComformer(nn.Layer):
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
     @paddle.no_grad()
-    def predict(self, graphs):
-        if isinstance(graphs, list):
-            results = []
-            for graph in graphs:
-                result = self._forward(
-                    {
-                        "graph": graph,
-                    }
-                )
-                result = self.unnormalize(result).numpy()[0, 0]
-                result = {self.property_name: result}
-                results.append(result)
-            return results
+    def predict(self, samples):
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
 
-        else:
-            data = {
-                "graph": graphs,
-            }
-            result = self._forward(data)
+        results = []
+        for sample in samples:
+            result = self._forward({"graph": sample})
             result = self.unnormalize(result).numpy()[0, 0]
-            result = {self.property_name: result}
-            return result
+            results.append({self.property_name: result})
+        return results if is_list else results[0]

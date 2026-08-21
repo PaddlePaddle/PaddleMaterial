@@ -12,7 +12,7 @@
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white">
   </a>
   <a href="https://pypi.org/project/ppmat/">
-    <img alt="PyPI version" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white">
+    <img alt="PyPI version" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white&amp;cacheSeconds=300">
   </a>
   <a href="LICENSE">
     <img alt="Apache 2.0 License" src="https://img.shields.io/github/license/PaddlePaddle/PaddleMaterials">
@@ -103,8 +103,9 @@ Predict material formation energy using a pretrained MEGNet model:
 python property_prediction/predict.py \
     --model_name='megnet_mp2018_train_60k_e_form' \
     --weights_name='best.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format='cif' \
+    --input_path='./property_prediction/example_data/cifs/' \
+    --output_path='result_property_prediction/'
 ```
 
 #### Structure Generation
@@ -115,7 +116,7 @@ Generate novel crystal structures using a pretrained MatterGen model:
 python structure_generation/sample.py \
     --model_name='mattergen_mp20' \
     --weights_name='latest.pdparams' \
-    --output_dir='result_mattergen_mp20/' \
+    --output_path='result_mattergen_mp20/' \
     --mode='by_num_atoms' \
     --num_atoms=4
 ```
@@ -128,8 +129,9 @@ Predict energy and forces using a pretrained MatterSim model:
 python interatomic_potentials/predict.py \
     --model_name='mattersim_1M' \
     --weights_name='mattersim-v1.0.0-1M_model.pdparams' \
-    --cif_file_path='./interatomic_potentials/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format='cif' \
+    --input_path='./interatomic_potentials/example_data/cifs/' \
+    --output_path='result_interatomic_potentials/'
 ```
 
 #### Electronic Structure
@@ -141,14 +143,17 @@ model:
 python electronic_structure/predict.py \
     --model_name='infgcn_qm9' \
     --weights_name='best.pdparams' \
-    --mol_file_path='electronic_structure/configs/infgcn/example/methane.mol' \
+    --input_format='mol' \
+    --input_path='electronic_structure/example_data/methane.mol' \
     --grid_shape=8 \
     --grid_batch_size=4096 \
-    --save_path='output/infgcn_qm9/methane'
+    --output_path='output/infgcn_qm9/methane'
 ```
 
 See the [InfGCN prediction guide](electronic_structure/configs/infgcn/README.md#prediction)
-for dataset-based and local-checkpoint inference.
+for registered-model and local-checkpoint inference from MOL, CUBE, CHGCAR, and
+density JSON inputs. Real test-split field examples are bundled under
+`electronic_structure/example_data/`.
 
 #### Spectrum Elucidation
 
@@ -159,7 +164,7 @@ model:
 python spectrum_elucidation/sample.py \
     --model_name='diffnmr_msdnmr_nless15' \
     --weights_name='best.pdparams' \
-    --output_dir='result_diffnmr_nless15/'
+    --output_path='result_diffnmr_nless15/'
 ```
 
 #### Spectrum Enhancement
@@ -170,8 +175,8 @@ Enhance STEM images using a pretrained SFIN model:
 python spectrum_enhancement/predict.py \
     --model_name='sfin_haadf_enhance' \
     --weights_name='best.pdparams' \
-    --input_path='path/to/noisy_image.png' \
-    --output_dir='result_sfin/'
+    --input_path='spectrum_enhancement/example_data/sfin_haadf.png' \
+    --output_path='result_sfin/'
 ```
 
 ---

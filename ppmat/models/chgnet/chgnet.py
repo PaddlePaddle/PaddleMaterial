@@ -1733,31 +1733,18 @@ class CHGNet(paddle.nn.Layer):
                 prediction[key] = prediction[key][0]
         return prediction
 
-    def predict(self, graphs):
-        if isinstance(graphs, list):
-            results = []
-            for graph in graphs:
-                result = self.forward(
-                    {
-                        "graph": graph,
-                    },
-                    return_loss=False,
-                    return_prediction=True,
-                )
-                prediction = result["pred_dict"]
-                prediction = self._prediction_to_numpy(prediction)
-                results.append(prediction)
-            return results
+    def predict(self, samples):
+        is_list = isinstance(samples, list)
+        samples = samples if is_list else [samples]
 
-        else:
-            data = {
-                "graph": graphs,
-            }
+        results = []
+        for sample in samples:
             result = self.forward(
-                data,
+                {"graph": sample},
                 return_loss=False,
                 return_prediction=True,
             )
             prediction = result["pred_dict"]
             prediction = self._prediction_to_numpy(prediction)
-            return prediction
+            results.append(prediction)
+        return results if is_list else results[0]

@@ -28,16 +28,7 @@
 
 如果出现 PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now. 信息，说明已成功安装。
 
-### 1.3 安装 paddle_scatter
-
-从源码安装第三方依赖 `paddle_scatter`：
-
-    git clone https://github.com/PFCCLab/paddle_scatter.git
-    cd paddle_scatter
-    pip install -v . --no-build-isolation
-    cd ..
-
-### 1.4 安装 PaddleMaterials
+### 1.3 安装 PaddleMaterials
 
 从 PyPI 安装已发布的软件包：
 
@@ -77,8 +68,8 @@
 python property_prediction/predict.py \
     --model_name='megnet_mp2018_train_60k_e_form' \
     --weights_name='best.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format=cif --input_path='./property_prediction/example_data/cifs/' \
+    --output_path='results/'
 ```
 
 ### 2.2 结构生成
@@ -89,7 +80,7 @@ python property_prediction/predict.py \
 python structure_generation/sample.py \
     --model_name='mattergen_mp20' \
     --weights_name='latest.pdparams' \
-    --output_dir='result_mattergen_mp20/' \
+    --output_path='result_mattergen_mp20/' \
     --mode='by_num_atoms' \
     --num_atoms=4
 ```
@@ -102,8 +93,8 @@ python structure_generation/sample.py \
 python interatomic_potentials/predict.py \
     --model_name='mattersim_1M' \
     --weights_name='mattersim-v1.0.0-1M_model.pdparams' \
-    --cif_file_path='./interatomic_potentials/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/' \
+    --output_path='results/'
 ```
 
 ### 2.4 电子结构预测
@@ -114,10 +105,10 @@ python interatomic_potentials/predict.py \
 python electronic_structure/predict.py \
     --model_name='infgcn_qm9' \
     --weights_name='best.pdparams' \
-    --mol_file_path='electronic_structure/configs/infgcn/example/methane.mol' \
+    --input_format=mol --input_path='electronic_structure/example_data/methane.mol' \
     --grid_shape=8 \
     --grid_batch_size=4096 \
-    --save_path='output/infgcn_qm9/methane'
+    --output_path='output/infgcn_qm9/methane'
 ```
 
 数据集和权重准备方式请参考
@@ -131,7 +122,7 @@ python electronic_structure/predict.py \
 python spectrum_elucidation/sample.py \
     --model_name='diffnmr_msdnmr_nless15' \
     --weights_name='best.pdparams' \
-    --output_dir='result_diffnmr_nless15/'
+    --output_path='result_diffnmr_nless15/'
 ```
 
 ### 2.6 谱图增强
@@ -143,7 +134,7 @@ python spectrum_enhancement/predict.py \
     --model_name='sfin_haadf_enhance' \
     --weights_name='best.pdparams' \
     --input_path='path/to/noisy_image.png' \
-    --output_dir='result_sfin/'
+    --output_path='result_sfin/'
 ```
 
 更多使用说明请参考各任务 README 或 [Get Started](./get_started.md)。

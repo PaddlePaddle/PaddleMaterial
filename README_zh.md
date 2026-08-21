@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="Install.md"><img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white"></a>
-  <a href="https://pypi.org/project/ppmat/"><img alt="PyPI 版本" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white"></a>
+  <a href="https://pypi.org/project/ppmat/"><img alt="PyPI 版本" src="https://img.shields.io/pypi/v/ppmat?logo=pypi&amp;logoColor=white&amp;cacheSeconds=300"></a>
   <a href="LICENSE"><img alt="Apache 2.0 许可证" src="https://img.shields.io/github/license/PaddlePaddle/PaddleMaterials"></a>
   <a href="https://github.com/PaddlePaddle/PaddleMaterials/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/PaddlePaddle/PaddleMaterials?style=flat&amp;logo=github"></a>
 </p>
@@ -88,8 +88,8 @@
 python property_prediction/predict.py \
     --model_name='megnet_mp2018_train_60k_e_form' \
     --weights_name='best.pdparams' \
-    --cif_file_path='./property_prediction/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format=cif --input_path='./property_prediction/example_data/cifs/' \
+    --output_path='results/'
 ```
 
 #### 结构生成
@@ -100,7 +100,7 @@ python property_prediction/predict.py \
 python structure_generation/sample.py \
     --model_name='mattergen_mp20' \
     --weights_name='latest.pdparams' \
-    --output_dir='result_mattergen_mp20/' \
+    --output_path='result_mattergen_mp20/' \
     --mode='by_num_atoms' \
     --num_atoms=4
 ```
@@ -113,8 +113,8 @@ python structure_generation/sample.py \
 python interatomic_potentials/predict.py \
     --model_name='mattersim_1M' \
     --weights_name='mattersim-v1.0.0-1M_model.pdparams' \
-    --cif_file_path='./interatomic_potentials/example_data/cifs/' \
-    --save_path='result.csv'
+    --input_format=cif --input_path='./interatomic_potentials/example_data/cifs/' \
+    --output_path='results/'
 ```
 
 #### 电子结构
@@ -125,10 +125,10 @@ python interatomic_potentials/predict.py \
 python electronic_structure/predict.py \
     --model_name='infgcn_qm9' \
     --weights_name='best.pdparams' \
-    --mol_file_path='electronic_structure/configs/infgcn/example/methane.mol' \
+    --input_format=mol --input_path='electronic_structure/example_data/methane.mol' \
     --grid_shape=8 \
     --grid_batch_size=4096 \
-    --save_path='output/infgcn_qm9/methane'
+    --output_path='output/infgcn_qm9/methane'
 ```
 
 有关基于数据集或本地检查点推理的方法，请参阅
@@ -142,7 +142,7 @@ python electronic_structure/predict.py \
 python spectrum_elucidation/sample.py \
     --model_name='diffnmr_msdnmr_nless15' \
     --weights_name='best.pdparams' \
-    --output_dir='result_diffnmr_nless15/'
+    --output_path='result_diffnmr_nless15/'
 ```
 
 #### 谱图增强
@@ -154,7 +154,7 @@ python spectrum_enhancement/predict.py \
     --model_name='sfin_haadf_enhance' \
     --weights_name='best.pdparams' \
     --input_path='path/to/noisy_image.png' \
-    --output_dir='result_sfin/'
+    --output_path='result_sfin/'
 ```
 
 ---
