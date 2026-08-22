@@ -73,7 +73,10 @@ Dataset:
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: dict
+          primitive: False
+          niggli: False
           num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/train"
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
       num_workers: 0
@@ -92,7 +95,10 @@ Dataset:
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: dict
+          primitive: False
+          niggli: False
           num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/val"
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
       num_workers: 0
@@ -111,7 +117,10 @@ Dataset:
         property_names: ${Global.label_names}
         build_structure_cfg:
           format: dict
+          primitive: False
+          niggli: False
           num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/test"
         build_graph_cfg: ${Global.graph_converter}
         filter_unvalid: False
       num_workers: 0

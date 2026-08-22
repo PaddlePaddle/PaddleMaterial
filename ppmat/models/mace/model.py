@@ -54,6 +54,15 @@ class MACE(nn.Layer):
         self.num_basis = num_basis
         self.r_max = r_max
         self.num_elements = num_elements
+        self.atomic_numbers = tuple(
+            list(range(1, 84)) + list(range(89, 96))
+        )
+        if len(self.atomic_numbers) != num_elements:
+            self.atomic_numbers = tuple(range(1, num_elements + 1))
+        self._atomic_number_to_index = {
+            atomic_number: index
+            for index, atomic_number in enumerate(self.atomic_numbers)
+        }
 
         support_property_names = ["energy_per_atom", "force", "stress"]
         support_loss_weights = {
@@ -92,10 +101,21 @@ class MACE(nn.Layer):
 
     def _atom_type_to_index(self, atom_types: paddle.Tensor) -> paddle.Tensor:
         """Map atomic numbers Z to embedding indices."""
-        # H=1 -> 0; clip out-of-range values to avoid OOB indexing
-        idx = atom_types.astype("int64").reshape([-1]) - 1
-        idx = paddle.clip(idx, 0, self.num_elements - 1)
-        return idx
+        atomic_numbers = (
+            paddle.cast(atom_types, dtype="int64")
+            .reshape([-1])
+            .cpu()
+            .numpy()
+            .tolist()
+        )
+        try:
+            indices = [self._atomic_number_to_index[int(z)] for z in atomic_numbers]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported atomic number {exc.args[0]}; supported atomic numbers are "
+                f"{self.atomic_numbers}."
+            ) from exc
+        return paddle.to_tensor(indices, dtype="int64")
 
     def _ensure_graph_tensor(self, graph):
         """Ensure graph features are paddle Tensors."""
@@ -249,10 +269,8 @@ class MACE(nn.Layer):
 
         return energy_per_atom, forces, stress
 
-    def forward(self, data, return_loss=True, return_prediction=True):
-        """Suite forward: return loss_dict / pred_dict."""
-        assert return_loss or return_prediction
-
+    def _forward(self, data):
+        """Compute standardized predictions from a batched graph."""
         energy, force, stress = self._compute_energy_force_stress(data["graph"])
 
         pred_dict = {}
@@ -262,6 +280,13 @@ class MACE(nn.Layer):
             pred_dict["force"] = force
         if "stress" in self.property_names and stress is not None:
             pred_dict["stress"] = stress
+        return pred_dict
+
+    def forward(self, data, return_loss=True, return_prediction=True):
+        """Return standardized predictions and optional training losses."""
+        assert return_loss or return_prediction
+
+        pred_dict = self._forward(data)
 
         loss_dict = {}
         if return_loss:

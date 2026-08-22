@@ -17,10 +17,10 @@ import numpy as np
 
 
 def atomic_number_to_index(atomic_numbers):
-    """Convert atomic numbers to indices"""
-    unique_atoms = sorted(list(set(atomic_numbers)))
-    atom_to_idx = {atom: i for i, atom in enumerate(unique_atoms)}
-    return [atom_to_idx[atom] for atom in atomic_numbers]
+    """Convert supported MACE atomic numbers to fixed embedding indices."""
+    supported = list(range(1, 84)) + list(range(89, 96))
+    atom_to_idx = {atomic_number: index for index, atomic_number in enumerate(supported)}
+    return [atom_to_idx[int(atomic_number)] for atomic_number in atomic_numbers]
 
 
 def radial_basis(r, r_max, num_basis):
