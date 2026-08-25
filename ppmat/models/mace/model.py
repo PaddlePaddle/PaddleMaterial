@@ -20,7 +20,6 @@ from typing import Dict
 from typing import Optional
 from typing import Sequence
 
-import numpy as np
 import paddle
 import paddle.nn as nn
 
@@ -309,23 +308,8 @@ class MACE(nn.Layer):
         prediction = pred_dict if return_prediction else {}
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
-    def _prediction_to_numpy(self, prediction):
-        """Convert predictions to numpy for Predictor CSV export."""
-        out = {}
-        for key, value in prediction.items():
-            if isinstance(value, paddle.Tensor):
-                value = value.numpy()
-            if key == "energy_per_atom" and isinstance(value, np.ndarray):
-                value = value.reshape(-1)
-                if value.size == 1:
-                    value = float(value[0])
-            if key == "stress" and isinstance(value, np.ndarray) and value.ndim == 3:
-                value = value[0]
-            out[key] = value
-        return out
-
     def predict(self, graphs):
-        """Inference API aligned with CHGNet / MatterSim."""
+        """Return standardized Paddle tensor predictions for Predictor."""
         if isinstance(graphs, list):
             results = []
             for graph in graphs:
@@ -334,7 +318,7 @@ class MACE(nn.Layer):
                     return_loss=False,
                     return_prediction=True,
                 )
-                results.append(self._prediction_to_numpy(result["pred_dict"]))
+                results.append(result["pred_dict"])
             return results
 
         result = self.forward(
@@ -342,4 +326,4 @@ class MACE(nn.Layer):
             return_loss=False,
             return_prediction=True,
         )
-        return self._prediction_to_numpy(result["pred_dict"])
+        return result["pred_dict"]

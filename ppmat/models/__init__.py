@@ -37,10 +37,13 @@ from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
 <<<<<<< HEAD
+<<<<<<< HEAD
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mace.model import MACE
 =======
 >>>>>>> ac0451b (Add files via upload)
+=======
+>>>>>>> 39f7f5b (Add files via upload)
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
@@ -86,6 +89,7 @@ __all__ = [
     "DiffPrior",
     "DiffNMR",
     "InfGCN",
+    "MatENO",
     "SFIN",
     "SphereNet",
 ]
