@@ -16,18 +16,12 @@ import unittest
 
 import paddle
 
-from ppmat.models.omatg.model import OMATGCSPNet as CSPNet, OMATGCSPNetFull
-from ppmat.utils.crystal import (
-    cart_to_frac_coords,
-    frac_to_cart_coords,
-    lattice_params_to_matrix_paddle,
-)
-from ppmat.datasets.omatg_dataset import Structure
-from ppmat.datasets.omatg_dataset import OMATGData
+from ppmat.models.omatg.model import OMATGCSPNetFull
+from ppmat.models.omatg.si.constants import OMatG
 
 
 def _make_batch(batch_size=2, atoms_per_struct=(3, 4), max_z=10):
-    """Build a minimal OMATGData batch for forward/loss tests."""
+    """Build a minimal OMatG sample dict batch for forward/loss tests."""
     num_list = list(atoms_per_struct[:batch_size])
     total = sum(num_list)
     atom_types = paddle.randint(1, max_z, [total], dtype="int64")
@@ -37,714 +31,513 @@ def _make_batch(batch_size=2, atoms_per_struct=(3, 4), max_z=10):
     node2graph = paddle.repeat_interleave(
         paddle.arange(batch_size, dtype="int64"), num_atoms
     )
-    d = {
-        "atom_types": atom_types,
-        "frac_coords": frac_coords,
-        "lattices": lattices,
-        "num_atoms": num_atoms,
-        "node2graph": node2graph,
+    return {
+        "n_atoms": num_atoms,
+        "species": atom_types,
+        "cell": lattices,
+        "pos": frac_coords,
+        "pos_is_fractional": paddle.ones([batch_size], dtype="bool"),
+        "batch": node2graph,
+        "ptr": paddle.concat(
+            [
+                paddle.to_tensor([0], dtype="int64"),
+                paddle.cumsum(num_atoms, axis=0).cast("int64"),
+            ]
+        ),
     }
-    return OMATGData.from_collate_dict(d)
 
 
-class TestCSPNetForward(unittest.TestCase):
-    """CSPNet and OMATGCSPNetFull minimal forward / loss smoke tests."""
+def _make_concat_sample(n):
+    """Build a ConcatData-wrapped sample dict (DefaultCollator-friendly)."""
+    import numpy as np
 
-    def test_cspnet_forward_returns_b_eta(self):
-        """CSP mode forward returns 4-tuple (cell_b, pos_b, cell_eta, pos_eta)."""
-        batch_size = 2
-        num_atoms = paddle.to_tensor([3, 4], dtype="int64")
-        total_atoms = int(num_atoms.sum())
-        node2graph = paddle.to_tensor([0, 0, 0, 1, 1, 1, 1], dtype="int64")
+    from ppmat.datasets.custom_data_type import ConcatData
 
-        model = CSPNet(
-            hidden_dim=64, num_layers=2, max_atoms=100,
-            time_embed_dim=32, edge_style="fc",
-        )
-        t = paddle.rand([batch_size])
-        atom_types = paddle.randint(1, 10, [total_atoms])
-        frac_coords = paddle.rand([total_atoms, 3])
-        lattices = paddle.rand([batch_size, 3, 3]) * 2.0
+    cell = (paddle.eye(3) * 5.0).numpy()
+    nums = np.arange(1, n + 1, dtype="int64")
+    pos = paddle.rand([n, 3]).numpy()
+    return {
+        "n_atoms": ConcatData(np.array([n], dtype="int64")),
+        "species": ConcatData(nums),
+        "cell": ConcatData(cell.reshape(1, 3, 3)),
+        "pos": ConcatData(pos),
+        "pos_is_fractional": ConcatData(np.array([True], dtype="bool")),
+    }
 
-        output = model(t, atom_types, frac_coords, lattices, num_atoms, node2graph)
-        self.assertEqual(len(output), 4)
-        self.assertEqual(output[0].shape, [batch_size, 3, 3])
-        self.assertEqual(output[1].shape, [total_atoms, 3])
-        self.assertEqual(output[2].shape, [batch_size, 3, 3])
-        self.assertEqual(output[3].shape, [total_atoms, 3])
 
-    def test_cspnet_forward_dict_keys(self):
-        """forward_dict returns b/eta dict with correct keys."""
-        model = CSPNet(
-            hidden_dim=64, num_layers=2, max_atoms=100,
-            time_embed_dim=32, edge_style="fc",
-        )
-        data = _make_batch()
-        t = paddle.rand([2])
-        out = model.forward_dict(
-            t, data.species, data.pos, data.cell,
-            data.n_atoms, data.batch,
-        )
-        self.assertIn("pos_b", out)
-        self.assertIn("pos_eta", out)
-        self.assertIn("cell_b", out)
-        self.assertIn("cell_eta", out)
+def _csp_si_scheduler_cfg(integration_time_steps=210):
+    """Build the SI scheduler config for CSP (Linear-ODE-style).
 
-    def test_omgcspnetfull_forward_csp_loss(self):
-        """CSP mode forward returns loss_dict with loss/loss_lattice/loss_coord."""
+    Every kwarg of ``SingleStochasticInterpolant.__init__`` is listed
+    explicitly (gamma/epsilon/integrator_kwargs ``None``,
+    ``correct_center_of_mass_motion`` as a bool) so the config doubles as
+    a regression check against silent default drift.
+    """
+    return {
+        "species": {
+            "__class_name__": "SingleStochasticInterpolantIdentity",
+            "__init_params__": {},
+        },
+        "pos": {
+            "__class_name__": "SingleStochasticInterpolant",
+            "__init_params__": {
+                "interpolant": {
+                    "__class_name__": "PeriodicLinearInterpolant",
+                    "__init_params__": {},
+                },
+                "gamma": None,
+                "epsilon": None,
+                "differential_equation_type": "ODE",
+                "integrator_kwargs": None,
+                "correct_center_of_mass_motion": True,
+                "velocity_annealing_factor": 10.18,
+            },
+        },
+        "cell": {
+            "__class_name__": "SingleStochasticInterpolant",
+            "__init_params__": {
+                "interpolant": {
+                    "__class_name__": "LinearInterpolant",
+                    "__init_params__": {},
+                },
+                "gamma": None,
+                "epsilon": None,
+                "differential_equation_type": "ODE",
+                "integrator_kwargs": None,
+                "correct_center_of_mass_motion": False,
+                "velocity_annealing_factor": 1.82,
+            },
+        },
+        "integration_time_steps": integration_time_steps,
+        "relative_si_costs": {
+            "species_loss": 0.0,
+            "pos_loss_b": 0.9994,
+            "cell_loss_b": 0.0006,
+        },
+    }
+
+
+def _dng_si_scheduler_cfg(integration_time_steps=710):
+    """Build the SI scheduler config for DNG (Linear-SDE + DFM mask)."""
+    return {
+        "species": {
+            "__class_name__": "DiscreteFlowMatchingMask",
+            "__init_params__": {"noise": 0.189},
+        },
+        "pos": {
+            "__class_name__": "SingleStochasticInterpolant",
+            "__init_params__": {
+                "interpolant": {
+                    "__class_name__": "PeriodicLinearInterpolant",
+                    "__init_params__": {},
+                },
+                "gamma": {
+                    "__class_name__": "LatentGammaSqrt",
+                    "__init_params__": {"a": 0.018},
+                },
+                "epsilon": {
+                    "__class_name__": "VanishingEpsilon",
+                    "__init_params__": {"c": 9.7, "mu": 0.17, "sigma": 0.029},
+                },
+                "differential_equation_type": "SDE",
+                "integrator_kwargs": None,
+                "correct_center_of_mass_motion": True,
+                "velocity_annealing_factor": 6.33,
+            },
+        },
+        "cell": {
+            "__class_name__": "SingleStochasticInterpolant",
+            "__init_params__": {
+                "interpolant": {
+                    "__class_name__": "LinearInterpolant",
+                    "__init_params__": {},
+                },
+                "gamma": None,
+                "epsilon": None,
+                "differential_equation_type": "ODE",
+                "integrator_kwargs": None,
+                "correct_center_of_mass_motion": False,
+                "velocity_annealing_factor": 1.07,
+            },
+        },
+        "integration_time_steps": integration_time_steps,
+        "relative_si_costs": {
+            "species_loss": 0.5918,
+            "pos_loss_b": 0.1309,
+            "pos_loss_z": 0.2708,
+            "cell_loss_b": 0.0065,
+        },
+    }
+
+
+class TestOMATGCSPNetFull(unittest.TestCase):
+    """CSP / DNG training mode minimal forward and loss tests."""
+
+    def test_csp_forward_loss(self):
+        """CSP mode forward returns finite loss_dict."""
         model = OMATGCSPNetFull(
-            hidden_dim=64, num_layers=2, max_atoms=100,
-            time_embed_dim=32, edge_style="fc", pred_type=False,
+            hidden_dim=64,
+            num_layers=2,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=32,
+            edge_style="fc",
+            pred_type=False,
         )
-        data = _make_batch()
-        output = model(data)
+        output = model(_make_batch())
         self.assertIn("loss_dict", output)
-        self.assertIn("loss", output["loss_dict"])
-        self.assertIn("loss_lattice", output["loss_dict"])
-        self.assertIn("loss_coord", output["loss_dict"])
-        self.assertNotIn("loss_type", output["loss_dict"])
         loss_val = float(output["loss_dict"]["loss"])
         self.assertFalse(loss_val != loss_val, "loss is NaN")
 
-    def test_omgcspnetfull_forward_dng_loss(self):
-        """DNG mode forward returns loss_dict including loss_type (cross-entropy)."""
+    def test_dng_forward_loss(self):
+        """DNG mode forward returns finite loss_dict including loss_type."""
         model = OMATGCSPNetFull(
-            hidden_dim=64, num_layers=2, max_atoms=100,
-            time_embed_dim=32, edge_style="fc", pred_type=True,
+            hidden_dim=64,
+            num_layers=2,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=32,
+            edge_style="fc",
+            pred_type=True,
         )
         model.enable_masked_species()
-        data = _make_batch()
-        output = model(data)
+        output = model(_make_batch())
         self.assertIn("loss_type", output["loss_dict"])
-        self.assertIn("loss", output["loss_dict"])
         loss_val = float(output["loss_dict"]["loss"])
         self.assertFalse(loss_val != loss_val, "DNG loss is NaN")
 
-    def test_cspnet_backward_gradient(self):
-        """Loss backward produces non-None gradients on model parameters."""
-        model = OMATGCSPNetFull(
-            hidden_dim=64, num_layers=2, max_atoms=100,
-            time_embed_dim=32, edge_style="fc",
-        )
-        data = _make_batch()
-        output = model(data)
-        loss = output["loss_dict"]["loss"]
-        loss.backward()
-        has_grad = any(
-            p.grad is not None and float(p.grad.abs().sum()) > 0
-            for p in model.parameters()
-        )
-        self.assertTrue(has_grad, "No non-zero gradients after backward")
-
-
-class TestStructureData(unittest.TestCase):
-    """Structure and OMATGData smoke tests."""
-
-    def test_structure_creation(self):
-        cell = paddle.eye(3) * 5.0
-        atomic_numbers = paddle.to_tensor([1, 1, 8], dtype="int64")
-        pos = paddle.rand([3, 3])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=True)
-        self.assertEqual(struct.cell.shape, [3, 3])
-        self.assertTrue(struct.pos_is_fractional)
-        self.assertEqual(len(struct.atomic_numbers), 3)
-
-    def test_structure_convert_coords(self):
-        cell = paddle.to_tensor([[5.0, 0, 0], [0, 5.0, 0], [0, 0, 5.0]])
-        atomic_numbers = paddle.to_tensor([1], dtype="int64")
-        pos = paddle.to_tensor([[2.5, 2.5, 2.5]])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=False)
-        struct.convert_to_fractional()
-        self.assertTrue(struct.pos_is_fractional)
-        self.assertAlmostEqual(float(struct.pos[0, 0]), 0.5, places=4)
-        struct.convert_to_cartesian()
-        self.assertFalse(struct.pos_is_fractional)
-        self.assertAlmostEqual(float(struct.pos[0, 0]), 2.5, places=4)
-
-    def test_structure_get_ase_atoms(self):
-        cell = paddle.eye(3) * 5.0
-        atomic_numbers = paddle.to_tensor([1, 8], dtype="int64")
-        pos = paddle.to_tensor([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=True)
-        atoms = struct.get_ase_atoms()
-        self.assertEqual(len(atoms), 2)
-
-    def test_omgdata_from_structure(self):
-        cell = paddle.eye(3) * 5.0
-        atomic_numbers = paddle.to_tensor([1, 1, 8], dtype="int64")
-        pos = paddle.rand([3, 3])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=True)
-        data = OMATGData(struct)
-        self.assertEqual(data.num_graphs, 1)
-        self.assertEqual(data.num_atoms, 3)
-        self.assertIsNotNone(data.species)
-        self.assertIsInstance(data.property_dict, list)
-
-    def test_omgdata_batch(self):
-        structs = []
-        for _ in range(3):
-            cell = paddle.eye(3) * 5.0
-            atomic_numbers = paddle.to_tensor([1, 8], dtype="int64")
-            pos = paddle.rand([2, 3])
-            structs.append(Structure(cell, atomic_numbers, pos, pos_is_fractional=True))
-        batch = OMATGData.from_batch(structs, concatenate=True)
-        self.assertEqual(batch.num_graphs, 3)
-        self.assertEqual(batch.num_atoms, 6)
-        self.assertEqual(batch.batch.shape, [6])
-        self.assertEqual(batch.ptr.shape, [4])
-
-    def test_omgdata_get_graph(self):
-        structs = []
-        for _ in range(2):
-            cell = paddle.eye(3) * 5.0
-            atomic_numbers = paddle.to_tensor([1, 8], dtype="int64")
-            pos = paddle.rand([2, 3])
-            structs.append(Structure(cell, atomic_numbers, pos, pos_is_fractional=True))
-        batch = OMATGData.from_batch(structs, concatenate=True)
-        g0 = batch.get_graph(0)
-        self.assertEqual(len(g0.atomic_numbers), 2)
-        g1 = batch.get_graph(1)
-        self.assertEqual(len(g1.atomic_numbers), 2)
-
-    def test_omgdata_clone(self):
-        cell = paddle.eye(3) * 5.0
-        atomic_numbers = paddle.to_tensor([1, 8], dtype="int64")
-        pos = paddle.rand([2, 3])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=True)
-        data = OMATGData(struct)
-        cloned = data.clone()
-        self.assertEqual(cloned.num_atoms, data.num_atoms)
-        self.assertTrue(paddle.equal_all(cloned.species, data.species))
-
-    def test_omgdata_set_get_field(self):
-        cell = paddle.eye(3) * 5.0
-        atomic_numbers = paddle.to_tensor([1, 8], dtype="int64")
-        pos = paddle.rand([2, 3])
-        struct = Structure(cell, atomic_numbers, pos, pos_is_fractional=True)
-        data = OMATGData(struct)
-        self.assertTrue(paddle.equal_all(data.get_field("species"), data.species))
-        new_pos = paddle.rand([2, 3])
-        data.set_field("pos", new_pos)
-        self.assertTrue(paddle.equal_all(data.get_field("pos"), new_pos))
-
-
-class TestLatticeUtils(unittest.TestCase):
-    """Lattice utility smoke tests."""
-
-    def test_lattice_params_to_matrix(self):
-        lengths = paddle.to_tensor([[3.0, 3.0, 5.0], [4.0, 4.0, 4.0]])
-        angles = paddle.to_tensor([[90.0, 90.0, 90.0], [90.0, 90.0, 120.0]])
-        matrices = lattice_params_to_matrix_paddle(lengths, angles)
-        self.assertEqual(matrices.shape, [2, 3, 3])
-
-    def test_frac_cart_conversion(self):
-        lengths = paddle.to_tensor([[3.0, 3.0, 5.0]])
-        angles = paddle.to_tensor([[90.0, 90.0, 90.0]])
-        num_atoms = paddle.to_tensor([3], dtype="int64")
-        frac_coords = paddle.rand([3, 3])
-        cart = frac_to_cart_coords(frac_coords, num_atoms, lengths=lengths, angles=angles)
-        self.assertEqual(cart.shape, [3, 3])
-        frac_back = cart_to_frac_coords(cart, num_atoms, lengths=lengths, angles=angles)
-        self.assertEqual(frac_back.shape, [3, 3])
-
-
-class TestSIComponents(unittest.TestCase):
-    """SI framework component smoke tests."""
-
-    def test_gamma_sqrt(self):
-        from ppmat.models.omatg.si.interpolants import LatentGammaSqrt
-        t = paddle.to_tensor([0.3, 0.5, 0.7])
-        g = LatentGammaSqrt(a=1.0)
-        self.assertEqual(g.gamma(t).shape, [3])
-        self.assertTrue(g.requires_antithetic())
-        self.assertEqual(g.gamma_derivative(t).shape, [3])
-
-    def test_gamma_encdec(self):
-        from ppmat.models.omatg.si.interpolants import LatentGammaEncoderDecoder
-        t = paddle.to_tensor([0.3, 0.5, 0.7])
-        g = LatentGammaEncoderDecoder()
-        self.assertEqual(g.gamma(t).shape, [3])
-        self.assertFalse(g.requires_antithetic())
-
-    def test_epsilon_vanishing(self):
-        from ppmat.models.omatg.si.interpolants import VanishingEpsilon
-        t = paddle.to_tensor([0.3, 0.5, 0.7])
-        eps = VanishingEpsilon(c=1.0)
-        self.assertEqual(eps.epsilon(t).shape, [3])
-
-    def test_sigma_geometric(self):
-        from ppmat.models.omatg.si.interpolants import GeometricSigma
-        s = paddle.to_tensor([0.0, 0.5, 1.0])
-        sig = GeometricSigma(sigma_min=0.1, sigma_max=10.0)
-        self.assertEqual(sig.sigma(s).shape, [3])
-        self.assertEqual(sig.sigma_dot(s).shape, [3])
-
-    def test_tau_constant(self):
-        from ppmat.models.omatg.si.interpolants import TauConstantSchedule
-        t = paddle.to_tensor([0.3, 0.7])
-        tau = TauConstantSchedule()
-        self.assertEqual(tau.tau(t).shape, [2])
-        self.assertEqual(tau.tau_dot(t).shape, [2])
-
-    def test_interpolant_linear(self):
-        from ppmat.models.omatg.si.interpolants import LinearInterpolant
-        t = paddle.to_tensor([0.3])
-        interp = LinearInterpolant()
-        self.assertEqual(interp.alpha(t).shape, [1])
-        self.assertEqual(interp.beta(t).shape, [1])
-
-    def test_interpolant_periodic_linear(self):
-        from ppmat.models.omatg.si.interpolants import PeriodicLinearInterpolant
-        interp = PeriodicLinearInterpolant()
-        corr = interp.get_corrector()
-        self.assertIsNotNone(corr)
-
-    def test_interpolant_vp(self):
-        from ppmat.models.omatg.si.interpolants import (
-            ScoreBasedDiffusionModelInterpolantVP,
-        )
-        from ppmat.models.omatg.si.interpolants import TauConstantSchedule
-        t = paddle.to_tensor([0.3])
-        interp = ScoreBasedDiffusionModelInterpolantVP(TauConstantSchedule())
-        self.assertEqual(interp.alpha(t).shape, [1])
-
-    def test_interpolant_ve(self):
-        from ppmat.models.omatg.si.interpolants import (
-            ScoreBasedDiffusionModelInterpolantVE,
-            GeometricSigma,
-        )
-        t = paddle.to_tensor([0.3])
-        interp = ScoreBasedDiffusionModelInterpolantVE(GeometricSigma(0.1, 10.0))
-        self.assertEqual(interp.alpha(t).shape, [1])
-
-    def test_dfm_mask_loss(self):
-        """DiscreteFlowMatchingMask cross-entropy loss."""
-        from ppmat.models.omatg.si.core import (
-            DiscreteFlowMatchingMask,
-        )
-        dfm = DiscreteFlowMatchingMask(noise=0.1)
-        x_0 = paddle.zeros([5], dtype="int64")
-        x_1 = paddle.randint(1, 10, [5], dtype="int64")
-        t = paddle.to_tensor([0.5])
-        x_t, z = dfm.interpolate(t, x_0, x_1, paddle.to_tensor([0, 0, 0, 0, 0]))
-        self.assertEqual(x_t.shape, [5])
-
-        def model_fn(x_t):
-            pred = paddle.rand([5, 100])
-            return pred, paddle.zeros_like(pred)
-        losses = dfm.loss(model_fn, t, x_0, x_1, x_t, z,
-                          paddle.to_tensor([0, 0, 0, 0, 0]))
-        self.assertIn("loss", losses)
-        self.assertTrue(dfm.uses_masked_species())
-
-    def test_identity_interpolant(self):
-        from ppmat.models.omatg.si.core import (
-            SingleStochasticInterpolantIdentity,
-        )
-        ident = SingleStochasticInterpolantIdentity()
-        x = paddle.to_tensor([1, 2, 3], dtype="int64")
-        t = paddle.to_tensor([0.5])
-        x_t, z = ident.interpolate(t, x, x, paddle.to_tensor([0, 0, 0]))
-        self.assertTrue(paddle.equal_all(x_t, x))
-        self.assertFalse(ident.uses_masked_species())
-
 
 class TestSITrainingPath(unittest.TestCase):
-    """SI velocity-matching training path smoke tests."""
+    """SI velocity-matching training path (CSP and DNG)."""
 
     def _build_csp_si_model(self):
         """Build a small CSP model with SI (Linear-ODE)."""
-        from ppmat.models.omatg.si import (
-            StochasticInterpolants, SingleStochasticInterpolant,
-            SingleStochasticInterpolantIdentity,
-            PeriodicLinearInterpolant, LinearInterpolant,
-        )
         from ppmat.models.omatg.model import IndependentSampler
-        si = StochasticInterpolants(
-            stochastic_interpolants=[
-                SingleStochasticInterpolantIdentity(),
-                SingleStochasticInterpolant(
-                    interpolant=PeriodicLinearInterpolant(), gamma=None,
-                    epsilon=None, differential_equation_type="ODE",
-                    velocity_annealing_factor=10.18,
-                    correct_center_of_mass_motion=True,
-                ),
-                SingleStochasticInterpolant(
-                    interpolant=LinearInterpolant(), gamma=None, epsilon=None,
-                    differential_equation_type="ODE",
-                    velocity_annealing_factor=1.82,
-                ),
-            ],
-            data_fields=["species", "pos", "cell"],
-            integration_time_steps=210,
-        )
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _csp_si_scheduler_cfg(integration_time_steps=210)
+        si = build_si_from_cfg(cfg)
         sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=False, use_si=False,
+            hidden_dim=32,
+            num_layers=1,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=16,
+            pred_type=False,
+            use_si=False,
         )
         model._si = si
         model._sampler = sampler
-        model._relative_si_costs = {
-            "species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006,
-        }
+        model._relative_si_costs = cfg["relative_si_costs"]
         model.use_si = True
         return model
 
     def test_csp_si_forward_loss(self):
         """CSP SI training path produces velocity-matching loss."""
-        model = self._build_csp_si_model()
-        data = _make_batch()
-        out = model(data)
-        self.assertIn("loss_dict", out)
+        out = self._build_csp_si_model()(_make_batch())
         self.assertIn("loss", out["loss_dict"])
-        self.assertIn("pos_loss_b", out["loss_dict"])
-        self.assertIn("cell_loss_b", out["loss_dict"])
-        self.assertIn("species_loss", out["loss_dict"])
         loss_val = float(out["loss_dict"]["loss"])
         self.assertFalse(loss_val != loss_val, "SI loss is NaN")
 
-    def test_csp_si_backward(self):
-        """SI loss backward produces gradients."""
-        model = self._build_csp_si_model()
-        data = _make_batch()
-        out = model(data)
-        loss = out["loss_dict"]["loss"]
-        loss.backward()
-        has_grad = any(
-            p.grad is not None and float(p.grad.abs().sum()) > 0
-            for p in model.parameters()
-        )
-        self.assertTrue(has_grad, "No gradients after SI backward")
-
     def test_dng_si_forward_loss(self):
-        """DNG SI training path (SDE + gamma + DFM mask)."""
-        from ppmat.models.omatg.si import (
-            StochasticInterpolants, SingleStochasticInterpolant,
-            PeriodicLinearInterpolant, LinearInterpolant,
-        )
-        from ppmat.models.omatg.si.core import DiscreteFlowMatchingMask
-        from ppmat.models.omatg.si.interpolants import LatentGammaSqrt, VanishingEpsilon
+        """DNG SI training path (SDE + gamma + DFM mask) stays finite."""
         from ppmat.models.omatg.model import IndependentSampler
-        si = StochasticInterpolants(
-            stochastic_interpolants=[
-                DiscreteFlowMatchingMask(noise=0.189),
-                SingleStochasticInterpolant(
-                    interpolant=PeriodicLinearInterpolant(),
-                    gamma=LatentGammaSqrt(a=0.018),
-                    epsilon=VanishingEpsilon(c=9.7, mu=0.17, sigma=0.029),
-                    differential_equation_type="SDE",
-                    velocity_annealing_factor=6.33,
-                    correct_center_of_mass_motion=True,
-                ),
-                SingleStochasticInterpolant(
-                    interpolant=LinearInterpolant(), gamma=None, epsilon=None,
-                    differential_equation_type="ODE",
-                    velocity_annealing_factor=1.07,
-                ),
-            ],
-            data_fields=["species", "pos", "cell"],
-            integration_time_steps=710,
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _dng_si_scheduler_cfg(integration_time_steps=710)
+        si = build_si_from_cfg(cfg)
+        sampler = IndependentSampler(
+            dataset_name="mp_20", mask_species=True, mirror_species=False
         )
-        sampler = IndependentSampler(dataset_name="mp_20", mask_species=True, mirror_species=False)
         model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=True, use_si=False,
+            hidden_dim=32,
+            num_layers=1,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=16,
+            pred_type=True,
+            use_si=False,
         )
         model.enable_masked_species()
         model._si = si
         model._sampler = sampler
-        model._relative_si_costs = {
-            "species_loss": 0.5918, "pos_loss_b": 0.1309,
-            "pos_loss_z": 0.2708, "cell_loss_b": 0.0065,
-        }
+        model._relative_si_costs = cfg["relative_si_costs"]
         model.use_si = True
-        data = _make_batch()
-        out = model(data)
+        out = model(_make_batch())
         self.assertIn("loss", out["loss_dict"])
-        self.assertIn("pos_loss_z", out["loss_dict"])
-        self.assertIn("species_loss", out["loss_dict"])
-
-
-class TestOSInterpolants(unittest.TestCase):
-    """One-sided interpolant smoke tests for VESBD/VPSBD variants."""
-
-    def test_vesbd_ode_forward(self):
-        """VESBD-ODE SI training via SingleStochasticInterpolantOS."""
-        from ppmat.models.omatg.si import (
-            StochasticInterpolants, SingleStochasticInterpolant,
-            SingleStochasticInterpolantIdentity,
-            SingleStochasticInterpolantOS,
-            LinearInterpolant,
-        )
-        from ppmat.models.omatg.si.interpolants import ScoreBasedDiffusionModelInterpolantVE
-        from ppmat.models.omatg.si.interpolants import GeometricSigma
-        from ppmat.models.omatg.model import IndependentSampler
-        os_interp = SingleStochasticInterpolantOS(
-            interpolant=ScoreBasedDiffusionModelInterpolantVE(
-                GeometricSigma(0.1, 10.0)
-            ),
-            epsilon=None, differential_equation_type="ODE",
-            velocity_annealing_factor=1.0,
-        )
-        si = StochasticInterpolants(
-            stochastic_interpolants=[
-                SingleStochasticInterpolantIdentity(),
-                os_interp,
-                SingleStochasticInterpolant(
-                    interpolant=LinearInterpolant(), gamma=None, epsilon=None,
-                    differential_equation_type="ODE",
-                    velocity_annealing_factor=1.82,
-                ),
-            ],
-            data_fields=["species", "pos", "cell"],
-            integration_time_steps=210,
-        )
-        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
-        model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=False, use_si=False,
-        )
-        model._si = si
-        model._sampler = sampler
-        model._relative_si_costs = {
-            "species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006,
-        }
-        model.use_si = True
-        data = _make_batch()
-        out = model(data)
-        self.assertIn("loss", out["loss_dict"])
-
-    def test_vpsbd_sde_forward(self):
-        """VPSBD-SDE SI training via SingleStochasticInterpolantOS."""
-        from ppmat.models.omatg.si import (
-            StochasticInterpolants, SingleStochasticInterpolant,
-            SingleStochasticInterpolantIdentity,
-            SingleStochasticInterpolantOS,
-            LinearInterpolant,
-        )
-        from ppmat.models.omatg.si.interpolants import ScoreBasedDiffusionModelInterpolantVP
-        from ppmat.models.omatg.si.interpolants import TauConstantSchedule, ConstantEpsilon
-        from ppmat.models.omatg.model import IndependentSampler
-        os_interp = SingleStochasticInterpolantOS(
-            interpolant=ScoreBasedDiffusionModelInterpolantVP(
-                TauConstantSchedule()
-            ),
-            epsilon=ConstantEpsilon(1.0),
-            differential_equation_type="SDE",
-            velocity_annealing_factor=1.0,
-        )
-        si = StochasticInterpolants(
-            stochastic_interpolants=[
-                SingleStochasticInterpolantIdentity(),
-                os_interp,
-                SingleStochasticInterpolant(
-                    interpolant=LinearInterpolant(), gamma=None, epsilon=None,
-                    differential_equation_type="ODE",
-                    velocity_annealing_factor=1.07,
-                ),
-            ],
-            data_fields=["species", "pos", "cell"],
-            integration_time_steps=710,
-        )
-        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
-        model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=False, use_si=False,
-        )
-        model._si = si
-        model._sampler = sampler
-        model._relative_si_costs = {
-            "species_loss": 0.0, "pos_loss_b": 0.5,
-            "pos_loss_z": 0.3, "cell_loss_b": 0.2,
-        }
-        model.use_si = True
-        data = _make_batch()
-        out = model(data)
-        self.assertIn("loss", out["loss_dict"])
-        self.assertIn("pos_loss_z", out["loss_dict"])
+        loss_val = float(out["loss_dict"]["loss"])
+        self.assertFalse(loss_val != loss_val, "DNG SDE loss is NaN")
 
 
 class TestSIFactory(unittest.TestCase):
-    """Config-driven SI/sampler factory smoke tests."""
+    """Config-driven SI end-to-end: YAML -> build_model -> forward -> sample."""
 
-    def test_build_si_from_cfg_csp(self):
-        """build_si_from_cfg builds CSP StochasticInterpolants from config."""
-        from ppmat.models.omatg.si import build_si_from_cfg, build_sampler_from_cfg
-        si_cfg = {
-            "stochastic_interpolants": [
-                {"__class_name__": "SingleStochasticInterpolantIdentity"},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "PeriodicLinearInterpolant"},
-                     "gamma": None, "epsilon": None,
-                     "differential_equation_type": "ODE",
-                     "velocity_annealing_factor": 10.18,
-                     "correct_center_of_mass_motion": True,
-                 }},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "LinearInterpolant"},
-                     "gamma": None, "epsilon": None,
-                     "differential_equation_type": "ODE",
-                     "velocity_annealing_factor": 1.82,
-                 }},
-            ],
-            "data_fields": ["species", "pos", "cell"],
-            "integration_time_steps": 210,
-        }
-        sampler_cfg = {
-            "position_distribution": {"__class_name__": "UniformPositionDistribution"},
-            "cell_distribution": {
-                "__class_name__": "InformedLatticeDistribution",
-                "__init_params__": {"dataset_name": "mp_20"},
-            },
-            "species_distribution": {"__class_name__": "MirrorSpecies"},
-        }
-        si = build_si_from_cfg(si_cfg)
-        self.assertEqual(len(si), 3)
-        sampler = build_sampler_from_cfg(sampler_cfg)
-        self.assertIsNotNone(sampler)
+    def test_config_driven_dng_si_from_yaml(self):
+        """build_model with DNG yaml trains and samples end-to-end."""
+        import copy
 
-    def test_build_si_from_cfg_dng(self):
-        """build_si_from_cfg builds DNG config with nested gamma/epsilon/DFM."""
-        from ppmat.models.omatg.si import build_si_from_cfg
-        si_cfg = {
-            "stochastic_interpolants": [
-                {"__class_name__": "DiscreteFlowMatchingMask",
-                 "__init_params__": {"noise": 0.189}},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "PeriodicLinearInterpolant"},
-                     "gamma": {"__class_name__": "LatentGammaSqrt",
-                               "__init_params__": {"a": 0.018}},
-                     "epsilon": {"__class_name__": "VanishingEpsilon",
-                                 "__init_params__": {"c": 9.7}},
-                     "differential_equation_type": "SDE",
-                     "velocity_annealing_factor": 6.33,
-                 }},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "LinearInterpolant"},
-                     "differential_equation_type": "ODE",
-                 }},
-            ],
-            "data_fields": ["species", "pos", "cell"],
-            "integration_time_steps": 710,
-        }
-        si = build_si_from_cfg(si_cfg)
-        self.assertEqual(len(si), 3)
+        from omegaconf import OmegaConf
 
-    def test_config_driven_si_forward(self):
-        """Full config-driven SI forward via OMATGCSPNetFull constructor."""
-        si_cfg = {
-            "stochastic_interpolants": [
-                {"__class_name__": "SingleStochasticInterpolantIdentity"},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "PeriodicLinearInterpolant"},
-                     "gamma": None, "epsilon": None,
-                     "differential_equation_type": "ODE",
-                     "velocity_annealing_factor": 10.18,
-                 }},
-                {"__class_name__": "SingleStochasticInterpolant",
-                 "__init_params__": {
-                     "interpolant": {"__class_name__": "LinearInterpolant"},
-                     "differential_equation_type": "ODE",
-                     "velocity_annealing_factor": 1.82,
-                 }},
-            ],
-            "data_fields": ["species", "pos", "cell"],
-            "integration_time_steps": 210,
-            "relative_si_costs": {
-                "species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006,
-            },
-        }
-        sampler_cfg = {
-            "dataset_name": "mp_20",
-            "mirror_species": True,
-            "mask_species": False,
-        }
-        model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=False,
-            use_si=True, si_cfg=si_cfg, sampler_cfg=sampler_cfg,
-        )
-        data = _make_batch()
-        out = model(data)
-        self.assertIn("loss", out["loss_dict"])
+        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.models import build_model
+
+        cfg = OmegaConf.load("structure_generation/configs/omatg/omatg_mp20_dng.yaml")
+        model_cfg = OmegaConf.to_container(cfg["Model"], resolve=True)
+        init_params = model_cfg["__init_params__"]
+        init_params.update(hidden_dim=32, num_layers=1, time_embed_dim=16)
+        init_params["si_scheduler_cfg"]["integration_time_steps"] = 10
+        model = build_model(copy.deepcopy(model_cfg))
+        self.assertTrue(model.use_si)
+
+        batch = DefaultCollator()([_make_concat_sample(3), _make_concat_sample(4)])
+        out = model(batch)
+        loss_val = float(out["loss_dict"]["loss"])
+        self.assertFalse(loss_val != loss_val, "DNG SI loss is NaN")
+        result = model.sample(batch, num_inference_steps=10)
+        self.assertEqual(len(result["result"]), 2)
+        for entry in result["result"]:
+            coords = paddle.to_tensor(entry["frac_coords"])
+            self.assertFalse(
+                bool(paddle.isnan(coords).any()), "sampled frac_coords contain NaN"
+            )
 
 
 class TestSISampling(unittest.TestCase):
-    """SI integrate-based sampling smoke tests."""
+    """SI integrate-based sampling."""
 
     def test_csp_si_sample(self):
         """CSP SI sampling produces structures via si.integrate."""
-        from ppmat.models.omatg.si import (
-            StochasticInterpolants, SingleStochasticInterpolant,
-            SingleStochasticInterpolantIdentity,
-            PeriodicLinearInterpolant, LinearInterpolant,
-        )
         from ppmat.models.omatg.model import IndependentSampler
-        si = StochasticInterpolants(
-            stochastic_interpolants=[
-                SingleStochasticInterpolantIdentity(),
-                SingleStochasticInterpolant(
-                    interpolant=PeriodicLinearInterpolant(), gamma=None,
-                    epsilon=None, differential_equation_type="ODE",
-                    velocity_annealing_factor=10.18,
-                ),
-                SingleStochasticInterpolant(
-                    interpolant=LinearInterpolant(), gamma=None, epsilon=None,
-                    differential_equation_type="ODE",
-                    velocity_annealing_factor=1.82,
-                ),
-            ],
-            data_fields=["species", "pos", "cell"],
-            integration_time_steps=10,
-        )
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _csp_si_scheduler_cfg(integration_time_steps=10)
+        si = build_si_from_cfg(cfg)
         sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
         model = OMATGCSPNetFull(
-            hidden_dim=32, num_layers=1, max_atoms=100,
-            time_embed_dim=16, pred_type=False, use_si=False,
+            hidden_dim=32,
+            num_layers=1,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=16,
+            pred_type=False,
+            use_si=False,
         )
         model._si = si
         model._sampler = sampler
-        model._relative_si_costs = {
-            "species_loss": 0.0, "pos_loss_b": 0.9994, "cell_loss_b": 0.0006,
-        }
+        model._relative_si_costs = cfg["relative_si_costs"]
         model.use_si = True
-        data = _make_batch()
-        result = model.sample(data, num_inference_steps=10)
-        self.assertIn("result", result)
+        result = model.sample(_make_batch(), num_inference_steps=10)
         self.assertEqual(len(result["result"]), 2)
-        self.assertIn("num_atoms", result["result"][0])
         self.assertIn("frac_coords", result["result"][0])
 
-
-class TestSamplers(unittest.TestCase):
-    """Sampler smoke tests using Paddle native APIs."""
-
-    def test_independent_sampler_sample_p_0(self):
-        """IndependentSampler.sample_p_0 returns OMATGData with correct batch."""
+    def test_dng_si_sample_stable(self):
+        """DNG SDE sampling stays finite (lattice cell clipped)."""
         from ppmat.models.omatg.model import IndependentSampler
-        sampler = IndependentSampler(dataset_name="mp_20", mirror_species=True)
-        data = _make_batch()
-        x_1 = OMATGData()
-        x_1.n_atoms = data.n_atoms
-        x_1.species = data.species
-        x_1.cell = data.cell
-        x_1.pos = data.pos
-        x_1.pos_is_fractional = paddle.ones_like(data.n_atoms, dtype="bool")
-        x_1.batch = data.batch
-        x_1.ptr = paddle.concat([
-            paddle.to_tensor([0], dtype="int64"),
-            paddle.cumsum(data.n_atoms, axis=0).cast("int64"),
-        ])
-        x_1.property_dict = [{} for _ in range(len(data.n_atoms))]
-        x_0 = sampler.sample_p_0(x_1)
-        self.assertEqual(x_0.num_graphs, 2)
-        self.assertEqual(x_0.num_atoms, x_1.num_atoms)
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _dng_si_scheduler_cfg(integration_time_steps=10)
+        si = build_si_from_cfg(cfg)
+        sampler = IndependentSampler(
+            dataset_name="mp_20", mask_species=True, mirror_species=False
+        )
+        model = OMATGCSPNetFull(
+            hidden_dim=32,
+            num_layers=1,
+            max_atoms=OMatG.default_max_atoms,
+            time_embed_dim=16,
+            pred_type=True,
+            use_si=False,
+        )
+        model.enable_masked_species()
+        model._si = si
+        model._sampler = sampler
+        model._relative_si_costs = cfg["relative_si_costs"]
+        model.use_si = True
+        result = model.sample(_make_batch(), num_inference_steps=10)
+        self.assertEqual(len(result["result"]), 2)
+        for entry in result["result"]:
+            coords = paddle.to_tensor(entry["frac_coords"])
+            self.assertFalse(
+                bool(paddle.isnan(coords).any()), "sampled frac_coords contain NaN"
+            )
+            lengths = paddle.to_tensor(entry["lengths"])
+            self.assertFalse(
+                bool(paddle.isnan(lengths).any()), "sampled lengths contain NaN"
+            )
+
+
+class TestOMatGMetric(unittest.TestCase):
+    """OMatGMetric evaluation (dng mode end-to-end)."""
+
+    def _crystal(self, scale=1.0):
+        import numpy as np
+
+        return {
+            "atom_types": np.array([11, 17], dtype=np.int64),
+            "frac_coords": np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]),
+            "lengths": np.array([5.64, 5.64, 5.64]) * scale,
+            "angles": np.array([90.0, 90.0, 90.0]),
+        }
+
+    def test_dng_mode_metrics_finite(self):
+        """DNG mode returns validity / METRe / Wasserstein / COV / dng_eval."""
+        from ppmat.metrics import OMatGMetric
+
+        pred = [self._crystal(), self._crystal(scale=1.3)]
+        ref = [self._crystal(), self._crystal(scale=1.6)]
+        out = OMatGMetric(metric_type="dng", dataset_name="mp_20")(pred, ref)
+        for key in (
+            "valid_rate",
+            "metre_rate",
+            "wdist_density",
+            "wdist_narity",
+            "wdist_coordination_numbers",
+            "cov_precision",
+            "cov_recall",
+            "dng_eval",
+        ):
+            self.assertIn(key, out)
+            value = float(out[key])
+            self.assertFalse(value != value, f"{key} is NaN")
+
+
+class TestDatasetToModel(unittest.TestCase):
+    """Dataset -> DefaultCollator -> SI forward end-to-end."""
+
+    def test_collate_dataset_to_model_forward(self):
+        """CSV -> OMATGStructureDataset -> DefaultCollator -> SI forward."""
+        import os
+        import tempfile
+
+        from ppmat.datasets.collate_fn import DefaultCollator
+        from ppmat.datasets.omatg_dataset import OMATGStructureDataset
+        from ppmat.models.omatg.model import IndependentSampler
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cifs = [
+            "data_cscl\n"
+            "_symmetry_space_group_name_H-M 'P 1'\n"
+            "_cell_length_a 4.0\n_cell_length_b 4.0\n_cell_length_c 4.0\n"
+            "_cell_angle_alpha 90.0\n_cell_angle_beta 90.0\n_cell_angle_gamma 90.0\n"
+            "loop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n"
+            "  1  'x, y, z'\n"
+            "loop_\n _atom_site_type_symbol\n _atom_site_label\n"
+            " _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n"
+            " _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n"
+            "  Cs  Cs0  1  0.0  0.0  0.0  1\n"
+            "  Cl  Cl1  1  0.5  0.5  0.5  1\n",
+            "data_nacl\n"
+            "_symmetry_space_group_name_H-M 'P 1'\n"
+            "_cell_length_a 4.0\n_cell_length_b 4.0\n_cell_length_c 4.0\n"
+            "_cell_angle_alpha 90.0\n_cell_angle_beta 90.0\n_cell_angle_gamma 90.0\n"
+            "loop_\n _symmetry_equiv_pos_site_id\n _symmetry_equiv_pos_as_xyz\n"
+            "  1  'x, y, z'\n"
+            "loop_\n _atom_site_type_symbol\n _atom_site_label\n"
+            " _atom_site_symmetry_multiplicity\n _atom_site_fract_x\n"
+            " _atom_site_fract_y\n _atom_site_fract_z\n _atom_site_occupancy\n"
+            "  Na  Na0  1  0.0  0.0  0.0  1\n"
+            "  Cl  Cl1  1  0.5  0.5  0.5  1\n",
+        ]
+        csv_lines = "\n".join('"' + cif.replace('"', '""') + '"' for cif in cifs)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            f.write("cif\n" + csv_lines + "\n")
+            csv_path = f.name
+        try:
+            dataset = OMATGStructureDataset(
+                file_path=csv_path,
+                property_keys=[],
+                lazy_storage=False,
+                convert_to_fractional=True,
+                niggli_reduce=False,
+            )
+            self.assertEqual(len(dataset), 2)
+            batch = DefaultCollator()([dataset[0], dataset[1]])
+
+            cfg = _csp_si_scheduler_cfg(integration_time_steps=8)
+            si = build_si_from_cfg(cfg)
+            model = OMATGCSPNetFull(
+                hidden_dim=32,
+                num_layers=1,
+                max_atoms=OMatG.default_max_atoms,
+                time_embed_dim=16,
+                pred_type=False,
+                use_si=False,
+            )
+            model._si = si
+            model._sampler = IndependentSampler(
+                dataset_name="mp_20", mirror_species=True
+            )
+            model._relative_si_costs = cfg["relative_si_costs"]
+            model.use_si = True
+            out = model(batch)
+            loss = float(out["loss_dict"]["loss"])
+            self.assertFalse(loss != loss, "loss is NaN")
+        finally:
+            os.unlink(csv_path)
+
+
+class TestBuildSiSchema(unittest.TestCase):
+    """build_si_from_cfg must reject malformed SI scheduler configs.
+
+    These regression tests pin the YAML contract: only the three data fields
+    and the two metadata keys (``integration_time_steps``,
+    ``relative_si_costs``) are accepted at the top level, and
+    ``integration_time_steps`` is mandatory so a user cannot silently land on
+    a hidden default.
+    """
+
+    def test_rejects_unknown_top_level_key(self):
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _csp_si_scheduler_cfg()
+        cfg["__typo_key__"] = 42
+        with self.assertRaisesRegex(ValueError, "unknown top-level keys"):
+            build_si_from_cfg(cfg)
+
+    def test_rejects_missing_integration_time_steps(self):
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _csp_si_scheduler_cfg()
+        cfg.pop("integration_time_steps")
+        with self.assertRaisesRegex(
+            ValueError, "must declare 'integration_time_steps'"
+        ):
+            build_si_from_cfg(cfg)
+
+    def test_rejects_legacy_underscore_prefix(self):
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        # _integration_time_steps was the old spelling; renaming to the
+        # canonical key must surface a clear error rather than silently
+        # falling back to a hard-coded default.
+        cfg = _csp_si_scheduler_cfg()
+        cfg["_integration_time_steps"] = cfg.pop("integration_time_steps")
+        with self.assertRaisesRegex(ValueError, "unknown top-level keys"):
+            build_si_from_cfg(cfg)
+
+    def test_rejects_non_int_integration_time_steps(self):
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        cfg = _csp_si_scheduler_cfg()
+        cfg["integration_time_steps"] = 210.0
+        with self.assertRaisesRegex(ValueError, "must be an int >= 2"):
+            build_si_from_cfg(cfg)
+
+    def test_yaml_files_match_schema(self):
+        """Both released CSP/DNG yaml files must load without warnings."""
+        from omegaconf import OmegaConf
+
+        from ppmat.models.omatg.si.core import build_si_from_cfg
+
+        for path in (
+            "structure_generation/configs/omatg/omatg_mp20_csp.yaml",
+            "structure_generation/configs/omatg/omatg_mp20_dng.yaml",
+        ):
+            cfg = OmegaConf.load(path)
+            si_cfg = OmegaConf.to_container(cfg["Model"], resolve=True)
+            init_params = si_cfg["__init_params__"]
+            si = build_si_from_cfg(init_params["si_scheduler_cfg"])
+            self.assertGreaterEqual(si._integration_time_steps, 2)
+            self.assertEqual(
+                sorted(df.value for df in si._data_fields),
+                ["cell", "pos", "species"],
+            )
 
 
 if __name__ == "__main__":

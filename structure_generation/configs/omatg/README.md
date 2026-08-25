@@ -21,15 +21,48 @@ Two crystal generation modes are supported:
 1. **CSP** (crystal structure prediction): atomic species are fixed; only coordinates and lattice vectors evolve.
 2. **DNG** (*de novo* generation): all species are masked at start and evolve together with structure.
 
-## Model Architecture
+## Model Description
 
-OMatG consists of the following core components:
+### Overview
 
-- **CSPNet**: Crystal structure prediction network using message-passing GNN architecture, supporting fully-connected (fc) or k-NN (knn) edge construction.
-- **Stochastic Interpolants**: SI framework supporting ODE/SDE integration, with multiple interpolant types (Linear/Trigonometric/EncDec/VESBD/VPSBD).
-- **IndependentSampler**: Independent distribution sampler for position/lattice/species base distributions.
+A crystalline material is represented by its unit cell ($\mathbf{L}\in\mathbb{R}^{3\times3}$),
+fractional coordinates ($\mathbf{X}\in[0,1)^{3\times N}$ with periodic boundary conditions),
+and discrete atomic species ($\mathbf{A}\in\mathbb{Z}^N_{>0}$).
 
-## Datasets
+OMatG evolves base samples $x_0$ into data samples $x_1$ through a stochastic interpolant
+$x_t = \alpha(t)\,x_0 + \beta(t)\,x_1 + \gamma(t)\,z$ over $t\in[0,1]$, learned via velocity
+matching. Sampling integrates the learned velocity field with a deterministic (ODE) or
+stochastic (SDE) scheme. Continuous variables $\{\mathbf{X}, \mathbf{L}\}$ use the SI
+framework; discrete species $\mathbf{A}$ use [discrete flow matching](https://arxiv.org/abs/2402.04997).
+
+### Crystal structure prediction of GaTe
+
+<img src="../../docs/omatg_csp_movie.gif" alt="csp movie" width="60%">
+
+### *De novo* generation of Pd<sub>3</sub>Te<sub>2</sub>I<sub>3</sub>
+
+<img src="../../docs/omatg_dng_movie.gif" alt="dng movie" width="60%">
+
+
+### Method
+
+#### 1) CSPNet backbone
+Message-passing GNN with fully-connected (fc) or k-NN (knn) edge construction,
+internal time embedding and dual output heads.
+
+#### 2) Stochastic Interpolants
+ODE/SDE integration with multiple interpolant schedules (Linear / Trig / EncDec /
+VESBD / VPSBD); continuous variables $\{\mathbf{X}, \mathbf{L}\}$ evolve via velocity
+matching.
+
+#### 3) IndependentSampler
+Base distribution sampler for position / lattice / species.
+
+#### 4) Discrete flow matching
+Masked-species evolution for *de novo* (DNG) generation.
+
+
+## Dataset Description
 
 ### Included Datasets
 
@@ -40,7 +73,20 @@ Several standard material datasets are included as LMDB files:
 | MP-20 | 45,229 | 20 | [Materials Project](https://pubs.aip.org/aip/apm/article/1/1/011002/119685) structures |
 | MPTS-52 | 40,476 | 52 | [Chronological MP split](https://joss.theoj.org/papers/10.21105/joss.05618) |
 | Perov-5 | 18,928 | 5 | [Perovskite dataset](https://pubs.rsc.org/en/content/articlelanding/2012/ee/c2ee22341d) |
-| Alex-MP-20 | 675,204 | — | Consolidated [Alexandria](https://arxiv.org/abs/2210.00579) + MP-20 |
+| Alex-MP-20 | 675,204 | - | Consolidated [Alexandria](https://arxiv.org/abs/2210.00579) + MP-20 |
+
+### Data Preparation
+
+The `omatg_mp20_*.yaml` configs reference MP-20 LMDB files at `./data/mp_20/{train,val,test}.lmdb`
+and the sampling configs expect `./data/mp_20/test.csv` (a CSV with a `cif` column) as the
+reference ground-truth set for metrics.
+
+The raw MP-20 (and the other MPTS-52 / Perov-5 / Alex-MP-20) structures can be converted into
+the expected LMDB layout from their source files before training. The LMDB record for each
+structure must contain the fields read by `StructureDataset`: `cell` (3x3), `atomic_numbers`
+(1D), and `pos` (Nx3), serialized with `pickle` under a non-double-underscore key. Only after
+these files are prepared will the training / validation / sampling commands below run.
+
 
 
 ### Supported Datasets
@@ -63,11 +109,8 @@ the `file_path` in the dataset section of the config.
 
 | File | Mode | Dataset | Description |
 |------|:----:|---------|-------------|
-| `omatg_mp20_csp.yaml` | CSP | MP-20 | Simplified MSE (fixed lr) |
-| `omatg_mp20_csp_linear_ode.yaml` | CSP | MP-20 | Linear-ODE (Cosine LR) |
-| `omatg_mp20_dng_linear_sde.yaml` | DNG | MP-20 | Linear-SDE (species prediction + WeightDecay) |
-| `omatg_mp20_csp_sample.yaml` | CSP | MP-20 | Sampling by number of atoms |
-| `omatg_mp20_dng_sample.yaml` | DNG | MP-20 | DNG sampling (species prediction) |
+| `omatg_mp20_csp.yaml` | CSP | MP-20 | Training (Linear-ODE, Cosine LR) + sampling |
+| `omatg_mp20_dng.yaml` | DNG | MP-20 | Training (Linear-SDE, species prediction + WeightDecay) + sampling |
 
 ## Results
 
@@ -82,13 +125,13 @@ the `file_path` in the dataset section of the config.
     </tr>
     <tr>
         <td nowrap>mp_20_csp</td><td nowrap>MP-20</td><td nowrap>CSP</td><td nowrap>Linear-ODE</td>
-        <td nowrap><a href="omatg_mp20_csp_linear_ode.yaml">train</a> / <a href="omatg_mp20_csp_sample.yaml">sample</a></td>
+        <td nowrap><a href="omatg_mp20_csp.yaml">config</a></td>
         <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_csp/Linear-ODE.pdparams">weight</a></td>
     </tr>
     <tr>
         <td nowrap>mp_20_dng</td><td nowrap>MP-20</td><td nowrap>DNG</td><td nowrap>Linear-SDE</td>
-        <td nowrap><a href="omatg_mp20_dng_linear_sde.yaml">train</a> / <a href="omatg_mp20_dng_sample.yaml">sample</a></td>
-        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-SDE.pdparams">weight</a></td>
+        <td nowrap><a href="omatg_mp20_dng.yaml">config</a></td>
+        <td nowrap><a href="https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_mp_20_dng/Linear-SDE-Gamma.pdparams">weight</a></td>
     </tr>
     <tr>
         <td nowrap>perov_5_csp</td><td nowrap>Perov-5</td><td nowrap>CSP</td><td nowrap>EncDec-ODE-Gamma</td>
@@ -109,7 +152,7 @@ the `file_path` in the dataset section of the config.
 
 ## Pretrained Weights
 
-Pre-trained weights hosted on Baidu BOS (50 files). Use `build_omatg_model(dataset, variant)`
+Pre-trained weights hosted on Baidu BOS (52 files, 5 dataset x variant tables below). Use `build_omatg_model(dataset, variant)`
 for automatic download. Cached to `~/.paddlemat/weights/omatg_{dataset}/` after first download.
 
 ```python
@@ -195,7 +238,7 @@ model, meta = build_omatg_model("mp_20_dng", "encdec_ode_gamma")  # DNG
 | vpsbd_ode | [VPSBD-ODE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/VPSBD-ODE.pdparams) |
 | vpsbd_sde | [VPSBD-SDE.pdparams](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/OMatG/omatg_alex_mp_20_csp/VPSBD-SDE.pdparams) |
 
-## Commands
+## Command
 
 ### Training
 
@@ -210,7 +253,7 @@ python structure_generation/train.py \
 
 # Full training (requires data/mp_20/ dataset)
 python structure_generation/train.py \
-    -c structure_generation/configs/omatg/omatg_mp20_csp_linear_ode.yaml \
+    -c structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     Trainer.max_epochs=500 \
     Trainer.output_dir=./output/omatg_mp20_csp
 ```
@@ -218,57 +261,83 @@ python structure_generation/train.py \
 ### Validation
 
 ```bash
+# NOTE: output_dir is automatically suffixed with _t_<timestamp>_s_<seed>
+# at runtime (see Trainer docs), so point to the suffixed directory here.
 # Evaluate on the validation split using a saved checkpoint
 python structure_generation/train.py \
-    -c structure_generation/configs/omatg/omatg_mp20_csp_linear_ode.yaml \
+    -c structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     Global.do_train=False \
     Global.do_eval=True \
-    Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
+    Trainer.pretrained_model_path=./output/omatg_mp20_csp_t_<timestamp>_s_42/checkpoints
 ```
 
 ### Testing
 
 ```bash
-# Evaluate on the test split
+# Evaluate on the test split with a saved checkpoint
 python structure_generation/train.py \
-    -c structure_generation/configs/omatg/omatg_mp20_csp_linear_ode.yaml \
+    -c structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     Global.do_train=False \
     Global.do_test=True \
     Global.do_eval=False \
-    Trainer.pretrained_model_path=./output/omatg_mp20_csp/checkpoints
+    Trainer.pretrained_model_path=./output/omatg_mp20_csp_t_<timestamp>_s_42/checkpoints
 ```
 
-### Sampling
+### Unit Tests
+
+The OMatG unit tests live in `test/omatg/test_omatg.py` and cover the core
+end-to-end flows (project convention 4.2): CSP/DNG forward and loss, the
+SI velocity-matching training path (Linear-ODE and DNG Linear-SDE), the
+config-driven build (YAML -> model -> forward -> sample), SI sampling
+stability, `OMatGMetric` (match/dng modes) and the dataset-to-collator-to-
+model pipeline (CSV -> `OMATGStructureDataset` -> `DefaultCollator` (with
+`ConcatData`) -> SI forward).
+
+```bash
+python -m pytest test/omatg/test_omatg.py -v
+```
+
+### Sample
 
 ```bash
 # Sample by number of atoms (with local checkpoint)
 python structure_generation/sample.py \
-    --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
+    --config_path structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
     --mode by_num_atoms \
     --num_atoms 8 \
-    --save_path ./results/omatg_samples
+    --output_path ./outputs/omatg_samples
 
 # Sample by chemical formula (with local checkpoint)
 python structure_generation/sample.py \
-    --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
+    --config_path structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
     --mode by_chemical_formula \
     --chemical_formula LiMnO2 \
-    --save_path ./results/omatg_samples
+    --output_path ./outputs/omatg_samples
 
-# Sample using pre-trained weights (HTTP auto-download)
-# Use build_omatg_model() in a Python script, then pass the model to the sampler.
-
-# Batch sample by dataloader (with local checkpoint)
+# Sample by dataloader (with local checkpoint)
 python structure_generation/sample.py \
-    --config_path structure_generation/configs/omatg/omatg_mp20_csp_sample.yaml \
+    --config_path structure_generation/configs/omatg/omatg_mp20_csp.yaml \
     --checkpoint_path ./output/omatg_mp20_csp/checkpoints/best.pdparams \
     --mode by_dataloader \
-    --save_path ./results/omatg_samples
+    --output_path ./outputs/omatg_samples
 ```
 
+## Reproduction Status
 
+This migration reproduces the OMatG **encoder forward pass** against the released
+checkpoints. All 52 weight files (5 datasets × variants) load and run a forward pass with
+per-attribute MAE well below `1e-6` relative to the PyTorch reference. The trained-loss /
+sampling-defect numbers of the paper (`match_rate` / COV / METRe / `dng_eval`) have **not
+yet been re-evaluated end-to-end for this migration**, and doing so requires the datasets
+prepared in the preceding section. The pretrained-weight path here reproduces the model
+architecture, weight loading and forward behaviour; paper-level sampling metrics remain to
+be validated and reported.
+
+To run the metrics path today, provide a ground-truth set of generated structures and target
+the `--mode compute_metric` sampling config, which computes CSP `match_rate` / DNG
+`valid_rate`, Wasserstein, COV and `dng_eval` via `OMatGMetric`.
 
 ## Citation
 

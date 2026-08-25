@@ -12,20 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .core import (
-    BIG_TIME, SMALL_TIME,
-    StochasticInterpolants,
-    SingleStochasticInterpolant, SingleStochasticInterpolantIdentity,
-    SingleStochasticInterpolantOS, DiscreteFlowMatchingMask,
-    build_si_from_cfg, build_sampler_from_cfg,
-)
-from .interpolants import LinearInterpolant, PeriodicLinearInterpolant
+from .core import BIG_TIME
+from .core import SMALL_TIME
+from .core import DiscreteFlowMatchingMask
+from .core import SingleStochasticInterpolant
+from .core import SingleStochasticInterpolantIdentity
+from .core import StochasticInterpolants
+from .core import build_sampler_from_cfg
+from .core import build_si_from_cfg
+from .interpolants import LatentGammaSqrt
+from .interpolants import LinearInterpolant
+from .interpolants import PeriodicLinearInterpolant
+from .interpolants import VanishingEpsilon
 
 __all__ = [
     "StochasticInterpolants",
-    "SingleStochasticInterpolant", "SingleStochasticInterpolantIdentity",
-    "SingleStochasticInterpolantOS", "DiscreteFlowMatchingMask",
-    "LinearInterpolant", "PeriodicLinearInterpolant",
-    "BIG_TIME", "SMALL_TIME",
-    "build_si_from_cfg", "build_sampler_from_cfg",
+    "SingleStochasticInterpolant",
+    "SingleStochasticInterpolantIdentity",
+    "DiscreteFlowMatchingMask",
+    "LinearInterpolant",
+    "PeriodicLinearInterpolant",
+    "VanishingEpsilon",
+    "LatentGammaSqrt",
+    "BIG_TIME",
+    "SMALL_TIME",
+    "build_si_from_cfg",
+    "build_sampler_from_cfg",
 ]

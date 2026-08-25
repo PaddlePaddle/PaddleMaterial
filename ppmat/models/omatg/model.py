@@ -12,30 +12,72 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""OMATG-specific CSPNet with knn graph, internal time embedding, dual outputs.
+"""OMATG-specific CSPNet with time embedding and dual output heads.
 
-Extends diffcsp.CSPNet to add:
-  - knn graph construction via radius_graph_pbc
-  - internal time embedding (SinusoidalTimeEmbeddings)
-  - dual output heads (coord_out_2, lattice_out_2, type_out_2)
-  - species_shift and enable_masked_species() for DNG mode
+OMatG uses Stochastic Interpolants (continuous alpha/beta/gamma schedules),
+not diffusion noise schedulers, so ppmat.schedulers (DDPMScheduler etc.) do
+not apply.
 """
+
+from typing import Dict
+from typing import Optional
 
 import paddle
 import paddle.nn as nn
 
-from ase.geometry.cell import cellpar_to_cell
-
-from ppmat.datasets.omatg_dataset import OMATGData, Structure
+from ppmat.datasets.omatg_dataset import LATTICE_PARAMS
+from ppmat.datasets.omatg_dataset import sample_lattice_cell
 from ppmat.losses import MSELoss
 from ppmat.models.diffcsp.diffcsp import CSPNet
-from ppmat.utils.crystal import radius_graph_pbc, frac_to_cart_coords_with_lattice
+from ppmat.models.omatg.si.constants import OMatG
+from ppmat.models.omatg.si.core import DiscreteFlowMatchingMask
+from ppmat.utils.crystal import frac_to_cart_coords_with_lattice
+from ppmat.utils.crystal import radius_graph_pbc
 from ppmat.utils.misc import repeat_blocks
 
 __all__ = [
+    "OMATGCSPNet",
     "OMATGCSPNetFull",
     "IndependentSampler",
+    "OMatG",
 ]
+
+
+def _normalize_sample_dict(data: dict) -> dict:
+    """Normalize collated sample dict keys to n_atoms/species/cell/pos/batch/ptr."""
+    out = {
+        "n_atoms": data.get("n_atoms", data.get("num_atoms")),
+        "species": data.get("species", data.get("atom_types")),
+        "cell": data.get("cell", data.get("lattices")),
+        "pos": data.get("pos", data.get("frac_coords")),
+    }
+    batch = data.get("batch", data.get("node2graph"))
+    n_atoms = out["n_atoms"]
+    if n_atoms.ndim > 1:
+        n_atoms = n_atoms.squeeze(-1)
+        out["n_atoms"] = n_atoms
+    if out["cell"] is not None and out["cell"].ndim == 2:
+        out["cell"] = out["cell"].unsqueeze(0)
+    pos_is_fractional = data.get("pos_is_fractional")
+    if pos_is_fractional is not None and pos_is_fractional.ndim > 1:
+        pos_is_fractional = pos_is_fractional.squeeze(-1)
+    out["pos_is_fractional"] = (
+        pos_is_fractional
+        if pos_is_fractional is not None
+        else paddle.ones_like(n_atoms, dtype="bool")
+    )
+    if batch is None:
+        batch = paddle.repeat_interleave(
+            paddle.arange(n_atoms.shape[0], dtype="int64"), n_atoms
+        )
+    out["batch"] = batch
+    out["ptr"] = paddle.concat(
+        [
+            paddle.to_tensor([0], dtype="int64"),
+            paddle.cumsum(n_atoms, axis=0).cast("int64"),
+        ]
+    )
+    return out
 
 
 class OMATGCSPNet(CSPNet):
@@ -45,7 +87,7 @@ class OMATGCSPNet(CSPNet):
         self,
         hidden_dim=128,
         num_layers=4,
-        max_atoms=100,
+        max_atoms=OMatG.default_max_atoms,
         act_fn="silu",
         dis_emb="sin",
         num_freqs=10,
@@ -75,7 +117,7 @@ class OMATGCSPNet(CSPNet):
             pred_scalar=pred_scalar,
             num_classes=max_atoms,
         )
-        # OMATG does not use property embedding; clear prop_mlp created by CSPNet
+        # OMatG has no property embedding; drop prop_mlp from CSPNet.
         for i in range(num_layers):
             getattr(self, "csp_layer_%d" % i).prop_mlp = None
 
@@ -89,9 +131,7 @@ class OMATGCSPNet(CSPNet):
             from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 
             self.time_embedder = SinusoidalTimeEmbeddings(time_embed_dim)
-            self.atom_latent_emb = nn.Linear(
-                hidden_dim + time_embed_dim, hidden_dim
-            )
+            self.atom_latent_emb = nn.Linear(hidden_dim + time_embed_dim, hidden_dim)
         else:
             self.time_embedder = None
             self.atom_latent_emb = nn.Linear(hidden_dim + 1, hidden_dim)
@@ -187,8 +227,7 @@ class OMATGCSPNet(CSPNet):
         else:
             t_embed = t
 
-        if t_embed.ndim == 1:
-            t_embed = t_embed.unsqueeze(0)
+        # Repeat batch-level time embedding per atom.
         t_per_atom = paddle.repeat_interleave(t_embed, num_atoms, axis=0)
         node_features = paddle.concat([node_features, t_per_atom], axis=1)
         node_features = self.atom_latent_emb(node_features)
@@ -261,49 +300,31 @@ class OMATGCSPNet(CSPNet):
             "cell_eta": preds[2],
         }
 
+
 class OMATGCSPNetFull(OMATGCSPNet):
-    """Full CSPNet with time embedding integrated for OMatG models.
+    """CSPNet with time embedding, checkpoint-compatible defaults."""
 
-    This is a convenience wrapper that creates CSPNet with time embedding.
-    Renamed from CSPNetFull to avoid naming conflicts with other CSPNet implementations.
-
-    Args:
-        hidden_dim: Hidden dimension for embeddings
-        num_layers: Number of message passing layers
-        max_atoms: Maximum number of atoms in crystal
-        act_fn: Activation function
-        dis_emb: Distance embedding type
-        num_freqs: Number of frequency bands for sinusoidal embedding
-        edge_style: Edge construction style
-        cutoff: Distance cutoff for graph construction
-        max_neighbors: Maximum number of neighbors
-        ln: Whether to use layer normalization
-        ip: Whether to use inner product
-        smooth: Whether to use smooth embedding
-        pred_type: Whether to predict atom types
-        pred_scalar: Whether to predict scalar properties
-        time_embed_dim: Time embedding dimension
-    """
-
+    # Defaults match the released checkpoints so a bare OMATGCSPNetFull()
+    # can load pretrained weights; build_omatg_model() overrides from these.
     def __init__(
         self,
-        hidden_dim: int = 128,
-        num_layers: int = 4,
-        max_atoms: int = 100,
+        hidden_dim: int = 512,
+        num_layers: int = 6,
+        max_atoms: int = OMatG.default_max_atoms,
         act_fn: str = "silu",
         dis_emb: str = "sin",
-        num_freqs: int = 10,
+        num_freqs: int = 128,
         edge_style: str = "fc",
-        cutoff: float = 6.0,
+        cutoff: float = 7.0,
         max_neighbors: int = 20,
-        ln: bool = False,
+        ln: bool = True,
         ip: bool = True,
         smooth: bool = False,
         pred_type: bool = False,
         pred_scalar: bool = False,
         time_embed_dim: int = 256,
         use_si: bool = False,
-        si_cfg: dict = None,
+        si_scheduler_cfg: dict = None,
         sampler_cfg: dict = None,
     ):
         super().__init__(
@@ -326,36 +347,32 @@ class OMATGCSPNetFull(OMATGCSPNet):
         self.use_si = use_si
         self._si = None
         self._sampler = None
-        self._relative_si_costs = None
+        self._relative_si_costs = {}
         self.mse_loss = MSELoss()
         if use_si:
-            self._build_si(si_cfg or {}, sampler_cfg or {})
+            self._build_si(si_scheduler_cfg or {}, sampler_cfg or {})
 
     def forward(self, data, t=None):
-        """Forward pass accepting dict or OMATGData/Batch object.
+        """Forward pass on a sample dict; returns loss_dict.
 
-        Args:
-            data: dict (for standalone use) or OMATGData/Batch (from collator pipeline).
-            t: Time tensor (optional, will be sampled if None)
-
-        Returns:
-            Dictionary containing loss_dict with loss components
+        OMatG training forward does not emit per-attribute predictions aligned
+        with labels, so compute_metric_func_dict does not apply; evaluation is
+        loss-based (eval_loss).
         """
-        if isinstance(data, dict):
-            atom_types = data["atom_types"]
-            frac_coords = data["frac_coords"]
-            lattices = data["lattices"]
-            num_atoms = data["num_atoms"]
-            node2graph = data["node2graph"]
-        else:
-            atom_types = data.species
-            frac_coords = data.pos
-            lattices = data.cell
-            num_atoms = data.n_atoms
-            node2graph = data.batch
+        # Accept collator keys (n_atoms/species/cell/pos) or standalone keys.
+        atom_types = data.get("atom_types", data.get("species"))
+        frac_coords = data.get("frac_coords", data.get("pos"))
+        lattices = data.get("lattices", data.get("cell"))
+        num_atoms = data.get("num_atoms", data.get("n_atoms"))
+        node2graph = data.get("node2graph", data.get("batch"))
 
-        # SI-based training path: velocity matching loss via StochasticInterpolants
+        # SI training path: velocity-matching loss; fail loudly if not built.
         if self.use_si:
+            if self._si is None or self._sampler is None:
+                raise ValueError(
+                    "use_si=True requires si_cfg and sampler_cfg to be provided "
+                    "and valid (got si_cfg that built no stochastic interpolants)."
+                )
             return self._si_forward(data)
 
         # Sample time if not provided
@@ -363,7 +380,6 @@ class OMATGCSPNetFull(OMATGCSPNet):
             batch_size = lattices.shape[0]
             t = paddle.rand([batch_size])
 
-        # Call forward_dict for b/eta outputs
         predictions = self.forward_dict(
             t=t,
             atom_types=atom_types,
@@ -405,111 +421,32 @@ class OMATGCSPNetFull(OMATGCSPNet):
         }
 
     def sample(self, batch_data, num_inference_steps=100, **kwargs):
-        """Sample crystal structures.
-
-        Based on the original OMatG implementation in omg_trainer.py and generate_csp.py.
-        Uses reverse-time ODE integration with Euler method.
-
-        Args:
-            batch_data: Dictionary (for standalone sampling) or OMATGData/Batch object.
-                Dictionary supports:
-                - structure_array with num_atoms and optionally atom_types
-                - or direct fields: atom_types, frac_coords (ignored), lattices (ignored),
-                  num_atoms, node2graph (ignored)
-            num_inference_steps: Number of integration steps (default 100)
-            **kwargs: Additional sampling parameters
-                - step_lr: step learning rate for Euler integration (default 1e-5)
-
-        Returns:
-            Dictionary containing generated structures
-        """
-        if self.use_si and self._si is not None:
-            return self._si_sample(batch_data, num_inference_steps, **kwargs)
-
-        # Support dict (standalone sampling) and OMATGData/Batch (collator output)
-        if isinstance(batch_data, dict):
-            if "structure_array" in batch_data:
-                sa = batch_data["structure_array"]
-                num_atoms_list = sa["num_atoms"].tolist()
-                atom_types = sa.get("atom_types")
-            else:
-                num_atoms_list = batch_data["num_atoms"].tolist()
-                atom_types = batch_data.get("atom_types")
-        else:
-            num_atoms_list = batch_data.n_atoms.tolist()
-            atom_types = batch_data.species
-
-        batch_size = len(num_atoms_list)
-        total_atoms = sum(num_atoms_list)
-
-        if atom_types is None:
-            atom_types = paddle.randint(1, 100, shape=[total_atoms])
-
-        num_atoms_tensor = paddle.to_tensor(num_atoms_list, dtype="int64")
-        node2graph = paddle.repeat_interleave(
-            paddle.arange(batch_size, dtype="int64"), num_atoms_tensor
-        )
-
-        # Sample from base distribution (uniform for positions, randn for lattice)
-        # Reference: omg_lightning.py:predict_step() -> x_0 = self.sampler.sample_p_0(x)
-        frac_coords = paddle.rand([total_atoms, 3])
-        lattices = paddle.randn([batch_size, 3, 3])
-
-        # Scale initial lattice to reasonable values
-        lattices = lattices * 2.0  # Scale to avoid extreme values
-
-        # Integration loop using Euler method
-        step_lr = 1e-5
-
-        for step in range(num_inference_steps):
-            t = paddle.full([batch_size], step / num_inference_steps)
-            lattice_pred, coord_pred = self._predict(
-                t, atom_types, frac_coords, lattices,
-                num_atoms_tensor, node2graph,
+        """Sample via SI integration; requires use_si=True (see configs)."""
+        if not self.use_si:
+            raise ValueError(
+                "OMATGCSPNetFull.sample() requires the StochasticInterpolants "
+                "sampling path (use_si=True). Build the model with an "
+                "si_cfg/sampler_cfg, e.g. load one of the "
+                "structure_generation/configs/omatg/*.yaml configs."
             )
-
-            if paddle.any(paddle.isnan(lattice_pred)) or paddle.any(
-                paddle.isnan(coord_pred)
-            ):
-                continue
-
-            frac_coords = frac_coords + coord_pred * step_lr
-            lattices = lattices + lattice_pred * step_lr
-
-            frac_coords = frac_coords % 1.0
-
-        # Final clipping to ensure valid lattice
-        lattices = paddle.clip(lattices, -10.0, 10.0)
-
-        # Convert lattice matrices to lengths and angles for BuildStructure
-        return self._build_sample_result(num_atoms_list, atom_types, frac_coords, lattices)
-
-    def _predict(self, t, atom_types, frac_coords, lattices, num_atoms, node2graph):
-        predictions = super().forward(
-            t=t,
-            atom_types=atom_types,
-            frac_coords=frac_coords,
-            lattices=lattices,
-            num_atoms=num_atoms,
-            node2graph=node2graph,
-        )
-        lattice_pred, coord_pred = predictions[0], predictions[1]
-        if paddle.any(paddle.isnan(lattice_pred)):
-            lattice_pred = paddle.zeros_like(lattice_pred)
-        if paddle.any(paddle.isnan(coord_pred)):
-            coord_pred = paddle.zeros_like(coord_pred)
-        return lattice_pred, coord_pred
+        if self._si is None or self._sampler is None:
+            raise ValueError(
+                "use_si=True requires si_cfg and sampler_cfg to be provided "
+                "and valid (got si_cfg that built no stochastic interpolants)."
+            )
+        return self._si_sample(batch_data, num_inference_steps, **kwargs)
 
     def _make_model_function(self):
         def model_function(x_t, time):
             return self.forward_dict(
                 t=time,
-                atom_types=x_t.species,
-                frac_coords=x_t.pos,
-                lattices=x_t.cell,
-                num_atoms=x_t.n_atoms,
-                node2graph=x_t.batch,
+                atom_types=x_t["species"],
+                frac_coords=x_t["pos"],
+                lattices=x_t["cell"],
+                num_atoms=x_t["n_atoms"],
+                node2graph=x_t["batch"],
             )
+
         return model_function
 
     @staticmethod
@@ -521,13 +458,15 @@ class OMATGCSPNetFull(OMATGCSPNet):
         result = []
         for i, n in enumerate(num_atoms_list):
             end_idx = start_idx + n
-            result.append({
-                "num_atoms": n,
-                "atom_types": atom_types[start_idx:end_idx].tolist(),
-                "frac_coords": frac_coords[start_idx:end_idx].tolist(),
-                "lengths": lengths[i].tolist(),
-                "angles": angles[i].tolist(),
-            })
+            result.append(
+                {
+                    "num_atoms": n,
+                    "atom_types": atom_types[start_idx:end_idx].tolist(),
+                    "frac_coords": frac_coords[start_idx:end_idx].tolist(),
+                    "lengths": lengths[i].tolist(),
+                    "angles": angles[i].tolist(),
+                }
+            )
             start_idx += n
         return {"result": result}
 
@@ -535,61 +474,94 @@ class OMATGCSPNetFull(OMATGCSPNet):
         x_1 = self._data_to_omatg(batch_data)
         x_0 = self._sampler.sample_p_0(x_1)
 
-        gen = self._si.integrate(x_0, self._make_model_function(), save_intermediate=False)
-
-        return self._build_sample_result(
-            gen.n_atoms.tolist(), gen.species, gen.pos, gen.cell
+        gen = self._si.integrate(
+            x_0,
+            self._make_model_function(),
+            save_intermediate=False,
+            integration_time_steps=num_inference_steps,
         )
 
-    def _build_si(self, si_cfg: dict, sampler_cfg: dict) -> None:
-        from ppmat.models.omatg.si.core import build_si_from_cfg, build_sampler_from_cfg
-        from ppmat.models.omatg.si import StochasticInterpolants
+        return self._build_sample_result(
+            gen["n_atoms"].tolist(), gen["species"], gen["pos"], gen["cell"]
+        )
 
-        si_list = si_cfg.get("stochastic_interpolants", [])
-        if not si_list:
-            self._si = None
-            self._relative_si_costs = {}
-            self._sampler = None
-            return
+    def _build_si(self, si_scheduler_cfg: dict, sampler_cfg: dict) -> None:
+        from ppmat.models.omatg.si.core import build_sampler_from_cfg
+        from ppmat.models.omatg.si.core import build_si_from_cfg
 
-        use_factory = isinstance(si_list[0], dict) and "__class_name__" in si_list[0]
-        if use_factory:
-            self._si = build_si_from_cfg(si_cfg)
-        else:
-            data_fields = si_cfg.get("data_fields")
-            if not data_fields:
-                raise ValueError("si_cfg must contain 'data_fields' when use_si=True.")
-            self._si = StochasticInterpolants(
-                stochastic_interpolants=si_list,
-                data_fields=data_fields,
-                integration_time_steps=si_cfg.get("integration_time_steps", 210),
+        # Normalize OmegaConf DictConfig to plain dicts.
+        if hasattr(si_scheduler_cfg, "__dict__") and hasattr(si_scheduler_cfg, "get"):
+            try:
+                from omegaconf import OmegaConf
+
+                si_scheduler_cfg = OmegaConf.to_container(
+                    si_scheduler_cfg, resolve=True
+                )
+            except Exception:
+                pass
+
+        if not si_scheduler_cfg:
+            raise ValueError(
+                "use_si=True requires a non-empty si_scheduler_cfg mapping data "
+                "fields to stochastic-interpolant configs (e.g. "
+                "'si_scheduler_cfg: {species: {...}, pos: {...}, cell: {...}, "
+                "integration_time_steps: 210}')."
             )
-        self._relative_si_costs = si_cfg.get("relative_si_costs", {})
+
+        self._si = build_si_from_cfg(si_scheduler_cfg)
+        self._relative_si_costs = si_scheduler_cfg.get("relative_si_costs", {})
+
+        # DFM masked species need an extra embedding token (species 0).
+        if any(
+            isinstance(si, DiscreteFlowMatchingMask)
+            for si in self._si._stochastic_interpolants
+        ):
+            self.enable_masked_species()
 
         if sampler_cfg:
-            if any(isinstance(v, dict) and "__class_name__" in v for v in sampler_cfg.values()):
-                self._sampler = build_sampler_from_cfg(sampler_cfg)
-            else:
-                self._sampler = IndependentSampler(
-                    dataset_name=sampler_cfg.get("dataset_name"),
-                    mirror_species=sampler_cfg.get("mirror_species", True),
-                    mask_species=sampler_cfg.get("mask_species", False),
-                )
+            self._sampler = build_sampler_from_cfg(sampler_cfg)
+            # Bind the parent model so IndependentSampler resolves max_atoms
+            # from the model's species embedding width. Must run after the DFM
+            # enable_masked_species step above so node_embedding reflects the
+            # +1 token expansion for masked-species DNG.
+            if isinstance(self._sampler, IndependentSampler):
+                self._sampler.bind_model(self)
 
     def _data_to_omatg(self, data):
-        from ppmat.datasets.omatg_dataset import OMATGData
-
-        if isinstance(data, OMATGData):
-            return data
-        return OMATGData.from_collate_dict(data)
+        if isinstance(data, dict) and "structure_array" in data:
+            # StructureSampler input; sample random species when none given.
+            sa = data["structure_array"]
+            num_atoms = paddle.to_tensor(sa["num_atoms"], dtype="int64")
+            if "atom_types" in sa:
+                species = paddle.to_tensor(sa["atom_types"], dtype="int64")
+            else:
+                total = int(num_atoms.sum().item())
+                species = paddle.randint(
+                    1, self.num_classes + 1, [total], dtype="int64"
+                )
+            data = {
+                "n_atoms": num_atoms,
+                "species": species,
+                "cell": paddle.eye(3).unsqueeze(0).tile([len(num_atoms), 1, 1]),
+                "pos": paddle.zeros([int(num_atoms.sum().item()), 3]),
+                "pos_is_fractional": paddle.ones([len(num_atoms)], dtype="bool"),
+            }
+        # DefaultCollator returns numpy arrays; convert to tensors.
+        data = {
+            k: (paddle.to_tensor(v) if not paddle.is_tensor(v) else v)
+            for k, v in data.items()
+            if v is not None
+        }
+        return _normalize_sample_dict(data)
 
     def _si_forward(self, data: dict) -> dict:
-        """SI training step: sample x_0, interpolate, compute velocity matching loss."""
-        from ppmat.models.omatg.si import SMALL_TIME, BIG_TIME
+        """SI velocity-matching loss step."""
+        from ppmat.models.omatg.si import BIG_TIME
+        from ppmat.models.omatg.si import SMALL_TIME
 
         x_1 = self._data_to_omatg(data)
         x_0 = self._sampler.sample_p_0(x_1)
-        batch_size = len(x_1.n_atoms)
+        batch_size = len(x_1["n_atoms"])
         t = paddle.rand([batch_size]) * (BIG_TIME - SMALL_TIME) + SMALL_TIME
 
         losses = self._si.losses(self._make_model_function(), t, x_0, x_1)
@@ -604,76 +576,145 @@ class OMATGCSPNetFull(OMATGCSPNet):
         return {"loss_dict": loss_dict}
 
 
-"""Independent base distribution sampler using Paddle native APIs."""
-
-_LATTICE_PARAMS = {
-    "carbon_24": {
-        "means": [0.9852757453918457, 1.3865314722061157, 1.7068126201629639],
-        "stds": [0.14957907795906067, 0.20431114733219147, 0.2403733879327774],
-    },
-    "mp_20": {
-        "means": [1.575442910194397, 1.7017393112182617, 1.9781638383865356],
-        "stds": [0.24437622725963593, 0.26526379585266113, 0.3535512685775757],
-    },
-    "mpts_52": {
-        "means": [1.6565313339233398, 1.8407557010650635, 2.1225264072418213],
-        "stds": [0.2952289581298828, 0.3340013027191162, 0.41885802149772644],
-    },
-    "perov_5": {
-        "means": [1.419227957725525, 1.419227957725525, 1.419227957725525],
-        "stds": [0.07268335670232773, 0.07268335670232773, 0.07268335670232773],
-    },
-    "alex_mp_20": {
-        "means": [1.5808929163076058, 1.74672046352959, 2.065243388307474],
-        "stds": [0.27284015410437057, 0.2944785731740152, 0.30899526911753017],
-    },
-}
-
-
-def _sample_cell(dataset_name):
-    params = _LATTICE_PARAMS.get(dataset_name)
-    if params is None:
-        return paddle.randn([3, 3]).numpy() * 2.0
-    lengths = paddle.exp(
-        paddle.randn([3]) * paddle.to_tensor(params["stds"])
-        + paddle.to_tensor(params["means"])
-    )
-    angles = paddle.rand([3]) * 60.0 + 60.0
-    return cellpar_to_cell(paddle.concat((lengths, angles)).numpy())
-
-
 class IndependentSampler:
-    """Sample base distributions for SI training using Paddle native APIs.
+    """Sample SI base distributions (lattice / species).
 
-    Args:
-        dataset_name: Optional dataset name for informed lattice distribution.
-        mirror_species: If True, keep input species unchanged (mirror).
-        mask_species: If True, replace species with zeros (mask token).
+    Internal SI x_0 sampler; bridged to the public StructureSampler via
+    model.sample() in sample.py.
+
+    ``max_atoms`` defaults to ``None`` and is resolved at first use against
+    the bound ``OMATGCSPNet`` model via :meth:`bind_model`; if used standalone
+    without a model and no explicit value, falls back to ``OMatG.default_max_atoms``
+    (the released-checkpoint default).
     """
 
-    def __init__(self, dataset_name=None, mirror_species=True, mask_species=False):
-        self._dataset_name = dataset_name
+    _DEFAULT_MAX_ATOMS: int = OMatG.default_max_atoms
+
+    def __init__(
+        self,
+        dataset_name=None,
+        lattice_means=None,
+        lattice_stds=None,
+        mirror_species=True,
+        mask_species=False,
+        max_atoms: Optional[int] = None,
+    ):
+        if (lattice_means is None) != (lattice_stds is None):
+            raise ValueError(
+                "lattice_means and lattice_stds must be provided together."
+            )
+        if lattice_means is None:
+            if dataset_name is None:
+                raise ValueError(
+                    "dataset_name must be provided (or lattice_means/lattice_stds "
+                    "injected explicitly) to sample the lattice base distribution."
+                )
+            params = LATTICE_PARAMS.get(dataset_name)
+            if params is None:
+                raise ValueError(
+                    f"Unknown dataset_name '{dataset_name}' for lattice base "
+                    f"distribution. Provide lattice_means/lattice_stds explicitly "
+                    f"or use one of: {sorted(LATTICE_PARAMS)}."
+                )
+            lattice_means, lattice_stds = params["means"], params["stds"]
+        self._lattice_means = list(lattice_means)
+        self._lattice_stds = list(lattice_stds)
         self._mirror_species = mirror_species
         self._mask_species = mask_species
+        self._max_atoms = max_atoms
+        self._bound_model: Optional["OMATGCSPNetFull"] = None
 
-    def sample_p_0(self, x_1: OMATGData) -> OMATGData:
-        batch_size = len(x_1.n_atoms)
-        structures = []
-        for i in range(batch_size):
-            sl = x_1.slice(i)
-            pos = paddle.rand(x_1.pos[sl].shape, dtype=x_1.pos.dtype)
-            cell = paddle.to_tensor(_sample_cell(self._dataset_name), dtype=x_1.cell.dtype)
-            if self._mask_species:
-                species = paddle.zeros_like(x_1.species[sl])
-            elif self._mirror_species:
-                species = x_1.species[sl].clone()
-            else:
-                species = paddle.randint(1, 100, x_1.species[sl].shape, dtype=x_1.species[sl].dtype)
-            sampled = Structure(
-                cell=cell,
-                atomic_numbers=species,
-                pos=pos,
-                pos_is_fractional=True,
+    @staticmethod
+    def _model_species_cardinality(model: "OMATGCSPNetFull") -> int:
+        """Read the species cardinality from the model's node_embedding.
+
+        Paddle's ``nn.Embedding`` exposes the width as ``_num_embeddings``;
+        fall back to ``num_classes`` if the attribute is missing.
+        """
+        emb = model.node_embedding
+        return int(
+            getattr(emb, "_num_embeddings", None)
+            or getattr(emb, "num_embeddings", None)
+            or model.num_classes
+        )
+
+    def bind_model(self, model: "OMATGCSPNetFull") -> None:
+        """Bind the parent OMatG model so that max_atoms is resolved from it.
+
+        When ``max_atoms`` was not provided explicitly, the bound model's
+        species ``node_embedding`` width is used as the upper bound. This
+        tracks the actual species cardinality (``max_atoms`` for CSP, or
+        ``max_atoms + 1`` after ``enable_masked_species`` for DNG mask-token
+        schemes), so the sampler stays in sync without a separate
+        ``max_atoms`` argument. An explicit constructor ``max_atoms`` is
+        not overridden.
+        """
+        self._bound_model = model
+        if self._max_atoms is None:
+            self._max_atoms = self._model_species_cardinality(model)
+
+    def _resolve_max_atoms(self) -> int:
+        if self._max_atoms is not None:
+            return int(self._max_atoms)
+        if self._bound_model is not None:
+            self._max_atoms = self._model_species_cardinality(self._bound_model)
+            return self._max_atoms
+        return self._DEFAULT_MAX_ATOMS
+
+    def sample_p_0(self, x_1: Dict[str, paddle.Tensor]) -> Dict[str, paddle.Tensor]:
+        batch_size = len(x_1["n_atoms"])
+        ptr = (
+            x_1["ptr"]
+            if "ptr" in x_1
+            else paddle.concat(
+                [
+                    paddle.to_tensor([0], dtype="int64"),
+                    paddle.cumsum(x_1["n_atoms"], axis=0).cast("int64"),
+                ]
             )
-            structures.append(sampled)
-        return OMATGData.from_batch(structures, concatenate=True)
+        )
+        n_atoms_list = []
+        species_list = []
+        pos_list = []
+        cell_list = []
+        batch_indices = []
+        for i in range(batch_size):
+            sl = slice(int(ptr[i]), int(ptr[i + 1]))
+            pos = paddle.rand(x_1["pos"][sl].shape, dtype=x_1["pos"].dtype)
+            cell = paddle.to_tensor(
+                sample_lattice_cell(self._lattice_means, self._lattice_stds),
+                dtype=x_1["cell"].dtype,
+            )
+            if self._mask_species:
+                species = paddle.zeros_like(x_1["species"][sl])
+            elif self._mirror_species:
+                species = x_1["species"][sl].clone()
+            else:
+                species = paddle.randint(
+                    1,
+                    self._resolve_max_atoms() + 1,
+                    x_1["species"][sl].shape,
+                    dtype=x_1["species"][sl].dtype,
+                )
+            n = len(species)
+            n_atoms_list.append(paddle.to_tensor([n], dtype="int64"))
+            species_list.append(species)
+            pos_list.append(pos)
+            cell_list.append(cell.unsqueeze(0))
+            batch_indices.append(paddle.full([n], i, dtype="int64"))
+
+        n_atoms = paddle.concat(n_atoms_list)
+        return {
+            "n_atoms": n_atoms,
+            "species": paddle.concat(species_list),
+            "cell": paddle.concat(cell_list),
+            "pos": paddle.concat(pos_list),
+            "pos_is_fractional": paddle.ones([batch_size], dtype="bool"),
+            "batch": paddle.concat(batch_indices),
+            "ptr": paddle.concat(
+                [
+                    paddle.to_tensor([0], dtype="int64"),
+                    paddle.cumsum(n_atoms, axis=0).cast("int64"),
+                ]
+            ),
+        }
