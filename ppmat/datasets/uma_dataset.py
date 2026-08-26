@@ -20,164 +20,166 @@ import os.path as osp
 import zlib
 from typing import Any
 
+import lmdb
 import numpy as np
+from ase import Atoms
 from paddle.io import Dataset
-from pymatgen.io.ase import AseAtomsAdaptor
 
+from ppmat.datasets.build_structure import BuildStructure
 from ppmat.datasets.custom_data_type import ConcatNumpyWarper
 from ppmat.models import build_graph_converter
 from ppmat.utils import download
 from ppmat.utils import logger
 
-
-def _find_property(atoms, key: str):
-    if key in atoms.info:
-        return atoms.info[key]
-    if key in atoms.arrays:
-        return atoms.arrays[key]
-    results = getattr(getattr(atoms, "calc", None), "results", {})
-    return results.get(key) if isinstance(results, dict) else None
+UMA_DATASET_URL = (
+    "https://paddle-org.bj.bcebos.com/paddlematerials/" "datasets/UMA/uma_datasets.zip"
+)
 
 
-class UMAAseDBDataset(Dataset):
-    """Single-task atomistic dataset backed by one or more ASE databases."""
+class _UMAAseLMDBDataset(Dataset):
+    """Read one UMA split from compressed ASE-LMDB files."""
 
-    url: str | None = None
-    md5: str | None = None
+    url: str
+    dataset_subdir: str
 
     def __init__(
         self,
-        path: str,
         build_graph_cfg: dict[str, Any],
-        property_names: list[str] | tuple[str, ...] = ("energy", "forces"),
+        split: str,
+        path: str | None = None,
+        property_names: str | list[str] | tuple[str, ...] = ("energy", "forces"),
+        build_structure_cfg: dict[str, Any] | None = None,
         pattern: str = "*.aselmdb",
-        select_args: dict[str, Any] | None = None,
-        url: str | None = None,
-        md5: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
         energy_key: str = "energy",
         forces_key: str = "forces",
         transforms=None,
-        **kwargs,
     ) -> None:
         super().__init__()
-        del kwargs
-        if not osp.exists(path):
-            dataset_url = url or self.url
-            if dataset_url is None:
-                raise FileNotFoundError(
-                    f"Dataset path does not exist: {path}. Please configure a "
-                    "download URL or prepare the dataset first."
-                )
-            logger.message("The UMA dataset is not found. Downloading it now.")
-            downloaded = download.get_datasets_path_from_url(
-                dataset_url, md5 or self.md5
+        if split not in {"train", "val", "test"}:
+            raise ValueError(f"Unsupported split: {split}.")
+        if path is None or not osp.exists(path):
+            logger.message(
+                f"The UMA {self.dataset_subdir} {split} split is not found. "
+                "Downloading it now."
             )
-            candidate = osp.join(downloaded, osp.basename(path))
-            path = candidate if osp.exists(candidate) else downloaded
+            root_path = download.get_datasets_path_from_url(self.url)
+            path = self._get_downloaded_split_path(root_path, split)
 
-        self.paths = self._collect_paths(path, pattern)
+        self.paths = self._get_database_paths(path, pattern)
+        self.databases = [
+            lmdb.open(
+                database_path,
+                subdir=False,
+                readonly=True,
+                lock=False,
+                readahead=False,
+                meminit=False,
+            )
+            for database_path in self.paths
+        ]
+        self.indices = self._build_indices()
+        self.indices = self.indices[int(offset) :]
+        if limit is not None:
+            self.indices = self.indices[: int(limit)]
+        if not self.indices:
+            raise ValueError(f"No records found in {path}.")
+
+        if build_structure_cfg is None:
+            build_structure_cfg = {
+                "format": "ase_atoms",
+                "primitive": False,
+                "niggli": False,
+                "canocial": False,
+                "num_cpus": 1,
+            }
+        self.build_structure = BuildStructure(**build_structure_cfg)
+        self.graph_converter = build_graph_converter(build_graph_cfg)
+        if isinstance(property_names, str):
+            property_names = [property_names]
         self.property_names = tuple(property_names)
         self.energy_key = energy_key
         self.forces_key = forces_key
         self.transforms = transforms
-        self.graph_converter = build_graph_converter(build_graph_cfg)
 
-        select_args = dict(select_args or {})
-        offset = int(select_args.pop("offset", 0))
-        limit = select_args.pop("limit", None)
-        limit = None if limit is None else int(limit)
+    def _get_downloaded_split_path(self, root_path: str, split: str) -> str:
+        relative_path = self.get_split_relative_path(split)
+        candidates = (
+            osp.join(root_path, relative_path),
+            osp.join(root_path, "uma_datasets", relative_path),
+        )
+        for candidate in candidates:
+            if osp.exists(candidate):
+                return candidate
+        raise FileNotFoundError(
+            f"Cannot find UMA {self.dataset_subdir} {split} split under "
+            f"{root_path}. Expected {relative_path}."
+        )
 
-        self.databases = [self._connect(path) for path in self.paths]
-        self.indices: list[tuple[int, int]] = []
-        for db_index, database in enumerate(self.databases):
-            row_ids = self._row_ids(database, select_args)
-            self.indices.extend((db_index, row_id) for row_id in row_ids)
-        self.indices = self.indices[offset:]
-        if limit is not None:
-            self.indices = self.indices[:limit]
-        if not self.indices:
-            raise ValueError(f"No records found in {path}.")
+    def get_split_relative_path(self, split: str) -> str:
+        return osp.join(self.dataset_subdir, split)
 
     @staticmethod
-    def _collect_paths(path: str, pattern: str) -> list[str]:
-        if osp.isfile(path):
-            return [path]
-        paths = sorted(glob.glob(osp.join(path, "**", pattern), recursive=True))
+    def _get_database_paths(path: str, pattern: str) -> list[str]:
+        paths = (
+            [path] if osp.isfile(path) else sorted(glob.glob(osp.join(path, pattern)))
+        )
         if not paths:
-            paths = sorted(glob.glob(path))
-        if not paths:
-            raise FileNotFoundError(f"No ASE database found from {path}.")
+            raise FileNotFoundError(f"No ASE-LMDB file found in {path}.")
         return paths
 
-    @staticmethod
-    def _connect(path: str):
-        import ase.db
-
-        try:
-            return ase.db.connect(path, readonly=True, use_lock_file=False)
-        except (TypeError, ValueError):
-            try:
-                return ase.db.connect(path)
-            except ValueError:
-                import lmdb
-
-                env = lmdb.open(
-                    path,
-                    subdir=False,
-                    readonly=True,
-                    lock=False,
-                    readahead=False,
-                    meminit=False,
-                )
-                return {"env": env, "path": path}
-
-    @staticmethod
-    def _row_ids(database, select_args: dict[str, Any]) -> list[int]:
-        if isinstance(database, dict):
-            with database["env"].begin() as txn:
-                length = txn.get(b"length")
+    def _build_indices(self) -> list[tuple[int, int]]:
+        indices = []
+        for database_index, database in enumerate(self.databases):
+            with database.begin() as transaction:
+                length = transaction.get(b"length")
                 if length is not None:
-                    return list(range(1, int(length.decode()) + 1))
-                return sorted(
-                    int(key.decode())
-                    for key, _ in txn.cursor()
-                    if key.decode().isdigit()
-                )
-        if hasattr(database, "ids") and not select_args:
-            return [int(row_id) for row_id in database.ids]
-        return [int(row.id) for row in database.select(**select_args)]
+                    row_ids = range(1, int(length.decode()) + 1)
+                else:
+                    row_ids = sorted(
+                        int(key.decode())
+                        for key, _ in transaction.cursor()
+                        if key.isdigit()
+                    )
+            indices.extend((database_index, row_id) for row_id in row_ids)
+        return indices
 
-    @staticmethod
-    def _decode(value):
+    @classmethod
+    def _decode(cls, value):
         if isinstance(value, dict):
             if "__ndarray__" in value:
                 shape, dtype, data = value["__ndarray__"][:3]
                 return np.asarray(data, dtype=dtype).reshape(shape)
-            return {key: UMAAseDBDataset._decode(item) for key, item in value.items()}
+            return {key: cls._decode(item) for key, item in value.items()}
         if isinstance(value, list):
-            return [UMAAseDBDataset._decode(item) for item in value]
+            return [cls._decode(item) for item in value]
         return value
 
-    def _read(self, database, row_id: int):
-        if not isinstance(database, dict):
-            row = database._get_row(row_id)
-            atoms = row.toatoms()
-            if isinstance(row.data, dict):
-                atoms.info.update(row.data)
-            return atoms, row
-
-        with database["env"].begin() as txn:
-            raw = txn.get(str(row_id).encode())
+    def read_data(self, database_index: int, row_id: int) -> dict[str, Any]:
+        with self.databases[database_index].begin() as transaction:
+            raw = transaction.get(str(row_id).encode())
         if raw is None:
-            raise KeyError(f"Missing row {row_id} in {database['path']}.")
+            raise KeyError(f"Missing row {row_id} in {self.paths[database_index]}.")
         try:
             raw = zlib.decompress(raw)
         except zlib.error:
             pass
-        record = self._decode(json.loads(raw.decode()))
+        return self._decode(json.loads(raw.decode()))
 
-        from ase import Atoms
+    @staticmethod
+    def _get_property(record: dict[str, Any], key: str):
+        value = record.get(key)
+        if value is None and isinstance(record.get("data"), dict):
+            value = record["data"].get(key)
+        return value
 
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        database_index, row_id = self.indices[index]
+        record = self.read_data(database_index, row_id)
         atoms = Atoms(
             numbers=record["numbers"],
             positions=record["positions"],
@@ -185,45 +187,18 @@ class UMAAseDBDataset(Dataset):
             pbc=record.get("pbc", True),
             tags=record.get("tags"),
         )
-        if isinstance(record.get("data"), dict):
-            atoms.info.update(record["data"])
-        return atoms, record
-
-    @staticmethod
-    def _row_property(row, key: str):
-        if isinstance(row, dict):
-            value = row.get(key)
-            if value is None and isinstance(row.get("data"), dict):
-                value = row["data"].get(key)
-            return value
-        try:
-            return row.get(key)
-        except Exception:
-            return None
-
-    def __len__(self) -> int:
-        return len(self.indices)
-
-    def __getitem__(self, index: int) -> dict[str, Any]:
-        database_index, row_id = self.indices[index]
-        atoms, row = self._read(self.databases[database_index], row_id)
-        structure = AseAtomsAdaptor.get_structure(atoms)
-        graph = self.graph_converter(structure)
+        graph = self.graph_converter(self.build_structure(atoms))
         if graph is None:
             raise ValueError(f"Failed to build graph for sample {index}.")
 
         data: dict[str, Any] = {"graph": graph}
         if "energy" in self.property_names:
-            energy = self._row_property(row, self.energy_key)
-            if energy is None:
-                energy = _find_property(atoms, self.energy_key)
+            energy = self._get_property(record, self.energy_key)
             data["energy"] = np.asarray(
                 [np.nan if energy is None else energy], dtype="float32"
             )
         if "forces" in self.property_names:
-            forces = self._row_property(row, self.forces_key)
-            if forces is None:
-                forces = _find_property(atoms, self.forces_key)
+            forces = self._get_property(record, self.forces_key)
             if forces is None:
                 forces = np.full((len(atoms), 3), np.nan, dtype="float32")
             data["forces"] = ConcatNumpyWarper(forces).astype("float32")
@@ -234,6 +209,21 @@ class UMAAseDBDataset(Dataset):
 
     def __del__(self):
         for database in getattr(self, "databases", []):
-            target = database.get("env") if isinstance(database, dict) else database
-            if hasattr(target, "close"):
-                target.close()
+            database.close()
+
+
+class UMAOC20Dataset(_UMAAseLMDBDataset):
+    """Prepared OC20 S2EF data used by the UMA configuration."""
+
+    url = UMA_DATASET_URL
+    dataset_subdir = osp.join("oc20", "uma_aselmdb")
+
+
+class UMAOMat24Dataset(_UMAAseLMDBDataset):
+    """OMat24 rattled structures used by the UMA configuration."""
+
+    url = UMA_DATASET_URL
+    dataset_subdir = "omat24"
+
+    def get_split_relative_path(self, split: str) -> str:
+        return osp.join(self.dataset_subdir, split, "rattled-500")

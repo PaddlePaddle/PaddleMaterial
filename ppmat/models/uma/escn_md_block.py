@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import paddle
 
-from .nn.activation import GateActivation
+from ppmat.models.common.activation import GateActivation
+
 from .nn.layer_norm import EquivariantRMSNorm
 from .nn.so2_layers import SO2_Convolution
 from .nn.so3_layers import SO3_Linear

@@ -15,18 +15,16 @@ of this implementation.
 
 The supplied configurations use OMat24 rattled structures and OC20 S2EF
 structures with total-energy and atomic-force labels. Data are read through
-`UMAAseDBDataset`, converted to `pgl.Graph` by the PaddleMaterials
-`FindPointsInSpheres` graph converter, and batched by `DefaultCollator`.
+the corresponding `UMAOMat24Dataset` and `UMAOC20Dataset`, converted to
+`pgl.Graph`, and batched by `DefaultCollator`.
 
 | Field | Description |
 | :-- | :-- |
 | `energy` | Structure energy |
 | `forces` | Atomic forces with shape `[num_atoms, 3]` |
 
-Dataset download and checksum handling are implemented by the dataset class.
-The dataset path in a configuration may also point to an existing ASE database.
-The prepared OMat24 and OC20 data used by the supplied configurations are
-available in the [PaddleMaterials UMA dataset package](https://paddle-org.bj.bcebos.com/paddlematerials/datasets/UMA/uma_datasets.zip).
+The dataset classes automatically download the prepared data when a local path
+is not provided. A configuration may also point to an existing ASE-LMDB split.
 
 ## Models
 
@@ -34,25 +32,6 @@ The model embeds atomic numbers and radial edge distances, rotates spherical
 node features into the local edge frame, and updates them with eSCN SO(2)
 convolutions and equivariant interaction blocks. A scalar head predicts energy
 and an equivariant L=1 head predicts forces directly.
-
-| Component | PaddleMaterials entry |
-| :-- | :-- |
-| Model | `ppmat.models.uma.UMA` |
-| Dataset | `ppmat.datasets.UMAAseDBDataset` |
-| Graph converter | `ppmat.models.FindPointsInSpheres` |
-| Collator | `ppmat.datasets.collate_fn.DefaultCollator` |
-
-The model uses Paddle-format precomputed Wigner-d coefficients stored in
-`ppmat/models/uma/Jd.pdparams`.
-
-Pretrained model packages follow the PaddleMaterials `MODEL_REGISTRY` naming
-convention. Both packages are provided in the shared
-[UMA checkpoint archive](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/uma/uma_checkpoints.zip):
-
-| Registered model name | Configuration | Weight |
-| :-- | :-- | :-- |
-| `uma_oc20_200k_s2ef` | `uma_oc20_200k_s2ef.yaml` | `checkpoints/best.pdparams` |
-| `uma_omat24_r500_s2ef` | `uma_omat24_r500_s2ef.yaml` | `checkpoints/best.pdparams` |
 
 ## Results
 
@@ -95,7 +74,6 @@ python interatomic_potentials/train.py \
 ```bash
 python interatomic_potentials/predict.py \
   --model_name uma_omat24_r500_s2ef \
-  --weights_name best.pdparams \
   --input_path path/to/structure.cif \
   --input_format cif \
   --output_path results

@@ -77,10 +77,10 @@ Metric:
 Dataset:
   train:
     dataset:
-      __class_name__: UMAAseDBDataset
+      __class_name__: UMAOC20Dataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        path: ./data/oc20/uma_aselmdb/train/train.aselmdb
+        split: train
         property_names: ["energy", "forces"]
     loader:
       num_workers: 0
@@ -95,13 +95,12 @@ Dataset:
 
   val:
     dataset:
-      __class_name__: UMAAseDBDataset
+      __class_name__: UMAOC20Dataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        path: ./data/oc20/uma_aselmdb/val/val.aselmdb
+        split: val
         property_names: ["energy", "forces"]
-        select_args:
-          limit: 25000
+        limit: 25000
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -115,10 +114,10 @@ Dataset:
 
   test:
     dataset:
-      __class_name__: UMAAseDBDataset
+      __class_name__: UMAOC20Dataset
       __init_params__:
         build_graph_cfg: ${Global.graph_converter}
-        path: ./data/oc20/uma_aselmdb/test/test.aselmdb
+        split: test
         property_names: ["energy", "forces"]
     loader:
       num_workers: 0

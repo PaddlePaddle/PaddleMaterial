@@ -25,16 +25,68 @@ from pathlib import Path
 import numpy as np
 import paddle
 
-from ppmat.models.common.radial_basis import GaussianSmearing
 from ppmat.models.common.radial_basis import PolynomialEnvelope
 
 from .common.rotation import eulers_to_wigner
 from .common.rotation import init_edge_rot_euler_angles
 from .common.so3 import CoefficientMapping
 from .escn_md_block import ESCNMDInteractionBlock
-from .nn.embedding import EdgeDegreeEmbedding
 from .nn.layer_norm import EquivariantRMSNorm
+from .nn.radial import RadialMLP
 from .nn.so3_layers import SO3_Linear
+
+
+class _UMAGaussianSmearing(paddle.nn.Layer):
+    """Gaussian distance expansion with UMA's pretrained basis width."""
+
+    def __init__(self, start: float, stop: float, num_gaussians: int) -> None:
+        super().__init__()
+        offset = paddle.linspace(start, stop, num_gaussians)
+        spacing = 2.0 * (offset[1] - offset[0]).item()
+        self.coeff = -0.5 / spacing**2
+        self.register_buffer("offset", offset)
+
+    def forward(self, distances: paddle.Tensor) -> paddle.Tensor:
+        distances = distances.reshape([-1, 1]) - self.offset.reshape([1, -1])
+        return paddle.exp(self.coeff * paddle.pow(distances, 2))
+
+
+class EdgeDegreeEmbedding(paddle.nn.Layer):
+    """Initialize equivariant node features from radial edge features."""
+
+    def __init__(
+        self,
+        sphere_channels: int,
+        edge_channels_list: list[int],
+        rescale_factor: float,
+        mapping,
+    ) -> None:
+        super().__init__()
+        self.sphere_channels = sphere_channels
+        self.m0_components = mapping.m_size[0]
+        self.radial = RadialMLP(
+            [*edge_channels_list, self.m0_components * sphere_channels]
+        )
+        self.rescale_factor = rescale_factor
+
+    def forward(
+        self,
+        x: paddle.Tensor,
+        edge_features: paddle.Tensor,
+        edge_index: paddle.Tensor,
+        wigner_inv: paddle.Tensor,
+    ) -> paddle.Tensor:
+        radial = self.radial(edge_features).reshape(
+            [-1, self.m0_components, self.sphere_channels]
+        )
+        edge_embedding = paddle.bmm(
+            wigner_inv[:, :, : self.m0_components], radial
+        ).astype(x.dtype)
+        return x.index_add(
+            axis=0,
+            index=edge_index[1],
+            value=edge_embedding / self.rescale_factor,
+        )
 
 
 class UMA(paddle.nn.Layer):
@@ -87,7 +139,11 @@ class UMA(paddle.nn.Layer):
         self.register_buffer("coefficient_index", coefficient_index, persistable=False)
 
         self.atom_embedding = paddle.nn.Embedding(max_num_elements, sphere_channels)
-        self.distance_expansion = GaussianSmearing(0.0, cutoff, num_distance_basis, 2.0)
+        self.distance_expansion = _UMAGaussianSmearing(
+            0.0,
+            cutoff,
+            num_distance_basis,
+        )
         self.source_embedding = paddle.nn.Embedding(max_num_elements, edge_channels)
         self.target_embedding = paddle.nn.Embedding(max_num_elements, edge_channels)
         paddle.nn.initializer.Uniform(-0.001, 0.001)(self.source_embedding.weight)
@@ -99,8 +155,6 @@ class UMA(paddle.nn.Layer):
         ]
         self.edge_degree_embedding = EdgeDegreeEmbedding(
             sphere_channels,
-            lmax,
-            mmax,
             edge_channels_list,
             rescale_factor=5.0,
             mapping=self.mapping,

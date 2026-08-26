@@ -55,7 +55,8 @@ from ppmat.datasets.qm9_dataset import QM9Dataset  # noqa
 from ppmat.datasets.sfin_dataset import SFINDataset
 from ppmat.datasets.split_mptrj_data import none_to_zero
 from ppmat.datasets.transform import build_transforms
-from ppmat.datasets.uma_dataset import UMAAseDBDataset
+from ppmat.datasets.uma_dataset import UMAOC20Dataset
+from ppmat.datasets.uma_dataset import UMAOMat24Dataset
 from ppmat.utils import logger
 
 __all__ = [
@@ -80,7 +81,8 @@ __all__ = [
     "SFINDataset",
     "OMol25Dataset",
     "MD17Dataset",
-    "UMAAseDBDataset",
+    "UMAOC20Dataset",
+    "UMAOMat24Dataset",
 ]
 
 INFO_CLASS_REGISTRY: Dict[str, type] = {
@@ -189,9 +191,6 @@ def build_dataloader(cfg: Dict, vocab=None):
     num_workers = loader_config.pop("num_workers", 0)
     use_shared_memory = loader_config.pop("use_shared_memory", True)
 
-    # collate_obj = getattr(
-    #     collate_fn, loader_config.pop("collate_fn", "DefaultCollator")
-    # )()
     collate_fn_name = loader_config.pop("collate_fn", "DefaultCollator")
     collate_params = loader_config.pop("collate_params", {})
     collate_cls = getattr(collate_fn, collate_fn_name)
