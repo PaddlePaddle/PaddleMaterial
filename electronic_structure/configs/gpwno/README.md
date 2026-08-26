@@ -78,29 +78,17 @@ $$
 
 ---
 
-## Key Configuration
-
-The PaddleMaterials configs follow the original GPWNO hyper-parameter choices:
-
-| Dataset | Original model profile | Main differences |
-| --- | --- | --- |
-| MD17_EC | `GPWNO_MD.yaml` | `num_spherical=3`, `num_fourier=40`, `padding=4`, `use_max_cell=true`, `equivariant_frame=true`, `residual=false` |
-| QM9_EC | `GPWNO_QM9.yaml` | `num_spherical=4`, `num_fourier=40`, `padding=4`, `use_max_cell=true`, `equivariant_frame=true`, `residual=true` |
-| MP_EC | `GPWNO_pbc.yaml` | `pbc=true`, `num_fourier=20`, `padding=0`, `use_max_cell=false`, `max_cell_size=324`, `equivariant_frame=false` |
-
----
-
 ## Results
-
-The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane, **0.73%** for QM9, and **4.32%** for cubic MP. These are the reproduction targets. The runs below used shorter or otherwise incomplete training schedules and are retained only as implementation smoke-test results; they do not constitute a reproduction of the paper metrics. New checkpoint and log links should be published only after the corresponding test command reaches the paper target with the aligned step budget.
 
 <table>
     <thead>
         <tr>
             <th nowrap="nowrap">Model Name</th>
             <th nowrap="nowrap">Dataset</th>
-            <th nowrap="nowrap">Smoke-test NMAE</th>
+            <th nowrap="nowrap">Validation NMAE</th>
+            <th nowrap="nowrap">Test NMAE</th>
             <th nowrap="nowrap">Paper test NMAE</th>
+            <th nowrap="nowrap">Evaluation scope</th>
             <th nowrap="nowrap">GPUs</th>
             <th nowrap="nowrap">Training time</th>
             <th nowrap="nowrap">Config</th>
@@ -111,8 +99,10 @@ The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane
         <tr>
             <td nowrap="nowrap">gpwno_md17_benzene</td>
             <td nowrap="nowrap">MD17_EC_Benzene</td>
-            <td nowrap="nowrap">3.5567% (val, 10 epochs)</td>
+            <td nowrap="nowrap">3.5567%</td>
+            <td nowrap="nowrap">-</td>
             <td nowrap="nowrap">2.45%</td>
+            <td nowrap="nowrap">Validation only (10 epochs)</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">15hour33min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/gpwno/gpwno_md17_benzene.yaml">gpwno_md17_benzene</a></td>
@@ -121,8 +111,10 @@ The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane
         <tr>
             <td nowrap="nowrap">gpwno_md17_ethane</td>
             <td nowrap="nowrap">MD17_EC_Ethane</td>
-            <td nowrap="nowrap">4.8339% (test)</td>
+            <td nowrap="nowrap">4.8302%</td>
+            <td nowrap="nowrap">4.8339%</td>
             <td nowrap="nowrap">3.67%</td>
+            <td nowrap="nowrap">Validation and test</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">52hour18min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml">gpwno_md17_ethane</a></td>
@@ -131,8 +123,10 @@ The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane
         <tr>
             <td nowrap="nowrap">gpwno_qm9</td>
             <td nowrap="nowrap">QM9_EC</td>
-            <td nowrap="nowrap">7.4001% (test, 2 epochs)</td>
+            <td nowrap="nowrap">7.0865%</td>
+            <td nowrap="nowrap">7.4001%</td>
             <td nowrap="nowrap">0.73%</td>
+            <td nowrap="nowrap">Validation and test (2 epochs)</td>
             <td nowrap="nowrap">3</td>
             <td nowrap="nowrap">36hour33min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/gpwno/gpwno_qm9.yaml">gpwno_qm9</a></td>
@@ -141,8 +135,10 @@ The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane
         <tr>
             <td nowrap="nowrap">gpwno_mp</td>
             <td nowrap="nowrap">MP_EC (cubic)</td>
+            <td nowrap="nowrap">34.8928%</td>
             <td nowrap="nowrap">37.8910%</td>
             <td nowrap="nowrap">4.32%</td>
+            <td nowrap="nowrap">Validation and test</td>
             <td nowrap="nowrap">1</td>
             <td nowrap="nowrap">37hour46min</td>
             <td nowrap="nowrap"><a href="../../../electronic_structure/configs/gpwno/gpwno_mp.yaml">gpwno_mp</a></td>
@@ -151,29 +147,9 @@ The paper reports test NMAE of **2.45%** for MD benzene, **3.67%** for MD ethane
     </tbody>
 </table>
 
-Note: The MD17_EC_Benzene smoke-test result is from epoch-10 validation of `gpwno_md17_benzene_t_20260527_182931_s_42`; it is not directly comparable to the paper's test result.
-
-Note: The MD17_EC_Ethane smoke-test result is from the test set evaluation of `gpwno_md17_ethane_t_20260529_204928_s_42`. The final validation NMAE is `4.8302%`, and the final test NMAE is `4.8339%`.
-
-Note: The QM9_EC smoke-test result is from the two-epoch test set evaluation of `gpwno_qm9_t_20260626_164201_s_42`, which resumed from `gpwno_qm9_t_20260625_221247_s_42/checkpoints/latest`. The best validation NMAE is `7.0865%`, and the final test NMAE is `7.4001%`.
-
-Note: The MP_EC smoke-test result is from the test set evaluation of `gpwno_mp_resume_t_20260528_204842_s_42`. The final validation NMAE is `34.8928%`, and the final test NMAE is `37.8910%`.
-
 ---
 
 ## Command
-
-### Data preparation
-
-The datasets are downloaded automatically by the dataset classes when the configured root directory is missing and `auto_download` is enabled.
-
-```bash
-# MD17_EC will be prepared under ./data/data_md
-python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_md17_ethane.yaml Global.do_train=False Global.do_eval=False Global.do_test=True
-
-# QM9_EC will be prepared under ./data/data_qm9 after the dataset package is downloaded and extracted
-python electronic_structure/train.py -c electronic_structure/configs/gpwno/gpwno_qm9.yaml Global.do_train=False Global.do_eval=False Global.do_test=True
-```
 
 ### Training
 

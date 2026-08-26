@@ -14,8 +14,7 @@
 
 import paddle
 
-# from torch_scatter import scatter
-from paddle_scatter.scatter import scatter
+from ppmat.utils.scatter import scatter
 
 from ..common.e3nn import o3
 from ..common.e3nn.nn import Activation

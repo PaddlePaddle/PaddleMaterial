@@ -15,11 +15,9 @@
 import numpy as np
 import paddle
 
-# from ....paddle_geometric.paddle_geometric.nn import radius, radius_graph
-from paddle_scatter.scatter import scatter
-
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
+from ppmat.utils.scatter import scatter
 
 from ..common.e3nn import o3
 from ..common.e3nn.math import soft_one_hot_linspace
