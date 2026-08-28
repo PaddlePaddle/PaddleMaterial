@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Telescoping discrete lattice parameter sampler."""
-import dataclasses
 import math
 from typing import Tuple
 
@@ -76,42 +75,37 @@ def lattice_transform_and_log_prob_mask(
     return length_matrix, angle_matrix, angle_vector, log_prob_mask
 
 
-@dataclasses.dataclass
-class LatticeSamplerConfig:
-    input_dimension: int = 128
-    hidden_dimension: int = 256
-    min_lattice_length: float = 2.0
-    max_lattice_length: float = 133.0
-    min_lattice_angle: float = 60.0
-    max_lattice_angle: float = 135.0
-    gradient_attenuation_factor: float = 1.0
-    n_bins: int = 100
-    n_telescopes: int = 2
-    lattice_length_bin_embedder_fourier_scale: float = 2.0
-    lattice_angle_bin_embedder_fourier_scale: float = 1.0
-    lattice_length_embedder_fourier_scale: float = 5.0
-    lattice_angle_embedder_fourier_scale: float = 1.0
-    lattice_param_dim: int = 32
-    n_emb_layers: int = 2
-    space_group_encoder_hidden_channels: int = 256
-    num_fourier_frequencies: int = 128
-    length_fourier_output_dim: int = 512
-    angle_fourier_output_dim: int = 256
-    bin_fourier_output_dim: int = 256
-
-
 class TelescopingDiscreteLatticeSampler(nn.Layer):
     def __init__(
         self,
-        config: LatticeSamplerConfig,
         embedding_tools: "EmbeddingTools",
+        input_dimension: int = 128,
+        hidden_dimension: int = 256,
+        min_lattice_length: float = 2.0,
+        max_lattice_length: float = 133.0,
+        min_lattice_angle: float = 60.0,
+        max_lattice_angle: float = 135.0,
+        gradient_attenuation_factor: float = 1.0,
+        n_bins: int = 100,
+        n_telescopes: int = 2,
+        lattice_length_bin_embedder_fourier_scale: float = 2.0,
+        lattice_angle_bin_embedder_fourier_scale: float = 1.0,
+        lattice_length_embedder_fourier_scale: float = 5.0,
+        lattice_angle_embedder_fourier_scale: float = 1.0,
+        lattice_param_dim: int = 32,
+        n_emb_layers: int = 2,
+        space_group_encoder_hidden_channels: int = 256,
+        num_fourier_frequencies: int = 128,
+        length_fourier_output_dim: int = 512,
+        angle_fourier_output_dim: int = 256,
+        bin_fourier_output_dim: int = 256,
     ):
         super().__init__()
-        self.config = config
-        self.MAX_LATTICE_LENGTH = config.max_lattice_length
-        self.MIN_LATTICE_LENGTH = config.min_lattice_length
-        self.MAX_LATTICE_ANGLE = config.max_lattice_angle
-        self.MIN_LATTICE_ANGLE = config.min_lattice_angle
+        self.MAX_LATTICE_LENGTH = max_lattice_length
+        self.MIN_LATTICE_LENGTH = min_lattice_length
+        self.MAX_LATTICE_ANGLE = max_lattice_angle
+        self.MIN_LATTICE_ANGLE = min_lattice_angle
+        self.gradient_attenuation_factor = gradient_attenuation_factor
 
         bravais_data = [lattice_transform_and_log_prob_mask(sg) for sg in range(1, 231)]
         bravais_length_transforms = paddle.stack([d[0] for d in bravais_data], axis=0)
@@ -123,84 +117,84 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         self.register_buffer("bravais_angle_offsets", bravais_angle_offsets)
         self.register_buffer("bravais_log_prob_masks", bravais_log_prob_masks)
 
-        self.n_bins = self.config.n_bins
-        self.n_telescopes = self.config.n_telescopes
+        self.n_bins = n_bins
+        self.n_telescopes = n_telescopes
         self.min_bin_edge = -4.0
         self.max_bin_edge = 4.0
 
         self.space_group_encoder = SpaceGroupEncoder(
             embedding_tools=embedding_tools,
-            hidden_channels=self.config.space_group_encoder_hidden_channels,
-            space_group_embedding_dim=self.config.input_dimension,
+            hidden_channels=space_group_encoder_hidden_channels,
+            space_group_embedding_dim=input_dimension,
         )
 
-        self.lattice_param_dim = self.config.lattice_param_dim
+        self.lattice_param_dim = lattice_param_dim
 
         self.lattice_length_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=1,
-                num_fourier_frequencies=self.config.num_fourier_frequencies,
-                scale=self.config.lattice_length_embedder_fourier_scale,
-                num_layers=self.config.n_emb_layers,
-                output_dim=self.config.length_fourier_output_dim,
+                num_fourier_frequencies=num_fourier_frequencies,
+                scale=lattice_length_embedder_fourier_scale,
+                num_layers=n_emb_layers,
+                output_dim=length_fourier_output_dim,
                 use_bias=True,
             ),
-            nn.Linear(self.config.length_fourier_output_dim, self.lattice_param_dim),
+            nn.Linear(length_fourier_output_dim, self.lattice_param_dim),
             nn.Silu(),
         )
 
         self.lattice_angle_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=1,
-                num_fourier_frequencies=self.config.num_fourier_frequencies,
-                scale=self.config.lattice_angle_embedder_fourier_scale,
-                num_layers=self.config.n_emb_layers,
-                output_dim=self.config.angle_fourier_output_dim,
+                num_fourier_frequencies=num_fourier_frequencies,
+                scale=lattice_angle_embedder_fourier_scale,
+                num_layers=n_emb_layers,
+                output_dim=angle_fourier_output_dim,
                 use_bias=True,
             ),
-            nn.Linear(self.config.angle_fourier_output_dim, self.lattice_param_dim),
+            nn.Linear(angle_fourier_output_dim, self.lattice_param_dim),
             nn.Silu(),
         )
 
         self.length_bin_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=2,
-                num_fourier_frequencies=self.config.num_fourier_frequencies,
-                scale=self.config.lattice_length_bin_embedder_fourier_scale,
-                output_dim=self.config.bin_fourier_output_dim,
-                num_layers=self.config.n_emb_layers,
+                num_fourier_frequencies=num_fourier_frequencies,
+                scale=lattice_length_bin_embedder_fourier_scale,
+                output_dim=bin_fourier_output_dim,
+                num_layers=n_emb_layers,
                 use_bias=True,
             ),
-            nn.Linear(self.config.bin_fourier_output_dim, self.config.hidden_dimension),
+            nn.Linear(bin_fourier_output_dim, hidden_dimension),
             nn.Silu(),
         )
 
         self.angle_bin_embedder = nn.Sequential(
             FourierLinear(
                 input_dim=2,
-                num_fourier_frequencies=self.config.num_fourier_frequencies,
-                scale=self.config.lattice_angle_bin_embedder_fourier_scale,
-                output_dim=self.config.bin_fourier_output_dim,
-                num_layers=self.config.n_emb_layers,
+                num_fourier_frequencies=num_fourier_frequencies,
+                scale=lattice_angle_bin_embedder_fourier_scale,
+                output_dim=bin_fourier_output_dim,
+                num_layers=n_emb_layers,
                 use_bias=True,
             ),
-            nn.Linear(self.config.bin_fourier_output_dim, self.config.hidden_dimension),
+            nn.Linear(bin_fourier_output_dim, hidden_dimension),
             nn.Silu(),
         )
 
         self.bin_conditioning_info_dim = (
-            self.config.input_dimension
+            input_dimension
             + _NUM_LATTICE_PARAMS * self.lattice_param_dim
             + _NUM_LATTICE_PARAMS
         )
 
         self.bin_logit_head = nn.Sequential(
             nn.Linear(
-                self.config.hidden_dimension + self.bin_conditioning_info_dim,
-                self.config.hidden_dimension,
+                hidden_dimension + self.bin_conditioning_info_dim,
+                hidden_dimension,
             ),
             nn.Silu(),
-            nn.Linear(self.config.hidden_dimension, _NUM_LATTICE_PARAMS),
+            nn.Linear(hidden_dimension, _NUM_LATTICE_PARAMS),
         )
 
         self.register_buffer("grid_pts", paddle.linspace(0, 1, self.n_bins + 1))
@@ -484,11 +478,11 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         log_pfs = log_pfs[:, column_indices_reversed]
         log_pf_masks = self.bravais_log_prob_masks[space_group_indices]
         log_pfs = log_pfs * log_pf_masks
-        if self.config.gradient_attenuation_factor != 1.0:
+        if self.gradient_attenuation_factor != 1.0:
             log_pfs_detach = log_pfs.detach()
             log_pfs = (
-                self.config.gradient_attenuation_factor * log_pfs
-                - self.config.gradient_attenuation_factor * log_pfs_detach
+                self.gradient_attenuation_factor * log_pfs
+                - self.gradient_attenuation_factor * log_pfs_detach
                 + log_pfs_detach
             )
         return log_pfs
@@ -622,11 +616,11 @@ class TelescopingDiscreteLatticeSampler(nn.Layer):
         log_pf_masks = self.bravais_log_prob_masks[space_group_indices]
         log_pfs = (log_pfs * log_pf_masks).sum(axis=1)
 
-        if self.config.gradient_attenuation_factor != 1.0:
+        if self.gradient_attenuation_factor != 1.0:
             log_pfs_detach = log_pfs.detach()
             log_pfs = (
-                self.config.gradient_attenuation_factor * log_pfs
-                - self.config.gradient_attenuation_factor * log_pfs_detach
+                self.gradient_attenuation_factor * log_pfs
+                - self.gradient_attenuation_factor * log_pfs_detach
                 + log_pfs_detach
             )
 

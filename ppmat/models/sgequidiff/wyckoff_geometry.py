@@ -14,23 +14,16 @@
 
 """Wyckoff site / space group precomputed data for the asymmetric unit (ASU).
 
-``WyckoffData`` loads the bundled Wyckoff site JSON
-(``clean_wyckoffs_in_asu_v6.json``, shipped under ``ppmat.models.sgequidiff.vocabs``)
-and derives all tensors from it. Construct explicitly via ``WyckoffData()`` or
-``build_wyckoff_data()``; pass the instance to downstream modules.
-
-Runtime caches written to ``get_data_directory()`` (``$ASU_DATA_DIR`` >
-``data/data/`` > ``~/.asu_data``): ``wyckoff_shape_decomposition.pkl``
-(precomputed Wyckoff site shapes) and ``expected_score_norms_*.pdparams``
-(Monte Carlo sigma-norm tables, see ``ASUVESDEScheduler``).
+``WyckoffGeometry`` loads the Wyckoff site JSON payload (upstream
+``clean_wyckoffs_in_asu_v6.json``) from the registered ``sgequidiff``
+vocabulary (``vocab["asu_sites"]["data"]``, see ``ppmat.models.sgequidiff.vocabs``)
+and derives all tensors from it. Construct explicitly via ``WyckoffGeometry()`` or
+``build_wyckoff_geometry()``; pass the instance to downstream modules.
 """
 
-import json
 from fractions import Fraction
-from pathlib import Path
 from typing import Dict
 from typing import List
-from typing import Optional
 from typing import Tuple
 
 import numpy as np
@@ -41,8 +34,8 @@ from scipy.spatial import ConvexHull
 from ppmat.models.sgequidiff.sgequidiff_meta import MAX_WYCKOFF_POSITIONS
 from ppmat.models.sgequidiff.sgequidiff_meta import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
 from ppmat.models.sgequidiff.sgequidiff_meta import spgroup_data
-from ppmat.models.sgequidiff.vocabs import RESOURCE_DIR
-from ppmat.utils.asu_dataset_meta import resolve_asu_data_dir
+from ppmat.models.sgequidiff.vocabs import VOCAB_NAME
+from ppmat.vocab import build_vocab
 
 # Max number of geometric shapes a single Wyckoff site is decomposed into
 # (0D point / 1D line / 2D facet); used to pad shape-related tensors.
@@ -112,56 +105,9 @@ conventional_to_primitive_transforms: dict = {
     ),
 }
 
-_DATA_DIRECTORY: Optional[Path] = None
 
-
-def get_data_directory() -> Path:
-    """External data / cache directory (writable).
-    $ASU_DATA_DIR > project data > ~/.asu_data."""
-    global _DATA_DIRECTORY
-    if _DATA_DIRECTORY is None:
-        _DATA_DIRECTORY = resolve_asu_data_dir()
-    return _DATA_DIRECTORY
-
-
-def get_shape_decomp_dict_path() -> Path:
-    """Path of the cached wyckoff_shape_decomposition.pkl under the data directory."""
-    return get_data_directory() / "wyckoff_shape_decomposition.pkl"
-
-
-def _resolve_data_file(relative_path: str) -> Path:
-    """Locate a bundled model resource file (under ppmat.models.sgequidiff.vocabs)."""
-    return RESOURCE_DIR / relative_path
-
-
-def _ensure_wyckoff_shape_decomp() -> None:
-    """Ensure wyckoff_shape_decomposition.pkl exists
-    (generated from the bundled JSON).
-    """
-    shape_decomp_path = get_shape_decomp_dict_path()
-    if shape_decomp_path.exists():
-        return
-    from ppmat.models.sgequidiff.wyckoff_shape_decomp import build_shape_decomp_dict
-
-    asu_dict_path = _resolve_data_file(
-        "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
-    ).as_posix()
-    build_shape_decomp_dict(str(shape_decomp_path), asu_dict_path)
-
-
-def _load_wyckoff_sites_dict(json_filepath: str) -> dict:
-    """Load and normalize the Wyckoff site dictionary from a JSON file."""
-    try:
-        with open(json_filepath) as file:
-            wyckoffs_dict = json.load(file)
-    except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(
-            f"JSON format error in file {json_filepath}:\n{str(e)}\n"
-            f"Please check if data file is complete.",
-            doc=e.doc,
-            pos=e.pos,
-        ) from e
-
+def _load_wyckoff_sites_dict(wyckoffs_dict: dict) -> dict:
+    """Normalize the Wyckoff site dictionary (fractions and tensors)."""
     to_fraction = np.vectorize(Fraction)
     for space_group_number in wyckoffs_dict.keys():
         for wyckoff_letter in wyckoffs_dict[space_group_number][
@@ -195,15 +141,13 @@ def _load_wyckoff_sites_dict(json_filepath: str) -> dict:
     return wyckoffs_dict
 
 
-class WyckoffData:
+class WyckoffGeometry:
     """All Wyckoff/ASU precomputed data. Built once under the global resource lock."""
 
-    def __init__(self) -> None:
-        self.asu_wyckoff_dict = _load_wyckoff_sites_dict(
-            _resolve_data_file(
-                "wyckoff_positions/clean_wyckoffs_in_asu_v6.json"
-            ).as_posix()
-        )
+    def __init__(self, vocab: dict | None = None) -> None:
+        if vocab is None:
+            vocab = build_vocab(VOCAB_NAME)
+        self.asu_wyckoff_dict = _load_wyckoff_sites_dict(vocab["asu_sites"]["data"])
 
         self._build_symmetry_ops()
         self._build_conventional_to_primitive_matrices()
@@ -530,6 +474,6 @@ class WyckoffData:
         self.padded_hull_equations_mask = mask_padded_hull_equations
 
 
-def build_wyckoff_data() -> WyckoffData:
-    """Build WyckoffData explicitly. No global singleton; callers own the instance."""
-    return WyckoffData()
+def build_wyckoff_geometry(vocab: dict | None = None) -> WyckoffGeometry:
+    """Build WyckoffGeometry explicitly. No global singleton; callers own the instance."""
+    return WyckoffGeometry(vocab)

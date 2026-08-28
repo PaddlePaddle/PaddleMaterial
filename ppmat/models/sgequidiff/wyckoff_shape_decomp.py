@@ -12,16 +12,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Wyckoff shape decomposition dict builder using scipy instead of meshpy."""
-import json
+"""Wyckoff shape decomposition cache builder and cache-location management.
+
+Builds ``wyckoff_shape_decomposition.pkl`` from the registered ASU sites
+vocabulary role (see ``ppmat.vocab.build_vocab``) and manages the on-disk
+cache directory shared by the SGEquiDiff derived-cache files.
+"""
+
+import os
 import pickle
 from fractions import Fraction
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from scipy.spatial import ConvexHull
 
+from ppmat.models.sgequidiff.vocabs import VOCAB_NAME
 from ppmat.utils import logger
+from ppmat.vocab import build_vocab
+
+_DATA_DIRECTORY: Optional[Path] = None
+
+
+def get_data_directory() -> Path:
+    """External data / cache directory (writable).
+    $ASU_DATA_DIR > project data > ~/.asu_data."""
+    global _DATA_DIRECTORY
+    if _DATA_DIRECTORY is None:
+        # Deferred import: avoids pulling ppmat.datasets (and its
+        # models-registered dataset modules) during package initialization.
+        from ppmat.datasets.asu_dataset import resolve_asu_data_dir
+
+        _DATA_DIRECTORY = resolve_asu_data_dir()
+    return _DATA_DIRECTORY
+
+
+def get_shape_decomp_dict_path() -> Path:
+    """Path of the cached wyckoff_shape_decomposition.pkl under the data directory."""
+    return get_data_directory() / "wyckoff_shape_decomposition.pkl"
+
+
+def ensure_wyckoff_shape_decomp() -> None:
+    """Ensure wyckoff_shape_decomposition.pkl exists
+    (generated from the registered ASU sites vocabulary role).
+    """
+    shape_decomp_path = get_shape_decomp_dict_path()
+    if shape_decomp_path.exists():
+        return
+
+    asu_dict = build_vocab(VOCAB_NAME)["asu_sites"]["data"]
+    build_shape_decomp_dict(str(shape_decomp_path), asu_dict)
 
 
 def _to_array(region) -> np.ndarray:
@@ -78,7 +119,7 @@ def _compute_3d_convex_hull_volume(vertices: np.ndarray) -> float:
 
 def build_shape_decomp_dict(
     output_path: str,
-    asu_dict_path: str,
+    asu_dict: dict,
 ) -> None:
     """Build Wyckoff shape decomposition dict and persist to pickle."""
     output = Path(output_path)
@@ -88,9 +129,6 @@ def build_shape_decomp_dict(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"[wyckoff_shape_decomp] building {output_path} ...")
-
-    with open(asu_dict_path, "r") as f:
-        asu_dict = json.load(f)
 
     shape_decomposition_dict = {}
 

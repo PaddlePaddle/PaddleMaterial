@@ -29,6 +29,7 @@ from ppmat.trainer.base_trainer import BaseTrainer
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils.io import append_timestamp_to_output_dir
+from ppmat.vocab import build_vocab
 
 if dist.get_world_size() > 1:
     fleet.init(is_collective=True)
@@ -71,8 +72,9 @@ if __name__ == "__main__":
     logger.info(f"Set random seed to {seed}")
 
     # build model from config
+    vocab = build_vocab(config.get("Vocabulary"))
     model_cfg = config["Model"]
-    model = build_model(model_cfg)
+    model = build_model(model_cfg, vocab=vocab)
 
     # build dataloader from config
     set_signal_handlers()

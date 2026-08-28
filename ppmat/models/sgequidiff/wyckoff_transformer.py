@@ -15,7 +15,6 @@
 """Wyckoff and Element Transformer: autoregressive sampling of Wyckoff
 positions and elements.
 """
-import dataclasses
 import math
 
 import paddle
@@ -30,8 +29,8 @@ from ppmat.models.sgequidiff.sgequidiff_meta import max_atoms_per_dataset
 from ppmat.models.sgequidiff.shared import FourierLinear
 from ppmat.models.sgequidiff.shared import SpaceGroupEncoder
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
-from ppmat.models.sgequidiff.wyckoff_data import WyckoffData
-from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
+from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
 
 # Number of lattice parameters per crystal: 3 lengths + 3 angles.
 _NUM_LATTICE_PARAMS: int = 6
@@ -206,34 +205,29 @@ class TransformerDecoderLayer(nn.Layer):
         return self.dropout(x)
 
 
-@dataclasses.dataclass
-class WyckoffElementTransformerConfig:
-    hidden_dim: int = 256
-    dataset_name: str = "mp_20"
-    num_heads: int = 2
-    num_hidden_layers: int = 4
-    dropout_rate: float = 0.1
-    lattice_fourier_num_frequencies: int = 64
-
-
 class WyckoffElementTransformer(nn.Layer):
     """Weight layout matches the released checkpoint format exactly."""
 
     def __init__(
         self,
-        config: WyckoffElementTransformerConfig,
-        wyckoff_data: "WyckoffData",
+        wyckoff_geometry: "WyckoffGeometry",
         embedding_tools: "EmbeddingTools",
+        hidden_dim: int = 256,
+        dataset_name: str = "mp_20",
+        num_heads: int = 2,
+        num_hidden_layers: int = 4,
+        dropout_rate: float = 0.1,
+        lattice_fourier_num_frequencies: int = 64,
     ):
         super().__init__()
-        self.config = config
-        self.hidden_dim = config.hidden_dim
-        self.num_heads = config.num_heads
-        self.num_hidden_layers = config.num_hidden_layers
-        self.dropout_rate = config.dropout_rate
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.num_hidden_layers = num_hidden_layers
+        self.dropout_rate = dropout_rate
+        self.dataset_name = dataset_name
 
         self.embedding_tools = embedding_tools
-        self.wyckoff_data = wyckoff_data
+        self.wyckoff_geometry = wyckoff_geometry
 
         assert self.hidden_dim % 2 == 0
         half_dim = int(self.hidden_dim / 2)
@@ -268,8 +262,8 @@ class WyckoffElementTransformer(nn.Layer):
 
         self.space_group_and_lattice_emb = SpaceGroupAndLatticeEncoder(
             self.hidden_dim,
-            config.dataset_name,
-            lattice_fourier_num_frequencies=config.lattice_fourier_num_frequencies,
+            dataset_name,
+            lattice_fourier_num_frequencies=lattice_fourier_num_frequencies,
             embedding_tools=embedding_tools,
         )
 
@@ -332,7 +326,7 @@ class WyckoffElementTransformer(nn.Layer):
             [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS], dtype="bool"
         )
         for sg_num in range(1, 231):
-            sg_dict = self.wyckoff_data.asu_wyckoff_dict[str(sg_num)]
+            sg_dict = self.wyckoff_geometry.asu_wyckoff_dict[str(sg_num)]
             sg_wyckoff_letters = sg_dict["ordered_wyckoff_letters"]
             _valid_mask[sg_num - 1, : len(sg_wyckoff_letters)] = True
             for wyckoff_index, wyckoff_letter in enumerate(sg_wyckoff_letters):
@@ -351,7 +345,7 @@ class WyckoffElementTransformer(nn.Layer):
     ):
         """Autoregressively sample Wyckoff positions and elements."""
         assert temperature > 0.0
-        max_allowed_atoms = max_atoms_per_dataset[self.config.dataset_name]
+        max_allowed_atoms = max_atoms_per_dataset[self.dataset_name]
         n_crystals = space_group_indices.shape[0]
 
         global_context = self.space_group_and_lattice_emb(

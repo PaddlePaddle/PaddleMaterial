@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from typing import Any
 from typing import Dict
 from typing import List
@@ -30,19 +29,14 @@ from paddle.distribution import Categorical
 from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
 from ppmat.models.sgequidiff.asu_math import asu_to_pymatgen_structure
 from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
-from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
-from ppmat.models.sgequidiff.drift_modules import CSPNetConfig
-from ppmat.models.sgequidiff.drift_modules import GNNConfig
-from ppmat.models.sgequidiff.lattice_sampler import LatticeSamplerConfig
 from ppmat.models.sgequidiff.lattice_sampler import TelescopingDiscreteLatticeSampler
 from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
 from ppmat.models.sgequidiff.vocabs import build_embedding_tools
-from ppmat.models.sgequidiff.wyckoff_data import build_wyckoff_data
+from ppmat.models.sgequidiff.wyckoff_geometry import build_wyckoff_geometry
 from ppmat.models.sgequidiff.wyckoff_transformer import WyckoffElementTransformer
-from ppmat.models.sgequidiff.wyckoff_transformer import WyckoffElementTransformerConfig
 from ppmat.utils import logger
-from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
-from ppmat.utils.asu_dataset_meta import chemical_symbols
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
+from ppmat.models.sgequidiff.sgequidiff_meta import chemical_symbols
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
@@ -81,19 +75,6 @@ class SpaceGroupSampler(nn.Layer):
         return normed_logits[space_group_indices]
 
 
-@dataclasses.dataclass
-class SGEQuiDiffConfig:
-    diffusion_model_config: EquivariantDiffusionModelConfig
-    lattice_model_config: LatticeSamplerConfig
-    transformer_config: WyckoffElementTransformerConfig
-    lattice_length_noise: Optional[float] = 0.0
-    lattice_angle_noise: Optional[float] = 0.0
-    space_group_grad_weight: Optional[float] = 1.0
-    lattice_grad_weight: Optional[float] = 1.0
-    wyckoff_element_grad_weight: Optional[float] = 1.0
-    frac_coord_grad_weight: Optional[float] = 1.0
-
-
 class SGEQuiDiff(nn.Layer):
     """Full crystal sampler combining all submodules.
 
@@ -115,8 +96,8 @@ class SGEQuiDiff(nn.Layer):
         model_type: Coordinate drift backbone type (``"gnn"``/``"mlp"``/``"cspnet"``).
         time_emb_dim: Time embedding dimension.
         num_plane_wave_freqs: Number of plane wave frequencies.
-        gnn_config: GNN backbone config (dict or ``GNNConfig``).
-        cspnet_config: CSPNet backbone config (dict or ``CSPNetConfig``).
+        gnn_config: GNN backbone overrides (plain dict of constructor kwargs).
+        cspnet_config: CSPNet backbone overrides (plain dict of constructor kwargs).
         noise_scheduler_cfg: Noise scheduler config dict.
         lattice_length_noise: Noise added to lattice lengths during training.
         lattice_angle_noise: Noise added to lattice angles during training.
@@ -124,12 +105,12 @@ class SGEQuiDiff(nn.Layer):
         lattice_grad_weight: Loss weight for the lattice log-prob.
         wyckoff_element_grad_weight: Loss weight for the wyckoff/element log-prob.
         frac_coord_grad_weight: Loss weight for the coordinate score matching.
-        lattice_sampler_config: Overrides for ``LatticeSamplerConfig`` fields.
-            Keys must be valid field names of ``LatticeSamplerConfig``; unknown
-            keys raise a ``TypeError``. ``None`` uses the dataclass defaults,
-            which match the released checkpoint structure.
-        wyckoff_element_transformer_config: Overrides for
-            ``WyckoffElementTransformerConfig`` fields, same semantics as
+        lattice_sampler_config: Overrides for the lattice sampler constructor
+            fields. Keys must be valid constructor parameter names; unknown
+            keys raise a ``TypeError``. ``None`` uses the defaults, which
+            match the released checkpoint structure.
+        wyckoff_element_transformer_config: Overrides for the
+            Wyckoff-element transformer constructor fields, same semantics as
             ``lattice_sampler_config``.
     """
 
@@ -157,6 +138,7 @@ class SGEQuiDiff(nn.Layer):
         frac_coord_grad_weight: Optional[float] = 1.0,
         lattice_sampler_config: Optional[Dict[str, Any]] = None,
         wyckoff_element_transformer_config: Optional[Dict[str, Any]] = None,
+        vocab: Optional[dict] = None,
     ):
         super().__init__()
         self.dataset_name = dataset_name
@@ -168,32 +150,8 @@ class SGEQuiDiff(nn.Layer):
         )
 
         if gnn_config is None:
-            gnn_cfg = GNNConfig(dataset_name=dataset_name)
-        elif isinstance(gnn_config, dict):
-            gnn_cfg = GNNConfig(**gnn_config)
-        else:
-            gnn_cfg = gnn_config
+            gnn_config = {"dataset_name": dataset_name}
 
-        if cspnet_config is None:
-            cspnet_cfg = CSPNetConfig()
-        elif isinstance(cspnet_config, dict):
-            cspnet_cfg = CSPNetConfig(**cspnet_config)
-        else:
-            cspnet_cfg = cspnet_config
-
-        diff_cfg = EquivariantDiffusionModelConfig(
-            model_type=model_type,
-            num_timesteps=num_timesteps,
-            noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
-            num_lattice_translations=num_lattice_translations,
-            sigma_min=sigma_min,
-            sigma_max=sigma_max,
-            time_emb_dim=time_emb_dim,
-            num_plane_wave_freqs=num_plane_wave_freqs,
-            gnn_config=gnn_cfg,
-            cspnet_config=cspnet_cfg,
-            noise_scheduler_cfg=noise_scheduler_cfg,
-        )
         lattice_kwargs = {
             "min_lattice_length": lr["min_lattice_length"],
             "max_lattice_length": lr["max_lattice_length"],
@@ -202,42 +160,45 @@ class SGEQuiDiff(nn.Layer):
         }
         if lattice_sampler_config is not None:
             lattice_kwargs.update(lattice_sampler_config)
-        lattice_cfg = LatticeSamplerConfig(**lattice_kwargs)
         we_kwargs = {"dataset_name": dataset_name}
         if wyckoff_element_transformer_config is not None:
             we_kwargs.update(wyckoff_element_transformer_config)
-        we_cfg = WyckoffElementTransformerConfig(**we_kwargs)
-        sampler_cfg = SGEQuiDiffConfig(
-            diffusion_model_config=diff_cfg,
-            lattice_model_config=lattice_cfg,
-            transformer_config=we_cfg,
-            lattice_length_noise=lattice_length_noise,
-            lattice_angle_noise=lattice_angle_noise,
-            space_group_grad_weight=space_group_grad_weight,
-            lattice_grad_weight=lattice_grad_weight,
-            wyckoff_element_grad_weight=wyckoff_element_grad_weight,
-            frac_coord_grad_weight=frac_coord_grad_weight,
-        )
-        self.config = sampler_cfg
+
+        self.lattice_length_noise = lattice_length_noise
+        self.lattice_angle_noise = lattice_angle_noise
+        self.space_group_grad_weight = space_group_grad_weight
+        self.lattice_grad_weight = lattice_grad_weight
+        self.wyckoff_element_grad_weight = wyckoff_element_grad_weight
+        self.frac_coord_grad_weight = frac_coord_grad_weight
 
         # Build static resources explicitly (no global singletons).
-        self.wyckoff_data = build_wyckoff_data()
-        self.embedding_tools = build_embedding_tools()
+        self.wyckoff_geometry = build_wyckoff_geometry(vocab)
+        self.embedding_tools = build_embedding_tools(vocab)
 
         self.atom_coord_diffusion_model = EquivariantDiffusionModel(
-            sampler_cfg.diffusion_model_config,
-            wyckoff_data=self.wyckoff_data,
+            model_type=model_type,
+            num_timesteps=num_timesteps,
+            noise_scheduler_num_monte_carlo_samples=noise_scheduler_num_monte_carlo_samples,
+            num_lattice_translations=num_lattice_translations,
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            time_emb_dim=time_emb_dim,
+            num_plane_wave_freqs=num_plane_wave_freqs,
+            gnn_config=gnn_config,
+            cspnet_config=cspnet_config,
+            noise_scheduler_cfg=noise_scheduler_cfg,
+            wyckoff_geometry=self.wyckoff_geometry,
             embedding_tools=self.embedding_tools,
         )
         self.space_group_sampler = SpaceGroupSampler()
         self.lattice_sampler = TelescopingDiscreteLatticeSampler(
-            sampler_cfg.lattice_model_config,
             embedding_tools=self.embedding_tools,
+            **lattice_kwargs,
         )
         self.wyckoff_and_element_sampler = WyckoffElementTransformer(
-            sampler_cfg.transformer_config,
-            wyckoff_data=self.wyckoff_data,
+            wyckoff_geometry=self.wyckoff_geometry,
             embedding_tools=self.embedding_tools,
+            **we_kwargs,
         )
 
         logger.info(
@@ -306,7 +267,7 @@ class SGEQuiDiff(nn.Layer):
         asu_frac_coords = _as_tensor(batch_data["frac_coords"], paddle.float32)
 
         if self.training and (
-            self.config.lattice_length_noise > 0 or self.config.lattice_angle_noise > 0
+            self.lattice_length_noise > 0 or self.lattice_angle_noise > 0
         ):
             (
                 noisy_lattice_lengths,
@@ -460,12 +421,12 @@ class SGEQuiDiff(nn.Layer):
         )
         lattice_noise_magnitude = paddle.to_tensor(
             [
-                self.config.lattice_length_noise,
-                self.config.lattice_length_noise,
-                self.config.lattice_length_noise,
-                self.config.lattice_angle_noise,
-                self.config.lattice_angle_noise,
-                self.config.lattice_angle_noise,
+                self.lattice_length_noise,
+                self.lattice_length_noise,
+                self.lattice_length_noise,
+                self.lattice_angle_noise,
+                self.lattice_angle_noise,
+                self.lattice_angle_noise,
             ],
             dtype=paddle.float32,
         )
@@ -613,33 +574,33 @@ class SGEQuiDiff(nn.Layer):
         detached_wyckoffs_log_prob = wyckoffs_log_prob.detach()
         detached_score_matching_loss = score_matching_loss.detach()
         space_group_log_prob = (
-            self.config.space_group_grad_weight * space_group_log_prob
-            - self.config.space_group_grad_weight * detached_space_group_log_prob
+            self.space_group_grad_weight * space_group_log_prob
+            - self.space_group_grad_weight * detached_space_group_log_prob
             + detached_space_group_log_prob
         )
         lattice_log_prob = (
-            self.config.lattice_grad_weight * lattice_log_prob
-            - self.config.lattice_grad_weight * detached_lattice_log_prob
+            self.lattice_grad_weight * lattice_log_prob
+            - self.lattice_grad_weight * detached_lattice_log_prob
             + detached_lattice_log_prob
         )
         termination_log_prob = (
-            self.config.wyckoff_element_grad_weight * termination_log_prob
-            - self.config.wyckoff_element_grad_weight * detached_termination_log_prob
+            self.wyckoff_element_grad_weight * termination_log_prob
+            - self.wyckoff_element_grad_weight * detached_termination_log_prob
             + detached_termination_log_prob
         )
         elements_log_prob = (
-            self.config.wyckoff_element_grad_weight * elements_log_prob
-            - self.config.wyckoff_element_grad_weight * detached_elements_log_prob
+            self.wyckoff_element_grad_weight * elements_log_prob
+            - self.wyckoff_element_grad_weight * detached_elements_log_prob
             + detached_elements_log_prob
         )
         wyckoffs_log_prob = (
-            self.config.wyckoff_element_grad_weight * wyckoffs_log_prob
-            - self.config.wyckoff_element_grad_weight * detached_wyckoffs_log_prob
+            self.wyckoff_element_grad_weight * wyckoffs_log_prob
+            - self.wyckoff_element_grad_weight * detached_wyckoffs_log_prob
             + detached_wyckoffs_log_prob
         )
         score_matching_loss = (
-            self.config.frac_coord_grad_weight * score_matching_loss
-            - self.config.frac_coord_grad_weight * detached_score_matching_loss
+            self.frac_coord_grad_weight * score_matching_loss
+            - self.frac_coord_grad_weight * detached_score_matching_loss
             + detached_score_matching_loss
         )
         return (
@@ -848,7 +809,7 @@ class SGEQuiDiff(nn.Layer):
                 wyckoff_indices=crystal.wyckoff_indices[mask],
                 conventional_frac_coords=crystal.conventional_frac_coords[mask],
             )
-            structure = asu_to_pymatgen_structure(filtered_crystal, self.wyckoff_data)
+            structure = asu_to_pymatgen_structure(filtered_crystal, self.wyckoff_geometry)
 
             result.append(
                 {

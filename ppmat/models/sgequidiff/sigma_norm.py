@@ -29,21 +29,22 @@ import pickle
 import numpy as np
 import paddle
 
-import ppmat.models.sgequidiff.wyckoff_data as wyckoff_data_module
 from ppmat.models.sgequidiff.asu_crystal import sample_point_in_asu_wyckoff_site
 from ppmat.models.sgequidiff.asu_math import d_log_p_asu_wrapped_normal
 from ppmat.models.sgequidiff.asu_math import get_space_group_ops_and_conventional_atoms
 from ppmat.models.sgequidiff.sgequidiff_meta import MAX_WYCKOFF_POSITIONS
 from ppmat.models.sgequidiff.sgequidiff_meta import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
-from ppmat.models.sgequidiff.wyckoff_data import WyckoffData
-from ppmat.models.sgequidiff.wyckoff_data import _ensure_wyckoff_shape_decomp
+from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
+from ppmat.models.sgequidiff.wyckoff_shape_decomp import ensure_wyckoff_shape_decomp
+from ppmat.models.sgequidiff.wyckoff_shape_decomp import get_data_directory
+from ppmat.models.sgequidiff.wyckoff_shape_decomp import get_shape_decomp_dict_path
 from ppmat.utils import logger
 
 
 @paddle.no_grad()
 def compute_sigma_norms(
     num_timesteps: int,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
     sigma_min: float = 0.002,
     sigma_max: float = 0.5,
     num_lattice_translations: int = 3,
@@ -83,7 +84,7 @@ def compute_sigma_norms(
     if sigma_norm_type == "asu_wrapped":
         return _sigma_norm_asu_wrapped(
             sigmas,
-            wyckoff_data,
+            wyckoff_geometry,
             num_lattice_translations,
             num_monte_carlo_samples,
         )
@@ -93,7 +94,7 @@ def compute_sigma_norms(
 @paddle.no_grad()
 def _sigma_norm_asu_wrapped(
     sigmas: paddle.Tensor,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
     num_lattice_translations: int,
     num_monte_carlo_samples: int = 2_500,
 ) -> paddle.Tensor:
@@ -106,7 +107,7 @@ def _sigma_norm_asu_wrapped(
         f"_T{num_timesteps}_{num_monte_carlo_samples}MCsamples"
         f"_{num_lattice_translations}LatticeTranslations.pdparams"
     )
-    cache_path = wyckoff_data_module.get_data_directory() / cache_name
+    cache_path = get_data_directory() / cache_name
     logger.info(f"Checking cache: {cache_path}")
     logger.info(f"Cache exists: {cache_path.exists()}")
     if cache_path.exists():
@@ -116,14 +117,11 @@ def _sigma_norm_asu_wrapped(
         return sigma_norms
     logger.info("Cache not found, computing sigma_norms...")
 
-    _ensure_wyckoff_shape_decomp()
-    with open(
-        wyckoff_data_module.get_data_directory() / "wyckoff_shape_decomposition.pkl",
-        "rb",
-    ) as f:
+    ensure_wyckoff_shape_decomp()
+    with open(str(get_shape_decomp_dict_path()), "rb") as f:
         wyckoff_shape_decomp_dict = pickle.load(f)
 
-    asu_wyckoff_dict = wyckoff_data.asu_wyckoff_dict
+    asu_wyckoff_dict = wyckoff_geometry.asu_wyckoff_dict
     sigma_norms = paddle.zeros(
         [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS, num_timesteps],
         dtype=paddle.float32,
@@ -138,7 +136,7 @@ def _sigma_norm_asu_wrapped(
             wyckoff_letters=wyckoff_letters,
             dictionary_of_wyckoffs_in_asu=asu_wyckoff_dict,
             dictionary_of_wyckoff_shape_decompositions=wyckoff_shape_decomp_dict,
-            hull_equations_3d=wyckoff_data.asu_hull_equations,
+            hull_equations_3d=wyckoff_geometry.asu_hull_equations,
             n_samples_per_wyckoff=num_monte_carlo_samples,
             return_sampled_wyckoff_shape_indices=True,
         )
@@ -157,7 +155,7 @@ def _sigma_norm_asu_wrapped(
                 n_atoms_per_xtal=paddle.to_tensor(
                     [num_monte_carlo_samples], dtype=paddle.int64
                 ),
-                wyckoff_data=wyckoff_data,
+                wyckoff_geometry=wyckoff_geometry,
             )
             map_conv_to_asu = sg_ops.map_conventional_to_asu_atom
             orbited_x = sg_ops.conventional_frac_coords

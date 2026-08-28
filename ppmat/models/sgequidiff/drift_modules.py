@@ -14,7 +14,6 @@
 
 """Non-equivariant drift backbones: GNN (PBC message passing), CSPNet (from
 DiffCSP), and TorusMLP."""
-import dataclasses
 import math
 from contextlib import nullcontext
 from typing import Optional
@@ -32,8 +31,8 @@ from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
 from ppmat.models.sgequidiff.shared import GraphNorm
 from ppmat.models.sgequidiff.shared import VariancePreservingAggregation
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
-from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
-from ppmat.utils.crystal import build_pbc_graph
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
+from ppmat.models.common.graph_converter import build_pbc_graph
 from ppmat.utils.crystal import frac_to_cart_coords
 from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.scatter import scatter as paddle_scatter
@@ -320,70 +319,64 @@ class InteractionBlock(nn.Layer):
         return self.skipinit_gain * h_agg
 
 
-@dataclasses.dataclass
-class GNNConfig:
-    num_plane_wave_freqs: int = 96
-    num_cartesian_distance_gaussians: int = 96
-    edge_hidden_dim: int = 128
-    atom_hidden_dim: int = 256
-    use_vpa: bool = True
-    use_graph_norm: bool = True
-    num_msg_pass_steps: int = 5
-    cutoff: float = 10.0
-    use_frac_coords_in_node_emb: bool = True
-    dataset_name: str = "mp_20"
-
-
 class GNN(nn.Layer):
     """GNN non-equivariant drift module."""
 
     def __init__(
         self,
-        config: GNNConfig,
         time_embedder: SinusoidalTimeEmbeddings,
         embedding_tools: "EmbeddingTools",
+        num_plane_wave_freqs: int = 96,
+        num_cartesian_distance_gaussians: int = 96,
+        edge_hidden_dim: int = 128,
+        atom_hidden_dim: int = 256,
+        use_vpa: bool = True,
+        use_graph_norm: bool = True,
+        num_msg_pass_steps: int = 5,
+        cutoff: float = 10.0,
+        use_frac_coords_in_node_emb: bool = True,
+        dataset_name: str = "mp_20",
     ):
         super().__init__()
-        self.config = config
         self.time_embedder = time_embedder
+        self.use_frac_coords_in_node_emb = use_frac_coords_in_node_emb
+        self.dataset_name = dataset_name
 
-        plane_wave_freqs = get_plane_wave_frequencies(
-            num_freqs=config.num_plane_wave_freqs
-        )
+        plane_wave_freqs = get_plane_wave_frequencies(num_freqs=num_plane_wave_freqs)
         self.register_buffer("plane_wave_freqs", plane_wave_freqs)
 
         self.gaussian_smearing = GaussianSmearing(
-            0.0, config.cutoff, config.num_cartesian_distance_gaussians
+            0.0, cutoff, num_cartesian_distance_gaussians
         )
         self.activation = Swish()
         self.embed_block = NodeAndEdgeEmbedder(
-            config.num_cartesian_distance_gaussians,
-            config.edge_hidden_dim,
-            config.atom_hidden_dim,
-            2 * config.num_plane_wave_freqs,
-            config.num_cartesian_distance_gaussians,
+            num_cartesian_distance_gaussians,
+            edge_hidden_dim,
+            atom_hidden_dim,
+            2 * num_plane_wave_freqs,
+            num_cartesian_distance_gaussians,
             self.time_embedder.dim,
             self.activation,
-            config.use_frac_coords_in_node_emb,
+            use_frac_coords_in_node_emb,
             embedding_tools,
         )
         self.interaction_blocks = nn.LayerList(
             [
                 InteractionBlock(
-                    hidden_channels=config.atom_hidden_dim,
-                    edge_hidden_dim=config.edge_hidden_dim,
+                    hidden_channels=atom_hidden_dim,
+                    edge_hidden_dim=edge_hidden_dim,
                     activation=self.activation,
-                    graph_norm=config.use_graph_norm,
-                    use_vpa=config.use_vpa,
+                    graph_norm=use_graph_norm,
+                    use_vpa=use_vpa,
                 )
-                for _ in range(config.num_msg_pass_steps)
+                for _ in range(num_msg_pass_steps)
             ]
         )
         self.mlp_skip_co = nn.Linear(
-            (config.num_msg_pass_steps + 1) * config.atom_hidden_dim,
-            config.atom_hidden_dim,
+            (num_msg_pass_steps + 1) * atom_hidden_dim,
+            atom_hidden_dim,
         )
-        self.mlp_out = nn.Linear(config.atom_hidden_dim, 3)
+        self.mlp_out = nn.Linear(atom_hidden_dim, 3)
 
     def forward(
         self,
@@ -414,7 +407,7 @@ class GNN(nn.Layer):
                 lattice_lengths, lattice_angles
             ).repeat_interleave(num_edges_per_crystal, axis=0)
 
-        if self.config.use_frac_coords_in_node_emb:
+        if self.use_frac_coords_in_node_emb:
             fourier_atom_frac_pos = plane_wave_fourier_features(
                 frac_coords, self.plane_wave_freqs
             )
@@ -506,7 +499,7 @@ class GNN(nn.Layer):
         self, lattice_lengths: paddle.Tensor, lattice_angles: paddle.Tensor
     ) -> paddle.Tensor:
         """Normalize lattice parameters to [-1, 1]."""
-        param_ranges = lattice_parameter_ranges[self.config.dataset_name]
+        param_ranges = lattice_parameter_ranges[self.dataset_name]
         min_len = param_ranges["min_lattice_length"]
         max_len = param_ranges["max_lattice_length"]
         min_ang = param_ranges["min_lattice_angle"]
@@ -517,17 +510,6 @@ class GNN(nn.Layer):
         return paddle.concat([normed_lengths, normed_angles], axis=-1)
 
 
-@dataclasses.dataclass
-class CSPNetConfig:
-    hidden_dim: int = 256
-    num_msg_pass_steps: int = 6
-    ln: bool = False
-    act_fn: str = "silu"
-    dis_emb: str = "sin"
-    num_freqs: int = 128
-    dense: bool = False
-
-
 class CSPNet(nn.Layer):
     """CSPNet from DiffCSP architecture.
 
@@ -535,26 +517,30 @@ class CSPNet(nn.Layer):
     (lengths + angles) specific to SGEquiDiff.
     """
 
-    def __init__(self, config: CSPNetConfig, time_embedder: nn.Layer):
+    def __init__(
+        self,
+        time_embedder: nn.Layer,
+        hidden_dim: int = 256,
+        num_msg_pass_steps: int = 6,
+        ln: bool = False,
+        act_fn: str = "silu",
+        dis_emb: str = "sin",
+        num_freqs: int = 128,
+        dense: bool = False,
+    ):
         super().__init__()
         latent_dim = time_embedder.dim
-        num_layers = config.num_msg_pass_steps
+        num_layers = num_msg_pass_steps
         max_atoms = ELEMENT_ENCODING_SIZE
-        hidden_dim = config.hidden_dim
-        num_freqs = config.num_freqs
-        act_fn_str = config.act_fn
-        dis_emb_str = config.dis_emb
-        dense = config.dense
-        ln = config.ln
 
         self.node_embedding = nn.Embedding(max_atoms, hidden_dim)
         self.atom_latent_emb = nn.Linear(hidden_dim + latent_dim, hidden_dim)
 
-        if act_fn_str == "silu":
+        if act_fn == "silu":
             self.act_fn = nn.Silu()
-        if dis_emb_str == "sin":
+        if dis_emb == "sin":
             self.dis_emb = SinusoidsEmbedding(n_frequencies=num_freqs, n_space=3)
-        elif dis_emb_str == "none":
+        elif dis_emb == "none":
             self.dis_emb = None
 
         for i in range(num_layers):

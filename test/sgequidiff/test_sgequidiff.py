@@ -23,10 +23,9 @@ import pytest
 
 from ppmat.metrics.streaming_base import StreamingMetricBase
 from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
-from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModelConfig
 from ppmat.models.sgequidiff.sgequidiff import SGEQuiDiff
 from ppmat.models.sgequidiff.vocabs import build_embedding_tools
-from ppmat.models.sgequidiff.wyckoff_data import build_wyckoff_data
+from ppmat.models.sgequidiff.wyckoff_geometry import build_wyckoff_geometry
 
 
 def _make_synthetic_batch(batch_size=2, atoms_per_crystal=2):
@@ -85,18 +84,16 @@ def model():
     Kept small (10 timesteps, tiny embeddings) so the forward/loss checks
     run quickly while still exercising the real score-matching path.
     """
-    wyckoff_data = build_wyckoff_data()
+    wyckoff_geometry = build_wyckoff_geometry()
     embedding_tools = build_embedding_tools()
     return EquivariantDiffusionModel(
-        EquivariantDiffusionModelConfig(
-            model_type="mlp",
-            num_timesteps=10,
-            num_lattice_translations=1,
-            noise_scheduler_num_monte_carlo_samples=10,
-            time_emb_dim=32,
-            num_plane_wave_freqs=16,
-        ),
-        wyckoff_data=wyckoff_data,
+        model_type="mlp",
+        num_timesteps=10,
+        num_lattice_translations=1,
+        noise_scheduler_num_monte_carlo_samples=10,
+        time_emb_dim=32,
+        num_plane_wave_freqs=16,
+        wyckoff_geometry=wyckoff_geometry,
         embedding_tools=embedding_tools,
     )
 
@@ -286,7 +283,7 @@ class TestFullTrainingObjective:
         (elements outside the encoding table, coords outside the unit cell,
         or lattice params outside the dataset bounds).
         """
-        from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE
+        from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
 
         out = sampler.sample(
             {"structure_array": {"num_atoms": paddle.to_tensor([2, 3], dtype="int64")}}
@@ -317,7 +314,7 @@ def _write_synthetic_mp20_npz(root_dir, split="train", num_crystals=8):
     [n, sg, comp(98), lengths(3), angles(3), elems(n), wyckoffs(n),
      frac_coords(3n), wyckoff_shape(n)].
     """
-    from ppmat.utils.asu_dataset_meta import ELEMENT_ENCODING_SIZE as NE
+    from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE as NE
 
     rng = np.random.default_rng(0)
     packed_arrays = []

@@ -26,7 +26,7 @@ from pymatgen.core import Lattice
 from pymatgen.core import Structure
 
 from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
-from ppmat.models.sgequidiff.wyckoff_data import WyckoffData
+from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
 from ppmat.utils.crystal import OFFSET_LIST
 from ppmat.utils.crystal import frac_to_cart_coords
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
@@ -37,7 +37,7 @@ from ppmat.utils.scatter import scatter_min_indices
 
 def primitive_lattice_matrix_from_conventional_lattice_params(
     space_group_indices: paddle.Tensor,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
     conventional_lattice_lengths: Optional[paddle.Tensor] = None,
     conventional_lattice_angles: Optional[paddle.Tensor] = None,
     conventional_lattice_matrix: Optional[paddle.Tensor] = None,
@@ -47,7 +47,7 @@ def primitive_lattice_matrix_from_conventional_lattice_params(
         conventional_lattice_matrix = lattice_params_to_matrix_paddle(
             conventional_lattice_lengths, conventional_lattice_angles
         )
-    P_matrices = wyckoff_data.conventional_to_primitive_P_matrices[space_group_indices]
+    P_matrices = wyckoff_geometry.conventional_to_primitive_P_matrices[space_group_indices]
     return paddle.bmm(P_matrices, conventional_lattice_matrix)
 
 
@@ -115,7 +115,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     n_coords_per_asu: paddle.Tensor,
     conventional_lattice_matrix: paddle.Tensor,
     space_group_indices: paddle.Tensor,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
     return_cartesian_coords: bool = True,
     return_node_is_original: bool = False,
     map_frac_coords_to_0_1_unit_cell: bool = True,
@@ -128,14 +128,14 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     num_asu_nodes_per_crystal = n_coords_per_asu
 
     conventional_to_primitive_transformations = (
-        wyckoff_data.conventional_to_primitive_invP_matrices[space_group_indices]
+        wyckoff_geometry.conventional_to_primitive_invP_matrices[space_group_indices]
     )
 
-    padded_gc_mats = wyckoff_data.padded_general_wyckoff_matrices[space_group_indices]
-    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[
+    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[space_group_indices]
+    padded_gc_trans = wyckoff_geometry.padded_general_wyckoff_translations[
         space_group_indices
     ]
-    padded_gc_mask = wyckoff_data.padded_general_wyckoff_ops_mask[space_group_indices]
+    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[space_group_indices]
     general_wyckoff_multiplicity_per_crystal = padded_gc_mask.cast(paddle.int64).sum(
         axis=1
     )
@@ -227,7 +227,7 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     primitive_lattice_matrix = (
         primitive_lattice_matrix_from_conventional_lattice_params(
             space_group_indices=space_group_indices,
-            wyckoff_data=wyckoff_data,
+            wyckoff_geometry=wyckoff_geometry,
             conventional_lattice_matrix=conventional_lattice_matrix,
         )
     )
@@ -290,7 +290,7 @@ def wrap_frac_coords_into_asu(
     num_atoms_per_asu: paddle.Tensor,
     hull_equations: paddle.Tensor,
     hull_equations_mask: paddle.Tensor,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """
     Map noisy fractional coordinates back to canonical ASU via group operations.
@@ -307,7 +307,7 @@ def wrap_frac_coords_into_asu(
             [space_group_indices.shape[0], 3, 3], dtype=paddle.float32
         ),
         space_group_indices=space_group_indices,
-        wyckoff_data=wyckoff_data,
+        wyckoff_geometry=wyckoff_geometry,
         return_cartesian_coords=False,
         get_primitive_cell=False,
     )
@@ -456,19 +456,19 @@ def get_space_group_ops_and_conventional_atoms(
     wyckoff_indices: paddle.Tensor,
     space_group_indices: paddle.Tensor,
     n_atoms_per_xtal: paddle.Tensor,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
 ) -> tuple:
     """Get space group operations (mod lattice translation) and
     de-duplicated conventional cell atoms.
     """
-    padded_gc_mats = wyckoff_data.padded_general_wyckoff_matrices[space_group_indices]
-    padded_gc_inv_mats = wyckoff_data.padded_inverse_general_wyckoff_matrices[
+    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[space_group_indices]
+    padded_gc_inv_mats = wyckoff_geometry.padded_inverse_general_wyckoff_matrices[
         space_group_indices
     ]
-    padded_gc_trans = wyckoff_data.padded_general_wyckoff_translations[
+    padded_gc_trans = wyckoff_geometry.padded_general_wyckoff_translations[
         space_group_indices
     ]
-    padded_gc_mask = wyckoff_data.padded_general_wyckoff_ops_mask[space_group_indices]
+    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[space_group_indices]
 
     general_wyckoff_multiplicity = padded_gc_mask.cast(paddle.int64).sum(axis=1)
 
@@ -535,7 +535,7 @@ def get_wyckoff_projected_gaussian_noise(
     wyckoff_shape_indices: paddle.Tensor,
     n_atoms_per_xtal: paddle.Tensor,
     sigma: Union[float, paddle.Tensor],
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
 ) -> paddle.Tensor:
     """
     Generate Gaussian noise projected onto Wyckoff subspace.
@@ -543,7 +543,7 @@ def get_wyckoff_projected_gaussian_noise(
     n_asu_atoms = wyckoff_indices.shape[0]
     unprojected_noise = sigma * paddle.randn([n_asu_atoms, 3])
     sg_per_atom = space_group_indices.repeat_interleave(n_atoms_per_xtal, axis=0)
-    projection_matrices = wyckoff_data.noise_projection_matrices[
+    projection_matrices = wyckoff_geometry.noise_projection_matrices[
         sg_per_atom, wyckoff_indices, wyckoff_shape_indices
     ]
     projected_noise = paddle.bmm(
@@ -555,7 +555,7 @@ def get_wyckoff_projected_gaussian_noise(
 def get_orbit_from_single_asu_position(
     asu_frac_coord: paddle.Tensor,
     space_group_number: int,
-    wyckoff_data: "WyckoffData",
+    wyckoff_geometry: "WyckoffGeometry",
 ) -> paddle.Tensor:
     """Expand one ASU fractional coordinate into its full Wyckoff orbit.
 
@@ -569,11 +569,11 @@ def get_orbit_from_single_asu_position(
         periodic de-duplication.
     """
     sg_idx = space_group_number - 1
-    rotations = wyckoff_data.padded_general_wyckoff_matrices[sg_idx]
-    translations = wyckoff_data.padded_general_wyckoff_translations[sg_idx].reshape(
+    rotations = wyckoff_geometry.padded_general_wyckoff_matrices[sg_idx]
+    translations = wyckoff_geometry.padded_general_wyckoff_translations[sg_idx].reshape(
         [-1, 3]
     )
-    ops_mask = wyckoff_data.padded_general_wyckoff_ops_mask[sg_idx]
+    ops_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[sg_idx]
     rotations = rotations[ops_mask]
     translations = translations[ops_mask]
 
@@ -595,7 +595,7 @@ def get_orbit_from_single_asu_position(
 
 
 def asu_to_pymatgen_structure(
-    asu: ASUCrystal, wyckoff_data: "WyckoffData"
+    asu: ASUCrystal, wyckoff_geometry: "WyckoffGeometry"
 ) -> Structure:
     """Expand an ASU crystal into a full conventional-cell pymatgen Structure."""
     lengths = asu.conventional_lattice_lengths.reshape([1, 3])
@@ -609,7 +609,7 @@ def asu_to_pymatgen_structure(
         orbit = get_orbit_from_single_asu_position(
             frac_coord,
             space_group_number=int(asu.space_group_number),
-            wyckoff_data=wyckoff_data,
+            wyckoff_geometry=wyckoff_geometry,
         )
         conventional_frac_coords.append(orbit.numpy())
         conventional_atomic_numbers.extend([int(atom_type) + 1] * orbit.shape[0])

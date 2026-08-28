@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SGEquiDiff per-dataset sampling metadata.
+"""SGEquiDiff model metadata.
 
 Dataset-dependent sampling bounds (lattice-parameter ranges and maximum unit
-cell size) used by the SGEquiDiff model components. The ASU dataset metadata
-and data-directory resolution live in ``ppmat.utils.asu_dataset_meta``; this module
-stays on the model side.
+cell size), element-encoding table, and crystallographic constants used by
+the SGEquiDiff model components. Pure-constant module: safe to import from
+both the model layer and the data layer.
 """
+
+from pymatgen.core import Element
 
 # Per-dataset metadata used by models for sampling / construction.
 lattice_parameter_ranges = {
@@ -54,6 +56,19 @@ NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS: int = 230
 # bundled space-group entries (``clean_wyckoffs_in_asu_v6.json``); bound for
 # tensor padding.
 MAX_WYCKOFF_POSITIONS: int = 27
+
+# Element-encoding table size. Not the periodic-table total (118); covers the
+# elements in the supported ASU datasets (max Z=94) with margin. Index 0 is a
+# placeholder. Used by the ASU data layout and the model embeddings.
+ELEMENT_ENCODING_SIZE: int = 98
+
+# Symbol table for 0-indexed atomic numbers in [0, ELEMENT_ENCODING_SIZE);
+# built from pymatgen to avoid a hand-written table.
+chemical_symbols = ["X"] + [
+    Element.from_Z(atomic_number).symbol
+    for atomic_number in range(1, ELEMENT_ENCODING_SIZE + 1)
+]
+assert len(chemical_symbols) == ELEMENT_ENCODING_SIZE + 1
 
 # Space group number (1-230) -> crystal system / Bravais lattice symbol.
 spgroup_data = {
