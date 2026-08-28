@@ -29,7 +29,6 @@ from ppmat.models import build_model
 from ppmat.models import build_model_from_name
 from ppmat.utils import logger
 from ppmat.utils import save_load
-from ppmat.vocab import build_vocab
 
 
 class StructureSampler:
@@ -93,8 +92,7 @@ class StructureSampler:
 
             model_config = config.get("Model", None)
             assert model_config is not None, "Model config must be provided."
-            vocab = build_vocab(config.get("Vocabulary"))
-            model = build_model(model_config, vocab=vocab)
+            model = build_model(model_config)
             save_load.load_pretrain(model, checkpoint_path)
 
         else:

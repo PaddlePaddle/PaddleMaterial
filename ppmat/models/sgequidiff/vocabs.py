@@ -15,9 +15,11 @@
 """SGEquiDiff embedding tables built from the registered vocabulary.
 
 The element / space-group / Wyckoff embedding tables come from the
-``sgequidiff`` vocabulary (see ``ppmat.vocab.build_vocab`` and the
-``Vocabulary:`` config section). Consumers should call
-``build_embedding_tools()`` and pass the instance to downstream modules.
+``sgequidiff`` vocabulary (see ``ppmat.vocab.build_vocab``). The vocabulary is
+resolved inside the SGEquiDiff model itself (no framework-level wiring, no
+``Vocabulary:`` config section): callers may inject a prebuilt vocabulary via
+``build_embedding_tools(vocab)``, otherwise it is downloaded through the
+registry automatically. Pass the resulting instance to downstream modules.
 
 Vocabulary roles (content derived from the upstream SGEquiDiff repository;
 vector payloads are byte-equivalent to the upstream values, conversion script

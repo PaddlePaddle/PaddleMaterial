@@ -99,6 +99,9 @@ class SGEQuiDiff(nn.Layer):
         gnn_config: GNN backbone overrides (plain dict of constructor kwargs).
         cspnet_config: CSPNet backbone overrides (plain dict of constructor kwargs).
         noise_scheduler_cfg: Noise scheduler config dict.
+        vocab: Prebuilt ``sgequidiff`` vocabulary dict. ``None`` (default)
+            resolves it internally via ``ppmat.vocab.build_vocab`` — no
+            framework-level wiring required.
         lattice_length_noise: Noise added to lattice lengths during training.
         lattice_angle_noise: Noise added to lattice angles during training.
         space_group_grad_weight: Loss weight for the space-group log-prob.

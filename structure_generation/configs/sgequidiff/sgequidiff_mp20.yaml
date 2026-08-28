@@ -84,8 +84,6 @@ Model:
       dropout_rate: 0.1
       lattice_fourier_num_frequencies: 64
 
-Vocabulary: sgequidiff
-
 Optimizer:
   __class_name__: AdamW
   clip_value: 0.5
