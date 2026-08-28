@@ -16,15 +16,12 @@
 
 Provides the common read-only LMDB access patterns shared by datasets:
 
-- ``open_lmdb`` / ``close_lmdb``: open/close an LMDB environment with safe
-  read-only defaults;
-- ``lmdb_size``: number of records (``env.stat()["entries"]``);
+- ``open_lmdb``: open an LMDB environment with safe read-only defaults;
 - ``lmdb_keys``: list all keys, optionally filtering metadata / non-numeric
   keys;
-- ``lmdb_get``: fetch a single record by key (pickle payload);
-- ``iter_lmdb``: iterate over (key, value) pairs with multi-format payload
-  decoding (zlib -> pickle -> json -> ast);
-- ``LmdbReader``: context-manager wrapper bundling the above.
+- ``lmdb_get``: fetch a single record by key;
+- ``decode_payload``: multi-format payload decoding (zlib -> pickle ->
+  json -> ast).
 
 Only the read path is abstracted; writing/building LMDB files stays with the
 code that owns the data format, and format-specific value decoding (e.g. the
@@ -38,10 +35,8 @@ import pickle
 import zlib
 from typing import Any
 from typing import Callable
-from typing import Iterator
 from typing import List
 from typing import Optional
-from typing import Tuple
 
 import lmdb
 
@@ -74,19 +69,6 @@ def open_lmdb(
         meminit=False,
         max_readers=max_readers,
     )
-
-
-def close_lmdb(env: lmdb.Environment) -> None:
-    """Close an LMDB environment, ignoring errors (safe to call twice)."""
-    try:
-        env.close()
-    except Exception:
-        pass
-
-
-def lmdb_size(env: lmdb.Environment) -> int:
-    """Return the number of records in the environment."""
-    return int(env.stat()["entries"])
 
 
 def lmdb_keys(
@@ -174,79 +156,3 @@ def decode_payload(payload: bytes) -> Any:
         return ast.literal_eval(raw.decode("utf-8"))
     except Exception:
         raise ValueError("Failed to decode LMDB payload with zlib/pickle/json/ast.")
-
-
-def iter_lmdb(
-    env: lmdb.Environment,
-    *,
-    key_filter: Optional[Callable[[str], bool]] = None,
-    decoder: Optional[Callable] = None,
-) -> Iterator[Tuple[str, Any]]:
-    """Iterate over all (key, decoded_value) pairs in the environment.
-
-    Args:
-        env: An open LMDB environment.
-        key_filter: Optional predicate on the decoded key (str); keys failing
-            it are skipped.
-        decoder: Optional payload decoder; defaults to ``decode_payload``.
-    """
-    decoder = decoder or decode_payload
-    with env.begin() as txn:
-        cursor = txn.cursor()
-        for key, value in cursor:
-            key_str = key.decode("ascii") if isinstance(key, bytes) else key
-            if key_filter is not None and not key_filter(key_str):
-                continue
-            yield key_str, decoder(value)
-
-
-class LmdbReader:
-    """Context-manager wrapper around a read-only LMDB environment.
-
-    Example::
-
-        with LmdbReader("data/train.lmdb") as reader:
-            print(reader.size)
-            for key, value in reader.items():
-                ...
-            obj = reader.get("0")
-    """
-
-    def __init__(
-        self,
-        file_path: str,
-        *,
-        subdir: Optional[bool] = None,
-        decoder: Optional[Callable] = None,
-    ) -> None:
-        self.file_path = file_path
-        self.subdir = subdir
-        self.decoder = decoder
-        self._env: Optional[lmdb.Environment] = None
-
-    def __enter__(self) -> "LmdbReader":
-        self._env = open_lmdb(self.file_path, subdir=self.subdir)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        close_lmdb(self._env)
-        self._env = None
-
-    @property
-    def env(self) -> lmdb.Environment:
-        if self._env is None:
-            raise RuntimeError("LmdbReader is not open; use it as a context manager.")
-        return self._env
-
-    @property
-    def size(self) -> int:
-        return lmdb_size(self.env)
-
-    def keys(self, **kwargs) -> List[str]:
-        return lmdb_keys(self.env, **kwargs)
-
-    def get(self, key: str) -> Any:
-        return lmdb_get(self.env, key, decoder=self.decoder)
-
-    def items(self, **kwargs) -> Iterator[Tuple[str, Any]]:
-        return iter_lmdb(self.env, decoder=self.decoder, **kwargs)

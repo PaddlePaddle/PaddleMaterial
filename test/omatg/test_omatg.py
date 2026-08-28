@@ -17,7 +17,7 @@ import unittest
 import paddle
 
 from ppmat.models.omatg.model import OMATGCSPNetFull
-from ppmat.models.omatg.si.constants import OMatG
+from ppmat.models.omatg.si.core import DEFAULT_MAX_ATOMS
 
 
 def _make_batch(batch_size=2, atoms_per_struct=(3, 4), max_z=10):
@@ -178,7 +178,7 @@ class TestOMATGCSPNetFull(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=64,
             num_layers=2,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=32,
             edge_style="fc",
             pred_type=False,
@@ -193,7 +193,7 @@ class TestOMATGCSPNetFull(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=64,
             num_layers=2,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=32,
             edge_style="fc",
             pred_type=True,
@@ -219,7 +219,7 @@ class TestSITrainingPath(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=32,
             num_layers=1,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=16,
             pred_type=False,
             use_si=False,
@@ -250,7 +250,7 @@ class TestSITrainingPath(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=32,
             num_layers=1,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=16,
             pred_type=True,
             use_si=False,
@@ -313,7 +313,7 @@ class TestSISampling(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=32,
             num_layers=1,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=16,
             pred_type=False,
             use_si=False,
@@ -339,7 +339,7 @@ class TestSISampling(unittest.TestCase):
         model = OMATGCSPNetFull(
             hidden_dim=32,
             num_layers=1,
-            max_atoms=OMatG.default_max_atoms,
+            max_atoms=DEFAULT_MAX_ATOMS,
             time_embed_dim=16,
             pred_type=True,
             use_si=False,
@@ -454,7 +454,7 @@ class TestDatasetToModel(unittest.TestCase):
             model = OMATGCSPNetFull(
                 hidden_dim=32,
                 num_layers=1,
-                max_atoms=OMatG.default_max_atoms,
+                max_atoms=DEFAULT_MAX_ATOMS,
                 time_embed_dim=16,
                 pred_type=False,
                 use_si=False,

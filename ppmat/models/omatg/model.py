@@ -29,7 +29,9 @@ from ppmat.datasets.omatg_dataset import LATTICE_PARAMS
 from ppmat.datasets.omatg_dataset import sample_lattice_cell
 from ppmat.losses import MSELoss
 from ppmat.models.diffcsp.diffcsp import CSPNet
-from ppmat.models.omatg.si.constants import OMatG
+from ppmat.models.omatg.si.core import BIG_TIME
+from ppmat.models.omatg.si.core import DEFAULT_MAX_ATOMS
+from ppmat.models.omatg.si.core import SMALL_TIME
 from ppmat.models.omatg.si.core import DiscreteFlowMatchingMask
 from ppmat.utils.crystal import frac_to_cart_coords_with_lattice
 from ppmat.utils.crystal import radius_graph_pbc
@@ -39,7 +41,6 @@ __all__ = [
     "OMATGCSPNet",
     "OMATGCSPNetFull",
     "IndependentSampler",
-    "OMatG",
 ]
 
 
@@ -87,7 +88,7 @@ class OMATGCSPNet(CSPNet):
         self,
         hidden_dim=128,
         num_layers=4,
-        max_atoms=OMatG.default_max_atoms,
+        max_atoms=DEFAULT_MAX_ATOMS,
         act_fn="silu",
         dis_emb="sin",
         num_freqs=10,
@@ -227,7 +228,6 @@ class OMATGCSPNet(CSPNet):
         else:
             t_embed = t
 
-        # Repeat batch-level time embedding per atom.
         t_per_atom = paddle.repeat_interleave(t_embed, num_atoms, axis=0)
         node_features = paddle.concat([node_features, t_per_atom], axis=1)
         node_features = self.atom_latent_emb(node_features)
@@ -310,7 +310,7 @@ class OMATGCSPNetFull(OMATGCSPNet):
         self,
         hidden_dim: int = 512,
         num_layers: int = 6,
-        max_atoms: int = OMatG.default_max_atoms,
+        max_atoms: int = DEFAULT_MAX_ATOMS,
         act_fn: str = "silu",
         dis_emb: str = "sin",
         num_freqs: int = 128,
@@ -359,14 +359,12 @@ class OMATGCSPNetFull(OMATGCSPNet):
         with labels, so compute_metric_func_dict does not apply; evaluation is
         loss-based (eval_loss).
         """
-        # Accept collator keys (n_atoms/species/cell/pos) or standalone keys.
         atom_types = data.get("atom_types", data.get("species"))
         frac_coords = data.get("frac_coords", data.get("pos"))
         lattices = data.get("lattices", data.get("cell"))
         num_atoms = data.get("num_atoms", data.get("n_atoms"))
         node2graph = data.get("node2graph", data.get("batch"))
 
-        # SI training path: velocity-matching loss; fail loudly if not built.
         if self.use_si:
             if self._si is None or self._sampler is None:
                 raise ValueError(
@@ -375,7 +373,6 @@ class OMATGCSPNetFull(OMATGCSPNet):
                 )
             return self._si_forward(data)
 
-        # Sample time if not provided
         if t is None:
             batch_size = lattices.shape[0]
             t = paddle.rand([batch_size])
@@ -408,7 +405,6 @@ class OMATGCSPNetFull(OMATGCSPNet):
                 }
             }
 
-        # CSP mode: use b components from forward_dict
         loss_lattice = self.mse_loss(predictions["cell_b"], lattices_gt)
         loss_coord = self.mse_loss(predictions["pos_b"], frac_coords_gt)
         loss = loss_lattice + loss_coord
@@ -556,9 +552,6 @@ class OMATGCSPNetFull(OMATGCSPNet):
 
     def _si_forward(self, data: dict) -> dict:
         """SI velocity-matching loss step."""
-        from ppmat.models.omatg.si import BIG_TIME
-        from ppmat.models.omatg.si import SMALL_TIME
-
         x_1 = self._data_to_omatg(data)
         x_0 = self._sampler.sample_p_0(x_1)
         batch_size = len(x_1["n_atoms"])
@@ -584,11 +577,11 @@ class IndependentSampler:
 
     ``max_atoms`` defaults to ``None`` and is resolved at first use against
     the bound ``OMATGCSPNet`` model via :meth:`bind_model`; if used standalone
-    without a model and no explicit value, falls back to ``OMatG.default_max_atoms``
+    without a model and no explicit value, falls back to ``DEFAULT_MAX_ATOMS``
     (the released-checkpoint default).
     """
 
-    _DEFAULT_MAX_ATOMS: int = OMatG.default_max_atoms
+    _DEFAULT_MAX_ATOMS: int = DEFAULT_MAX_ATOMS
 
     def __init__(
         self,

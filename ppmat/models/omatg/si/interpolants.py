@@ -116,30 +116,6 @@ class LatentGamma(ABC, TimeChecker):
         raise NotImplementedError
 
 
-class Sigma(ABC, TimeChecker):
-    """Noise schedule sigma(s) for one-sided variance-exploding interpolant."""
-
-    @abstractmethod
-    def sigma(self, s: paddle.Tensor) -> paddle.Tensor:
-        raise NotImplementedError
-
-    @abstractmethod
-    def sigma_dot(self, s: paddle.Tensor) -> paddle.Tensor:
-        raise NotImplementedError
-
-
-class Tau(ABC, TimeChecker):
-    """Tau function for one-sided variance-preserving interpolant."""
-
-    @abstractmethod
-    def tau(self, t: paddle.Tensor) -> paddle.Tensor:
-        raise NotImplementedError
-
-    @abstractmethod
-    def tau_dot(self, t: paddle.Tensor) -> paddle.Tensor:
-        raise NotImplementedError
-
-
 class IdentityCorrector(Corrector):
     def correct(self, x: paddle.Tensor) -> paddle.Tensor:
         return x
@@ -200,58 +176,6 @@ class LinearInterpolant(Interpolant):
 class PeriodicLinearInterpolant(LinearInterpolant):
     def get_corrector(self) -> Corrector:
         return PeriodicBoundaryConditionsCorrector(0.0, 1.0)
-
-
-class ScoreBasedDiffusionModelInterpolantVP(Interpolant):
-    """Variance-preserving SBDM interpolant scheduler."""
-
-    def __init__(self, tau: Tau) -> None:
-        super().__init__()
-        self._tau = tau
-
-    def alpha(self, t: paddle.Tensor) -> paddle.Tensor:
-        return paddle.sqrt(1.0 - self._tau.tau(t) ** 2)
-
-    def alpha_dot(self, t: paddle.Tensor) -> paddle.Tensor:
-        tau = self._tau.tau(t)
-        return -tau * self._tau.tau_dot(t) / paddle.sqrt(1.0 - tau**2)
-
-    def beta(self, t: paddle.Tensor) -> paddle.Tensor:
-        return self._tau.tau(t)
-
-    def beta_dot(self, t: paddle.Tensor) -> paddle.Tensor:
-        return self._tau.tau_dot(t)
-
-    def get_corrector(self) -> Corrector:
-        return IdentityCorrector()
-
-
-class ScoreBasedDiffusionModelInterpolantVE(Interpolant):
-    """Variance-exploding SBDM interpolant scheduler."""
-
-    def __init__(self, sigma: Sigma) -> None:
-        super().__init__()
-        self._sigma = sigma
-
-    def alpha(self, t: paddle.Tensor) -> paddle.Tensor:
-        return paddle.sqrt(
-            self._sigma.sigma(1.0 - t) ** 2
-            - self._sigma.sigma(paddle.zeros_like(t)) ** 2
-        )
-
-    def alpha_dot(self, t: paddle.Tensor) -> paddle.Tensor:
-        sigma = self._sigma.sigma(1.0 - t)
-        alpha = paddle.sqrt(sigma**2 - self._sigma.sigma(paddle.zeros_like(t)) ** 2)
-        return -sigma * self._sigma.sigma_dot(1.0 - t) / alpha
-
-    def beta(self, t: paddle.Tensor) -> paddle.Tensor:
-        return paddle.ones_like(t)
-
-    def beta_dot(self, t: paddle.Tensor) -> paddle.Tensor:
-        return paddle.zeros_like(t)
-
-    def get_corrector(self) -> Corrector:
-        return IdentityCorrector()
 
 
 class LatentGammaSqrt(LatentGamma):
@@ -335,8 +259,6 @@ class StochasticInterpolantSpecies(StochasticInterpolant, ABC):
 __all__ = [
     "LinearInterpolant",
     "PeriodicLinearInterpolant",
-    "ScoreBasedDiffusionModelInterpolantVP",
-    "ScoreBasedDiffusionModelInterpolantVE",
     "VanishingEpsilon",
     "LatentGammaSqrt",
     "StochasticInterpolant",

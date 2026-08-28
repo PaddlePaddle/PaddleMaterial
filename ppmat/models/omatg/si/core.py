@@ -29,29 +29,26 @@ from typing import Union
 
 import paddle
 
-from .interpolants import (
-    Corrector,
-    Epsilon,
-    IdentityCorrector,
-    Interpolant,
-    LatentGamma,
-    ScoreBasedDiffusionModelInterpolantVE,
-    ScoreBasedDiffusionModelInterpolantVP,
-    StochasticInterpolant,
-    StochasticInterpolantSpecies,
-    TimeChecker,
-)
-from .constants import OMatG
+from .interpolants import Corrector
+from .interpolants import Epsilon
+from .interpolants import IdentityCorrector
+from .interpolants import Interpolant
+from .interpolants import LatentGamma
+from .interpolants import StochasticInterpolant
+from .interpolants import StochasticInterpolantSpecies
 
-# Re-exported for backwards-compatibility; the single source of truth lives
-# in ``OMatG`` so the integration time grid and species cardinality cannot
-# drift apart across files.
-SMALL_TIME: float = OMatG.small_time
-BIG_TIME: float = OMatG.big_time
+# Species cardinality of the released OMatG checkpoints; also the upper
+# bound of the masked-species token space.
+DEFAULT_MAX_ATOMS: int = 100
+
+# SI integration runs on the interior time grid [SMALL_TIME, BIG_TIME] so
+# the singular endpoints t=0/1 (gamma/epsilon derivatives) stay out of play.
+SMALL_TIME: float = 1.0e-3
+BIG_TIME: float = 1.0 - 1.0e-3
 
 
 def _clone_dict(data: Dict[str, paddle.Tensor]) -> Dict[str, paddle.Tensor]:
-    """Deep-copy tensor fields of a sample dict (replaces Data.clone())."""
+    """Deep-copy the tensor fields of a sample dict."""
     return {k: v.clone() for k, v in data.items()}
 
 
@@ -363,9 +360,6 @@ class SingleStochasticInterpolantIdentity(StochasticInterpolantSpecies):
         return False
 
 
-MAX_ATOM_NUM: int = OMatG.default_max_atoms
-
-
 class DiscreteFlowMatchingMask(StochasticInterpolantSpecies):
     """Discrete flow matching between masked base p_0 and target p_1 for species."""
 
@@ -408,7 +402,7 @@ class DiscreteFlowMatchingMask(StochasticInterpolantSpecies):
         assert paddle.all(x_0 == self._mask_index)
         assert paddle.all(x_1 != self._mask_index)
         pred = model_function(x_t)[0]
-        assert pred.shape == (x_0.shape[0], MAX_ATOM_NUM)
+        assert pred.shape == (x_0.shape[0], DEFAULT_MAX_ATOMS)
         return {"loss": paddle.nn.functional.cross_entropy(input=pred, label=x_1 - 1)}
 
     def integrate(
@@ -422,30 +416,30 @@ class DiscreteFlowMatchingMask(StochasticInterpolantSpecies):
         """Advance masked species by one discretised CTMC step."""
         eps = paddle.finfo(paddle.float64).eps
         x_1_probs = paddle.nn.functional.softmax(model_function(time, x_t)[0], axis=-1)
-        x_1_probs = x_1_probs.reshape((-1, MAX_ATOM_NUM))
+        x_1_probs = x_1_probs.reshape((-1, DEFAULT_MAX_ATOMS))
         shifted_x_1 = paddle.multinomial(
             x_1_probs, num_samples=1, replacement=True
         ).squeeze(-1)
         shifted_x_t = x_t - 1
         assert shifted_x_1.shape == x_t.shape == shifted_x_t.shape
         shifted_x_1_hot = paddle.nn.functional.one_hot(
-            shifted_x_1, num_classes=MAX_ATOM_NUM
+            shifted_x_1, num_classes=DEFAULT_MAX_ATOMS
         )
-        dpt = shifted_x_1_hot - 1.0 / MAX_ATOM_NUM
+        dpt = shifted_x_1_hot - 1.0 / DEFAULT_MAX_ATOMS
         dpt_xt = dpt.gather(-1, shifted_x_t[:, None]).squeeze(-1)
-        pt = time * shifted_x_1_hot + (1.0 - time) * (1.0 / MAX_ATOM_NUM)
+        pt = time * shifted_x_1_hot + (1.0 - time) * (1.0 / DEFAULT_MAX_ATOMS)
         pt_xt = pt.gather(-1, shifted_x_t[:, None]).squeeze(-1)
         S = paddle.count_nonzero(x=pt, axis=-1).cast(pt.dtype)
         denom = paddle.where(pt_xt == 0.0, paddle.ones_like(pt_xt), S * pt_xt)
         rate = paddle.nn.functional.relu(x=dpt - dpt_xt[:, None]) / denom[:, None]
-        rate[(pt_xt == 0.0)[:, None].expand([-1, MAX_ATOM_NUM])] = 0.0
+        rate[(pt_xt == 0.0)[:, None].expand([-1, DEFAULT_MAX_ATOMS])] = 0.0
         rate[pt == 0.0] = 0.0
         rate_db = paddle.zeros_like(rate)
         if self._noise > 0.0:
             rate_db[shifted_x_t == shifted_x_1] = 1.0
-            rate_db[shifted_x_1 != shifted_x_t] = (MAX_ATOM_NUM * time + 1.0 - time) / (
-                1.0 - time + eps
-            )
+            rate_db[shifted_x_1 != shifted_x_t] = (
+                DEFAULT_MAX_ATOMS * time + 1.0 - time
+            ) / (1.0 - time + eps)
             rate_db *= self._noise
         rate = rate + rate_db
         step_probs = (rate * time_step).clip(max=1.0)
@@ -765,7 +759,9 @@ def build_si_from_cfg(si_scheduler_cfg: dict) -> StochasticInterpolants:
     default_module = "ppmat.models.omatg.si"
     allowed_field_keys = {df.value for df in DataField}
     unknown_keys = [
-        k for k in si_scheduler_cfg if k not in allowed_field_keys and k not in _ALLOWED_META_KEYS
+        k
+        for k in si_scheduler_cfg
+        if k not in allowed_field_keys and k not in _ALLOWED_META_KEYS
     ]
     if unknown_keys:
         raise ValueError(
@@ -824,7 +820,6 @@ def build_sampler_from_cfg(sampler_cfg: dict):
 __all__ = [
     "BIG_TIME",
     "SMALL_TIME",
-    "MAX_ATOM_NUM",
     "DataField",
     "StochasticInterpolant",
     "StochasticInterpolantSpecies",

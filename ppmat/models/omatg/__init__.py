@@ -102,7 +102,10 @@ def build_omatg_model(
     sampler_cfg: dict = None,
     **model_kwargs,
 ):
-    """Build OMatG model, downloading weights; si_scheduler_cfg/sampler_cfg enable sampling."""
+    """Build OMatG model and download weights.
+
+    si_scheduler_cfg/sampler_cfg enable the SI sampling path.
+    """
     weight_url = get_omatg_model_url(dataset, variant)
 
     logger.info(f"Building OMatG model: {dataset} / {variant}")
