@@ -25,8 +25,7 @@ VOCAB_REGISTRY = {
     "infgcn_mp": "https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/infgcn_mp.json",
     "infgcn_omol25": "https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/infgcn_omol25.json",
     "diffnmr_msdnmr_nless15": "https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/diffnmr_msdnmr_nless15.json",
-    "sgequidiff": "http://127.0.0.1/models/sgequidiff.json",
-    # "sgequidiff": "https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/sgequidiff.json",
+    "sgequidiff": "https://paddle-org.bj.bcebos.com/paddlematerials/assets/vocabs/sgequidiff.json",
 }
 
 VOCAB_MD5_REGISTRY = {
