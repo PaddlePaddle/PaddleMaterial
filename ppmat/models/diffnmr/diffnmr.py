@@ -29,6 +29,7 @@ from ppmat.metrics.diffnmr_metric import NLL
 from ppmat.metrics.diffnmr_metric import SumExceptBatchKL
 from ppmat.metrics.diffnmr_metric import SumExceptBatchMetric
 from ppmat.models.common import initializer
+from ppmat.models.common.runtime import RuntimeMixin
 from ppmat.models.diffnmr.diffusion_prior import DiffPriorNetwork
 from ppmat.models.diffnmr.extra_features_graph import DummyExtraFeatures
 from ppmat.models.diffnmr.extra_features_graph import ExtraFeatures
@@ -280,7 +281,7 @@ class _DiffNMRSamplingMixin:
         return result
 
 
-class MolecularGraphFormer(_DiffNMRSamplingMixin, nn.Layer):
+class MolecularGraphFormer(_DiffNMRSamplingMixin, RuntimeMixin, nn.Layer):
     def __init__(
         self,
         encoder_cfg,
@@ -288,8 +289,11 @@ class MolecularGraphFormer(_DiffNMRSamplingMixin, nn.Layer):
         diffmodel_cfg,
         dataset_infos=None,
         vocab=None,
+        execution_backend="eager",
+        runtime_options=None,
     ) -> None:
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
 
         # configure general variables settings
         self.T = diffmodel_cfg["diffusion_steps"]
@@ -393,6 +397,12 @@ class MolecularGraphFormer(_DiffNMRSamplingMixin, nn.Layer):
         # set use formula for training and sample or not
         self.flag_use_formula = diffmodel_cfg.get("flag_use_formula", False)
 
+    def run_encoder(self, *args):
+        return self._run_runtime("graph_encoder", self.encoder, *args)
+
+    def run_decoder(self, *args):
+        return self._run_runtime("denoise_step", self.decoder, *args)
+
     def forward(self, batch):
         batch_graph = batch["graph"]
         batch_property = batch["property"]
@@ -445,14 +455,16 @@ class MolecularGraphFormer(_DiffNMRSamplingMixin, nn.Layer):
         ).astype(dtype="float32")
 
         # obtain the condition vector from output of encoder
-        conditionVec = self.encoder(input_X_pure, input_E_pure, input_y_pure, node_mask)
+        conditionVec = self.run_encoder(
+            input_X_pure, input_E_pure, input_y_pure, node_mask
+        )
         # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
         # 4. Decoder forward
         # Convention: pred.X and pred.E are logits with shapes [B, n, Cx] and
         # [B, n, n, Ce]
-        pred = self.decoder(input_X, input_E, input_y, node_mask)
+        pred = self.run_decoder(input_X, input_E, input_y, node_mask)
 
         # 5. Compute training loss
         loss_dict = self.train_loss(
@@ -491,7 +503,7 @@ class MolecularGraphFormer(_DiffNMRSamplingMixin, nn.Layer):
         return result
 
 
-class NMRNetCLIP(nn.Layer):
+class NMRNetCLIP(RuntimeMixin, nn.Layer):
     def __init__(
         self,
         graph_encoder: dict,
@@ -502,6 +514,10 @@ class NMRNetCLIP(nn.Layer):
         **kwargs,
     ):
         super().__init__()
+        self._init_runtime(
+            kwargs.pop("execution_backend", "eager"),
+            kwargs.pop("runtime_options", None),
+        )
         self.name = kwargs.get("__name__")
         self.vocab = vocab
         peakwidthemb_num = vocab["peakwidth"]["num_embeddings"]
@@ -635,10 +651,14 @@ class NMRNetCLIP(nn.Layer):
         num_C_peak = paddle.to_tensor(batch_spectrum["num_C_peak"])
         conditionAll = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
         if self.flag_onlyH is True:
-            global_H, _ = self.spectrum_encoder(conditionAll)
+            global_H, _ = self._run_runtime(
+                "spectrum_encoder", self.spectrum_encoder, conditionAll
+            )
             condition_nmr = global_H
         else:
-            condition_nmr = self.spectrum_encoder(conditionAll)
+            condition_nmr = self._run_runtime(
+                "spectrum_encoder", self.spectrum_encoder, conditionAll
+            )
 
         # get graph embedded vector
         # prepare the extra feature for encoder input without noisy
@@ -661,8 +681,13 @@ class NMRNetCLIP(nn.Layer):
             x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
-        condition_graph = self.graph_encoder(
-            input_X_pure, input_E_pure, input_y_pure, node_mask
+        condition_graph = self._run_runtime(
+            "graph_encoder",
+            self.graph_encoder,
+            input_X_pure,
+            input_E_pure,
+            input_y_pure,
+            node_mask,
         )
 
         # compute similarity between graph and NMR
@@ -685,7 +710,7 @@ class NMRNetCLIP(nn.Layer):
         return {"loss_dict": loss_dict}
 
 
-class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
+class DiffNMR(_DiffNMRSamplingMixin, RuntimeMixin, nn.Layer):
     def __init__(
         self,
         encoder_cfg,
@@ -695,8 +720,11 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
         vocab,
         clip=None,
         connector_cfg=None,
+        execution_backend="eager",
+        runtime_options=None,
     ) -> None:
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
         self.vocab = vocab
         peakwidthemb_num = vocab["peakwidth"]["num_embeddings"]
         splitemb_num = vocab["split"]["num_embeddings"]
@@ -790,6 +818,8 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
                 sample_cfg=connector_cfg["sample_cfg"],
                 connector_cfg=connector_cfg["model_cfg"],
                 clip=clip,
+                execution_backend=execution_backend,
+                runtime_options=runtime_options,
             )
             state_dict = paddle.load(connector_cfg["pretrained_model_path"])
             connector_state_dict = {
@@ -870,6 +900,12 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
         # set use formula for training and sample or not
         self.flag_use_formula = diffmodel_cfg.get("flag_use_formula", False)
 
+    def run_encoder(self, *args):
+        return self._run_runtime("spectrum_encoder", self.encoder, *args)
+
+    def run_decoder(self, *args):
+        return self._run_runtime("denoise_step", self.decoder, *args)
+
     def make_src_mask(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
         return src_mask
@@ -919,7 +955,7 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
         num_H_peak = paddle.to_tensor(batch_spectrum["num_H_peak"])
         num_C_peak = paddle.to_tensor(batch_spectrum["num_C_peak"])
         condition_Spectrum = [condition_H1nmr, num_H_peak, condition_C13nmr, num_C_peak]
-        encoder_output = self.encoder(condition_Spectrum)
+        encoder_output = self.run_encoder(condition_Spectrum)
         if self.flag_onlyH is True:
             # The H-only encoder returns the pooled H/C branches directly and
             # does not expose token-level conditioning for DiffPrior.
@@ -949,7 +985,7 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
         # 4. Decoder forward
         # Convention: pred.X and pred.E are logits with shapes [B, n, Cx] and
         # [B, n, n, Ce]
-        pred = self.decoder(input_X, input_E, input_y, node_mask)
+        pred = self.run_decoder(input_X, input_E, input_y, node_mask)
 
         # 5. Compute training loss
         loss_dict = self.train_loss(
@@ -989,14 +1025,17 @@ class DiffNMR(_DiffNMRSamplingMixin, nn.Layer):
 
 
 # PP-DiffNMR
-class DiffPrior(nn.Layer):
+class DiffPrior(RuntimeMixin, nn.Layer):
     def __init__(
         self,
         sample_cfg: dict,
         connector_cfg: dict,
         clip: nn.Layer,
+        execution_backend="eager",
+        runtime_options=None,
     ):
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
 
         self.clip = clip
         self.timesteps = sample_cfg["timesteps"]  # TODO: check
@@ -1052,6 +1091,9 @@ class DiffPrior(nn.Layer):
         self.register_buffer(
             name="_dummy", tensor=paddle.to_tensor(data=[True]), persistable=False
         )
+
+    def _run_prior(self, *args, **kwargs):
+        return self._run_runtime("denoise_step", self.net, *args, **kwargs)
 
     def forward(self, batch):
 
@@ -1202,11 +1244,11 @@ class DiffPrior(nn.Layer):
         self_cond = None
         if self.net.self_cond and random.random() < 0.5:
             with paddle.no_grad():
-                self_cond = self.net(
+                self_cond = self._run_prior(
                     moleculargraph_embed_noisy, times, **spectrum_cond
                 ).detach()
 
-        pred = self.net(
+        pred = self._run_prior(
             moleculargraph_embed_noisy,
             times,
             self_cond=self_cond,

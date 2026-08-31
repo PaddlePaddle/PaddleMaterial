@@ -1,4 +1,3 @@
-from functools import partial
 from typing import Callable
 from typing import Optional
 
@@ -8,6 +7,8 @@ from paddle.nn.functional import swish
 
 from ppmat.models.common.basis_utils import bessel_basis
 from ppmat.models.common.basis_utils import real_sph_harm
+from ppmat.models.common.runtime import RuntimeMixin
+from ppmat.models.common.runtime import runtime_boundary
 from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.scatter import scatter
 
@@ -91,7 +92,7 @@ class SphericalBasisLayer(paddle.nn.Layer):
         for i in range(num_spherical):
             if i == 0:
                 sph1 = sym.lambdify([theta], sph_harm_forms[i][0], modules)(0)
-                self.sph_funcs.append(partial(self._sph_to_tensor, sph1))
+                self.sph_funcs.append(float(sph1))
             else:
                 sph = sym.lambdify([theta], sph_harm_forms[i][0], modules)
                 self.sph_funcs.append(sph)
@@ -99,17 +100,19 @@ class SphericalBasisLayer(paddle.nn.Layer):
                 bessel = sym.lambdify([x], bessel_forms[i][j], modules)
                 self.bessel_funcs.append(bessel)
 
-    @staticmethod
-    def _sph_to_tensor(sph, x: paddle.Tensor) -> paddle.Tensor:
-        return paddle.zeros_like(x=x) + sph
-
     def forward(
         self, dist: paddle.Tensor, angle: paddle.Tensor, idx_kj: paddle.Tensor
     ) -> paddle.Tensor:
         dist = dist / self.cutoff
         rbf = paddle.stack(x=[f(dist) for f in self.bessel_funcs], axis=1)
         rbf = self.envelope(dist).unsqueeze(axis=-1) * rbf
-        cbf = paddle.stack(x=[f(angle) for f in self.sph_funcs], axis=1)
+        cbf = paddle.stack(
+            x=[
+                paddle.zeros_like(angle) + self.sph_funcs[0],
+                *(function(angle) for function in self.sph_funcs[1:]),
+            ],
+            axis=1,
+        )
         n, k = self.num_spherical, self.num_radial
         out = (rbf[idx_kj].reshape([-1, n, k]) * cbf.reshape([-1, n, 1])).reshape(
             [-1, n * k]
@@ -269,7 +272,7 @@ class OutputPPBlock(paddle.nn.Layer):
         return self.lin(x)
 
 
-class DimeNetPlusPlus(paddle.nn.Layer):
+class DimeNetPlusPlus(RuntimeMixin, paddle.nn.Layer):
     """
     Fast and Uncertainty-Aware Directional Message Passing for
     Non-Equilibrium Molecules, https://arxiv.org/abs/2011.14115
@@ -317,6 +320,9 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         loss_type (str, optional): Loss type, can be 'mse_loss' or 'l1_loss'.
             Defaults to "l1_loss".
         act (str, optional): The activation function. Defaults to swish.
+        execution_backend (str, optional): Numerical execution backend. Use
+            ``"eager"`` or ``"cinn"``. Defaults to ``"eager"``.
+        runtime_options (dict, optional): Per-backend runtime options.
     """
 
     def __init__(
@@ -343,8 +349,11 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         data_std: float = 1.0,
         loss_type: str = "l1_loss",
         act: str = "swish",
+        execution_backend: str = "eager",
+        runtime_options: dict | None = None,
     ):
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
         # store hyperparams
         self.out_channels = out_channels
         self.cutoff = cutoff
@@ -356,12 +365,8 @@ class DimeNetPlusPlus(paddle.nn.Layer):
         else:
             assert isinstance(property_names, str)
             self.property_names = property_names
-        self.register_buffer(
-            tensor=paddle.to_tensor(data_mean), name="data_mean"
-        )
-        self.register_buffer(
-            tensor=paddle.to_tensor(data_std), name="data_std"
-        )
+        self.register_buffer(tensor=paddle.to_tensor(data_mean), name="data_mean")
+        self.register_buffer(tensor=paddle.to_tensor(data_std), name="data_std")
 
         # basis layers
         self.rbf = BesselBasisLayer(num_radial, cutoff, envelope_exponent)
@@ -450,6 +455,7 @@ class DimeNetPlusPlus(paddle.nn.Layer):
     def unnormalize(self, tensor):
         return tensor * self.data_std + self.data_mean
 
+    @runtime_boundary("forward")
     def _forward(self, data):
         #  The data in data['graph'] is numpy.ndarray, convert it to paddle.Tensor
         data["graph"] = data["graph"].tensor()

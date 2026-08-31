@@ -73,6 +73,67 @@ def test_scatter_sum_supports_second_order_gradients():
     np.testing.assert_allclose(second_grad.numpy(), np.full([3, 1], 2.0))
 
 
+def test_scatter_mean_supports_second_order_gradients():
+    values = paddle.to_tensor([[1.0], [2.0], [3.0]], stop_gradient=False)
+    groups = paddle.to_tensor([0, 1, 0], dtype="int64")
+
+    result = scatter_mean(values.square(), groups, dim=0, dim_size=3)
+    first_grad = paddle.grad(result.sum(), values, create_graph=True)[0]
+    second_grad = paddle.grad(first_grad.sum(), values)[0]
+
+    np.testing.assert_allclose(first_grad.numpy(), [[1.0], [4.0], [3.0]])
+    np.testing.assert_allclose(second_grad.numpy(), [[1.0], [2.0], [1.0]])
+
+
+def test_scatter_sum_dim_zero_supports_higher_rank_and_empty_input():
+    values = paddle.arange(24, dtype="float32").reshape([4, 2, 3])
+    groups = paddle.to_tensor([0, 2, 0, 2], dtype="int64")
+
+    result = scatter_sum(values, groups, dim=0, dim_size=4)
+    expected = np.zeros([4, 2, 3], dtype="float32")
+    np.add.at(expected, groups.numpy(), values.numpy())
+    np.testing.assert_array_equal(result.numpy(), expected)
+
+    empty = scatter_sum(
+        paddle.empty([0, 2, 3], dtype="float32"),
+        paddle.empty([0], dtype="int64"),
+        dim=0,
+        dim_size=4,
+    )
+    np.testing.assert_array_equal(empty.numpy(), np.zeros([4, 2, 3]))
+
+
+def test_scatter_sum_dim_zero_preserves_complex_fallback():
+    values = paddle.to_tensor(
+        [[1.0 + 2.0j], [3.0 - 1.0j], [2.0 + 4.0j]], dtype="complex64"
+    )
+    groups = paddle.to_tensor([0, 1, 0], dtype="int64")
+
+    result = scatter_sum(values, groups, dim=0, dim_size=3)
+
+    np.testing.assert_allclose(result.numpy(), [[3.0 + 6.0j], [3.0 - 1.0j], [0.0]])
+
+
+def test_scatter_sum_supports_force_loss_parameter_gradients():
+    coords = paddle.to_tensor(
+        [[0.1, 0.2], [0.4, -0.2], [-0.3, 0.7]], stop_gradient=False
+    )
+    weights = paddle.to_tensor(
+        [[0.2, 0.4], [0.6, 0.8]], stop_gradient=False
+    )
+    groups = paddle.to_tensor([0, 1, 0], dtype="int64")
+
+    messages = paddle.sin(coords @ weights)
+    pooled = scatter_sum(messages, groups, dim=0, dim_size=3)
+    energy = pooled.square().sum()
+    force = -paddle.grad(energy, coords, create_graph=True)[0]
+    force.square().mean().backward()
+
+    assert weights.grad is not None
+    assert paddle.isfinite(weights.grad).all()
+    assert float(paddle.abs(weights.grad).sum()) > 0
+
+
 def test_scatter_reductions_support_nonzero_and_negative_dim():
     values = paddle.to_tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     groups = paddle.to_tensor([0, 1, 0], dtype="int64")

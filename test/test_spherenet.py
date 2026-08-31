@@ -225,7 +225,9 @@ def test_radius_graph_uses_edges_as_endpoint_indices():
         "idx_kj": graph.edge_feat["ti_idx_kj"].astype("int64"),
         "idx_ji": graph.edge_feat["ti_idx_ji"].astype("int64"),
     }
-    result = compute_geometry(graph.node_feat["cart_coords"], edge_index, triplet_indices)
+    result = compute_geometry(
+        graph.node_feat["cart_coords"], edge_index, triplet_indices
+    )
     np.testing.assert_array_equal(result[3].numpy(), edge_index[1].numpy())
     np.testing.assert_array_equal(result[4].numpy(), edge_index[0].numpy())
 
@@ -246,7 +248,7 @@ def test_radius_graph_batch_matches_individual_energy_and_force():
         return converter([Chem.MolFromXYZBlock(block) for block in xyz_blocks])
 
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=1,
         hidden_channels=16,
@@ -380,7 +382,7 @@ def test_predict_returns_energy_and_force():
     molecule = Chem.MolFromXYZBlock("3\nwater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n")
     graph = RadiusGraphConverter(cutoff=5.0, return_triplet_indices=True)(molecule)
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=0,
         hidden_channels=16,
@@ -406,7 +408,7 @@ def test_model_scaling_returns_physical_energy_and_force():
     molecule = Chem.MolFromXYZBlock("3\nwater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n")
     graph = RadiusGraphConverter(cutoff=5.0, return_triplet_indices=True)(molecule)
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=0,
         hidden_channels=16,
@@ -423,7 +425,7 @@ def test_model_scaling_returns_physical_energy_and_force():
     )
     model.eval()
 
-    normalized_energy, pos = model._forward({"graph": graph})
+    normalized_energy, pos, _ = model._forward({"graph": graph})
     normalized_gradient = paddle.grad(normalized_energy.sum(), pos)[0]
     result = model({"graph": graph}, return_loss=False, return_prediction=True)[
         "pred_dict"
@@ -463,7 +465,7 @@ def test_force_loss_produces_parameter_gradients():
     )
     graph = RadiusGraphConverter(cutoff=5.0, return_triplet_indices=True)(molecule)
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=1,
         hidden_channels=16,
@@ -476,10 +478,10 @@ def test_force_loss_produces_parameter_gradients():
         num_radial=2,
         num_output_layers=1,
         output_init="zeros",
-        force_loss_weight=100.0,
+        loss_weights_dict={"energy": 1.0, "force": 100.0},
     )
     model.train()
-    energy, _ = model._forward({"graph": graph})
+    energy, _, _ = model._forward({"graph": graph})
     force = paddle.to_tensor(
         [
             [1.0, -0.4, 0.5],
@@ -499,6 +501,12 @@ def test_force_loss_produces_parameter_gradients():
 
     expected_force_loss = paddle.nn.functional.l1_loss(
         result["pred_dict"]["force"], force
+    )
+    assert set(result["loss_dict"]) == {"energy", "force", "loss"}
+    np.testing.assert_allclose(
+        result["loss_dict"]["force"].item(),
+        expected_force_loss.item(),
+        rtol=1e-6,
     )
     np.testing.assert_allclose(
         result["loss_dict"]["loss"].item(),
@@ -534,7 +542,7 @@ def test_training_and_eval_paths_match_energy_and_force():
     )
     graph = RadiusGraphConverter(cutoff=5.0, return_triplet_indices=True)(molecule)
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=1,
         hidden_channels=16,
@@ -549,11 +557,11 @@ def test_training_and_eval_paths_match_energy_and_force():
     )
 
     model.train()
-    train_energy, train_pos = model._forward({"graph": graph})
+    train_energy, train_pos, _ = model._forward({"graph": graph})
     train_force = -paddle.grad(train_energy.sum(), train_pos)[0]
 
     model.eval()
-    eval_energy, eval_pos = model._forward({"graph": graph})
+    eval_energy, eval_pos, _ = model._forward({"graph": graph})
     eval_force = -paddle.grad(eval_energy.sum(), eval_pos)[0]
 
     np.testing.assert_allclose(
@@ -577,7 +585,7 @@ def test_force_loss_supports_molecules_without_triplets():
     assert graph.edge_feat["ti_idx_kj"].shape == (0,)
 
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=1,
         hidden_channels=16,
@@ -633,7 +641,7 @@ def test_force_matches_finite_difference_with_fixed_torsion_branch():
         return converter(molecule)
 
     model = SphereNet(
-        energy_and_force=True,
+        derivative_properties=("force",),
         property_name="energy",
         num_layers=1,
         hidden_channels=16,
@@ -645,11 +653,11 @@ def test_force_matches_finite_difference_with_fixed_torsion_branch():
         num_spherical=2,
         num_radial=2,
         num_output_layers=1,
-        output_init="GlorotOrthogonal",
+        output_init="glorot_orthogonal",
     )
     model.eval()
 
-    energy, position_tensor = model._forward({"graph": build_graph(positions)})
+    energy, position_tensor, _ = model._forward({"graph": build_graph(positions)})
     actual = paddle.grad(energy.sum(), position_tensor)[0][0, 0].item()
 
     epsilon = 1e-3

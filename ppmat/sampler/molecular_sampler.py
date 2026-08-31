@@ -38,6 +38,7 @@ from ppmat.models import build_model
 from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.utils import save_load
+from ppmat.utils.execution import configure_execution_backend
 from ppmat.utils.model_package import get_model_config_path
 from ppmat.utils.model_package import resolve_model_package_dir
 from ppmat.visualization import AnimationWriter
@@ -212,6 +213,13 @@ class MolecularSampler:
             )
 
         self.model = model
+        execution_config = config.get("Execution") or {}
+        self.execution_backend = configure_execution_backend(
+            self.model,
+            execution_config.get("backend"),
+            init_params=execution_config.get("__init_params__"),
+            owner="MolecularSampler",
+        )
         self.model.eval()
         self.config = config
         self.sample_config = sample_config

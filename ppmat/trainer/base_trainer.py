@@ -42,6 +42,7 @@ from ppmat.utils import AverageMeter
 from ppmat.utils import logger
 from ppmat.utils import misc
 from ppmat.utils import save_load
+from ppmat.utils.execution import configure_execution_backend
 
 
 class BaseTrainer:
@@ -62,10 +63,10 @@ class BaseTrainer:
             Scheduler. Defaults to None.
         compute_metric_func_dict (Optional[Dict], optional): Compute metric function
             dictionary. Defaults to None.
-    
+
     Notice:
         support 2 types metric integration method. recommend metric module first. if
-        metirc calc is complicated using multipul inputs and outputs of models, could 
+        metirc calc is complicated using multipul inputs and outputs of models, could
         use stream metric.
     """
 
@@ -78,6 +79,7 @@ class BaseTrainer:
         optimizer: Optional[optim.Optimizer] = None,
         lr_scheduler: Optional[optim.lr.LRScheduler] = None,
         compute_metric_func_dict: Optional[Dict] = None,
+        execution_config: Optional[Dict] = None,
     ):
         # 1. initialize arguments
         self.model = model
@@ -88,6 +90,7 @@ class BaseTrainer:
         self.compute_metric_func_dict = compute_metric_func_dict
 
         self.config = config
+        execution_config = execution_config or {}
 
         if optimizer is None:
             self.use_amp = False
@@ -132,6 +135,19 @@ class BaseTrainer:
         # environment
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
+
+        # Keep the model as the sole checkpoint/optimizer owner. A runtime
+        # backend selected by the Trainer must be exposed and validated by the
+        # model before weights, AMP, or distributed wrappers mutate it.
+        self.execution_backend = configure_execution_backend(
+            self.model,
+            execution_config.get("backend"),
+            init_params=execution_config.get("__init_params__"),
+            use_amp=self.use_amp,
+            world_size=self.world_size,
+            owner="Trainer",
+        )
+
         # initialize distributed environment
         if self.world_size > 1:
             fleet.init(is_collective=True)
@@ -189,7 +205,8 @@ class BaseTrainer:
                 logger.info(
                     "VisualDL is enabled for logging, you can view it by running:\n"
                     f"visualdl --logdir {self.visualdl_writer._logdir} --port 8080"
-                    "\n For more information about how to use VisualDL, please refer to:"
+                    "\n For more information about how to use VisualDL, please "
+                    "refer to:"
                     "https://www.paddlepaddle.org.cn/paddle/visualdl"
                 )
 
@@ -459,7 +476,6 @@ class BaseTrainer:
             # concatenate gathered tensors and compute
             for key, compute_metric_func in self.compute_metric_func_dict.items():
 
-
                 pred = paddle.concat(all_pred_dict[key])[:num_eval_samples]
                 label = paddle.concat(all_label_dict[key])[:num_eval_samples]
                 metric = compute_metric_func(pred, label)
@@ -604,7 +620,10 @@ class BaseTrainer:
                     loss_info[key] = AverageMeter(key)
                 loss_info[key].update(float(loss_dict[key]), batch_size)
 
-            if self.compute_metric_during_train and self.compute_metric_func_dict is not None:
+            if (
+                self.compute_metric_during_train
+                and self.compute_metric_func_dict is not None
+            ):
                 pred_dict = result.get("pred_dict", {})
                 for key, compute_metric_func in self.compute_metric_func_dict.items():
                     if key not in pred_dict:
@@ -716,9 +735,9 @@ class BaseTrainer:
                                 "Unsupported lr scheduler indicator: "
                                 f"{self.lr_scheduler.indicator}"
                             )
-                        indicator_value = indicator_groups[
-                            self.lr_scheduler.indicator
-                        ][self.lr_scheduler.indicator_name].avg
+                        indicator_value = indicator_groups[self.lr_scheduler.indicator][
+                            self.lr_scheduler.indicator_name
+                        ].avg
                         self.lr_scheduler.step(metrics=indicator_value)
                     else:
                         self.lr_scheduler.step()
@@ -793,7 +812,7 @@ class BaseTrainer:
                     " be overridden by weights loaded from given 'checkpoint_path'."
                 )
             loaded_state = save_load.load_checkpoint(
-                self.resume_from_checkpoint,
+                resume_from_checkpoint,
                 self.model,
                 self.optimizer,
                 self.scaler,

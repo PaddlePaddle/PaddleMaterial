@@ -29,6 +29,7 @@ from ppmat.models import build_model
 from ppmat.models import build_model_from_name
 from ppmat.utils import logger
 from ppmat.utils import save_load
+from ppmat.utils.execution import configure_execution_backend
 
 
 class StructureSampler:
@@ -107,6 +108,14 @@ class StructureSampler:
 
         self.model = model
         self.config = config
+
+        execution_config = config.get("Execution") or {}
+        self.execution_backend = configure_execution_backend(
+            self.model,
+            execution_config.get("backend"),
+            init_params=execution_config.get("__init_params__"),
+            owner="StructureSampler",
+        )
 
         self.model.eval()
 

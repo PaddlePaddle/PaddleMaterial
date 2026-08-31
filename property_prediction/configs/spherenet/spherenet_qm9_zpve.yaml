@@ -57,7 +57,6 @@ Trainer:
 Model:
   __class_name__: SphereNet
   __init_params__:
-    energy_and_force: false
     cutoff: 5.0
     num_layers: 4
     hidden_channels: 128
@@ -73,7 +72,7 @@ Model:
     num_before_skip: 1
     num_after_skip: 2
     num_output_layers: 3
-    output_init: GlorotOrthogonal
+    output_init: glorot_orthogonal
     property_name: zpve
 
 Metric:
