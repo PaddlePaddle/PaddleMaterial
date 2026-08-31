@@ -137,6 +137,36 @@ class TorusMLP(nn.Layer):
         *args,
         **kwargs,
     ) -> paddle.Tensor:
+        return self.forward_with_graph(
+            frac_coords=frac_coords,
+            time_embeddings=time_embeddings,
+        )
+
+    def construct_graph_inputs(
+        self,
+        frac_coords: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_matrices: paddle.Tensor,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+    ) -> tuple:
+        """Protocol placeholder: the MLP backbone builds no graph.
+
+        Kept for uniformity with GNN/CSPNet so the compiled runtime
+        boundary stays backbone-agnostic; the whole MLP forward is
+        tensor-only and compiled in one piece.
+        """
+        return ()
+
+    def forward_with_graph(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor = None,
+        time_embeddings: paddle.Tensor = None,
+        n_atoms_per_xtal: paddle.Tensor = None,
+        graph_inputs: tuple = (),
+    ) -> paddle.Tensor:
+        """Pure numerical core (the whole MLP is tensor-only)."""
         return self.layers(
             paddle.concat(
                 [
@@ -392,20 +422,69 @@ class GNN(nn.Layer):
         """GNN forward pass, returns (n_atoms, 3)."""
         cm = paddle.no_grad() if not differentiate_graph_construction else nullcontext()
         with cm:
-            (
-                map_atom_to_xtal,
-                edge_index,
-                relative_fractional_positions,
-                cartesian_distances,
-                num_edges_per_crystal,
-            ) = self.construct_graphs(frac_coords, n_atoms_per_xtal, lattice_matrices)
-            fourier_relative_frac_pos = plane_wave_fourier_features(
-                relative_fractional_positions, self.plane_wave_freqs
+            graph_inputs = self.construct_graph_inputs(
+                frac_coords=frac_coords,
+                n_atoms_per_xtal=n_atoms_per_xtal,
+                lattice_matrices=lattice_matrices,
+                lattice_lengths=lattice_lengths,
+                lattice_angles=lattice_angles,
             )
-            gaussian_smeared_cart_dists = self.gaussian_smearing(cartesian_distances)
-            normed_lattice_params = self.norm_lattice_params(
-                lattice_lengths, lattice_angles
-            ).repeat_interleave(num_edges_per_crystal, axis=0)
+        return self.forward_with_graph(
+            frac_coords=frac_coords,
+            element_indices=element_indices,
+            time_embeddings=time_embeddings,
+            n_atoms_per_xtal=n_atoms_per_xtal,
+            graph_inputs=graph_inputs,
+        )
+
+    def construct_graph_inputs(
+        self,
+        frac_coords: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_matrices: paddle.Tensor,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+    ) -> tuple:
+        """Graph construction and edge features (data-dependent shapes, kept
+        eager outside the compiled runtime boundary)."""
+        (
+            map_atom_to_xtal,
+            edge_index,
+            relative_fractional_positions,
+            cartesian_distances,
+            num_edges_per_crystal,
+        ) = self.construct_graphs(frac_coords, n_atoms_per_xtal, lattice_matrices)
+        fourier_relative_frac_pos = plane_wave_fourier_features(
+            relative_fractional_positions, self.plane_wave_freqs
+        )
+        gaussian_smeared_cart_dists = self.gaussian_smearing(cartesian_distances)
+        normed_lattice_params = self.norm_lattice_params(
+            lattice_lengths, lattice_angles
+        ).repeat_interleave(num_edges_per_crystal, axis=0)
+        return (
+            map_atom_to_xtal,
+            edge_index,
+            fourier_relative_frac_pos,
+            gaussian_smeared_cart_dists,
+            normed_lattice_params,
+        )
+
+    def forward_with_graph(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        graph_inputs: tuple,
+    ) -> paddle.Tensor:
+        """Pure numerical core: embedding, message passing, output head."""
+        (
+            map_atom_to_xtal,
+            edge_index,
+            fourier_relative_frac_pos,
+            gaussian_smeared_cart_dists,
+            normed_lattice_params,
+        ) = graph_inputs
 
         if self.use_frac_coords_in_node_emb:
             fourier_atom_frac_pos = plane_wave_fourier_features(
@@ -433,7 +512,7 @@ class GNN(nn.Layer):
                 edge_index,
                 edge_latents,
                 map_atom_to_xtal,
-                lattice_matrices.shape[0],
+                n_atoms_per_xtal.shape[0],
             )
 
         skip_connection_elements.append(node_latents)
@@ -594,16 +673,49 @@ class CSPNet(nn.Layer):
         **kwargs,
     ) -> paddle.Tensor:
         """CSPNet forward pass."""
+        graph_inputs = self.construct_graph_inputs(
+            frac_coords=frac_coords,
+            n_atoms_per_xtal=n_atoms_per_xtal,
+            lattice_lengths=lattice_lengths,
+            lattice_angles=lattice_angles,
+        )
+        return self.forward_with_graph(
+            frac_coords=frac_coords,
+            element_indices=element_indices,
+            time_embeddings=time_embeddings,
+            n_atoms_per_xtal=n_atoms_per_xtal,
+            graph_inputs=graph_inputs,
+        )
+
+    def construct_graph_inputs(
+        self,
+        frac_coords: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        lattice_lengths: paddle.Tensor,
+        lattice_angles: paddle.Tensor,
+    ) -> tuple:
+        """Fully-connected edge construction (data-dependent shapes, kept
+        eager outside the compiled runtime boundary)."""
         n_crystals = n_atoms_per_xtal.shape[0]
         node2graph = paddle.arange(n_crystals).repeat_interleave(
             n_atoms_per_xtal, axis=0
         )
-        atom_types = element_indices
         lattices = paddle.concat([lattice_lengths, lattice_angles], axis=-1)
-
         edges, frac_diff = self.gen_edges(n_atoms_per_xtal, frac_coords)
+        return (edges, frac_diff, node2graph, lattices)
+
+    def forward_with_graph(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        graph_inputs: tuple,
+    ) -> paddle.Tensor:
+        """Pure numerical core: embedding, message passing, coordinate head."""
+        (edges, frac_diff, node2graph, lattices) = graph_inputs
         edge2graph = node2graph[edges[0]]
-        node_features = self.node_embedding(atom_types)
+        node_features = self.node_embedding(element_indices)
         node_features = paddle.concat([node_features, time_embeddings], axis=-1)
         node_features = self.atom_latent_emb(node_features)
 

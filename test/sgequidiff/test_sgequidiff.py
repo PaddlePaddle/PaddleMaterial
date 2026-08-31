@@ -26,6 +26,7 @@ from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
 from ppmat.models.sgequidiff.sgequidiff import SGEQuiDiff
 from ppmat.models.sgequidiff.vocabs import build_embedding_tools
 from ppmat.models.sgequidiff.wyckoff_geometry import build_wyckoff_geometry
+from ppmat.utils.execution import configure_execution_backend
 
 
 def _make_synthetic_batch(batch_size=2, atoms_per_crystal=2):
@@ -500,3 +501,98 @@ def test_sgequidiff_metric(tmp_path):
         assert streamed[key] == pytest.approx(value)
     stream_metric.reset()
     assert stream_metric.compute_epoch(stage="sample") == {}
+
+
+def test_execution_backend_protocol():
+    """Runtime protocol: backend selection is owned by the diffusion model.
+
+    Overall question: does the SGEQuiDiff <-> EquivariantDiffusionModel
+    delegation honor the framework execution-backend contract (backend
+    propagation, eager fallback, invalid input rejection, AMP/world-size
+    constraints) without changing any state_dict key?
+    """
+    model = _make_sgequidiff()
+    state_dict_before = {k: tuple(v.shape) for k, v in model.state_dict().items()}
+
+    assert configure_execution_backend(model, None, owner="Trainer") == "eager"
+    model.set_execution_backend("cinn")
+    assert model.execution_backend == "cinn"
+    assert model.atom_coord_diffusion_model.execution_backend == "cinn"
+    model.set_runtime_options({"cinn": {"full_graph": False}})
+    state_dict_after = {k: tuple(v.shape) for k, v in model.state_dict().items()}
+    assert state_dict_after == state_dict_before, "state_dict changed on backend switch"
+
+    model.set_execution_backend("eager")
+    assert model.atom_coord_diffusion_model.execution_backend == "eager"
+
+    with pytest.raises(ValueError):
+        model.set_execution_backend("not-a-backend")
+    model.set_execution_backend("cinn")
+    with pytest.raises(ValueError):
+        model.validate_execution_backend(use_amp=True)
+    with pytest.raises(ValueError):
+        model.validate_execution_backend(world_size=2)
+
+
+def _make_small_gnn_sgequidiff():
+    """Tiny GNN SGEQuiDiff so CINN compilation stays fast in tests."""
+    return SGEQuiDiff(
+        dataset_name="mp_20",
+        num_timesteps=2,
+        noise_scheduler_num_monte_carlo_samples=2,
+        num_lattice_translations=1,
+        gnn_config={
+            "num_cartesian_distance_gaussians": 8,
+            "edge_hidden_dim": 16,
+            "atom_hidden_dim": 16,
+            "num_plane_wave_freqs": 8,
+            "num_msg_pass_steps": 2,
+            "use_graph_norm": False,
+        },
+    )
+
+
+@pytest.mark.skipif(
+    not (
+        paddle.is_compiled_with_cuda()
+        and paddle.device.cuda.device_count() > 0
+        and paddle.base.is_compiled_with_cinn()
+    ),
+    reason="requires a CUDA GPU and a CINN-enabled Paddle build",
+)
+def test_cinn_sampling_parity():
+    """CINN workflow: compiled denoise_step matches eager sampling.
+
+    Overall question: does sampling with ``execution_backend="cinn"`` reuse a
+    single cached compiled runtime and reproduce the eager trajectory within
+    GPU float32 tolerance?
+    """
+    paddle.set_device("gpu")
+    try:
+        model = _make_small_gnn_sgequidiff()
+        batch = {"structure_array": {"num_atoms": paddle.to_tensor([1])}}
+
+        def sample_frac_coords():
+            paddle.seed(42)
+            result = model.sample(dict(batch))["result"]
+            return [crystal["frac_coords"] for crystal in result]
+
+        model.set_execution_backend("eager")
+        coords_eager = sample_frac_coords()
+
+        model.set_execution_backend("cinn")
+        model.set_runtime_options({"cinn": {"full_graph": False}})
+        coords_cinn = sample_frac_coords()
+
+        cache = model.atom_coord_diffusion_model._runtime_cache
+        assert list(cache.keys()) == [("cinn", "train", "denoise_step")]
+
+        max_diff = max(
+            abs(a - b)
+            for eager_cell, cinn_cell in zip(coords_eager, coords_cinn)
+            for eager_row, cinn_row in zip(eager_cell, cinn_cell)
+            for a, b in zip(eager_row, cinn_row)
+        )
+        assert max_diff < 2e-5, f"eager/CINN sampling mismatch: {max_diff}"
+    finally:
+        paddle.set_device("cpu")

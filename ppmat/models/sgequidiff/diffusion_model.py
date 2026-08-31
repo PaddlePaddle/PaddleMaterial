@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """EquivariantDiffusionModel and NoiseScheduler."""
+from contextlib import nullcontext
 from typing import Dict
 from typing import Optional
 
@@ -21,6 +22,8 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from tqdm import tqdm
 
+from ppmat.models.common.runtime import RuntimeMixin
+from ppmat.models.common.runtime import runtime_boundary
 from ppmat.models.sgequidiff.wyckoff_shape_decomp import ensure_wyckoff_shape_decomp
 from ppmat.models.sgequidiff.wyckoff_shape_decomp import get_shape_decomp_dict_path
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
@@ -40,7 +43,7 @@ from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 from ppmat.utils.scatter import scatter as paddle_scatter
 
 
-class EquivariantDiffusionModel(nn.Layer):
+class EquivariantDiffusionModel(RuntimeMixin, nn.Layer):
     """Space-group equivariant diffusion model modeling crystal coords in ASU."""
 
     def __init__(
@@ -59,8 +62,11 @@ class EquivariantDiffusionModel(nn.Layer):
         noise_scheduler_cfg: Optional[dict] = None,
         wyckoff_geometry: "WyckoffGeometry" = None,
         embedding_tools: "EmbeddingTools" = None,
+        execution_backend: str = "eager",
+        runtime_options: Optional[dict] = None,
     ):
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
         if sigma_min <= 0.0:
             raise ValueError(f"sigma_min must be positive, got {sigma_min}")
         if not isinstance(time_emb_dim, int) or time_emb_dim <= 0:
@@ -431,14 +437,48 @@ class EquivariantDiffusionModel(nn.Layer):
             reduce="sum",
         )
 
-        non_equivariant_output = self.non_equivariant_drift_model(
+        drift = self.non_equivariant_drift_model
+        cm = paddle.no_grad() if not differentiate_graph_construction else nullcontext()
+        with cm:
+            graph_inputs = drift.construct_graph_inputs(
+                frac_coords=frac_coords_of_conv_atoms,
+                n_atoms_per_xtal=n_conv_atoms_per_xtal,
+                lattice_matrices=lattice_matrices,
+                lattice_lengths=lattice_lengths,
+                lattice_angles=lattice_angles,
+            )
+        return self._runtime_denoise_step(
             frac_coords=frac_coords_of_conv_atoms,
             element_indices=conventional_element_indices,
-            n_atoms_per_xtal=n_conv_atoms_per_xtal,
-            lattice_matrices=lattice_matrices,
-            lattice_lengths=lattice_lengths,
-            lattice_angles=lattice_angles,
             time_embeddings=time_embeddings[map_unique_conventional_to_asu],
+            n_atoms_per_xtal=n_conv_atoms_per_xtal,
+            graph_inputs=graph_inputs,
+            A_inv_ops=sg_ops.A_inv_ops,
+            inverse_indices=sg_ops.inverse_indices,
+            map_conventional_to_asu_atom=map_conventional_to_asu_atom,
+            n_asu_atoms=frac_coords.shape[0],
+        )
+
+    @runtime_boundary("denoise_step")
+    def _runtime_denoise_step(
+        self,
+        frac_coords: paddle.Tensor,
+        element_indices: paddle.Tensor,
+        time_embeddings: paddle.Tensor,
+        n_atoms_per_xtal: paddle.Tensor,
+        graph_inputs: tuple,
+        A_inv_ops: paddle.Tensor,
+        inverse_indices: paddle.Tensor,
+        map_conventional_to_asu_atom: paddle.Tensor,
+        n_asu_atoms: int,
+    ) -> paddle.Tensor:
+        """Compiled numerical core of one coordinate-denoise step."""
+        non_equivariant_output = self.non_equivariant_drift_model.forward_with_graph(
+            frac_coords=frac_coords,
+            element_indices=element_indices,
+            time_embeddings=time_embeddings,
+            n_atoms_per_xtal=n_atoms_per_xtal,
+            graph_inputs=graph_inputs,
         )
 
         src = paddle.bmm(
@@ -450,7 +490,7 @@ class EquivariantDiffusionModel(nn.Layer):
             src=src,
             index=map_conventional_to_asu_atom,
             dim=0,
-            dim_size=frac_coords.shape[0],
+            dim_size=n_asu_atoms,
             reduce="mean",
         )
         return vector_field

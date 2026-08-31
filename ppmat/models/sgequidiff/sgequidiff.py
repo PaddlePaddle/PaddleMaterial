@@ -115,6 +115,11 @@ class SGEQuiDiff(nn.Layer):
         wyckoff_element_transformer_config: Overrides for the
             Wyckoff-element transformer constructor fields, same semantics as
             ``lattice_sampler_config``.
+        execution_backend: Numerical execution backend, ``"eager"`` or
+            ``"cinn"``. Forwarded to the coordinate diffusion model, which
+            owns the compiled runtime. Defaults to ``"eager"``.
+        runtime_options: Per-backend runtime options forwarded to the
+            coordinate diffusion model.
     """
 
     def __init__(
@@ -141,6 +146,8 @@ class SGEQuiDiff(nn.Layer):
         frac_coord_grad_weight: Optional[float] = 1.0,
         lattice_sampler_config: Optional[Dict[str, Any]] = None,
         wyckoff_element_transformer_config: Optional[Dict[str, Any]] = None,
+        execution_backend: str = "eager",
+        runtime_options: Optional[dict] = None,
         vocab: Optional[dict] = None,
     ):
         super().__init__()
@@ -192,6 +199,8 @@ class SGEQuiDiff(nn.Layer):
             noise_scheduler_cfg=noise_scheduler_cfg,
             wyckoff_geometry=self.wyckoff_geometry,
             embedding_tools=self.embedding_tools,
+            execution_backend=execution_backend,
+            runtime_options=runtime_options,
         )
         self.space_group_sampler = SpaceGroupSampler()
         self.lattice_sampler = TelescopingDiscreteLatticeSampler(
@@ -207,6 +216,28 @@ class SGEQuiDiff(nn.Layer):
         logger.info(
             f"[SGEQuiDiff] Initialized: dataset={dataset_name}, "
             f"snr={diffusion_snr}, temperature={temperature}"
+        )
+
+    # Framework-facing runtime protocol: configure_execution_backend in
+    # ppmat/utils/execution.py resolves these via getattr (trainer, predictor,
+    # and samplers are the real callers). No direct callers exist in this
+    # file; do not remove.
+    @property
+    def execution_backend(self) -> str:
+        """Active numerical execution backend (owned by the diffusion model)."""
+        return self.atom_coord_diffusion_model.execution_backend
+
+    def set_execution_backend(self, backend: str) -> None:
+        self.atom_coord_diffusion_model.set_execution_backend(backend)
+
+    def set_runtime_options(self, runtime_options: dict) -> None:
+        self.atom_coord_diffusion_model.set_runtime_options(runtime_options)
+
+    def validate_execution_backend(
+        self, use_amp: bool = False, world_size: int = 1
+    ) -> None:
+        self.atom_coord_diffusion_model.validate_execution_backend(
+            use_amp=use_amp, world_size=world_size
         )
 
     def forward(self, batch_data: Dict) -> Dict:
