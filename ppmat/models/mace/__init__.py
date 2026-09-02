@@ -12,18 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .layers import EquivariantLayer
-from .layers import RadialBasisFunction
+from .model import EquivariantLayer
 from .model import MACE
 from .utils import atomic_number_to_index
-from .utils import get_edge_vectors
-from .utils import radial_basis
 
-__all__ = [
-    "MACE",
-    "EquivariantLayer",
-    "RadialBasisFunction",
-    "atomic_number_to_index",
-    "radial_basis",
-    "get_edge_vectors",
-]
+__all__ = ["MACE", "EquivariantLayer", "atomic_number_to_index"]

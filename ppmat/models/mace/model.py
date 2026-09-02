@@ -23,7 +23,29 @@ from typing import Sequence
 import paddle
 import paddle.nn as nn
 
-from .layers import EquivariantLayer
+import paddle.nn.functional as F
+
+from ppmat.models.common.radial_basis import RadialBasis
+from .utils import atomic_number_to_index
+
+
+class EquivariantLayer(nn.Layer):
+    """Equivariant message passing layer."""
+
+    def __init__(self, hidden_dim, num_basis, r_max):
+        super().__init__()
+        self.rbf = RadialBasis(num_basis, r_max)
+        self.W_message = nn.Linear(num_basis + hidden_dim, hidden_dim)
+        self.W_update = nn.Linear(hidden_dim * 2, hidden_dim)
+
+    def forward(self, x, edge_indices, edge_distances):
+        rbf_features = self.rbf(edge_distances)
+        src, dst = edge_indices
+        message = F.relu(self.W_message(paddle.concat([x[src], rbf_features], axis=-1)))
+        aggregated = paddle.zeros_like(x)
+        index = dst.reshape([-1, 1]).expand_as(message)
+        aggregated = paddle.scatter_add(aggregated, 0, index.astype("int64"), message)
+        return F.relu(self.W_update(paddle.concat([x, aggregated], axis=-1)))
 
 
 class MACE(nn.Layer):
@@ -53,15 +75,6 @@ class MACE(nn.Layer):
         self.num_basis = num_basis
         self.r_max = r_max
         self.num_elements = num_elements
-        self.atomic_numbers = tuple(
-            list(range(1, 84)) + list(range(89, 96))
-        )
-        if len(self.atomic_numbers) != num_elements:
-            self.atomic_numbers = tuple(range(1, num_elements + 1))
-        self._atomic_number_to_index = {
-            atomic_number: index
-            for index, atomic_number in enumerate(self.atomic_numbers)
-        }
 
         support_property_names = ["energy_per_atom", "force", "stress"]
         support_loss_weights = {
@@ -98,33 +111,6 @@ class MACE(nn.Layer):
         else:
             raise ValueError(f"Unknown loss_type: {loss_type}")
 
-    def _atom_type_to_index(self, atom_types: paddle.Tensor) -> paddle.Tensor:
-        """Map atomic numbers Z to embedding indices."""
-        atomic_numbers = (
-            paddle.cast(atom_types, dtype="int64")
-            .reshape([-1])
-            .cpu()
-            .numpy()
-            .tolist()
-        )
-        try:
-            indices = [self._atomic_number_to_index[int(z)] for z in atomic_numbers]
-        except KeyError as exc:
-            raise ValueError(
-                f"Unsupported atomic number {exc.args[0]}; supported atomic numbers are "
-                f"{self.atomic_numbers}."
-            ) from exc
-        return paddle.to_tensor(indices, dtype="int64")
-
-    def _ensure_graph_tensor(self, graph):
-        """Ensure graph features are paddle Tensors."""
-        if hasattr(graph, "tensor") and callable(graph.tensor):
-            # Skip conversion when features are already paddle Tensors
-            sample = graph.node_feat.get("atom_types")
-            if sample is not None and not isinstance(sample, paddle.Tensor):
-                graph = graph.tensor()
-        return graph
-
     def _compute_bond_dist(self, graph, positions, lattice):
         """Recompute bond lengths from coordinates (and PBC offsets).
 
@@ -157,9 +143,9 @@ class MACE(nn.Layer):
         bond_dist = paddle.clip(bond_dist, min=1e-8)
         return bond_dist, src, dst
 
-    def _compute_energy_force_stress(self, graph):
-        """Compute energy, forces, and stress from a graph."""
-        graph = self._ensure_graph_tensor(graph)
+    def _forward(self, data):
+        """Compute standardized predictions from a batched graph."""
+        graph = data["graph"]
 
         atom_types = graph.node_feat["atom_types"]
         positions = graph.node_feat["cart_coords"].astype("float32")
@@ -192,7 +178,16 @@ class MACE(nn.Layer):
                 paddle.eye(3, dtype=positions.dtype) + strain_atoms,
             )
 
-        indices = self._atom_type_to_index(atom_types)
+        indices = paddle.to_tensor(
+            atomic_number_to_index(
+                paddle.cast(atom_types, dtype="int64")
+                .reshape([-1])
+                .cpu()
+                .numpy()
+                .tolist()
+            ),
+            dtype="int64",
+        )
         x = self.embedding(indices)
 
         # Differentiable bond lengths instead of constant graph bond_dist
@@ -218,24 +213,13 @@ class MACE(nn.Layer):
 
         forces = None
         if "force" in self.property_names:
-            # Match CHGNet: create_graph=True in train for force-loss backprop.
-            # Fall back when higher-order grads are unavailable.
-            try:
-                force_grad = paddle.grad(
-                    outputs=[total_energy.sum()],
-                    inputs=[positions],
-                    create_graph=self.training,
-                    retain_graph=True,
-                    allow_unused=True,
-                )[0]
-            except RuntimeError:
-                force_grad = paddle.grad(
-                    outputs=[total_energy.sum()],
-                    inputs=[positions],
-                    create_graph=False,
-                    retain_graph=True,
-                    allow_unused=True,
-                )[0]
+            force_grad = paddle.grad(
+                outputs=[total_energy.sum()],
+                inputs=[positions],
+                create_graph=self.training,
+                retain_graph=True,
+                allow_unused=True,
+            )[0]
             if force_grad is None:
                 forces = paddle.zeros_like(positions)
             else:
@@ -244,39 +228,24 @@ class MACE(nn.Layer):
         stress = None
         if "stress" in self.property_names and strain is not None:
             volume = paddle.linalg.det(lattice)
-            try:
-                stress_grad = paddle.grad(
-                    outputs=[total_energy.sum()],
-                    inputs=[strain],
-                    create_graph=self.training,
-                    retain_graph=self.training,
-                    allow_unused=True,
-                )[0]
-            except RuntimeError:
-                stress_grad = paddle.grad(
-                    outputs=[total_energy.sum()],
-                    inputs=[strain],
-                    create_graph=False,
-                    retain_graph=False,
-                    allow_unused=True,
-                )[0]
+            stress_grad = paddle.grad(
+                outputs=[total_energy.sum()],
+                inputs=[strain],
+                create_graph=self.training,
+                retain_graph=self.training,
+                allow_unused=True,
+            )[0]
             if stress_grad is None:
                 stress = paddle.zeros_like(lattice)
             else:
                 # Convert to GPa (1 eV/Angstrom^3 ≈ 160.21766208 GPa)
                 stress = stress_grad / volume.reshape([-1, 1, 1]) / 160.21766208
 
-        return energy_per_atom, forces, stress
-
-    def _forward(self, data):
-        """Compute standardized predictions from a batched graph."""
-        energy, force, stress = self._compute_energy_force_stress(data["graph"])
-
         pred_dict = {}
         if "energy_per_atom" in self.property_names:
-            pred_dict["energy_per_atom"] = energy
-        if "force" in self.property_names and force is not None:
-            pred_dict["force"] = force
+            pred_dict["energy_per_atom"] = energy_per_atom
+        if "force" in self.property_names and forces is not None:
+            pred_dict["force"] = forces
         if "stress" in self.property_names and stress is not None:
             pred_dict["stress"] = stress
         return pred_dict
@@ -308,22 +277,10 @@ class MACE(nn.Layer):
         prediction = pred_dict if return_prediction else {}
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
-    def predict(self, graphs):
+    def predict(self, data):
         """Return standardized Paddle tensor predictions for Predictor."""
-        if isinstance(graphs, list):
-            results = []
-            for graph in graphs:
-                result = self.forward(
-                    {"graph": graph},
-                    return_loss=False,
-                    return_prediction=True,
-                )
-                results.append(result["pred_dict"])
-            return results
-
-        result = self.forward(
-            {"graph": graphs},
+        return self.forward(
+            data,
             return_loss=False,
             return_prediction=True,
-        )
-        return result["pred_dict"]
+        )["pred_dict"]
