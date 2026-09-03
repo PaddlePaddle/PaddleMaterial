@@ -19,33 +19,28 @@ vocabulary role (see ``ppmat.vocab.build_vocab``) and manages the on-disk
 cache directory shared by the SGEquiDiff derived-cache files.
 """
 
-import os
 import pickle
 from fractions import Fraction
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from scipy.spatial import ConvexHull
 
 from ppmat.models.sgequidiff.vocabs import VOCAB_NAME
+from ppmat.utils import download
 from ppmat.utils import logger
 from ppmat.vocab import build_vocab
 
-_DATA_DIRECTORY: Optional[Path] = None
-
 
 def get_data_directory() -> Path:
-    """External data / cache directory (writable).
-    $ASU_DATA_DIR > project data > ~/.asu_data."""
-    global _DATA_DIRECTORY
-    if _DATA_DIRECTORY is None:
-        # Deferred import: avoids pulling ppmat.datasets (and its
-        # models-registered dataset modules) during package initialization.
-        from ppmat.datasets.asu_dataset import resolve_asu_data_dir
+    """Writable cache directory for SGEquiDiff derived assets.
 
-        _DATA_DIRECTORY = resolve_asu_data_dir()
-    return _DATA_DIRECTORY
+    Resolved under ``~/.paddlemat/datasets`` (the unified dataset cache
+    root) and created on demand.
+    """
+    directory = Path(download.DATASETS_HOME) / "sgequidiff"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
 def get_shape_decomp_dict_path() -> Path:

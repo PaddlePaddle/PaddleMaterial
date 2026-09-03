@@ -16,24 +16,23 @@
 positions and elements.
 """
 import math
+from typing import Optional
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 
 from ppmat.models.common.activation import ScaledSiLU as Swish
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
 from ppmat.models.sgequidiff.sgequidiff_meta import MAX_WYCKOFF_POSITIONS
 from ppmat.models.sgequidiff.sgequidiff_meta import NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS
+from ppmat.models.sgequidiff.sgequidiff_meta import NUM_LATTICE_PARAMS
 from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
 from ppmat.models.sgequidiff.sgequidiff_meta import max_atoms_per_dataset
 from ppmat.models.sgequidiff.shared import FourierLinear
 from ppmat.models.sgequidiff.shared import SpaceGroupEncoder
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
 from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
-from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
-
-# Number of lattice parameters per crystal: 3 lengths + 3 angles.
-_NUM_LATTICE_PARAMS: int = 6
 
 
 class MultiheadAttention(nn.MultiHeadAttention):
@@ -45,19 +44,20 @@ class MultiheadAttention(nn.MultiHeadAttention):
     NaN-to-zero fallback for fully-masked rows. This subclass keeps the native
     projection layers and re-runs the attention math with the masking
     convention used by the model (bool ``attn_mask`` with ``True`` = masked).
+
+    Note: the native attention-prob dropout path is not re-implemented here,
+    so ``dropout_rate`` only applies to the residual/FFN dropouts of
+    ``PreLNDecoderLayer``.
     """
 
-    def __init__(self, embed_dim, num_heads, kdim=None):
-        super().__init__(embed_dim=embed_dim, num_heads=num_heads, need_weights=True)
-        assert (
-            kdim is None or kdim == embed_dim
-        ), "cross-dimension attention (kdim != embed_dim) is not required"
+    def __init__(self, embed_dim, num_heads):
+        super().__init__(embed_dim=embed_dim, num_heads=num_heads)
 
     def forward(
         self,
         query,
-        key=None,
-        value=None,
+        key,
+        value,
         need_weights=False,
         attn_mask=None,
         key_padding_mask=None,
@@ -145,7 +145,7 @@ class SpaceGroupAndLatticeEncoder(nn.Layer):
             space_group_embedding_dim=math.floor(self.hidden_dim / 2),
         )
         self.lattice_encoder = FourierLinear(
-            input_dim=_NUM_LATTICE_PARAMS,
+            input_dim=NUM_LATTICE_PARAMS,
             num_fourier_frequencies=lattice_fourier_num_frequencies,
             scale=1.0,
             output_dim=math.ceil(self.hidden_dim / 2),
@@ -170,7 +170,13 @@ class SpaceGroupAndLatticeEncoder(nn.Layer):
         return emb
 
 
-class TransformerDecoderLayer(nn.Layer):
+class PreLNDecoderLayer(nn.Layer):
+    """Pre-LayerNorm transformer decoder block (self-attention only).
+
+    Named to avoid confusion with ``paddle.nn.TransformerDecoderLayer`` (a
+    post-LN layer with cross-attention and different mask semantics).
+    """
+
     def __init__(
         self,
         hidden_dim: int = 64,
@@ -229,7 +235,11 @@ class WyckoffElementTransformer(nn.Layer):
         self.embedding_tools = embedding_tools
         self.wyckoff_geometry = wyckoff_geometry
 
-        assert self.hidden_dim % 2 == 0
+        if self.hidden_dim % 2 != 0:
+            raise ValueError(
+                f"hidden_dim must be even (wyckoff/element split), "
+                f"got {self.hidden_dim}."
+            )
         half_dim = int(self.hidden_dim / 2)
         self.half_dim = half_dim
         self.wyckoff_dim = half_dim
@@ -279,7 +289,7 @@ class WyckoffElementTransformer(nn.Layer):
 
         self.hidden_layers = nn.LayerList(
             [
-                TransformerDecoderLayer(
+                PreLNDecoderLayer(
                     hidden_dim=self.hidden_dim,
                     num_heads=self.num_heads,
                     dropout_rate=self.dropout_rate,
@@ -291,7 +301,6 @@ class WyckoffElementTransformer(nn.Layer):
         self.wyckoff_mha = MultiheadAttention(
             embed_dim=half_dim,
             num_heads=1,
-            kdim=self.wyckoff_dim,
         )
 
         d = half_dim + self.wyckoff_dim
@@ -316,7 +325,6 @@ class WyckoffElementTransformer(nn.Layer):
         self.element_mha = MultiheadAttention(
             embed_dim=half_dim,
             num_heads=1,
-            kdim=self.element_dim,
         )
 
         _valid_mask = paddle.zeros(
@@ -325,7 +333,7 @@ class WyckoffElementTransformer(nn.Layer):
         _zero_dim_mask = paddle.zeros(
             [NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS], dtype="bool"
         )
-        for sg_num in range(1, 231):
+        for sg_num in range(1, NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS + 1):
             sg_dict = self.wyckoff_geometry.asu_wyckoff_dict[str(sg_num)]
             sg_wyckoff_letters = sg_dict["ordered_wyckoff_letters"]
             _valid_mask[sg_num - 1, : len(sg_wyckoff_letters)] = True
@@ -344,7 +352,8 @@ class WyckoffElementTransformer(nn.Layer):
         temperature: float = 1.0,
     ):
         """Autoregressively sample Wyckoff positions and elements."""
-        assert temperature > 0.0
+        if temperature <= 0.0:
+            raise ValueError(f"temperature must be positive, got {temperature}.")
         max_allowed_atoms = max_atoms_per_dataset[self.dataset_name]
         n_crystals = space_group_indices.shape[0]
 
@@ -370,33 +379,22 @@ class WyckoffElementTransformer(nn.Layer):
 
         wyckoff_exists = self.valid_wyckoff_positions_mask[space_group_indices]
 
-        _xtal_indices_list = []
-        _existing_wyckoff_indices_list = []
-        for b in range(n_crystals):
-            for wp_idx in range(MAX_WYCKOFF_POSITIONS):
-                if wyckoff_exists[b, wp_idx]:
-                    _xtal_indices_list.append(b)
-                    _existing_wyckoff_indices_list.append(wp_idx)
-
-        if len(_xtal_indices_list) > 0:
-            _xtal_indices = paddle.to_tensor(_xtal_indices_list, dtype="int64")
-            _existing_wyckoff_indices = paddle.to_tensor(
-                _existing_wyckoff_indices_list, dtype="int64"
+        # Every space group has at least one Wyckoff site ("a"), so the
+        # nonzero of ``wyckoff_exists`` is never empty.
+        _existing_positions = paddle.nonzero(wyckoff_exists)
+        _xtal_indices = _existing_positions[:, 0]
+        _existing_wyckoff_indices = _existing_positions[:, 1]
+        wyckoff_keys = self.wyckoff_emb(
+            self.embedding_tools.get_wyckoff_embedding(
+                wyckoff_index=_existing_wyckoff_indices,
+                space_group_index=space_group_indices[_xtal_indices],
             )
-            wyckoff_keys = self.wyckoff_emb(
-                self.embedding_tools.get_wyckoff_embedding(
-                    wyckoff_index=_existing_wyckoff_indices,
-                    space_group_index=space_group_indices[_xtal_indices],
-                )
-            )
-        else:
-            wyckoff_keys = paddle.zeros([0, self.wyckoff_dim])
+        )
 
         padded_wyckoff_keys = paddle.zeros(
             [n_crystals, MAX_WYCKOFF_POSITIONS, self.wyckoff_dim]
         )
-        if len(_xtal_indices_list) > 0:
-            padded_wyckoff_keys[_xtal_indices, _existing_wyckoff_indices] = wyckoff_keys
+        padded_wyckoff_keys[_xtal_indices, _existing_wyckoff_indices] = wyckoff_keys
 
         padded_wyckoff_keys = paddle.concat(
             [self.stop_key.expand([n_crystals, 1, -1]), padded_wyckoff_keys],
@@ -522,72 +520,59 @@ class WyckoffElementTransformer(nn.Layer):
             crystal_is_complete[incomplete_mask] = sampled_stop_token
 
             if (~crystal_is_complete).sum() > 0:
-                if sampled_wyckoff_indices.shape[0] > 0:
-                    sampled_wyckoff_embeddings = self.wyckoff_emb(
-                        self.embedding_tools.get_wyckoff_embedding(
-                            wyckoff_index=sampled_wyckoff_indices,
-                            space_group_index=space_group_indices[
-                                idxs_of_xtals_to_update
-                            ],
-                        )
+                # At least one crystal is still incomplete, so at least one
+                # of them sampled an atom (not a stop token); hence
+                # ``sampled_wyckoff_indices`` is non-empty here.
+                sampled_wyckoff_embeddings = self.wyckoff_emb(
+                    self.embedding_tools.get_wyckoff_embedding(
+                        wyckoff_index=sampled_wyckoff_indices,
+                        space_group_index=space_group_indices[idxs_of_xtals_to_update],
                     )
-                else:
-                    sampled_wyckoff_embeddings = paddle.zeros([0, self.wyckoff_dim])
+                )
 
-                if sampled_wyckoff_indices.shape[0] > 0:
-                    atom_z_element_mixed = self.mix_xtal_and_wyckoff_mlp(
-                        paddle.concat(
-                            [
-                                atom_z_element[~sampled_stop_token],
-                                sampled_wyckoff_embeddings,
-                            ],
-                            axis=-1,
-                        )
+                atom_z_element_mixed = self.mix_xtal_and_wyckoff_mlp(
+                    paddle.concat(
+                        [
+                            atom_z_element[~sampled_stop_token],
+                            sampled_wyckoff_embeddings,
+                        ],
+                        axis=-1,
                     )
-                else:
-                    atom_z_element_mixed = paddle.zeros([0, self.half_dim])
+                )
 
                 element_keys = _element_keys.expand(
                     [atom_z_element_mixed.shape[0], -1, -1]
                 )
 
-                if sampled_wyckoff_indices.shape[0] > 0:
-                    (
-                        wyckoff_attn_mask,
-                        element_attn_mask,
-                    ) = self.get_lexicographic_attn_masks(
-                        space_group_indices[idxs_of_xtals_to_update],
-                        padded_wyckoff_indices[
-                            idxs_of_xtals_to_update, iteration - 2 : iteration
-                        ].reshape([-1])
-                        if iteration > 1
-                        else sampled_wyckoff_indices,
-                        padded_element_indices[
-                            idxs_of_xtals_to_update, iteration - 2 : iteration
-                        ].reshape([-1])
-                        if iteration > 1
-                        else paddle.zeros_like(sampled_wyckoff_indices),
-                        paddle.full(
-                            [
-                                sampled_wyckoff_indices.shape[0],
-                                2 if iteration > 1 else 1,
-                            ],
-                            fill_value=True,
-                            dtype="bool",
-                        ),
-                        2 * paddle.ones_like(sampled_wyckoff_indices)
-                        if iteration > 1
-                        else paddle.ones_like(sampled_wyckoff_indices),
-                    )
-                    wyckoff_attn_mask = wyckoff_attn_mask[:, -1, :].unsqueeze(1)
-                    element_attn_mask = element_attn_mask[:, -1, :].unsqueeze(1)
-                else:
-                    wyckoff_attn_mask = paddle.zeros(
-                        [0, 1, 1 + MAX_WYCKOFF_POSITIONS], dtype="bool"
-                    )
-                    element_attn_mask = paddle.zeros(
-                        [0, 1, ELEMENT_ENCODING_SIZE], dtype="bool"
-                    )
+                (
+                    wyckoff_attn_mask,
+                    element_attn_mask,
+                ) = self.get_lexicographic_attn_masks(
+                    space_group_indices[idxs_of_xtals_to_update],
+                    padded_wyckoff_indices[
+                        idxs_of_xtals_to_update, iteration - 2 : iteration
+                    ].reshape([-1])
+                    if iteration > 1
+                    else sampled_wyckoff_indices,
+                    padded_element_indices[
+                        idxs_of_xtals_to_update, iteration - 2 : iteration
+                    ].reshape([-1])
+                    if iteration > 1
+                    else paddle.zeros_like(sampled_wyckoff_indices),
+                    paddle.full(
+                        [
+                            sampled_wyckoff_indices.shape[0],
+                            2 if iteration > 1 else 1,
+                        ],
+                        fill_value=True,
+                        dtype="bool",
+                    ),
+                    2 * paddle.ones_like(sampled_wyckoff_indices)
+                    if iteration > 1
+                    else paddle.ones_like(sampled_wyckoff_indices),
+                )
+                wyckoff_attn_mask = wyckoff_attn_mask[:, -1, :].unsqueeze(1)
+                element_attn_mask = element_attn_mask[:, -1, :].unsqueeze(1)
 
                 element_probs = self.element_mha(
                     query=atom_z_element_mixed[:, None, :],
@@ -893,9 +878,21 @@ class WyckoffElementTransformer(nn.Layer):
         lattice_lengths: paddle.Tensor,
         lattice_angles: paddle.Tensor,
         space_group_indices: paddle.Tensor,
+        max_atoms: Optional[int] = None,
     ):
-        """Log probabilities of the given elements and Wyckoff positions."""
-        max_atoms = int(n_asu_atoms_per_xtal.max())
+        """Log probabilities of the given elements and Wyckoff positions.
+
+        Args:
+            max_atoms: Static padding width for the teacher-forced forward.
+                Passing the dataset-wide maximum keeps forward shapes static
+                (no GPU->CPU sync, CINN-friendly). When omitted, the batch
+                maximum is computed with ``.max()`` which forces a GPU->CPU
+                sync every call. Callers must guarantee
+                ``n_asu_atoms_per_xtal <= max_atoms`` (the bundled ASU
+                datasets satisfy this by construction).
+        """
+        if max_atoms is None:
+            max_atoms = int(n_asu_atoms_per_xtal.max())
         n_crystals = n_asu_atoms_per_xtal.shape[0]
         n_asu_atoms = element_indices.shape[0]
         atom_mask = (

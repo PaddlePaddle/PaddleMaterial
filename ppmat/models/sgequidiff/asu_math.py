@@ -15,6 +15,7 @@
 """
 ASU / Wyckoff math helpers: hull test, ASU wrapping, diffusion score computation.
 """
+from typing import Dict
 from typing import NamedTuple
 from typing import Optional
 from typing import Tuple
@@ -25,7 +26,6 @@ import paddle
 from pymatgen.core import Lattice
 from pymatgen.core import Structure
 
-from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
 from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
 from ppmat.utils.crystal import OFFSET_LIST
 from ppmat.utils.crystal import frac_to_cart_coords
@@ -47,7 +47,9 @@ def primitive_lattice_matrix_from_conventional_lattice_params(
         conventional_lattice_matrix = lattice_params_to_matrix_paddle(
             conventional_lattice_lengths, conventional_lattice_angles
         )
-    P_matrices = wyckoff_geometry.conventional_to_primitive_P_matrices[space_group_indices]
+    P_matrices = wyckoff_geometry.conventional_to_primitive_P_matrices[
+        space_group_indices
+    ]
     return paddle.bmm(P_matrices, conventional_lattice_matrix)
 
 
@@ -61,11 +63,11 @@ def _deduplicate_orbit_coords(
     first_expand = paddle.repeat_interleave(first_idx, orbit_sizes_sqr)
     orbit_expand = paddle.repeat_interleave(orbit_sizes, orbit_sizes_sqr)
 
-    n_pairs = int(orbit_sizes_sqr.sum().item())
     offset = paddle.repeat_interleave(
         paddle.cumsum(orbit_sizes_sqr, axis=0) - orbit_sizes_sqr, orbit_sizes_sqr
     )
-    pair_ids = paddle.arange(n_pairs) - offset
+    # ``arange`` accepts a tensor ``end`` directly: no GPU sync is needed.
+    pair_ids = paddle.arange(end=orbit_sizes_sqr.sum(), dtype=paddle.int64) - offset
     row_ids = paddle.floor_divide(pair_ids, orbit_expand) + first_expand
     col_ids = pair_ids % orbit_expand + first_expand
 
@@ -97,7 +99,15 @@ class _ASUToPrimitiveResult(NamedTuple):
 
 
 class _SpaceGroupOpsResult(NamedTuple):
-    """Named result of space-group operation expansion."""
+    """Named result of space-group operation expansion.
+
+    Note: ``map_conventional_to_asu_atom`` maps the **raw** (pre-dedup)
+    conventional atoms to ASU atoms; ``conventional_frac_coords`` and the
+    other per-atom fields are already restricted to
+    ``unique_non_overlapping_atom_indices``. Consumers that need a mapping
+    aligned with the deduplicated atoms must index this field by
+    ``unique_non_overlapping_atom_indices`` first.
+    """
 
     A_inv_ops: paddle.Tensor
     inverse_indices: paddle.Tensor
@@ -131,11 +141,15 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
         wyckoff_geometry.conventional_to_primitive_invP_matrices[space_group_indices]
     )
 
-    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[space_group_indices]
+    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[
+        space_group_indices
+    ]
     padded_gc_trans = wyckoff_geometry.padded_general_wyckoff_translations[
         space_group_indices
     ]
-    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[space_group_indices]
+    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[
+        space_group_indices
+    ]
     general_wyckoff_multiplicity_per_crystal = padded_gc_mask.cast(paddle.int64).sum(
         axis=1
     )
@@ -215,7 +229,6 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
         dim_size=batch_size,
         reduce="sum",
     )
-    assert num_prim_nodes_per_crystal.shape[0] == batch_size
 
     map_prim_to_asu = paddle.arange(asu_frac_coords.shape[0]).repeat_interleave(
         asu_multiplicity_per_asu_atom, axis=0
@@ -224,13 +237,15 @@ def batched_convert_asu_frac_coords_to_primitive_cartesian_coords(
     primitive_element_indices = asu_element_indices[map_prim_to_asu]
     asu_frac_coords_of_prim_atoms = asu_frac_coords[map_prim_to_asu]
 
-    primitive_lattice_matrix = (
-        primitive_lattice_matrix_from_conventional_lattice_params(
-            space_group_indices=space_group_indices,
-            wyckoff_geometry=wyckoff_geometry,
-            conventional_lattice_matrix=conventional_lattice_matrix,
+    primitive_lattice_matrix = None
+    if return_cartesian_coords or get_primitive_cell:
+        primitive_lattice_matrix = (
+            primitive_lattice_matrix_from_conventional_lattice_params(
+                space_group_indices=space_group_indices,
+                wyckoff_geometry=wyckoff_geometry,
+                conventional_lattice_matrix=conventional_lattice_matrix,
+            )
         )
-    )
 
     if return_cartesian_coords:
         out_coords = frac_to_cart_coords(
@@ -333,7 +348,6 @@ def wrap_frac_coords_into_asu(
         index=map_conventional_to_asu_coord,
         dim_size=n_asu_atoms,
     )
-    assert indices_of_conv_atoms_in_asu.shape[0] == n_asu_atoms
 
     supercell_frac_coords_in_asu = supercell_frac_coords[indices_of_conv_atoms_in_asu]
     asu_atom_is_inside = supercell_in_wyckoff[indices_of_conv_atoms_in_asu]
@@ -404,7 +418,7 @@ def d_log_p_asu_wrapped_normal(
     """
     Compute gradient of log ASU-wrapped normal probability (i.e. ground truth score).
     """
-    if isinstance(sigma, float):
+    if not isinstance(sigma, paddle.Tensor):
         sigma_conv = paddle.full([conventional_frac_coords.shape[0], 1], sigma)
     else:
         sigma_conv = sigma[map_conventional_to_asu_frac_coords].unsqueeze(1)
@@ -461,14 +475,18 @@ def get_space_group_ops_and_conventional_atoms(
     """Get space group operations (mod lattice translation) and
     de-duplicated conventional cell atoms.
     """
-    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[space_group_indices]
+    padded_gc_mats = wyckoff_geometry.padded_general_wyckoff_matrices[
+        space_group_indices
+    ]
     padded_gc_inv_mats = wyckoff_geometry.padded_inverse_general_wyckoff_matrices[
         space_group_indices
     ]
     padded_gc_trans = wyckoff_geometry.padded_general_wyckoff_translations[
         space_group_indices
     ]
-    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[space_group_indices]
+    padded_gc_mask = wyckoff_geometry.padded_general_wyckoff_ops_mask[
+        space_group_indices
+    ]
 
     general_wyckoff_multiplicity = padded_gc_mask.cast(paddle.int64).sum(axis=1)
 
@@ -595,20 +613,22 @@ def get_orbit_from_single_asu_position(
 
 
 def asu_to_pymatgen_structure(
-    asu: ASUCrystal, wyckoff_geometry: "WyckoffGeometry"
+    asu: Dict, wyckoff_geometry: "WyckoffGeometry"
 ) -> Structure:
     """Expand an ASU crystal into a full conventional-cell pymatgen Structure."""
-    lengths = asu.conventional_lattice_lengths.reshape([1, 3])
-    angles = asu.conventional_lattice_angles.reshape([1, 3])
+    lengths = asu["conventional_lattice_lengths"].reshape([1, 3])
+    angles = asu["conventional_lattice_angles"].reshape([1, 3])
     lattice_matrix = lattice_params_to_matrix_paddle(lengths, angles)[0]
     pmg_lattice = Lattice(matrix=lattice_matrix.numpy())
 
     conventional_frac_coords = []
     conventional_atomic_numbers = []
-    for frac_coord, atom_type in zip(asu.conventional_frac_coords, asu.element_indices):
+    for frac_coord, atom_type in zip(
+        asu["conventional_frac_coords"], asu["element_indices"]
+    ):
         orbit = get_orbit_from_single_asu_position(
             frac_coord,
-            space_group_number=int(asu.space_group_number),
+            space_group_number=int(asu["space_group_number"]),
             wyckoff_geometry=wyckoff_geometry,
         )
         conventional_frac_coords.append(orbit.numpy())

@@ -16,7 +16,6 @@
 encoder, Fourier feature encoding, and graph aggregation / normalization."""
 
 import math
-from typing import Optional
 
 import paddle
 import paddle.nn as nn
@@ -63,7 +62,8 @@ class FourierLinear(nn.Layer):
         use_bias: bool = True,
     ):
         super().__init__()
-        assert num_layers >= 1
+        if num_layers < 1:
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}.")
         self.num_fourier_frequencies = num_fourier_frequencies
         self.scale = scale
         self.output_dim = output_dim
@@ -107,11 +107,8 @@ class VariancePreservingAggregation(nn.Layer):
         self,
         src: paddle.Tensor,
         index: paddle.Tensor,
-        dim_size: Optional[int] = None,
+        dim_size: int,
     ) -> paddle.Tensor:
-        if dim_size is None:
-            dim_size = int(index.max().item()) + 1
-
         sum_agg = paddle_scatter(src, index, dim=0, dim_size=dim_size, reduce="sum")
         counts = paddle_scatter(
             paddle.ones([src.shape[0]], dtype=src.dtype),

@@ -501,12 +501,20 @@ class AdamW:
         false-positive risks of substring matching (e.g. ``"time_embedder"``
         accidentally matching ``"time_embedder_aux.weight"``).
 
-        Parameters that match no entry fall back to ``lr_multiplier=1.0`` and
-        no weight-decay multiplier (i.e. they inherit the optimizer's full
-        weight decay). The returned groups carry absolute learning rates and
-        weight decays (``learning_rate * lr_multiplier``,
-        ``weight_decay * weight_decay_multiplier`` if configured); paddle's
-        parameter-group spec uses absolute values, not multipliers.
+        Paddle parameter-group semantics (verified experimentally against
+        ``paddle.optimizer``): a float ``learning_rate`` entry in a group is
+        a **multiplier** of the optimizer's global learning rate (the global
+        rate may itself be a float or an ``LRScheduler``); a ``weight_decay``
+        entry in a group is an **absolute** value that overrides the
+        optimizer-level weight decay for that group. Group entries whose
+        ``weight_decay_multiplier`` is set therefore carry
+        ``weight_decay * weight_decay_multiplier``. Note that a parameter
+        matched by ``no_weight_decay_name`` never decays, regardless of any
+        group ``weight_decay_multiplier`` (``apply_decay_param_fun`` wins).
+
+        Parameters that match no entry fall back to ``lr_multiplier=1.0``
+        and no weight-decay multiplier (i.e. they inherit the optimizer's
+        full weight decay).
 
         Args:
             model_list (Tuple[nn.Layer, ...]): Tuple of model(s).
@@ -522,6 +530,11 @@ class AdamW:
                 lr_multiplier = 1.0
                 wd_multiplier = None
                 for group in self.named_lr_groups:
+                    if "name" not in group:
+                        raise ValueError(
+                            "named_lr_groups entry missing 'name': "
+                            f"{group}"
+                        )
                     if group["name"] in name.split("."):
                         lr_multiplier = group.get("lr_multiplier", 1.0)
                         wd_multiplier = group.get("weight_decay_multiplier")
@@ -529,17 +542,12 @@ class AdamW:
                 key = (lr_multiplier, wd_multiplier)
                 grouped.setdefault(key, []).append(param)
 
-        base_lr = (
-            self.learning_rate
-            if isinstance(self.learning_rate, float)
-            else 1.0
-        )
         base_wd = self.weight_decay
         result = []
         for (lr_multiplier, wd_multiplier), params in grouped.items():
             group_dict = {
                 "params": params,
-                "learning_rate": base_lr * lr_multiplier,
+                "learning_rate": lr_multiplier,
             }
             if wd_multiplier is not None:
                 group_dict["weight_decay"] = base_wd * wd_multiplier

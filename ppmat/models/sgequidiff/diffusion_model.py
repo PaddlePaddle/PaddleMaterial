@@ -24,8 +24,6 @@ from tqdm import tqdm
 
 from ppmat.models.common.runtime import RuntimeMixin
 from ppmat.models.common.runtime import runtime_boundary
-from ppmat.models.sgequidiff.wyckoff_shape_decomp import ensure_wyckoff_shape_decomp
-from ppmat.models.sgequidiff.wyckoff_shape_decomp import get_shape_decomp_dict_path
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.sgequidiff.asu_crystal import sample_point_in_asu_wyckoff_site
 from ppmat.models.sgequidiff.asu_math import d_log_p_asu_wrapped_normal
@@ -38,6 +36,8 @@ from ppmat.models.sgequidiff.drift_modules import TorusMLP
 from ppmat.models.sgequidiff.sigma_norm import compute_sigma_norms
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
 from ppmat.models.sgequidiff.wyckoff_geometry import WyckoffGeometry
+from ppmat.models.sgequidiff.wyckoff_shape_decomp import ensure_wyckoff_shape_decomp
+from ppmat.models.sgequidiff.wyckoff_shape_decomp import get_shape_decomp_dict_path
 from ppmat.schedulers import build_scheduler
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 from ppmat.utils.scatter import scatter as paddle_scatter
@@ -70,9 +70,7 @@ class EquivariantDiffusionModel(RuntimeMixin, nn.Layer):
         if sigma_min <= 0.0:
             raise ValueError(f"sigma_min must be positive, got {sigma_min}")
         if not isinstance(time_emb_dim, int) or time_emb_dim <= 0:
-            raise ValueError(
-                f"time_emb_dim must be a positive int, got {time_emb_dim}"
-            )
+            raise ValueError(f"time_emb_dim must be a positive int, got {time_emb_dim}")
         self.model_type = model_type
         self.num_lattice_translations = num_lattice_translations
 
@@ -412,8 +410,6 @@ class EquivariantDiffusionModel(RuntimeMixin, nn.Layer):
             n_atoms_per_xtal,
             self.wyckoff_geometry,
         )
-        A_inv_ops = sg_ops.A_inv_ops
-        inverse_indices = sg_ops.inverse_indices
         map_conventional_to_asu_atom = sg_ops.map_conventional_to_asu_atom
         conventional_wyckoff_indices = sg_ops.conventional_wyckoff_indices
         conventional_element_indices = sg_ops.conventional_element_indices

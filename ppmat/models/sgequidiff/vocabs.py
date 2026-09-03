@@ -21,14 +21,15 @@ resolved inside the SGEquiDiff model itself (no framework-level wiring, no
 ``build_embedding_tools(vocab)``, otherwise it is downloaded through the
 registry automatically. Pass the resulting instance to downstream modules.
 
-Vocabulary roles (content derived from the upstream SGEquiDiff repository;
-vector payloads are byte-equivalent to the upstream values, conversion script
-lives under the sgequidiff history workspace):
+Vocabulary roles (payloads converted from the upstream SGEquiDiff repository;
+content is pinned by the ``sgequidiff`` entry in ``ppmat.vocab.VOCAB_REGISTRY``
+via its download URL and MD5):
 
 - ``element``: atomic numbers 0-100 -> 92-dim embeddings
   (upstream ``data/init_tokens/cgcnn_atom_init.json``).
 - ``space_group``: space-group numbers 1-230 -> 62-dim embeddings
-  (upstream ``data/init_tokens/space_group_features/space_group_embeddings_62dim.json``).
+  (upstream ``data/init_tokens/space_group_features/``
+  ``space_group_embeddings_62dim.json``).
 - ``wyckoff``: per-space-group letter -> 231-dim embeddings
   (upstream ``data/init_tokens/wyckoff_features/wyckoff_embeddings_231dim.json``).
 - ``asu_sites``: ASU Wyckoff-site geometry payload under ``data``
@@ -58,6 +59,13 @@ class EmbeddingTools:
     @paddle.no_grad()
     def __init__(self, vocab: dict):
         element_vectors = vocab["element"]["vectors"][: ELEMENT_ENCODING_SIZE + 1]
+        if len(element_vectors) != ELEMENT_ENCODING_SIZE + 1:
+            raise ValueError(
+                "element vocabulary has "
+                f"{len(element_vectors)} rows, expected "
+                f"{ELEMENT_ENCODING_SIZE + 1} (index 0 placeholder + Z=1.."
+                f"{ELEMENT_ENCODING_SIZE - 1})"
+            )
         self.element_embedding_length = len(element_vectors[0])
         self.element_embedding_tensor = paddle.to_tensor(
             element_vectors,
@@ -73,6 +81,7 @@ class EmbeddingTools:
 
         wyckoff_dict = vocab["wyckoff"]["vectors"]
         self.wyckoff_embedding_length = len(wyckoff_dict["1"]["a"])
+        asu_sites = vocab["asu_sites"]["data"]
 
         wyckoff_emb_list = []
         n_wyckoffs_list = []
@@ -80,6 +89,11 @@ class EmbeddingTools:
             wyckoff_dict_of_sg = wyckoff_dict[str(sg_num)]
             letters = list(wyckoff_dict_of_sg.keys())
 
+            # Map letters to sort keys: lowercase "a".."z" -> 0..25 (ASCII 97
+            # is "a"), uppercase "A".."Z" -> 26..51 (ASCII 65 is "A", ranked
+            # after all lowercase letters). The sorted result must reproduce
+            # the JSON order of ``ordered_wyckoff_letters`` used by the model
+            # side; verified below per space group.
             wyckoff_ascii = [ord(letter) for letter in letters]
             wyckoff_idxs = [
                 ai - 97 if ai >= 97 else ai - 65 + 26 for ai in wyckoff_ascii
@@ -90,6 +104,14 @@ class EmbeddingTools:
                     zip(letters, wyckoff_idxs), key=lambda pair: pair[1]
                 )
             ]
+            ordered_letters = list(asu_sites[str(sg_num)]["ordered_wyckoff_letters"])
+            if sorted_letters != ordered_letters:
+                raise ValueError(
+                    f"space group {sg_num}: wyckoff vocabulary keys sorted to "
+                    f"{sorted_letters} but asu_sites ordered_wyckoff_letters is "
+                    f"{ordered_letters}; embeddings and site geometry would be "
+                    "silently misaligned"
+                )
 
             emb_array = paddle.to_tensor(
                 [wyckoff_dict_of_sg[letter] for letter in sorted_letters],
@@ -109,17 +131,22 @@ class EmbeddingTools:
             n_wyckoffs_list, dtype=paddle.int64
         )
 
+    @paddle.no_grad()
     def get_space_group_embedding(
         self, space_group_index: paddle.Tensor
     ) -> paddle.Tensor:
         """Get space group embedding."""
-        assert space_group_index.dtype == paddle.int64
+        if space_group_index.dtype != paddle.int64:
+            raise TypeError(
+                "space_group_index must be int64, got " f"{space_group_index.dtype}"
+            )
         return self.space_group_embedding_tensor[space_group_index]
 
     @paddle.no_grad()
     def get_element_embedding(self, atomic_number: paddle.Tensor) -> paddle.Tensor:
         """Get element embedding."""
-        assert atomic_number.dtype == paddle.int64
+        if atomic_number.dtype != paddle.int64:
+            raise TypeError(f"atomic_number must be int64, got {atomic_number.dtype}")
         return self.element_embedding_tensor[atomic_number]
 
     @paddle.no_grad()
@@ -128,11 +155,15 @@ class EmbeddingTools:
         wyckoff_index: paddle.Tensor,
         space_group_index: paddle.Tensor,
     ) -> paddle.Tensor:
-        """Get Wyckoff embedding by index and space group."""
-        valid_mask = (
-            self.n_wyckoffs_per_space_group[space_group_index] > wyckoff_index
-        )
-        assert valid_mask.all().item(), "Invalid space group-Wyckoff index pairs"
+        """Get Wyckoff embedding by index and space group.
+
+        Callers must pass ``wyckoff_index`` values below
+        ``n_wyckoffs_per_space_group[space_group_index]`` (the model derives
+        its indices from ``valid_wyckoff_positions_mask``, which guarantees
+        this). Out-of-range indices read zero padding silently; the per-step
+        validity check was removed from this hot path to avoid a GPU sync on
+        every training step.
+        """
         return self.wyckoff_embedding_tensor[space_group_index, wyckoff_index, :]
 
 

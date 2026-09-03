@@ -110,10 +110,9 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MPTS52ASUDataset
       __init_params__:
-        name: mpts_52
-        split: train
+        path: data/data/mpts_52/train.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -125,10 +124,9 @@ Dataset:
         batch_size: 32
   val:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MPTS52ASUDataset
       __init_params__:
-        name: mpts_52
-        split: val
+        path: data/data/mpts_52/val.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -140,10 +138,9 @@ Dataset:
         batch_size: 64
   test:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MPTS52ASUDataset
       __init_params__:
-        name: mpts_52
-        split: test
+        path: data/data/mpts_52/test.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -157,10 +154,9 @@ Dataset:
 Sample:
   data:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MPTS52ASUDataset
       __init_params__:
-        name: mpts_52
-        split: test
+        path: data/data/mpts_52/test.npz
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -175,4 +171,6 @@ Sample:
   metrics:
     __class_name__: SGEQuiDiffMetric
     __init_params__:
+      # Reference CIF pool for novelty / coverage; switch to the train split
+      # csv to measure novelty against the training distribution.
       gt_file_path: data/data/mpts_52/test.csv

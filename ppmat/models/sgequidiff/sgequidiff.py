@@ -26,17 +26,18 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distribution import Categorical
 
-from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
+from ppmat.models.common.runtime import RuntimeMixin
 from ppmat.models.sgequidiff.asu_math import asu_to_pymatgen_structure
 from ppmat.models.sgequidiff.diffusion_model import EquivariantDiffusionModel
 from ppmat.models.sgequidiff.lattice_sampler import TelescopingDiscreteLatticeSampler
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
+from ppmat.models.sgequidiff.sgequidiff_meta import chemical_symbols
 from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
+from ppmat.models.sgequidiff.sgequidiff_meta import max_atoms_per_dataset
 from ppmat.models.sgequidiff.vocabs import build_embedding_tools
 from ppmat.models.sgequidiff.wyckoff_geometry import build_wyckoff_geometry
 from ppmat.models.sgequidiff.wyckoff_transformer import WyckoffElementTransformer
 from ppmat.utils import logger
-from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
-from ppmat.models.sgequidiff.sgequidiff_meta import chemical_symbols
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 
 
@@ -75,13 +76,20 @@ class SpaceGroupSampler(nn.Layer):
         return normed_logits[space_group_indices]
 
 
-class SGEQuiDiff(nn.Layer):
+class SGEQuiDiff(RuntimeMixin, nn.Layer):
     """Full crystal sampler combining all submodules.
 
     This is the unified model entry: ``forward(batch_data)`` returns the
     training loss dict (delegating to the internal coordinate diffusion model),
     and ``sample(batch_data)`` returns structures compatible with
     ``structure_generation/sample.py``.
+
+    SGEQuiDiff is an **unconditional** generator:
+    ``sample_by_num_atoms`` raises ``NotImplementedError`` (it declares
+    ``supports_num_atoms_sampling = False``), and the formula passed to
+    ``sample_by_chemical_formula`` is ignored (it declares
+    ``supports_chemical_formula_sampling = False``); use
+    ``sample_by_dataloader`` instead.
 
     Args:
         dataset_name: Dataset name, e.g. ``"mp_20"``.
@@ -100,7 +108,7 @@ class SGEQuiDiff(nn.Layer):
         cspnet_config: CSPNet backbone overrides (plain dict of constructor kwargs).
         noise_scheduler_cfg: Noise scheduler config dict.
         vocab: Prebuilt ``sgequidiff`` vocabulary dict. ``None`` (default)
-            resolves it internally via ``ppmat.vocab.build_vocab`` — no
+            resolves it internally via ``ppmat.vocab.build_vocab``, with no
             framework-level wiring required.
         lattice_length_noise: Noise added to lattice lengths during training.
         lattice_angle_noise: Noise added to lattice angles during training.
@@ -121,6 +129,9 @@ class SGEQuiDiff(nn.Layer):
         runtime_options: Per-backend runtime options forwarded to the
             coordinate diffusion model.
     """
+
+    supports_num_atoms_sampling = False
+    supports_chemical_formula_sampling = False
 
     def __init__(
         self,
@@ -199,9 +210,10 @@ class SGEQuiDiff(nn.Layer):
             noise_scheduler_cfg=noise_scheduler_cfg,
             wyckoff_geometry=self.wyckoff_geometry,
             embedding_tools=self.embedding_tools,
-            execution_backend=execution_backend,
-            runtime_options=runtime_options,
         )
+        # Single source of truth for the runtime lives in the diffusion
+        # sub-model; the mixin state on this top-level wrapper stays idle.
+        self._init_runtime(execution_backend, runtime_options)
         self.space_group_sampler = SpaceGroupSampler()
         self.lattice_sampler = TelescopingDiscreteLatticeSampler(
             embedding_tools=self.embedding_tools,
@@ -226,6 +238,10 @@ class SGEQuiDiff(nn.Layer):
     def execution_backend(self) -> str:
         """Active numerical execution backend (owned by the diffusion model)."""
         return self.atom_coord_diffusion_model.execution_backend
+
+    @execution_backend.setter
+    def execution_backend(self, value: str) -> None:
+        self.atom_coord_diffusion_model.set_execution_backend(value)
 
     def set_execution_backend(self, backend: str) -> None:
         self.atom_coord_diffusion_model.set_execution_backend(backend)
@@ -424,6 +440,9 @@ class SGEQuiDiff(nn.Layer):
             lattice_lengths,
             lattice_angles,
             space_group_indices,
+            # Static pad width: avoids the per-step GPU sync of
+            # ``.max()`` and keeps shapes CINN-friendly.
+            max_atoms=max_atoms_per_dataset[self.dataset_name],
         )
 
     def get_noisy_lattice_lengths_and_angles(
@@ -661,7 +680,7 @@ class SGEQuiDiff(nn.Layer):
         space_group_numbers=None,
         lattice_parameters=None,
         wyckoff_element_data=None,
-    ) -> List[ASUCrystal]:
+    ) -> List[Dict]:
         """Full crystal sampling pipeline."""
 
         if space_group_numbers is None:
@@ -669,7 +688,12 @@ class SGEQuiDiff(nn.Layer):
                 batch_size, temperature
             )
         else:
-            assert space_group_numbers.shape[0] == batch_size
+            if space_group_numbers.shape[0] != batch_size:
+                raise ValueError(
+                    "space_group_numbers batch size "
+                    f"({space_group_numbers.shape[0]}) does not match "
+                    f"batch_size ({batch_size})."
+                )
             space_group_indices = space_group_numbers - 1
 
         if lattice_parameters is None:
@@ -724,20 +748,20 @@ class SGEQuiDiff(nn.Layer):
         )
         for i in range(n_asu_atoms_per_xtal.shape[0]):
             asu_crystals.append(
-                ASUCrystal(
-                    space_group_number=1 + space_group_indices[i],
-                    conventional_lattice_lengths=lattice_lengths[i],
-                    conventional_lattice_angles=lattice_angles[i],
-                    element_indices=element_indices[
+                {
+                    "space_group_number": 1 + space_group_indices[i],
+                    "conventional_lattice_lengths": lattice_lengths[i],
+                    "conventional_lattice_angles": lattice_angles[i],
+                    "element_indices": element_indices[
                         atom_offsets[i] : atom_offsets[i + 1]
                     ],
-                    wyckoff_indices=wyckoff_indices[
+                    "wyckoff_indices": wyckoff_indices[
                         atom_offsets[i] : atom_offsets[i + 1]
                     ],
-                    conventional_frac_coords=frac_coords[
+                    "conventional_frac_coords": frac_coords[
                         atom_offsets[i] : atom_offsets[i + 1]
                     ],
-                )
+                }
             )
         return asu_crystals
 
@@ -824,7 +848,7 @@ class SGEQuiDiff(nn.Layer):
         result = []
         for crystal in crystals:
             valid_mask = []
-            for i, idx in enumerate(crystal.element_indices.tolist()):
+            for i, idx in enumerate(crystal["element_indices"].tolist()):
                 if 0 <= idx < ELEMENT_ENCODING_SIZE:
                     elem = chemical_symbols[idx + 1]
                     if elem != "X":
@@ -835,15 +859,17 @@ class SGEQuiDiff(nn.Layer):
                 continue
 
             mask = paddle.to_tensor(valid_mask, dtype=paddle.int64)
-            filtered_crystal = ASUCrystal(
-                space_group_number=crystal.space_group_number,
-                conventional_lattice_lengths=crystal.conventional_lattice_lengths,
-                conventional_lattice_angles=crystal.conventional_lattice_angles,
-                element_indices=crystal.element_indices[mask],
-                wyckoff_indices=crystal.wyckoff_indices[mask],
-                conventional_frac_coords=crystal.conventional_frac_coords[mask],
+            filtered_crystal = {
+                "space_group_number": crystal["space_group_number"],
+                "conventional_lattice_lengths": crystal["conventional_lattice_lengths"],
+                "conventional_lattice_angles": crystal["conventional_lattice_angles"],
+                "element_indices": crystal["element_indices"][mask],
+                "wyckoff_indices": crystal["wyckoff_indices"][mask],
+                "conventional_frac_coords": crystal["conventional_frac_coords"][mask],
+            }
+            structure = asu_to_pymatgen_structure(
+                filtered_crystal, self.wyckoff_geometry
             )
-            structure = asu_to_pymatgen_structure(filtered_crystal, self.wyckoff_geometry)
 
             result.append(
                 {

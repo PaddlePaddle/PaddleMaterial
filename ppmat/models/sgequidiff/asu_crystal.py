@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ASU (Asymmetric Unit) crystal data structures and utilities."""
+"""ASU (Asymmetric Unit) sampling utilities."""
 
 from typing import List
 from typing import Optional
@@ -22,39 +22,11 @@ from typing import Union
 import paddle
 
 
-class ASUCrystal:
-    """ASU crystal data."""
-
-    __hash__ = None
-
-    def __init__(
-        self,
-        space_group_number: paddle.Tensor,
-        conventional_lattice_lengths: paddle.Tensor,
-        conventional_lattice_angles: paddle.Tensor,
-        element_indices: paddle.Tensor,
-        wyckoff_indices: paddle.Tensor,
-        conventional_frac_coords: paddle.Tensor,
-    ):
-        assert (
-            wyckoff_indices.shape[0]
-            == element_indices.shape[0]
-            == conventional_frac_coords.shape[0]
-        )
-        self.space_group_number = space_group_number
-        self.conventional_lattice_lengths = conventional_lattice_lengths
-        self.conventional_lattice_angles = conventional_lattice_angles
-        self.element_indices = element_indices
-        self.wyckoff_indices = wyckoff_indices
-        self.conventional_frac_coords = conventional_frac_coords
-
-
 def sample_point_in_asu_wyckoff_site(
     space_group_numbers: List[str],
     wyckoff_letters: List[str],
     dictionary_of_wyckoffs_in_asu: dict,
     dictionary_of_wyckoff_shape_decompositions: dict,
-    finished_sampling_mask: paddle.Tensor = None,
     n_samples_per_wyckoff: int = 1,
     return_sampled_wyckoff_shape_indices: bool = False,
     hull_equations_3d: Optional[paddle.Tensor] = None,
@@ -62,9 +34,7 @@ def sample_point_in_asu_wyckoff_site(
     """Uniformly sample points in ASU Wyckoff sites."""
     random_samples_in_wyckoffs = []
     sampled_wyckoff_shape_indices = []
-    for i, (space_group_number, wyckoff_letter) in enumerate(
-        zip(space_group_numbers, wyckoff_letters)
-    ):
+    for space_group_number, wyckoff_letter in zip(space_group_numbers, wyckoff_letters):
         wyckoff_position_dict = dictionary_of_wyckoffs_in_asu[space_group_number][
             wyckoff_letter
         ]
@@ -135,26 +105,17 @@ def sample_point_in_asu_wyckoff_site(
                 [0], dtype=paddle.int64
             ).expand([n_samples_per_wyckoff])
 
-        if finished_sampling_mask is not None and finished_sampling_mask[i]:
-            sample_in_wyckoff = paddle.full(
-                [n_samples_per_wyckoff, 3], -1.0, dtype=paddle.float32
-            )
-            sampled_wyckoff_shape_index = paddle.full(
-                [n_samples_per_wyckoff], -1, dtype=paddle.int64
-            )
-        else:
-            h_eq = (
-                hull_equations_3d[int(space_group_number) - 1]
-                if hull_equations_3d is not None
-                else None
-            )
-            sample_in_wyckoff = uniformly_sample_point_in_convex_shape(
-                vertices=vertices,
-                wyckoff_site_dimensionality=wyckoff_dof,
-                n_samples=n_samples_per_wyckoff,
-                hull_equations=h_eq,
-            )
-            assert sample_in_wyckoff is not None
+        h_eq = (
+            hull_equations_3d[int(space_group_number) - 1]
+            if hull_equations_3d is not None
+            else None
+        )
+        sample_in_wyckoff = uniformly_sample_point_in_convex_shape(
+            vertices=vertices,
+            wyckoff_site_dimensionality=wyckoff_dof,
+            n_samples=n_samples_per_wyckoff,
+            hull_equations=h_eq,
+        )
 
         random_samples_in_wyckoffs.append(sample_in_wyckoff)
         sampled_wyckoff_shape_indices.append(sampled_wyckoff_shape_index)
@@ -184,15 +145,24 @@ def uniformly_sample_point_in_convex_shape(
 ) -> paddle.Tensor:
     """Uniformly sample points inside a convex shape."""
     if wyckoff_site_dimensionality == 0:
-        assert vertices.shape == [1, 3]
+        if list(vertices.shape) != [1, 3]:
+            raise ValueError(
+                f"0D site expects vertices of shape [1, 3], got {vertices.shape}"
+            )
         return vertices.expand([n_samples, 3])
     elif wyckoff_site_dimensionality == 1:
-        assert list(vertices.shape) == [n_samples, 2, 3]
+        if list(vertices.shape) != [n_samples, 2, 3]:
+            raise ValueError(
+                f"1D site expects vertices of shape [n, 2, 3], got {vertices.shape}"
+            )
         samples = paddle.rand([n_samples, 1])
         ep1, ep2 = vertices[:, 0], vertices[:, 1]
         return samples * (ep2 - ep1) + ep1
     elif wyckoff_site_dimensionality == 2:
-        assert list(vertices.shape) == [n_samples, 3, 3]
+        if list(vertices.shape) != [n_samples, 3, 3]:
+            raise ValueError(
+                f"2D site expects vertices of shape [n, 3, 3], got {vertices.shape}"
+            )
         r1_sqrt, r2 = paddle.rand([n_samples, 1]).sqrt(), paddle.rand([n_samples, 1])
         return (
             (1.0 - r1_sqrt) * vertices[:, 0]
@@ -200,11 +170,14 @@ def uniformly_sample_point_in_convex_shape(
             + r1_sqrt * r2 * vertices[:, 2]
         )
     elif wyckoff_site_dimensionality == 3:
-        assert hull_equations is not None, "hull_equations required for 3D sampling"
+        if hull_equations is None:
+            raise ValueError("hull_equations required for 3D sampling")
         box_lower_left = paddle.min(vertices, axis=0)
         box_top_right = paddle.max(vertices, axis=0)
         accepted = []
         total = 0
+        # Empirical rejection-sampling budget; exhaustion raises the
+        # diagnostic RuntimeError below.
         max_iters = 1000
         batch_size = max(3 * n_samples, 1)
         for _ in range(max_iters):

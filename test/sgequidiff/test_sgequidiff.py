@@ -169,23 +169,21 @@ class TestSGEQuiDiffEndToEnd:
         which is 1-indexed (chemical_symbols[0] == "X" placeholder). An
         off-by-one here drops H from every generated crystal.
         """
-        from ppmat.models.sgequidiff.asu_crystal import ASUCrystal
-
-        crystal = ASUCrystal(
-            space_group_number=paddle.to_tensor(1, dtype=paddle.int64),
-            conventional_lattice_lengths=paddle.to_tensor(
+        crystal = {
+            "space_group_number": paddle.to_tensor(1, dtype=paddle.int64),
+            "conventional_lattice_lengths": paddle.to_tensor(
                 [[5.0, 5.0, 5.0]], dtype=paddle.float32
             ),
-            conventional_lattice_angles=paddle.to_tensor(
+            "conventional_lattice_angles": paddle.to_tensor(
                 [[90.0, 90.0, 90.0]], dtype=paddle.float32
             ),
-            element_indices=paddle.to_tensor([0, 1, 2], dtype=paddle.int64),
-            wyckoff_indices=paddle.to_tensor([0, 0, 0], dtype=paddle.int64),
-            conventional_frac_coords=paddle.to_tensor(
+            "element_indices": paddle.to_tensor([0, 1, 2], dtype=paddle.int64),
+            "wyckoff_indices": paddle.to_tensor([0, 0, 0], dtype=paddle.int64),
+            "conventional_frac_coords": paddle.to_tensor(
                 [[0.1, 0.2, 0.3], [0.3, 0.4, 0.5], [0.6, 0.7, 0.8]],
                 dtype=paddle.float32,
             ),
-        )
+        }
 
         def _fake_sample_crystal(
             batch_size, diffusion_snr=0.4, temperature=1.0, **kwargs
@@ -376,9 +374,7 @@ def test_dataset_collate_to_model_forward(tmp_path):
             "dataset": {
                 "__class_name__": "AsymmetricUnitDataset",
                 "__init_params__": {
-                    "name": "mp_20",
-                    "split": "train",
-                    "data_directory": str(tmp_path),
+                    "path": str(tmp_path / "mp_20" / "train.npz"),
                 },
             },
             "loader": {"num_workers": 0, "use_shared_memory": False},
@@ -420,6 +416,42 @@ def test_dataset_collate_to_model_forward(tmp_path):
         assert bool(
             paddle.equal(out["label_dict"][key], batch[key]).all().item()
         ), f"label_dict[{key}] mismatch with batch label"
+
+
+def test_dataset_downloads_via_unified_pipeline(tmp_path, monkeypatch):
+    """Download path: a missing explicit path falls back to the unified
+    download pipeline (url + md5 + cache under ~/.paddlemat/datasets).
+
+    Overall question: when ``path`` does not exist, does the dataset resolve
+    the npz as ``<extract_root>/<name>/<split>.npz`` using the class-level
+    ``name`` / ``url`` / ``md5`` attributes, with subclass overrides
+    (MPTS52ASUDataset) selecting their own source?
+    """
+    import ppmat.utils.download as download
+    from ppmat.datasets.asu_dataset import AsymmetricUnitDataset
+    from ppmat.datasets.asu_dataset import MPTS52ASUDataset
+
+    extract_root = tmp_path / "cache" / "mp_20_asu"
+    _write_synthetic_mp20_npz(extract_root, num_crystals=4)
+
+    calls = {}
+
+    def fake_get_datasets_path_from_url(url, md5sum=None):
+        calls["url"] = url
+        calls["md5"] = md5sum
+        return str(extract_root)
+
+    monkeypatch.setattr(
+        download, "get_datasets_path_from_url", fake_get_datasets_path_from_url
+    )
+
+    dataset = AsymmetricUnitDataset(path=str(tmp_path / "custom" / "train.npz"))
+    assert calls == {"url": AsymmetricUnitDataset.url, "md5": AsymmetricUnitDataset.md5}
+    assert dataset.path == str(extract_root / "mp_20" / "train.npz")
+    assert len(dataset) == 4
+
+    assert MPTS52ASUDataset.name == "mpts_52"
+    assert MPTS52ASUDataset.url != AsymmetricUnitDataset.url
 
 
 def test_sgequidiff_metric(tmp_path):
@@ -464,8 +496,12 @@ def test_sgequidiff_metric(tmp_path):
     pd.DataFrame({"cif": cifs}).to_csv(gt_csv, index=False)
 
     pred_dicts = [get_crys_from_cif(cif).dict for cif in cifs]
+    # The first structure is repeated across "batches": it must be counted
+    # once for uniqueness, so the streaming accumulation (which spreads the
+    # duplicate over two steps) matches the batch interface.
+    duplicated = pred_dicts + [pred_dicts[0]]
     metric = SGEQuiDiffMetric(gt_file_path=str(gt_csv))
-    result = metric(pred_dicts)
+    result = metric(duplicated)
 
     for key in (
         "validity",
@@ -493,9 +529,11 @@ def test_sgequidiff_metric(tmp_path):
         result={"samples": {"result": pred_dicts[:4]}}, batch=None, stage="sample"
     )
     stream_metric.update_step(
-        result={"result": pred_dicts[4:]}, batch=None, stage="sample"
+        result={"result": pred_dicts[4:] + [pred_dicts[0]]},
+        batch=None,
+        stage="sample",
     )
-    stream_metric.update_step(result={"result": pred_dicts}, batch=None, stage="eval")
+    stream_metric.update_step(result={"result": duplicated}, batch=None, stage="eval")
     streamed = stream_metric.compute_epoch(stage="sample")
     for key, value in result.items():
         assert streamed[key] == pytest.approx(value)
@@ -556,7 +594,7 @@ def _make_small_gnn_sgequidiff():
     not (
         paddle.is_compiled_with_cuda()
         and paddle.device.cuda.device_count() > 0
-        and paddle.base.is_compiled_with_cinn()
+        and paddle.is_compiled_with_cinn()
     ),
     reason="requires a CUDA GPU and a CINN-enabled Paddle build",
 )
@@ -596,3 +634,61 @@ def test_cinn_sampling_parity():
         assert max_diff < 2e-5, f"eager/CINN sampling mismatch: {max_diff}"
     finally:
         paddle.set_device("cpu")
+
+
+def test_named_lr_groups_effective_learning_rates():
+    """Optimizer contract: named_lr_groups scale the effective learning rate.
+
+    Overall question: do ``lr_multiplier`` groups produce the configured
+    effective learning rates under Paddle's parameter-group semantics (a
+    float group ``learning_rate`` multiplies the optimizer's global rate,
+    for both float and LRScheduler optimizers)? This pins the semantics that
+    the SGEQuiDiff training recipe (sub-sampled lr for the autoregressive
+    samplers) relies on.
+    """
+    from ppmat.optimizer.optimizer import AdamW
+
+    class _TwoLayerModel(paddle.nn.Layer):
+        def __init__(self):
+            super().__init__()
+            self.wyckoff_and_element_sampler = paddle.nn.Linear(2, 2, bias_attr=False)
+            self.atom_coord_backbone = paddle.nn.Linear(2, 2, bias_attr=False)
+
+    def _run(global_lr_factory, lr_multiplier):
+        model = _TwoLayerModel()
+        opt = AdamW(
+            learning_rate=global_lr_factory(),
+            weight_decay=0.0,
+            named_lr_groups=[
+                {
+                    "name": "wyckoff_and_element_sampler",
+                    "lr_multiplier": lr_multiplier,
+                }
+            ],
+        )(model)
+        before = {n: p.numpy().copy() for n, p in model.named_parameters()}
+        # Every weight has grad = 1; with weight_decay=0 and first-step AdamW
+        # bias correction, the parameter delta equals the effective lr.
+        loss = paddle.zeros([1])
+        for p in model.parameters():
+            loss = loss + p.sum()
+        loss.backward()
+        opt.step()
+        deltas = {
+            n: float(np.abs(after - before[n]).max())
+            for n, after in ((n, p.numpy()) for n, p in model.named_parameters())
+        }
+        return deltas
+
+    # Case A: float global lr.
+    deltas = _run(lambda: 2.0, 0.1)
+    assert deltas["atom_coord_backbone.weight"] == pytest.approx(2.0, abs=1e-4)
+    assert deltas["wyckoff_and_element_sampler.weight"] == pytest.approx(0.2, abs=1e-4)
+
+    # Case B: LRScheduler global lr (ReduceOnPlateau-style recipes).
+    scheduler_lr = 2.0
+    deltas = _run(
+        lambda: paddle.optimizer.lr.StepDecay(scheduler_lr, step_size=1000), 0.1
+    )
+    assert deltas["atom_coord_backbone.weight"] == pytest.approx(2.0, abs=1e-4)
+    assert deltas["wyckoff_and_element_sampler.weight"] == pytest.approx(0.2, abs=1e-4)

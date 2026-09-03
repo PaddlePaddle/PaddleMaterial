@@ -27,12 +27,12 @@ from ppmat.models.common.radial_basis import GaussianSmearing
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
 from ppmat.models.sgequidiff.sgequidiff_csp_layer import CSPLayer
 from ppmat.models.sgequidiff.sgequidiff_csp_layer import SinusoidsEmbedding
+from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
 from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
 from ppmat.models.sgequidiff.shared import GraphNorm
 from ppmat.models.sgequidiff.shared import VariancePreservingAggregation
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
-from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
-from ppmat.models.common.graph_converter import build_pbc_graph
+from ppmat.utils.crystal import build_pbc_graph
 from ppmat.utils.crystal import frac_to_cart_coords
 from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.scatter import scatter as paddle_scatter
@@ -182,7 +182,8 @@ def custom_he_orthogonal_(weight: paddle.Tensor, gain: float = 1.0) -> paddle.Te
     """He initialization + orthogonalization."""
     with paddle.no_grad():
         fan_in = weight.shape[1]
-        assert fan_in > 1
+        if fan_in <= 1:
+            raise ValueError(f"custom_he_orthogonal_ requires fan_in > 1, got {fan_in}")
 
         nn.initializer.Orthogonal()(weight)
         eps = 1e-6
@@ -541,14 +542,14 @@ class GNN(nn.Layer):
             frac_coords, n_atoms_per_xtal, lattices=lattice_matrices
         )
         (
-            destination_ids,
             source_ids,
+            destination_ids,
             source_node_image_offsets,
             num_edges_per_crystal,
         ) = build_pbc_graph(
             cart_coords=cart_coords,
-            lattice_matrix=lattice_matrices,
-            num_nodes_per_crystal=n_atoms_per_xtal,
+            lattice=lattice_matrices,
+            num_atoms=n_atoms_per_xtal,
         )
         edge_index = paddle.stack([source_ids, destination_ids], axis=0)
         out = get_pbc_distances(

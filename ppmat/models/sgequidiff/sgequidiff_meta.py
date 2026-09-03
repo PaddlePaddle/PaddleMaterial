@@ -22,7 +22,12 @@ both the model layer and the data layer.
 
 from pymatgen.core import Element
 
-# Per-dataset metadata used by models for sampling / construction.
+# Empirical lattice-parameter bounds per dataset, taken from the upstream
+# SGEquiDiff reference configuration. Each range encloses the observed
+# min/max over the corresponding bundled train split (verified for
+# mp_20: lengths [2.281, 132.382] A, angles [60.003, 134.969] deg;
+# mpts_52: lengths [0.986, 189.494] A, angles [60.062, 134.898] deg).
+# Used for normalization domains and sampling clamps.
 lattice_parameter_ranges = {
     "mp_20": {
         "min_lattice_length": 2.0,
@@ -44,13 +49,11 @@ max_atoms_per_dataset = {
     "mpts_52": 52,
 }
 
-# ``mp_20_assumeP1`` is the same mp_20 set with symmetry relaxed to P1, so it
-# shares the mp_20 lattice bounds and atom-count bound.
-lattice_parameter_ranges["mp_20_assumeP1"] = lattice_parameter_ranges["mp_20"]
-max_atoms_per_dataset["mp_20_assumeP1"] = max_atoms_per_dataset["mp_20"]
-
 # Number of crystallographic space groups, indexed 1..230.
 NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS: int = 230
+
+# Number of lattice parameters per crystal: 3 lengths + 3 angles.
+NUM_LATTICE_PARAMS: int = 6
 
 # Maximum length of ``ordered_wyckoff_letters`` observed across the 230
 # bundled space-group entries (``clean_wyckoffs_in_asu_v6.json``); bound for
@@ -68,9 +71,16 @@ chemical_symbols = ["X"] + [
     Element.from_Z(atomic_number).symbol
     for atomic_number in range(1, ELEMENT_ENCODING_SIZE + 1)
 ]
-assert len(chemical_symbols) == ELEMENT_ENCODING_SIZE + 1
+if len(chemical_symbols) != ELEMENT_ENCODING_SIZE + 1:
+    raise RuntimeError(
+        "chemical_symbols table size mismatch: "
+        f"{len(chemical_symbols)} != {ELEMENT_ENCODING_SIZE + 1}"
+    )
 
-# Space group number (1-230) -> crystal system / Bravais lattice symbol.
+# Space group number (1-230) -> Bravais lattice symbol. pymatgen's
+# SpaceGroup exposes crystal_system only ("triclinic"/"tetragonal" both
+# start with "t"), so the symbol table is written out explicitly and
+# verified below for full coverage and known symbols.
 spgroup_data = {
     1: "aP",
     2: "aP",
@@ -303,3 +313,30 @@ spgroup_data = {
     229: "cI",
     230: "cI",
 }
+
+if set(spgroup_data) != set(range(1, NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS + 1)):
+    raise RuntimeError(
+        "spgroup_data must cover exactly space groups 1..230, got "
+        f"{len(spgroup_data)} entries."
+    )
+_unknown_symbols = set(spgroup_data.values()) - {
+    "aP",
+    "mP",
+    "mC",
+    "oP",
+    "oC",
+    "oF",
+    "oI",
+    "oA",
+    "tP",
+    "tI",
+    "hP",
+    "hR",
+    "cP",
+    "cF",
+    "cI",
+}
+if _unknown_symbols:
+    raise RuntimeError(
+        f"spgroup_data contains unknown lattice symbols: {_unknown_symbols}"
+    )

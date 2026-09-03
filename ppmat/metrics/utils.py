@@ -223,12 +223,11 @@ def get_crys_from_cif(cif, polar_decompose=False):
 class FingerprintScaler:
     """Z-score scaler for fingerprint features used by metric computation.
 
-    Numpy implementation; intentionally separate from
-    ``mattergen.property_embeddings.StandardScalerPaddle`` (a paddle.nn.Layer
-    used during training). Migrated from CDVAE/DiffCSP common utils.
-
-    Handles NaN means/stds and zero-std columns: missing values fall back to
-    0 / 1 after standardization, and constant columns keep the raw value.
+    Pure numpy implementation, separate from the training-side paddle.nn.Layer
+    scalers: metric computation runs under ``paddle.no_grad()``-free numpy
+    post-processing and must not create paddle graph nodes. Handles NaN
+    means/stds and zero-std columns: missing values fall back to 0 / 1 after
+    standardization, and constant columns keep the raw value.
     """
 
     def __init__(self, means=None, stds=None, nan_replacement=None):
@@ -322,33 +321,36 @@ def get_novel_structures(structures, reference_structures, matcher):
     return novel_structures, novel_structure_idxs
 
 
-def filter_fingerprints(struc_fps, comp_fps):
-    """Keep fingerprints whose structural fingerprint is valid."""
-    filtered_struc_fps = []
-    filtered_comp_fps = []
-    for struc_fp, comp_fp in zip(struc_fps, comp_fps):
-        if struc_fp is not None and comp_fp is not None:
-            filtered_struc_fps.append(struc_fp)
-            filtered_comp_fps.append(comp_fp)
-    return filtered_struc_fps, filtered_comp_fps
-
-
 def compute_cov(crys, gt_crys, struc_cutoff, comp_cutoff, num_gen_crystals=None):
     """Coverage / matching metrics between generated and ground-truth crystals.
 
-    The composition fingerprints are standardized on the ground-truth set only
-    (reference distribution), avoiding leakage from generated structures.
+    Crystals lacking a valid structural OR composition fingerprint are
+    dropped as a pair so the structural and composition fingerprints stay
+    row-aligned. The composition fingerprints are standardized on the
+    ground-truth set only (reference distribution), avoiding leakage from
+    generated structures.
     """
-    struc_fps = [c.struct_fp for c in crys if c.struct_fp is not None]
-    comp_fps = [c.comp_fp for c in crys if c.comp_fp is not None]
-    gt_struc_fps = [c.struct_fp for c in gt_crys if c.struct_fp is not None]
-    gt_comp_fps = [c.comp_fp for c in gt_crys if c.comp_fp is not None]
+    valid_crys = [
+        c for c in crys if c.struct_fp is not None and c.comp_fp is not None
+    ]
+    valid_gt_crys = [
+        c for c in gt_crys if c.struct_fp is not None and c.comp_fp is not None
+    ]
+    struc_fps = [c.struct_fp for c in valid_crys]
+    comp_fps = [c.comp_fp for c in valid_crys]
+    gt_struc_fps = [c.struct_fp for c in valid_gt_crys]
+    gt_comp_fps = [c.comp_fp for c in valid_gt_crys]
+
+    if len(struc_fps) == 0 or len(gt_struc_fps) == 0:
+        raise ValueError(
+            "compute_cov requires at least one valid fingerprint on each "
+            f"side, got {len(struc_fps)} generated and "
+            f"{len(gt_struc_fps)} ground-truth crystals with valid "
+            "structural/composition fingerprints"
+        )
 
     if num_gen_crystals is None:
         num_gen_crystals = len(struc_fps)
-
-    struc_fps, comp_fps = filter_fingerprints(struc_fps, comp_fps)
-    gt_struc_fps, gt_comp_fps = filter_fingerprints(gt_struc_fps, gt_comp_fps)
 
     scaler = FingerprintScaler(nan_replacement=0.0).fit(gt_comp_fps)
     comp_fps = scaler.transform(comp_fps)

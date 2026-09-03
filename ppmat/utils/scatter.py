@@ -14,7 +14,9 @@
 
 # This code is adapted from https://github.com/rusty1s/pytorch_scatter/blob/master/torch_scatter/scatter.py
 
-from typing import Literal, Optional, Tuple
+from typing import Literal
+from typing import Optional
+from typing import Tuple
 
 import paddle
 
@@ -93,6 +95,10 @@ def scatter_argmin(
 
     src and index must be one-dimensional. Empty groups are assigned -1.
     Ties are resolved by selecting the first occurrence in src.
+
+    Note: ``scatter_argmax`` (segment-based implementation) resolves ties by
+    the **last** occurrence instead; do not swap the two implementations
+    without re-verifying numeric parity of their consumers.
     """
     if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
         raise ValueError("src and index must be one-dimensional with equal length")
@@ -136,6 +142,8 @@ def scatter_argmax(
 
     max_values = paddle.geometric.segment_max(sorted_src, sorted_index)
     n = src.shape[0]
+    # float32 exactly represents integers up to 2**24; larger ``n`` loses
+    # arg-position precision in the weight trick below.
     weights = paddle.arange(n, dtype=paddle.float32)
     is_max = sorted_src == max_values[sorted_index]
     max_weights = paddle.where(is_max, weights, paddle.to_tensor(-float("inf")))
@@ -337,16 +345,14 @@ def scatter_min_with_argmin(
         min_values = paddle.concat(
             [
                 min_values,
-                paddle.full(
-                    [dim_size - seg_size], float("inf"), dtype=src.dtype
-                ),
+                paddle.full([dim_size - seg_size], float("inf"), dtype=src.dtype),
             ]
         )
 
     n = src.shape[0]
     weights = paddle.arange(n, dtype=paddle.float32)
-    is_min = (sorted_src == min_values[sorted_index])
-    min_weights = paddle.where(is_min, weights, paddle.to_tensor(float('inf')))
+    is_min = sorted_src == min_values[sorted_index]
+    min_weights = paddle.where(is_min, weights, paddle.to_tensor(float("inf")))
     argmin_sorted = paddle.geometric.segment_min(min_weights, sorted_index)
     argmin = paddle.where(
         empty_mask,

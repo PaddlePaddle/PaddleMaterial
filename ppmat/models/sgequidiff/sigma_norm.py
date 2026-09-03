@@ -49,7 +49,6 @@ def compute_sigma_norms(
     sigma_max: float = 0.5,
     num_lattice_translations: int = 3,
     num_monte_carlo_samples: int = 2_500,
-    sigma_norm_type: str = "asu_wrapped",
 ) -> paddle.Tensor:
     """Compute the sigma-norm table of shape ``[230, MAX_WYCKOFF, num_timesteps]``.
 
@@ -59,8 +58,6 @@ def compute_sigma_norms(
         num_lattice_translations: Lattice-translation neighbors for the
             wrapped-normal expectation.
         num_monte_carlo_samples: MC samples per (space group, Wyckoff site).
-        sigma_norm_type: "asu_wrapped" for the Monte Carlo estimate, or
-            "unwrapped" for the analytical 1/sigma table.
 
     Returns:
         Table of shape ``[NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, MAX_WYCKOFF_POSITIONS,
@@ -71,24 +68,12 @@ def compute_sigma_norms(
         np.exp(np.linspace(np.log(sigma_min), np.log(sigma_max), num_timesteps)),
         dtype=paddle.float32,
     )
-
-    if sigma_norm_type == "unwrapped":
-        sigma_norms = 1.0 / sigmas
-        return sigma_norms[None, None, :].expand(
-            [
-                NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS,
-                MAX_WYCKOFF_POSITIONS,
-                -1,
-            ]
-        )
-    if sigma_norm_type == "asu_wrapped":
-        return _sigma_norm_asu_wrapped(
-            sigmas,
-            wyckoff_geometry,
-            num_lattice_translations,
-            num_monte_carlo_samples,
-        )
-    raise ValueError(f"Unknown sigma_norm_type: {sigma_norm_type}")
+    return _sigma_norm_asu_wrapped(
+        sigmas,
+        wyckoff_geometry,
+        num_lattice_translations,
+        num_monte_carlo_samples,
+    )
 
 
 @paddle.no_grad()
@@ -127,6 +112,9 @@ def _sigma_norm_asu_wrapped(
         dtype=paddle.float32,
     )
 
+    # Reverse iteration order is kept from the upstream implementation so the
+    # global RNG draw sequence (and thus recomputed tables) stays reproducible
+    # against previously cached .pdparams tables.
     for sg_num in range(NUM_CRYSTALLOGRAPHIC_SPACE_GROUPS, 0, -1):
         sg_dict = asu_wyckoff_dict[str(sg_num)]
         wyckoff_letters = sg_dict["ordered_wyckoff_letters"]
@@ -162,6 +150,8 @@ def _sigma_norm_asu_wrapped(
             unique_indices = sg_ops.unique_non_overlapping_atom_indices
             map_unique_conv_to_asu = map_conv_to_asu[unique_indices]
 
+            # Cap the chunk count so each chunked sigma batch bounds peak
+            # memory of the MC estimate.
             _chunks = min(200, num_timesteps)
             for sigma_idxs in paddle.chunk(
                 paddle.arange(num_timesteps), chunks=_chunks
@@ -180,7 +170,7 @@ def _sigma_norm_asu_wrapped(
                         sigma,
                     )
                     norm_t = ((scores**2).sum(axis=-1)).sqrt().mean()
-                    norms.append(float(norm_t.item()))
+                    norms.append(norm_t.item())
 
                 sigma_norms[sg_num - 1, i, sigma_idxs] = paddle.to_tensor(
                     norms, dtype=paddle.float32

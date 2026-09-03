@@ -112,8 +112,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
-        split: train
+        path: data/data/mp_20/train.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -127,8 +126,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
-        split: val
+        path: data/data/mp_20/val.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -142,8 +140,7 @@ Dataset:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
-        split: test
+        path: data/data/mp_20/test.npz
     loader:
       num_workers: 0
       use_shared_memory: False
@@ -159,8 +156,7 @@ Sample:
     dataset:
       __class_name__: AsymmetricUnitDataset
       __init_params__:
-        name: mp_20
-        split: test
+        path: data/data/mp_20/test.npz
     sampler:
       __class_name__: BatchSampler
       __init_params__:
@@ -175,4 +171,6 @@ Sample:
   metrics:
     __class_name__: SGEQuiDiffMetric
     __init_params__:
+      # Reference CIF pool for novelty / coverage; switch to the train split
+      # csv to measure novelty against the training distribution.
       gt_file_path: data/data/mp_20/test.csv

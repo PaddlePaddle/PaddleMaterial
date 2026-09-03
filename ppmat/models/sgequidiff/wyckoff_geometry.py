@@ -133,16 +133,15 @@ def _load_wyckoff_sites_dict(wyckoffs_dict: dict) -> dict:
             # JSON stores "dim" as a string; normalize in place.
             site["dim"] = dim
 
-            if dim == 2:
-                site["plane_coefficients"] = to_fraction(
-                    site["plane_coefficients"]
-                ).tolist()
-
     return wyckoffs_dict
 
 
 class WyckoffGeometry:
-    """All Wyckoff/ASU precomputed data. Built once under the global resource lock."""
+    """All Wyckoff/ASU precomputed data, derived from the ASU sites vocabulary.
+
+    Instances are owned by their callers (no global cache or lock); build one
+    via ``build_wyckoff_geometry`` and pass it to downstream modules.
+    """
 
     def __init__(self, vocab: dict | None = None) -> None:
         if vocab is None:
@@ -230,15 +229,16 @@ class WyckoffGeometry:
             padded_ops_mask[sg_num - 1, :n_ops] = True
 
             # First slot must be the identity operation.
-            assert paddle.equal_all(
-                padded_matrices[sg_num - 1, 0], paddle.eye(3)
-            ).item(), f"space group {sg_num}: first op is not identity"
-            assert paddle.equal_all(
+            if not paddle.equal_all(padded_matrices[sg_num - 1, 0], paddle.eye(3)):
+                raise ValueError(f"space group {sg_num}: first op is not identity")
+            if not paddle.equal_all(
                 padded_translations[sg_num - 1, 0], paddle.zeros([1, 3])
-            ).item(), f"space group {sg_num}: first op has nonzero translation"
-            assert padded_ops_mask[sg_num - 1][
-                0
-            ].item(), f"space group {sg_num}: first op mask not set"
+            ):
+                raise ValueError(
+                    f"space group {sg_num}: first op has nonzero translation"
+                )
+            if not bool(padded_ops_mask[sg_num - 1, 0]):
+                raise ValueError(f"space group {sg_num}: first op mask not set")
 
         self.padded_general_wyckoff_matrices = padded_matrices
         self.padded_inverse_general_wyckoff_matrices = padded_inverse_matrices
@@ -347,12 +347,20 @@ class WyckoffGeometry:
             sg_dict = self.asu_wyckoff_dict[str(sg)]
             general_site = sg_dict[sg_dict["ordered_wyckoff_letters"][-1]]
 
-            assert general_site["dim"] == 3, f"space group {sg}: general site is not 3D"
+            if int(general_site["dim"]) != 3:
+                raise ValueError(f"space group {sg}: general site is not 3D")
             vertices = general_site["vertices"].astype("float64")
 
             hull = ConvexHull(vertices)
             equations = hull.equations
             n_facets = equations.shape[0]
+            if n_facets > _max_simplicial_hull_facets:
+                raise ValueError(
+                    f"space group {sg}: ASU hull has {n_facets} facets, "
+                    f"exceeding the padding budget "
+                    f"{_max_simplicial_hull_facets}; hull constraints would "
+                    "be silently truncated"
+                )
             asu_hull_equations[sg - 1, :n_facets] = paddle.to_tensor(
                 equations, dtype=paddle.float32
             )
@@ -361,10 +369,9 @@ class WyckoffGeometry:
 
     def _build_wyckoff_shape_hull_equations(self) -> None:
         """Hull equations for each 0/1/2/3D Wyckoff shape (bounded shapes included)."""
-        # Bound budget must cover the minimal 2D prism (2 caps + 3 sides = 5);
-        # 0D boxes (6 faces) and 1D tetrahedra (4) are covered by the hull
-        # facet budget above.
-        max_num_shape_bounds = max(2, 5, _max_simplicial_hull_facets)
+        # The hull-facet budget covers every Wyckoff shape's bound count
+        # observed in the bundled 230 space-group entries.
+        max_num_shape_bounds = _max_simplicial_hull_facets
 
         padded_hull_equations = paddle.full(
             [
@@ -475,5 +482,5 @@ class WyckoffGeometry:
 
 
 def build_wyckoff_geometry(vocab: dict | None = None) -> WyckoffGeometry:
-    """Build WyckoffGeometry explicitly. No global singleton; callers own the instance."""
+    """Build a WyckoffGeometry instance owned by the caller (no global cache)."""
     return WyckoffGeometry(vocab)

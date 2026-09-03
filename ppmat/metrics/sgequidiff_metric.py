@@ -61,11 +61,19 @@ class SGEQuiDiffMetric(StreamingMetricBase):
     collected per ``update_step`` (``stage == "sample"``) and the full metric
     set (validity / uniqueness / novelty / coverage) is computed in
     ``compute_epoch``. The legacy batch interface ``__call__(pred_data,
-    gt_data)`` remains available.
+    gt_data)`` remains the entry used by
+    ``StructureSampler.compute_metric`` today; the streaming interface is
+    wired the same way as molecular samplers and is ready for
+    chunked/streaming generation loops.
 
     Args:
-        gt_file_path: Optional CSV with a ``"cif"`` column used as ground truth
-            (used when ``gt_data`` is not passed to ``__call__``).
+        gt_file_path: Optional CSV with a ``"cif"`` column used as the
+            evaluation reference set (validity baseline, and the reference
+            pool for novelty / coverage; pass the **train** split to measure
+            novelty against the training distribution).
+        stol / angle_tol / ltol: ``StructureMatcher`` tolerance parameters
+            (structure distance, angle tolerance in degrees, and fractional
+            length tolerance) used for uniqueness and novelty matching.
         struc_cutoff: Structural fingerprint distance cutoff for coverage.
         comp_cutoff: Composition fingerprint distance cutoff for coverage.
         n_structures: Optional cap on the number of generated structures scored.
@@ -74,13 +82,16 @@ class SGEQuiDiffMetric(StreamingMetricBase):
     def __init__(
         self,
         gt_file_path: Optional[str] = None,
+        stol: float = 0.5,
+        angle_tol: float = 10,
+        ltol: float = 0.3,
         struc_cutoff: float = 0.4,
         comp_cutoff: float = 10.0,
         n_structures: Optional[int] = None,
     ):
         super().__init__()
         self.gt_file_path = gt_file_path
-        self.matcher = StructureMatcher(stol=0.5, angle_tol=10, ltol=0.3)
+        self.matcher = StructureMatcher(stol=stol, angle_tol=angle_tol, ltol=ltol)
         self.struc_cutoff = struc_cutoff
         self.comp_cutoff = comp_cutoff
         self.n_structures = n_structures
@@ -89,7 +100,8 @@ class SGEQuiDiffMetric(StreamingMetricBase):
 
     def _load_gt_crys(self) -> List[Crystal]:
         if self._gt_crys is None:
-            assert self.gt_file_path, "gt_file_path is required when gt_data is None"
+            if not self.gt_file_path:
+                raise ValueError("gt_file_path is required when gt_data is None")
             csv = pd.read_csv(self.gt_file_path)
             self._gt_crys = [get_crys_from_cif(cif) for cif in csv["cif"].tolist()]
         return self._gt_crys
@@ -122,6 +134,11 @@ class SGEQuiDiffMetric(StreamingMetricBase):
         return self._compute(pred_data, gt_data)
 
     def _compute(self, pred_data: Any, gt_data: Any = None) -> dict:
+        if not pred_data:
+            raise ValueError(
+                "pred_data is empty; generation-quality metrics require at "
+                "least one generated structure"
+            )
         pred_crys = [Crystal(d) for d in pred_data]
         if self.n_structures is not None:
             pred_crys = pred_crys[: self.n_structures]
