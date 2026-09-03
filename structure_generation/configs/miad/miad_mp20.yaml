@@ -48,6 +48,7 @@ Model:
       task: gen_mp20
       cont_time: false
       num_steps: 1000
+      eps: 1e-3
       lat_diffusion:
         method: ddpm
         scheduler_cfg:

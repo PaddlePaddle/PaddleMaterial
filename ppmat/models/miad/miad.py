@@ -16,9 +16,11 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 
+from ppmat.models.common.runtime import RuntimeMixin
+from ppmat.models.common.runtime import runtime_boundary
+from ppmat.models.diffcsp.diffcsp import CSPNet
 from ppmat.models.miad.crystal_diffusion import CrystalGen
 from ppmat.models.miad.crystal_diffusion import parse_num_atoms_to_per_crystal
-from ppmat.models.diffcsp.diffcsp import CSPNet
 from ppmat.utils import logger
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
@@ -95,9 +97,7 @@ def _extract_x0(batch, mirage_num_atoms=None):
             padded_frac.append(frac_coords_np[offset : offset + n])
             padded_types.append(atom_types_np[offset : offset + n])
             if n_m > n:
-                padded_frac.append(
-                    np.random.rand(n_m - n, 3).astype("float32")
-                )
+                padded_frac.append(np.random.rand(n_m - n, 3).astype("float32"))
                 padded_types.append(np.zeros(n_m - n, dtype="int64"))
             padded_num_atoms.append(n_m)
             offset += n
@@ -119,7 +119,7 @@ def _extract_x0(batch, mirage_num_atoms=None):
     return batch
 
 
-class MiAD(nn.Layer):
+class MiAD(RuntimeMixin, paddle.nn.Layer):
     """Mirage Atom Diffusion model.
 
     Supports num-atoms-based sampling: ``sample_by_num_atoms`` provides only
@@ -130,11 +130,25 @@ class MiAD(nn.Layer):
 
     supports_num_atoms_sampling = True
 
-    # Max atom-type class index (mirage type 0 + real atomic numbers 3..83)
+    # Official MAX_ATOMIC_NUM; class index 0 is the mirage type.
     _MAX_ATOMIC_NUM = 100
 
-    def __init__(self, model_cfg=None, diffusion_cfg=None):
+    # Sentinel class index of mirage atoms, filtered from sampled output.
+    _MIRAGE_TYPE = 0
+
+    # Atomic number used when every sampled atom is mirage, so the output
+    # structure stays non-empty (hydrogen).
+    _FALLBACK_ATOMIC_NUM = 1
+
+    def __init__(
+        self,
+        model_cfg=None,
+        diffusion_cfg=None,
+        execution_backend="eager",
+        runtime_options=None,
+    ):
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
 
         model_cfg = model_cfg or {}
         diffusion_cfg = diffusion_cfg or {}
@@ -147,8 +161,17 @@ class MiAD(nn.Layer):
         )
         # prop_dim/pred_scalar excluded: MiAD has no property-guided branches
         _cspnet_keys = {
-            "hidden_dim", "latent_dim", "num_layers", "act_fn", "dis_emb",
-            "num_freqs", "edge_style", "ln", "ip", "smooth", "pred_type",
+            "hidden_dim",
+            "latent_dim",
+            "num_layers",
+            "act_fn",
+            "dis_emb",
+            "num_freqs",
+            "edge_style",
+            "ln",
+            "ip",
+            "smooth",
+            "pred_type",
             "num_classes",
         }
         cspnet_kwargs = {k: v for k, v in model_cfg.items() if k in _cspnet_keys}
@@ -199,9 +222,7 @@ class MiAD(nn.Layer):
             else:
                 shape_mismatch_keys.append(name)
         loaded = set(param_state.keys())
-        unexpected_keys = [
-            k for k in state_dict.keys() if k not in loaded
-        ]
+        unexpected_keys = [k for k in state_dict.keys() if k not in loaded]
         if shape_mismatch_keys:
             logger.warning(
                 "Shape mismatch, skipped: %s", ", ".join(shape_mismatch_keys)
@@ -210,11 +231,55 @@ class MiAD(nn.Layer):
             self.get_parameter(name).set_value(param_state[name])
         return missing_keys, unexpected_keys
 
+    def _decode(
+        self,
+        time_emb,
+        atom_types,
+        frac_coords,
+        lattices,
+        num_atoms,
+        node2graph,
+    ):
+        edges, frac_diff = self.decoder.gen_edges(num_atoms, frac_coords)
+        return self._runtime_decode(
+            time_emb,
+            atom_types,
+            frac_coords,
+            lattices,
+            num_atoms,
+            node2graph,
+            edges,
+            frac_diff,
+        )
+
+    @runtime_boundary("denoise_step")
+    def _runtime_decode(
+        self,
+        time_emb,
+        atom_types,
+        frac_coords,
+        lattices,
+        num_atoms,
+        node2graph,
+        edges,
+        frac_diff,
+    ):
+        return self.decoder.forward_with_edges(
+            time_emb,
+            atom_types,
+            frac_coords,
+            lattices,
+            num_atoms,
+            node2graph,
+            edges,
+            frac_diff,
+        )
+
     def forward(self, batch, **kwargs):
         batch = _extract_x0(batch, mirage_num_atoms=self.mirage_num_atoms)
         batch = self.diffusion.train_step(
             batch=batch,
-            model=self.decoder,
+            model=self._decode,
         )
         loss = batch["loss"]
         loss_dict = {
@@ -258,7 +323,7 @@ class MiAD(nn.Layer):
 
         try:
             batch = self.diffusion.sampling_procedure(
-                model=self.decoder,
+                model=self._decode,
                 batch=batch_data,
             )
         finally:
@@ -291,17 +356,18 @@ class MiAD(nn.Layer):
             at_np = _to_numpy(at_i)
             start_idx += n
             # Filter out mirage atoms (type 0)
-            valid_mask = at_np != 0
+            valid_mask = at_np != self._MIRAGE_TYPE
             if valid_mask.any():
                 at_np = at_np[valid_mask]
                 fc_np = fc_np[valid_mask]
                 n = int(valid_mask.sum())
             else:
-                # All-mirage fallback: keep the count, replace type 0 with H
-                at_np = np.where(at_np == 0, 1, at_np)
-            lat_for_params = (
-                lat_np.reshape(1, 3, 3) if lat_np.ndim == 2 else lat_np
-            )
+                # All-mirage fallback: keep the count, replace the mirage
+                # type with hydrogen so the structure stays non-empty.
+                at_np = np.where(
+                    at_np == self._MIRAGE_TYPE, self._FALLBACK_ATOMIC_NUM, at_np
+                )
+            lat_for_params = lat_np.reshape(1, 3, 3) if lat_np.ndim == 2 else lat_np
             lengths, angles = lattices_to_params_shape_numpy(lat_for_params)
             result.append(
                 {

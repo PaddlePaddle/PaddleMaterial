@@ -61,20 +61,20 @@ class D3PM:
         xt_probs = paddle.matmul(
             onehot_x0[:, None, :], self.cumprod_Q_t[t.cast("int64")]
         )[:, 0, :]
-        xt = paddle.distribution.Categorical(
-            logits=paddle.log(xt_probs.clip(1e-12))
-        ).sample().cast("int64")
+        xt = (
+            paddle.distribution.Categorical(logits=paddle.log(xt_probs.clip(1e-12)))
+            .sample()
+            .cast("int64")
+        )
         return self.to_domain(xt)
 
     def _reverse_step_distribution(self, onehot_x0, onehot_xt, t):
         t_idx = t.cast("int64")
         numerator = (
-            paddle.matmul(
-                onehot_xt[:, None, :], self.Q_t[t_idx].transpose([0, 2, 1])
-            )[:, 0, :]
-            * paddle.matmul(
-                onehot_x0[:, None, :], self.cumprod_Q_t_1[t_idx]
-            )[:, 0, :]
+            paddle.matmul(onehot_xt[:, None, :], self.Q_t[t_idx].transpose([0, 2, 1]))[
+                :, 0, :
+            ]
+            * paddle.matmul(onehot_x0[:, None, :], self.cumprod_Q_t_1[t_idx])[:, 0, :]
         )
         denominator = (
             paddle.matmul(onehot_x0[:, None, :], self.cumprod_Q_t[t_idx])[:, 0, :]
@@ -94,9 +94,11 @@ class D3PM:
         xt_1_probs = self._reverse_step_distribution(onehot_x0, onehot_xt, t)
         if (t.cast("int64") == 0).all():
             return self.to_domain(self.from_domain(xt_1_probs.cast("float32")))
-        xt_1 = paddle.distribution.Categorical(
-            logits=paddle.log(xt_1_probs.clip(1e-12))
-        ).sample().cast("int64")
+        xt_1 = (
+            paddle.distribution.Categorical(logits=paddle.log(xt_1_probs.clip(1e-12)))
+            .sample()
+            .cast("int64")
+        )
         return self.to_domain(xt_1)
 
     def prior_sample(self, batch):
@@ -104,9 +106,11 @@ class D3PM:
         total = int(na.sum()) if na.ndim > 0 else int(na)
         shape = [total, self.num_types]
         xT_probs = paddle.ones(shape, dtype="float32") / self.num_types
-        xT = paddle.distribution.Categorical(
-            logits=paddle.log(xT_probs.clip(1e-12))
-        ).sample().cast("int64")
+        xT = (
+            paddle.distribution.Categorical(logits=paddle.log(xT_probs.clip(1e-12)))
+            .sample()
+            .cast("int64")
+        )
         return self.to_domain(xT)
 
     def loss(self, onehot_pred, onehot_xt, onehot_x0, t):
@@ -117,9 +121,7 @@ class D3PM:
         pred_xt_1_probs = self._reverse_step_distribution(
             onehot_x0_pred, onehot_xt, t_idx
         )
-        orig_xt_1_probs = self._reverse_step_distribution(
-            onehot_x0, onehot_xt, t_idx
-        )
+        orig_xt_1_probs = self._reverse_step_distribution(onehot_x0, onehot_xt, t_idx)
         kl_loss = (
             (
                 orig_xt_1_probs

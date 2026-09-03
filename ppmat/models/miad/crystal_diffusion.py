@@ -20,6 +20,7 @@ from ppmat.models.miad.type_diffusion import build_type_diffusion
 from ppmat.schedulers import build_scheduler
 from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
 
+
 def parse_num_atoms_to_per_crystal(num_atoms_data):
     if num_atoms_data is None:
         return None
@@ -41,7 +42,8 @@ class CrystalGen:
         self.config = diffusion_config
         self.cont_time = self.config["cont_time"]
         self.num_steps = self.config["num_steps"]
-        self.eps = 1e-3
+        # Official default eps=1e-3: lower bound of the time sampling range.
+        self.eps = float(self.config.get("eps", 1e-3))
         self.time_embedding = SinusoidalTimeEmbeddings(
             self.config.get("time_embed_dim", 256)
         )
@@ -97,13 +99,13 @@ class CrystalGen:
         t0_idx = t[0].cast("int64")
         t1_idx = t[1].cast("int64")
 
-        noise = paddle.randn(l0.shape)
-        self.lat_randn = noise
-        lt = self.lat_scheduler.add_noise(l0, noise, t0_idx)
+        lat_noise = paddle.randn(l0.shape)
+        batch["lat_noise"] = lat_noise
+        lt = self.lat_scheduler.add_noise(l0, lat_noise, t0_idx)
 
-        noise = paddle.randn(f0.shape)
-        self.frac_randn = noise
-        ft = (f0 + self.sigmas_t[t1_idx] * noise) % 1.0
+        frac_noise = paddle.randn(f0.shape)
+        batch["frac_noise"] = frac_noise
+        ft = (f0 + self.sigmas_t[t1_idx] * frac_noise) % 1.0
 
         if self.gen_type:
             at = self.type_diffusion.forward_step_sample(a0, t[1], batch)
@@ -123,7 +125,8 @@ class CrystalGen:
 
         at_1 = (
             self.type_diffusion.reverse_step_sample(a_pred, at, t[1], batch)
-            if self.gen_type else at
+            if self.gen_type
+            else at
         )
         return [lt_1, ft_1, at_1]
 
@@ -145,9 +148,11 @@ class CrystalGen:
         st = self.sigmas_t[t_idx]
         st_1 = self.sigmas_t[paddle.maximum(t_idx - 1, paddle.to_tensor(0))]
         snt = self.sigmas_norm_t[t_idx]
-        step_size = st ** 2 - st_1 ** 2
+        step_size = st**2 - st_1**2
         drift = -step_size * pred * paddle.sqrt(snt)
-        diffusion = paddle.sqrt(st_1 ** 2 * (st ** 2 - st_1 ** 2) / (st ** 2)) * paddle.randn(xt.shape)
+        diffusion = paddle.sqrt(
+            st_1**2 * (st**2 - st_1**2) / (st**2)
+        ) * paddle.randn(xt.shape)
         return (xt + drift + diffusion) % 1.0
 
     def _prior_lat(self, batch):
@@ -161,7 +166,8 @@ class CrystalGen:
     def prior_sample(self, batch):
         prior_at = (
             self.type_diffusion.prior_sample(batch)
-            if self.gen_type else batch["atom_types"]
+            if self.gen_type
+            else batch["atom_types"]
         )
         return [self._prior_lat(batch), self._prior_frac(batch), prior_at]
 
@@ -178,15 +184,26 @@ class CrystalGen:
     def train_step(self, batch, model):
         batch["t"] = self._time_sample(batch)
         batch["xt"] = self.forward_step_sample(batch["x0"], batch["t"], batch)
-        batch["prediction"] = self.model_prediction(batch["xt"], batch["t"], model, batch)
+        batch["prediction"] = self.model_prediction(
+            batch["xt"], batch["t"], model, batch
+        )
 
-        loss_lat = ((batch["prediction"][0] - self.lat_randn) ** 2).reshape([-1, 9]).mean(axis=1).mean()
+        lat_noise = batch["lat_noise"]
+        loss_lat = (
+            ((batch["prediction"][0] - lat_noise) ** 2)
+            .reshape([-1, 9])
+            .mean(axis=1)
+            .mean()
+        )
 
         t_idx = batch["t"][1].cast("int64")
         st = self.sigmas_t[t_idx]
         snt = self.sigmas_norm_t[t_idx]
-        normed_score = d_log_p_wrapped_normal(st * self.frac_randn, st) / paddle.sqrt(snt)
-        loss_frac = ((batch["prediction"][1] - normed_score) ** 2).reshape([-1, 3]).mean(axis=1)
+        frac_noise = batch["frac_noise"]
+        normed_score = d_log_p_wrapped_normal(st * frac_noise, st) / paddle.sqrt(snt)
+        loss_frac = (
+            ((batch["prediction"][1] - normed_score) ** 2).reshape([-1, 3]).mean(axis=1)
+        )
         # Mask out type-0 mirage atoms from the coordinate loss, rescaling to
         # keep the loss scale over the reduced atom count.
         if self.gen_type and batch["x0"][2] is not None:
@@ -213,14 +230,20 @@ class CrystalGen:
         batch["xt"] = self.prior_sample(batch)
         for t_vec in self._time_iterator(batch, start_from=self.num_steps - 1):
             batch["t"] = t_vec
-            batch["xt"] = self.reverse_step_sample(batch["xt"], batch["t"], model, batch)
+            batch["xt"] = self.reverse_step_sample(
+                batch["xt"], batch["t"], model, batch
+            )
         batch["xt"] = self.output_transform(batch["xt"], batch)
         batch["x0_prediction"] = batch["xt"]
         return batch
 
     def output_transform(self, x0, batch):
         def _out(diff, x):
-            return diff.output_transform(x, batch) if hasattr(diff, "output_transform") else x
+            return (
+                diff.output_transform(x, batch)
+                if hasattr(diff, "output_transform")
+                else x
+            )
 
         return [
             x0[0],

@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
+import hashlib
 import os
 from collections import defaultdict
+from typing import TYPE_CHECKING
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -23,9 +24,12 @@ from typing import Union
 import numpy as np
 
 from ppmat.metrics.streaming_base import StreamingMetricBase
+from ppmat.utils import download
+from ppmat.utils import logger
 from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    import pandas as pd
 
 # StructureMatcher tolerances (fractional / degrees / lattice)
 _MATCHER_STOL = 0.5
@@ -92,7 +96,8 @@ def _parse_structures(raw_list, format_str):
                 results.append(_structure_from_array(item))
             else:
                 raise ValueError(f"Invalid format specified: {format_str}")
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to parse structure: %s", exc)
             results.append(None)
     return results
 
@@ -147,7 +152,9 @@ def compute_uniqueness(
     symmetric: bool = _MATCHER_SYMMETRIC,
 ) -> List[bool]:
     matcher = _make_matcher(stol, angle_tol, ltol, attempt_supercell)
-    return _match_against(structures, defaultdict(list), matcher, symmetric=symmetric, dynamic=True)
+    return _match_against(
+        structures, defaultdict(list), matcher, symmetric=symmetric, dynamic=True
+    )
 
 
 def compute_novelty(
@@ -191,7 +198,10 @@ def compute_sun(
         else:
             non_trivial.append(False)
 
-    sun = [s and u and nv and nt for s, u, nv, nt in zip(stability, uniqueness, novelty, non_trivial)]
+    sun = [
+        s and u and nv and nt
+        for s, u, nv, nt in zip(stability, uniqueness, novelty, non_trivial)
+    ]
 
     def rate(flags):
         return round(100 * sum(flags) / max(len(flags), 1), 2)
@@ -259,19 +269,15 @@ class SUNMetric(StreamingMetricBase):
     def update_step(self, *, result: Dict, batch, stage: str):
         """Accumulate one evaluation step's generated structures.
 
-        ``result`` is expected to carry the generated materials under
-        ``"result"``/``"samples"``/``"structures"`` (sample output), and
-        optionally ``"energy_above_hull"`` for stability.
+        ``result`` must be a dict (per ``StreamingMetricBase``) carrying the
+        generated materials under ``"result"``/``"samples"``/``"structures"``
+        (sample output), and optionally ``"energy_above_hull"`` for stability.
         """
         if stage not in ("eval", "sample"):
             return
         generated = (
-            result.get("result")
-            or result.get("samples")
-            or result.get("structures")
+            result.get("result") or result.get("samples") or result.get("structures")
         )
-        if not generated and isinstance(result, (list, tuple)):
-            generated = result
         if not generated:
             return
         self._ingest(generated, result.get("energy_above_hull"))
@@ -314,9 +320,7 @@ class SUNMetric(StreamingMetricBase):
                 fmt = "cif_str"
             elif isinstance(generated[0], dict):
                 fmt = "array"
-            structures = (
-                _parse_structures(generated, fmt) if fmt else list(generated)
-            )
+            structures = _parse_structures(generated, fmt) if fmt else list(generated)
         else:
             raise ValueError("generated must be a non-empty list or DataFrame")
 
@@ -330,8 +334,11 @@ class SUNMetric(StreamingMetricBase):
         if self._reference_structures:
             self._novelty.extend(
                 compute_novelty(
-                    structures, self._reference_structures,
-                    stol=self.stol, angle_tol=self.angle_tol, ltol=self.ltol,
+                    structures,
+                    self._reference_structures,
+                    stol=self.stol,
+                    angle_tol=self.angle_tol,
+                    ltol=self.ltol,
                     attempt_supercell=self.attempt_supercell,
                 )
             )
@@ -390,7 +397,9 @@ class SUNMetric(StreamingMetricBase):
             metastable = compute_stability(
                 self._energy_above_hull, threshold=_METASTABILITY_THRESHOLD
             )
-            msun = compute_sun(metastable, self._unique, self._novelty, self._structures)
+            msun = compute_sun(
+                metastable, self._unique, self._novelty, self._structures
+            )
             results["metastable_rate"] = msun["stability_rate"]
             results["msun_rate"] = msun["sun_rate"]
             results["msun_count"] = msun["sun_count"]
@@ -406,8 +415,9 @@ class SUNMetric(StreamingMetricBase):
     def _load_reference(self):
         """Load the novelty reference set (the training split).
 
-        Parsed structures are cached to ``<csv_dir>/novelty_reference.pkl`` so
-        repeated evaluations skip the expensive CIF parsing.
+        Parsed structures are cached under ``DATASETS_HOME/miad/`` (keyed by a
+        hash of the reference file path) so repeated evaluations skip the
+        expensive CIF parsing without writing into the dataset directory.
         """
         import pickle
 
@@ -423,9 +433,12 @@ class SUNMetric(StreamingMetricBase):
             logger.warning(f"Reference file not found: {self.reference_file_path}")
             return
 
-        cache_path = os.path.join(
-            os.path.dirname(self.reference_file_path), "novelty_reference.pkl"
-        )
+        cache_dir = os.path.join(download.DATASETS_HOME, "miad")
+        os.makedirs(cache_dir, exist_ok=True)
+        path_hash = hashlib.md5(
+            os.path.abspath(self.reference_file_path).encode("utf-8")
+        ).hexdigest()[:8]
+        cache_path = os.path.join(cache_dir, f"novelty_reference_{path_hash}.pkl")
         if os.path.exists(cache_path):
             logger.info(f"Loading cached reference structures from {cache_path}")
             with open(cache_path, "rb") as f:
@@ -445,8 +458,8 @@ class SUNMetric(StreamingMetricBase):
                 self._reference_structures.append(
                     Structure.from_str(cif_str, fmt="cif")
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to parse reference cif: %s", exc)
         logger.info(f"Loaded {len(self._reference_structures)} reference structures")
         try:
             with open(cache_path, "wb") as f:

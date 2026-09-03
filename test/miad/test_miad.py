@@ -13,17 +13,21 @@
 # limitations under the License.
 
 import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import paddle
 from omegaconf import OmegaConf
 
 from ppmat.datasets.collate_fn import DefaultCollator
+from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.datasets.mp20_dataset import MP20Dataset
 from ppmat.models import build_model
 from ppmat.models.miad.miad import MiAD
+from ppmat.trainer.base_trainer import BaseTrainer
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _MP20_TEST_CSV = str(_PROJECT_ROOT / "data" / "mp_20" / "test.csv")
@@ -67,6 +71,7 @@ TINY_DIFFUSION_CFG = {
     "cont_time": False,
     "num_steps": 10,
     "time_embed_dim": 32,
+    "eps": 1e-3,
     "lat_diffusion": {
         "method": "ddpm",
         "scheduler_cfg": {
@@ -128,8 +133,90 @@ _SAMPLE_NUM_ATOMS = (5, 7)
 _SAMPLE_INFERENCE_STEPS = 5
 
 
-def _make_tiny_model():
-    return MiAD(model_cfg=TINY_MODEL_CFG, diffusion_cfg=TINY_DIFFUSION_CFG)
+def _make_tiny_model(execution_backend="eager"):
+    # Isolated name scope keeps parameter names (and optimizer accumulator
+    # names) identical across instances, which checkpoint resume relies on.
+    with paddle.utils.unique_name.guard():
+        return MiAD(
+            model_cfg=TINY_MODEL_CFG,
+            diffusion_cfg=TINY_DIFFUSION_CFG,
+            execution_backend=execution_backend,
+        )
+
+
+def _clone_state_dict(model):
+    return {key: value.clone() for key, value in model.state_dict().items()}
+
+
+def _record_cinn_boundaries(names):
+    def run_boundary(self, name, function, *args, **kwargs):
+        names.append(name)
+        return function(*args, **kwargs)
+
+    return run_boundary
+
+
+def _make_structure_sample(num_atoms, seed):
+    rng = np.random.RandomState(seed)
+    return {
+        "structure_array": {
+            "frac_coords": ConcatData(rng.rand(num_atoms, 3).astype("float32")),
+            "atom_types": ConcatData(
+                rng.randint(1, 10, size=num_atoms).astype("int64")
+            ),
+            "lattice": ConcatData(rng.rand(1, 3, 3).astype("float32")),
+            "num_atoms": ConcatData(np.array([num_atoms], dtype="int64")),
+        }
+    }
+
+
+def _make_structure_loader():
+    # Different atom counts per crystal keep collate and mirage padding honest.
+    samples = [
+        _make_structure_sample(4, seed=1),
+        _make_structure_sample(3, seed=2),
+    ]
+    return paddle.io.DataLoader(
+        samples,
+        batch_size=2,
+        shuffle=False,
+        collate_fn=DefaultCollator(),
+        return_list=True,
+    )
+
+
+def _trainer_config(output_dir, max_epochs):
+    return {
+        "max_epochs": max_epochs,
+        "output_dir": str(output_dir),
+        "save_freq": 1,
+        "log_freq": 100,
+        "start_eval_epoch": 1,
+        "eval_freq": 1,
+        "seed": 2026,
+        "pretrained_model_path": None,
+        "resume_from_checkpoint": None,
+        "compute_metric_during_train": False,
+        "use_amp": False,
+        "eval_with_no_grad": True,
+        "gradient_accumulation_steps": 1,
+        "best_metric_indicator": "eval_loss",
+        "name_for_best_metric": "loss",
+        "greater_is_better": False,
+    }
+
+
+def _build_trainer(model, output_dir, max_epochs, backend="cinn"):
+    optimizer = paddle.optimizer.Adam(learning_rate=1e-3, parameters=model.parameters())
+    trainer = BaseTrainer(
+        _trainer_config(output_dir, max_epochs),
+        model,
+        train_dataloader=_make_structure_loader(),
+        val_dataloader=_make_structure_loader(),
+        optimizer=optimizer,
+        execution_config={"backend": backend},
+    )
+    return trainer, optimizer
 
 
 def _sample_small_batch(model, num_inference_steps=_SAMPLE_INFERENCE_STEPS):
@@ -223,8 +310,9 @@ class MiADStateDictTest(unittest.TestCase):
     def test_official_layout_weight_load(self):
         # Empirical layout facts of the MiAD 70-key state_dict built from the
         # current YAML: no "decoder." prefix, PyTorch (out, in) Linear weights,
-        # no prop_mlp. The official miad_mp20 checkpoint URL is not yet wired
-        # into MODEL_REGISTRY, so only layout round-trip is asserted here.
+        # no prop_mlp. Only the layout round-trip is asserted here; the
+        # registered miad_mp20 checkpoint is exercised by weight-registry
+        # checks (build_model_from_name downloads it on demand).
         model = _make_model_from_yaml()
         sd = model.state_dict()
         self.assertEqual(len(sd), 70)
@@ -232,7 +320,7 @@ class MiADStateDictTest(unittest.TestCase):
         official = {}
         for k, v in sd.items():
             if k.startswith("decoder."):
-                name = k[len("decoder."):]
+                name = k[len("decoder.") :]
                 if name.endswith(".weight") and len(v.shape) == 2:
                     v = v.T
                 official[name] = v
@@ -266,15 +354,244 @@ class MiADSUNMetricTest(unittest.TestCase):
         structures = _sample_small_batch(model)
         results = metrics_fn(structures)
         for key in (
-            "total", "valid", "non_trivial",
-            "stability_rate", "uniqueness_rate", "novelty_rate",
-            "sun_rate", "sun_count",
+            "total",
+            "valid",
+            "non_trivial",
+            "stability_rate",
+            "uniqueness_rate",
+            "novelty_rate",
+            "sun_rate",
+            "sun_count",
         ):
             self.assertIn(key, results)
         for key in (
-            "stability_rate", "uniqueness_rate", "novelty_rate", "sun_rate",
+            "stability_rate",
+            "uniqueness_rate",
+            "novelty_rate",
+            "sun_rate",
         ):
             self.assertTrue(np.isfinite(results[key]), f"{key} must be finite")
+
+
+class MiADCinnDispatchTest(unittest.TestCase):
+    """Boundary dispatch must not move eager numbers or the state layout."""
+
+    def setUp(self):
+        # GPU scatter kernels are atomic and non-deterministic; the dispatch
+        # contract compares bitwise, so run it on CPU.
+        paddle.set_device("cpu")
+
+    def test_forward_dispatch_matches_eager(self):
+        initial_state = _clone_state_dict(_make_tiny_model())
+        # sigma_norm() is a Monte-Carlo constant fixed at construction time and
+        # is not part of state_dict, so both instances must be built under the
+        # same seed before their numbers can be compared bitwise.
+        paddle.seed(2026)
+        eager_model = _make_tiny_model()
+        paddle.seed(2026)
+        cinn_model = _make_tiny_model(execution_backend="cinn")
+        eager_model.set_state_dict(initial_state)
+        cinn_model.set_state_dict(initial_state)
+        eager_model.eval()
+        cinn_model.eval()
+
+        paddle.seed(7)
+        eager_batch = _make_synthetic_batch()
+        paddle.seed(7)
+        cinn_batch = _make_synthetic_batch()
+
+        paddle.seed(42)
+        with paddle.no_grad():
+            eager_loss = eager_model(eager_batch)["loss_dict"]["loss"]
+
+        names = []
+        paddle.seed(42)
+        with mock.patch.object(MiAD, "_run_runtime", _record_cinn_boundaries(names)):
+            with paddle.no_grad():
+                cinn_loss = cinn_model(cinn_batch)["loss_dict"]["loss"]
+
+        self.assertEqual(names, ["denoise_step"])
+        np.testing.assert_allclose(
+            cinn_loss.numpy(), eager_loss.numpy(), atol=0, rtol=0
+        )
+        self.assertEqual(
+            cinn_model.state_dict().keys(), eager_model.state_dict().keys()
+        )
+
+    def test_sampling_dispatch_matches_eager(self):
+        initial_state = _clone_state_dict(_make_tiny_model())
+        paddle.seed(2026)
+        eager_model = _make_tiny_model()
+        paddle.seed(2026)
+        cinn_model = _make_tiny_model(execution_backend="cinn")
+        eager_model.set_state_dict(initial_state)
+        cinn_model.set_state_dict(initial_state)
+        eager_model.eval()
+        cinn_model.eval()
+
+        paddle.seed(123)
+        eager_result = _sample_small_batch(eager_model)
+
+        names = []
+        paddle.seed(123)
+        with mock.patch.object(MiAD, "_run_runtime", _record_cinn_boundaries(names)):
+            cinn_result = _sample_small_batch(cinn_model)
+
+        self.assertTrue(names)
+        self.assertEqual(set(names), {"denoise_step"})
+        self.assertEqual(len(cinn_result), len(eager_result))
+        for eager_entry, cinn_entry in zip(eager_result, cinn_result):
+            self.assertEqual(eager_entry["num_atoms"], cinn_entry["num_atoms"])
+            for key in ("atom_types", "frac_coords", "lattice"):
+                np.testing.assert_allclose(
+                    cinn_entry[key], eager_entry[key], atol=0, rtol=0
+                )
+
+
+class MiADCinnTrainerTest(unittest.TestCase):
+    """Trainer orchestration with the CINN backend selected end to end."""
+
+    def setUp(self):
+        # Drive the public runtime hooks without a GPU compiler: the workflow
+        # under test is orchestration, not compilation itself.
+        paddle.set_device("cpu")
+        validate_patcher = mock.patch.object(
+            MiAD, "validate_execution_backend", lambda self, **kwargs: None
+        )
+        self.boundaries = []
+        runtime_patcher = mock.patch.object(
+            MiAD,
+            "_run_runtime",
+            _record_cinn_boundaries(self.boundaries),
+        )
+        validate_patcher.start()
+        runtime_patcher.start()
+        self.addCleanup(validate_patcher.stop)
+        self.addCleanup(runtime_patcher.stop)
+
+    def test_checkpoint_resume_workflow(self):
+        initial_state = _clone_state_dict(_make_tiny_model())
+        # Same-seed construction keeps the Monte-Carlo sigma_norm constant
+        # identical across instances (it lives outside state_dict).
+        paddle.seed(2026)
+        first_model = _make_tiny_model(execution_backend="cinn")
+        first_model.set_state_dict(initial_state)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            first_trainer, _ = _build_trainer(first_model, Path(tmp_dir) / "first", 1)
+            with paddle.utils.unique_name.guard():
+                first_trainer.train()
+
+            checkpoint_dir = Path(tmp_dir) / "first" / "checkpoints"
+            for prefix in ("epoch_1", "latest", "best"):
+                for suffix in ("pdparams", "pdopt", "pdstates"):
+                    self.assertTrue((checkpoint_dir / f"{prefix}.{suffix}").is_file())
+            saved_state = paddle.load(str(checkpoint_dir / "latest.pdparams"))
+            self.assertEqual(saved_state.keys(), first_model.state_dict().keys())
+
+            paddle.seed(2026)
+            resumed_model = _make_tiny_model(execution_backend="cinn")
+            resumed_trainer, resumed_optimizer = _build_trainer(
+                resumed_model, Path(tmp_dir) / "resumed", 2
+            )
+            with paddle.utils.unique_name.guard():
+                resumed_trainer.train(
+                    resume_from_checkpoint=str(checkpoint_dir / "latest")
+                )
+
+            paddle.seed(2026)
+            straight_model = _make_tiny_model(execution_backend="cinn")
+            straight_model.set_state_dict(initial_state)
+            straight_trainer, straight_optimizer = _build_trainer(
+                straight_model, Path(tmp_dir) / "straight", 2
+            )
+            with paddle.utils.unique_name.guard():
+                straight_trainer.train()
+
+        self.assertEqual(first_trainer.state.global_step, 1)
+        self.assertEqual(resumed_trainer.state.global_step, 2)
+        self.assertEqual(resumed_trainer.state.epoch, 2)
+        self.assertEqual(resumed_optimizer.get_lr(), straight_optimizer.get_lr())
+        self.assertTrue(self.boundaries)
+        self.assertEqual(set(self.boundaries), {"denoise_step"})
+        for model in (resumed_model, straight_model):
+            self.assertEqual(model.state_dict().keys(), first_model.state_dict().keys())
+            for value in model.state_dict().values():
+                self.assertTrue(paddle.isfinite(value).all())
+
+
+@unittest.skipUnless(
+    os.environ.get("PPMAT_RUN_CINN_WORKFLOW_TESTS") == "1",
+    "Set PPMAT_RUN_CINN_WORKFLOW_TESTS=1 to run the GPU CINN compile test",
+)
+class MiADGpuCinnTest(unittest.TestCase):
+    """Real CINN compilation on GPU: compiled run must match eager."""
+
+    def test_gpu_cinn_matches_eager(self):
+        if (
+            not paddle.is_compiled_with_cuda()
+            or not paddle.base.is_compiled_with_cinn()
+        ):
+            self.skipTest("Paddle must be compiled with CUDA and CINN")
+        paddle.set_device("gpu:0")
+
+        initial_state = _clone_state_dict(_make_tiny_model())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            paddle.seed(2026)
+            eager_model = _make_tiny_model()
+            eager_model.set_state_dict(initial_state)
+            paddle.seed(2026)
+            cinn_model = _make_tiny_model(execution_backend="cinn")
+            cinn_model.set_state_dict(initial_state)
+
+            # Identical seed streams make both epochs draw the same timesteps,
+            # noise and mirage padding, isolating the compiled-numerics delta.
+            paddle.seed(2026)
+            np.random.seed(2026)
+            eager_trainer, _ = _build_trainer(
+                eager_model, Path(tmp_dir) / "eager", 1, backend="eager"
+            )
+            with paddle.utils.unique_name.guard():
+                eager_trainer.train()
+
+            paddle.seed(2026)
+            np.random.seed(2026)
+            cinn_trainer, _ = _build_trainer(cinn_model, Path(tmp_dir) / "cinn", 1)
+            with paddle.utils.unique_name.guard():
+                cinn_trainer.train()
+
+            self.assertEqual(
+                eager_trainer.state.global_step, cinn_trainer.state.global_step
+            )
+            for key in initial_state:
+                np.testing.assert_allclose(
+                    cinn_model.state_dict()[key].numpy(),
+                    eager_model.state_dict()[key].numpy(),
+                    atol=2e-5,
+                    rtol=2e-5,
+                )
+
+            # Same weights, same seed: compiled eval forward stays close.
+            cinn_model.set_state_dict(eager_model.state_dict())
+            cinn_model.eval()
+            eager_model.eval()
+            paddle.seed(7)
+            eager_batch = _make_synthetic_batch()
+            paddle.seed(7)
+            cinn_batch = _make_synthetic_batch()
+            with paddle.no_grad():
+                paddle.seed(42)
+                eager_loss = eager_model(eager_batch)["loss_dict"]["loss"]
+                paddle.seed(42)
+                cinn_loss = cinn_model(cinn_batch)["loss_dict"]["loss"]
+            np.testing.assert_allclose(
+                cinn_loss.numpy(), eager_loss.numpy(), atol=2e-5, rtol=2e-5
+            )
+
+            cinn_model.eval()
+            result = _sample_small_batch(cinn_model)
+            self.assertEqual(len(result), 2)
+            for entry in result:
+                self.assertTrue((entry["atom_types"] != 0).all())
 
 
 if __name__ == "__main__":
