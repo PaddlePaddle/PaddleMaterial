@@ -156,6 +156,7 @@ def main():
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         compute_metric_func_dict=None,
+        execution_config=config.get("Execution"),
     )
     trainer.attach_metrics(metric_cfg, model=model)
 

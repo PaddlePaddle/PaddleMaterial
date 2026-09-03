@@ -523,10 +523,10 @@ def _encode_spectrum_condition(model, condition):
     """Encode the four-branch NMR condition through the declared interface."""
 
     if model.flag_onlyH:
-        embedding, _ = model.encoder(condition)
+        embedding, _ = model.run_encoder(condition)
         return embedding, None
 
-    embedding, (token_encoding, _) = model.encoder(condition)
+    embedding, (token_encoding, _) = model.run_encoder(condition)
     return embedding, token_encoding
 
 
@@ -595,7 +595,7 @@ def step(
         # 4. Decoder forward
         # Convention: pred.X and pred.E are logits with shapes [B, n, Cx] and
         # [B, n, n, Ce]
-        pred = model.decoder(input_X, input_E, input_y, node_mask)
+        pred = model.run_decoder(input_X, input_E, input_y, node_mask)
     else:
         # prepare the extra feature for encoder input without noisy
         batch_values = (
@@ -624,14 +624,14 @@ def step(
             x=(batch_values.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
-        conditionVec = model.encoder(
+        conditionVec = model.run_encoder(
             input_X_pure, input_E_pure, input_y_pure, node_mask
         )
         # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
         # forward of decoder with encoder output as condition vector of input of decoder
-        pred = model.decoder(input_X, input_E, input_y, node_mask)
+        pred = model.run_decoder(input_X, input_E, input_y, node_mask)
 
     pred_X = F.softmax(pred.X, axis=-1)
     pred_E = F.softmax(pred.E, axis=-1)
@@ -1029,7 +1029,7 @@ def reconstruction_logp(model, t, X, E, node_mask, condition_Spectrum):
         # 4. Decoder forward
         # Convention: pred.X and pred.E are logits with shapes [B, n, Cx] and
         # [B, n, n, Ce]
-        pred0 = model.decoder(input_X, input_E, input_y, node_mask)
+        pred0 = model.run_decoder(input_X, input_E, input_y, node_mask)
     else:
         # prepare the extra feature for encoder input without noisy
         z_t = (
@@ -1053,14 +1053,14 @@ def reconstruction_logp(model, t, X, E, node_mask, condition_Spectrum):
             x=(z_t.y.astype("float32"), extra_data_pure.y)
         ).astype(dtype="float32")
         # obtain the condition vector from output of encoder
-        conditionVec = model.encoder(
+        conditionVec = model.run_encoder(
             input_X_pure, input_E_pure, input_y_pure, node_mask
         )
         # complete input_y for decoder
         input_y = paddle.hstack(x=(input_y, conditionVec)).astype(dtype="float32")
 
         # forward of decoder with encoder output as condition vector of input of decoder
-        pred0 = model.decoder(input_X, input_E, input_y, node_mask)  # TODO: uniform
+        pred0 = model.run_decoder(input_X, input_E, input_y, node_mask)
     ############################################################
 
     probX0 = F.softmax(pred0.X, axis=-1)

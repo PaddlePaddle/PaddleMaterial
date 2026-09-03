@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
-
 import paddle
 import paddle.nn as nn
+
+from ppmat.models.common.runtime import RuntimeMixin
+from ppmat.models.common.runtime import runtime_boundary
 
 # BatchNorm semantic alignment:
 # PyTorch: running = (1 - m_torch) * running + m_torch * batch.
@@ -87,7 +88,9 @@ class FourierUnit(nn.Layer):
         coords_hor = coords_hor.expand([x.shape[0], 1, height, width])
 
         # Concatenate coordinates and FFT features
-        ffted = paddle.concat([coords_vert, coords_hor, ffted], axis=1)  # (B, C*2+2, H, W/2+1)
+        ffted = paddle.concat(
+            [coords_vert, coords_hor, ffted], axis=1
+        )  # (B, C*2+2, H, W/2+1)
 
         # Process through convolution
         ffted = self.conv_layer(ffted)
@@ -150,17 +153,26 @@ class FFC(nn.Layer):
         ffc_bias_bound = 1.0 / ffc_fan_in**0.5
 
         self.convl2l = nn.Conv2D(
-            in_channels // 2, in_channels // 2, 3, padding=1,
+            in_channels // 2,
+            in_channels // 2,
+            3,
+            padding=1,
             weight_attr=_kaiming_uniform_attr(),
             bias_attr=_uniform_attr(ffc_bias_bound),
         )
         self.convl2g = nn.Conv2D(
-            in_channels // 2, in_channels // 2, 3, padding=1,
+            in_channels // 2,
+            in_channels // 2,
+            3,
+            padding=1,
             weight_attr=_kaiming_uniform_attr(),
             bias_attr=_uniform_attr(ffc_bias_bound),
         )
         self.convg2l = nn.Conv2D(
-            in_channels // 2, in_channels // 2, 3, padding=1,
+            in_channels // 2,
+            in_channels // 2,
+            3,
+            padding=1,
             weight_attr=_kaiming_uniform_attr(),
             bias_attr=_uniform_attr(ffc_bias_bound),
         )
@@ -220,9 +232,10 @@ class ResnetBlock(nn.Layer):
         return out
 
 
-class SFIN(nn.Layer):
+class SFIN(RuntimeMixin, nn.Layer):
     """
-    SFIN: Noise Calibration and Spatial-Frequency Interactive Network for STEM Image Enhancement.
+    SFIN: Noise Calibration and Spatial-Frequency Interactive Network for STEM
+    Image Enhancement.
 
     Args:
         in_channels (int): Number of input channels (default: 1 for grayscale images)
@@ -248,8 +261,11 @@ class SFIN(nn.Layer):
         target_name: str = "gt_enhance",
         loss_type: str = "l1",
         loss_weight: float = 1.0,
+        execution_backend: str = "eager",
+        runtime_options: dict | None = None,
     ):
         super(SFIN, self).__init__()
+        self._init_runtime(execution_backend, runtime_options)
         self.in_channels = in_channels
         self.base_channels = base_channels
         self.num_blocks = num_blocks
@@ -274,7 +290,10 @@ class SFIN(nn.Layer):
         head_fan_in = in_channels * 3 * 3
         head_bias_bound = 1.0 / head_fan_in**0.5
         self.head_conv = nn.Conv2D(
-            in_channels, base_channels, 3, padding=1,
+            in_channels,
+            base_channels,
+            3,
+            padding=1,
             weight_attr=_kaiming_uniform_attr(),
             bias_attr=_uniform_attr(head_bias_bound),
         )
@@ -283,11 +302,15 @@ class SFIN(nn.Layer):
         tail_fan_in = base_channels * 3 * 3
         tail_bias_bound = 1.0 / tail_fan_in**0.5
         self.tail_conv = nn.Conv2D(
-            base_channels, in_channels, 3, padding=1,
+            base_channels,
+            in_channels,
+            3,
+            padding=1,
             weight_attr=_kaiming_uniform_attr(),
             bias_attr=_uniform_attr(tail_bias_bound),
         )
 
+    @runtime_boundary("forward")
     def _forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """
         Tensor-only forward pass of SFIN.
@@ -301,9 +324,7 @@ class SFIN(nn.Layer):
         x = self.head_conv(x)
         shortcut = x
         x = self.body(x)
-        x = x + shortcut
-        x = self.tail_conv(x)
-        return x
+        return self.tail_conv(x + shortcut)
 
     @staticmethod
     def _to_tensor(data) -> paddle.Tensor:

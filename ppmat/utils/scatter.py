@@ -30,6 +30,17 @@ __all__ = [
 
 ReduceType = Literal["sum", "add", "mean", "min"]
 
+# Keep the one-hot fallback for dtypes that index_add does not support on every
+# backend (notably complex and CPU bfloat16). Model aggregation uses the common
+# floating-point dtypes below and takes the memory-linear index_add path.
+_INDEX_ADD_DTYPES = (
+    paddle.float16,
+    paddle.float32,
+    paddle.float64,
+    paddle.int32,
+    paddle.int64,
+)
+
 
 def _normalize_dim(src: paddle.Tensor, dim: int) -> int:
     if src.ndim == 0:
@@ -42,14 +53,19 @@ def _normalize_dim(src: paddle.Tensor, dim: int) -> int:
 def _resolve_dim_size(index: paddle.Tensor, dim_size: Optional[int]) -> int:
     if dim_size is None:
         return 0 if index.numel() == 0 else int(index.max()) + 1
-    dim_size = int(dim_size)
-    if dim_size < 0:
-        raise ValueError("dim_size must be non-negative")
-    return dim_size
+    # No non-negative check here on purpose. Under AST conversion dim_size
+    # arrives as a traced value that converts to -1, so the check fires during
+    # conversion rather than on a bad call: M3GNet's registered checkpoints fail
+    # with "dim_size must be non-negative" inside MainBlock.three_body. A
+    # negative value still fails immediately in paddle.zeros below.
+    return int(dim_size)
 
 
 def _zeros(src: paddle.Tensor, shape) -> paddle.Tensor:
-    return paddle.zeros(shape, dtype=src.dtype).to(src.place)
+    # paddle.zeros allocates on the current device, which is where src lives in
+    # every supported workflow. An explicit .to(src.place) would add a
+    # device-transfer op that static-graph capture cannot trace.
+    return paddle.zeros(shape, dtype=src.dtype)
 
 
 def _broadcast(
@@ -100,11 +116,15 @@ def scatter_sum_first_order(
     for inference and first-order training. Use scatter_sum for force models
     that require second-order gradients.
     """
-    if index.ndim != 1 or src.shape[0] != index.shape[0]:
-        raise ValueError("index must be one-dimensional and match src.shape[0]")
+    # Only the rank is checked: src.shape[0] is -1 under static-graph capture,
+    # so a length comparison would reject valid compiled calls.
+    if index.ndim != 1:
+        raise ValueError("index must be one-dimensional")
 
     dim_size = _resolve_dim_size(index, dim_size)
     out = _zeros(src, [dim_size, *src.shape[1:]])
+    if src.shape[0] == 0:
+        return out + src.sum() * 0
     return paddle.scatter_nd_add(out, index.reshape([-1, 1]), src)
 
 
@@ -121,14 +141,29 @@ def _scatter_sum(
     size[dim] = dim_size
     out = _zeros(src, size)
 
-    # Paddle's put_along_axis backward does not support the second-order
-    # gradients required by force training when aggregating on the first axis.
+    # Use index_add on the first axis to keep memory linear in the number of
+    # source rows while preserving the second-order gradients used by force
+    # training. Other axes retain put_along_axis's broadcast semantics.
     if dim == 0:
         if src.shape[0] == 0:
             return out + src.sum() * 0
         idx_1d = index.reshape([index.shape[0], -1])[:, 0]
+        if src.dtype in _INDEX_ADD_DTYPES:
+            return paddle.index_add(
+                x=out,
+                index=idx_1d,
+                axis=0,
+                value=src,
+            )
+
+        # Preserve the previous behavior for dtypes without a portable
+        # index_add kernel, such as complex and CPU bfloat16.
         one_hot = paddle.nn.functional.one_hot(idx_1d, dim_size).cast(src.dtype)
-        flat_out = paddle.mm(one_hot.t(), src.reshape([src.shape[0], -1]))
+        flat_out = paddle.matmul(
+            one_hot,
+            src.reshape([src.shape[0], -1]),
+            transpose_x=True,
+        )
         return flat_out.reshape(out.shape)
 
     return paddle.put_along_axis(

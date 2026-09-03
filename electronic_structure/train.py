@@ -166,6 +166,7 @@ if __name__ == "__main__":
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         compute_metric_func_dict=metric_func,
+        execution_config=config.get("Execution"),
     )
 
     if config["Global"].get("do_train", True):

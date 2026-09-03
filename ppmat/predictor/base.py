@@ -31,6 +31,7 @@ from ppmat.models import build_model_from_name
 from ppmat.utils import logger
 from ppmat.utils import save_load
 from ppmat.utils.download import is_url
+from ppmat.utils.execution import configure_execution_backend
 from ppmat.vocab import build_vocab
 
 PathLike = Union[str, os.PathLike]
@@ -147,12 +148,12 @@ class BasePredictor:
             for item in self.config_overrides or ():
                 key = item.split("=", 1)[0]
                 root = key.split(".", 1)[0]
-                if root not in {"Predict", "Dataset"}:
+                if root not in {"Predict", "Dataset", "Execution"}:
                     unsupported_overrides.append(item)
             if unsupported_overrides:
                 raise ValueError(
-                    "Registered-model overrides only support Predict.* and "
-                    "Dataset.*; use config_path and checkpoint_path for other "
+                    "Registered-model overrides only support Predict.*, Dataset.*, "
+                    "and Execution.*; use config_path and checkpoint_path for other "
                     f"changes. Unsupported overrides: {unsupported_overrides}."
                 )
             logger.info("Since model_name is given, downloading it...")
@@ -181,9 +182,19 @@ class BasePredictor:
         self.config = config
         self.vocab = build_vocab(config.get("Vocabulary"))
 
+        self.predict_config = config.get("Predict") or {}
+        execution_config = config.get("Execution") or {}
+        self.execution_backend = configure_execution_backend(
+            self.model,
+            execution_config.get("backend"),
+            init_params=execution_config.get("__init_params__"),
+            world_size=paddle.distributed.get_world_size(),
+            owner="Predictor",
+        )
+        # Backend selection may replace the callable used for the forward pass.
+        # Apply eval mode after that hook so the runtime sees the same contract.
         self.model.eval()
 
-        self.predict_config = config.get("Predict") or {}
         self.eval_with_no_grad = self.predict_config.get("eval_with_no_grad", True)
 
         self.graph_converter_fn = None

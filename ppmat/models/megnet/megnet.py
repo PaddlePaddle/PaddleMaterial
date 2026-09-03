@@ -28,6 +28,8 @@ from pgl.math import segment_softmax
 from pgl.math import segment_sum
 
 from ppmat.models.common import initializer
+from ppmat.models.common.runtime import RuntimeMixin
+from ppmat.models.common.runtime import runtime_boundary
 from ppmat.utils import logger
 
 
@@ -644,7 +646,7 @@ class EdgeSet2Set(paddle.nn.Layer):
         return q_star
 
 
-class MEGNetPlus(paddle.nn.Layer):
+class MEGNetPlus(RuntimeMixin, paddle.nn.Layer):
     """MegNet: Graph Networks as a Universal Machine Learning Framework for Molecules
     and Crystals
 
@@ -679,6 +681,9 @@ class MEGNetPlus(paddle.nn.Layer):
         data_mean (float, optional): Mean of the training data. Defaults to 0.0.
         data_std (float, optional): Standard deviation of the training data. Defaults
             to 1.0.
+        execution_backend (str, optional): Numerical execution backend. Use
+            ``"eager"`` or ``"cinn"``. Defaults to ``"eager"``.
+        runtime_options (dict, optional): Per-backend runtime options.
     """
 
     def __init__(
@@ -699,10 +704,13 @@ class MEGNetPlus(paddle.nn.Layer):
         property_name: Optional[str] = "formation_energy_per_atom",
         data_mean: float = 0.0,
         data_std: float = 1.0,
+        execution_backend: str = "eager",
+        runtime_options: dict | None = None,
         # loss_cfg:dict = {},
     ):
         # loss = build_loss(loss_cfg)
         super().__init__()
+        self._init_runtime(execution_backend, runtime_options)
         self.max_element_types = max_element_types
         if bond_expansion_cfg is None:
             bond_expansion_cfg = {
@@ -779,12 +787,17 @@ class MEGNetPlus(paddle.nn.Layer):
         elif isinstance(m, nn.LSTM):
             initializer.lstm_init_(m)
 
+    @runtime_boundary("forward")
     def _forward(self, data):
         #  The data in data['graph'] is numpy.ndarray, convert it to paddle.Tensor
         g = data["graph"].tensor()
         # print(data["id"])
         batch_size = g.num_graph
-        state_attr = paddle.zeros([batch_size, 2])
+        if isinstance(batch_size, paddle.Tensor):
+            batch_size = int(batch_size)
+        state_attr = paddle.zeros(
+            [batch_size, self.embedding.dim_state_embedding], dtype="float32"
+        )
         node_attr = g.node_feat["atom_types"]
         edge_attr = self.bond_expansion(g.edge_feat["bond_dist"])
         node_feat, edge_feat, state_feat = self.embedding(
