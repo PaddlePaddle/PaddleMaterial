@@ -20,6 +20,7 @@ from unittest import mock
 
 import numpy as np
 import paddle
+from cinn_workflow_harness import REPO_ROOT
 from omegaconf import OmegaConf
 
 from ppmat.datasets.collate_fn import DefaultCollator
@@ -29,11 +30,8 @@ from ppmat.models import build_model
 from ppmat.models.miad.miad import MiAD
 from ppmat.trainer.base_trainer import BaseTrainer
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_MP20_TEST_CSV = str(_PROJECT_ROOT / "data" / "mp_20" / "test.csv")
-_MIAD_YAML = str(
-    _PROJECT_ROOT / "structure_generation" / "configs" / "miad" / "miad_mp20.yaml"
-)
+_MP20_TEST_CSV = REPO_ROOT / "data" / "mp_20" / "test.csv"
+_MIAD_YAML = REPO_ROOT / "structure_generation" / "configs" / "miad" / "miad_mp20.yaml"
 
 
 def setUpModule():
