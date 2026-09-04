@@ -26,10 +26,8 @@ from ppmat.utils.crystal import lattices_to_params_shape_numpy
 
 
 class MiADCSPNet(CSPNet):
-    """CSPNet with block-diagonal edge generation (avoids GPU crash on certain
-    batch sizes), stripping the ``prop_mlp`` sub-layers the shared Paddle
-    CSPNet adds for property-guided models: the MiAD checkpoint has no such
-    parameters, so keeping them would silently leave 24 weights unloaded.
+    """CSPNet with block-diagonal edge generation (avoids GPU crashes) and
+    without the ``prop_mlp`` sub-layers absent from the MiAD checkpoint.
     """
 
     def __init__(self, *args, **kwargs):
@@ -85,8 +83,7 @@ def _extract_x0(batch, mirage_num_atoms=None):
             f"got {lattice_np.shape}"
         )
     if mirage_num_atoms is not None:
-        # Pad every crystal to mirage_num_atoms atoms with type-0 mirage
-        # atoms at random fractional coordinates.
+        # Pad every crystal to mirage_num_atoms with type-0 mirage atoms.
         padded_frac = []
         padded_types = []
         padded_num_atoms = []
@@ -122,22 +119,16 @@ def _extract_x0(batch, mirage_num_atoms=None):
 class MiAD(RuntimeMixin, paddle.nn.Layer):
     """Mirage Atom Diffusion model.
 
-    Supports num-atoms-based sampling: ``sample_by_num_atoms`` provides only
-    ``num_atoms``; all atoms start as mirage (type 0) and the trained
-    mirage-infusion prior determines which become real elements, then the
-    type-0 atoms are filtered out.
+    ``sample`` supports num-atoms-based sampling: all atoms start as mirage
+    (type 0) and mirage atoms are filtered from the output.
     """
 
     supports_num_atoms_sampling = True
 
     # Official MAX_ATOMIC_NUM; class index 0 is the mirage type.
     _MAX_ATOMIC_NUM = 100
-
-    # Sentinel class index of mirage atoms, filtered from sampled output.
     _MIRAGE_TYPE = 0
-
-    # Atomic number used when every sampled atom is mirage, so the output
-    # structure stays non-empty (hydrogen).
+    # Hydrogen fallback when every sampled atom is mirage.
     _FALLBACK_ATOMIC_NUM = 1
 
     def __init__(
@@ -179,18 +170,15 @@ class MiAD(RuntimeMixin, paddle.nn.Layer):
         self.diffusion = CrystalGen(diffusion_cfg)
 
     def set_state_dict(self, state_dict, use_structured_name=True):
-        # Official checkpoints: no "decoder." prefix, PyTorch (out, in) layout
-        # for Linear weights (Embedding keeps the same layout). Adapt per key:
-        # unprefixed keys get the prefix and, if Linear, a transposed weight.
+        # Official checkpoints: no "decoder." prefix and PyTorch (out, in)
+        # Linear weights. Adapt per key.
         linear_param_names = set()
         for module_name, module in self.decoder.named_modules():
             if isinstance(module, nn.Linear):
-                for pname in ("weight",):
-                    if module_name:
-                        full = f"decoder.{module_name}.{pname}"
-                    else:
-                        full = f"decoder.{pname}"
-                    linear_param_names.add(full)
+                name = (
+                    f"decoder.{module_name}.weight" if module_name else "decoder.weight"
+                )
+                linear_param_names.add(name)
         adapted = {}
         for k, v in state_dict.items():
             if k.startswith("decoder."):
@@ -277,15 +265,8 @@ class MiAD(RuntimeMixin, paddle.nn.Layer):
 
     def forward(self, batch, **kwargs):
         batch = _extract_x0(batch, mirage_num_atoms=self.mirage_num_atoms)
-        batch = self.diffusion.train_step(
-            batch=batch,
-            model=self._decode,
-        )
-        loss = batch["loss"]
-        loss_dict = {
-            "loss": loss,
-        }
-        return {"loss_dict": loss_dict}
+        batch = self.diffusion.train_step(batch, self._decode)
+        return {"loss_dict": {"loss": batch["loss"]}}
 
     @paddle.no_grad()
     def sample(self, batch_data, num_inference_steps=None):
@@ -301,19 +282,15 @@ class MiAD(RuntimeMixin, paddle.nn.Layer):
                         f"batch_idx provided but missing required key '{key}'"
                     )
         elif num_atoms_data is not None:
-            parsed = parse_num_atoms_to_per_crystal(num_atoms_data)
-            if parsed is not None:
-                num_atoms, num_atoms_np = parsed
-                batch_idx_np, batch_size = _build_batch_idx(num_atoms_np)
-                batch_idx = paddle.to_tensor(batch_idx_np)
-                atom_types = paddle.zeros([int(num_atoms_np.sum())], dtype="int64")
-                batch_data = {
-                    **batch_data,
-                    "num_atoms": num_atoms,
-                    "batch_idx": batch_idx,
-                    "atom_types": atom_types,
-                    "batch_size": batch_size,
-                }
+            num_atoms, num_atoms_np = parse_num_atoms_to_per_crystal(num_atoms_data)
+            batch_idx_np, batch_size = _build_batch_idx(num_atoms_np)
+            batch_data = {
+                **batch_data,
+                "num_atoms": num_atoms,
+                "batch_idx": paddle.to_tensor(batch_idx_np),
+                "atom_types": paddle.zeros([int(num_atoms_np.sum())], dtype="int64"),
+                "batch_size": batch_size,
+            }
 
         if num_inference_steps is not None:
             original_steps = self.diffusion.num_steps
@@ -330,10 +307,7 @@ class MiAD(RuntimeMixin, paddle.nn.Layer):
             if original_steps is not None:
                 self.diffusion.num_steps = original_steps
 
-        x0_pred = batch["x0_prediction"]
-        lattices = x0_pred[0]
-        frac_coords = x0_pred[1]
-        atom_types = x0_pred[2]
+        lattices, frac_coords, atom_types = batch["x0_prediction"]
 
         result = []
         num_atoms = batch_data.get("num_atoms", None)
@@ -347,23 +321,17 @@ class MiAD(RuntimeMixin, paddle.nn.Layer):
                 n = frac_coords.shape[0]
                 if i > 0:
                     break
-            # Convert to numpy for downstream consumers (BuildStructure, CSPMetric)
-            lat_i = lattices[i]
-            fc_i = frac_coords[start_idx : start_idx + n]
-            at_i = atom_types[start_idx : start_idx + n]
-            lat_np = _to_numpy(lat_i)
-            fc_np = _to_numpy(fc_i)
-            at_np = _to_numpy(at_i)
+            lat_np = _to_numpy(lattices[i])
+            fc_np = _to_numpy(frac_coords[start_idx : start_idx + n])
+            at_np = _to_numpy(atom_types[start_idx : start_idx + n])
             start_idx += n
-            # Filter out mirage atoms (type 0)
             valid_mask = at_np != self._MIRAGE_TYPE
             if valid_mask.any():
                 at_np = at_np[valid_mask]
                 fc_np = fc_np[valid_mask]
                 n = int(valid_mask.sum())
             else:
-                # All-mirage fallback: keep the count, replace the mirage
-                # type with hydrogen so the structure stays non-empty.
+                # All-mirage fallback keeps the structure non-empty.
                 at_np = np.where(
                     at_np == self._MIRAGE_TYPE, self._FALLBACK_ATOMIC_NUM, at_np
                 )

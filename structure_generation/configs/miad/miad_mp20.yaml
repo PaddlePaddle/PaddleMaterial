@@ -166,8 +166,7 @@ Sample:
   metrics:
     __class_name__: SUNMetric
     __init_params__:
-      # Novelty reference follows the official MiAD semantics: compare against
-      # the *training* split (train.csv), not the test split.
+      # Official MiAD semantics: novelty references the training split.
       reference_file_path: "./data/mp_20/train.csv"
   model_sample_params:
     num_inference_steps: 1000

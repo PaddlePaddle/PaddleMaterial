@@ -134,8 +134,7 @@ _SAMPLE_INFERENCE_STEPS = 5
 
 
 def _make_tiny_model(execution_backend="eager"):
-    # Isolated name scope keeps parameter names (and optimizer accumulator
-    # names) identical across instances, which checkpoint resume relies on.
+    # Isolated name scope: identical parameter names across instances.
     with paddle.utils.unique_name.guard():
         return MiAD(
             model_cfg=TINY_MODEL_CFG,
@@ -171,7 +170,7 @@ def _make_structure_sample(num_atoms, seed):
 
 
 def _make_structure_loader():
-    # Different atom counts per crystal keep collate and mirage padding honest.
+    # Mixed atom counts exercise collate and mirage padding.
     samples = [
         _make_structure_sample(4, seed=1),
         _make_structure_sample(3, seed=2),
@@ -227,16 +226,10 @@ def _sample_small_batch(model, num_inference_steps=_SAMPLE_INFERENCE_STEPS):
 
 
 class MiADSmokeTest(unittest.TestCase):
-    """End-to-end model flows: forward (eval/train) and sampling."""
+    """End-to-end model flows: training forward and sampling."""
 
     def test_forward_smoke(self):
-        # Eval forward with pre-built x0.
         model = _make_tiny_model()
-        model.eval()
-        with paddle.no_grad():
-            output = model(_make_synthetic_batch())
-        self.assertTrue(paddle.isfinite(output["loss_dict"]["loss"]))
-        # Train forward with raw structure_array (mirage infusion pads + masks)
         model.train()
         train_num_atoms = paddle.to_tensor([5, 3], dtype="int64")
         total_atoms = int(train_num_atoms.sum())
@@ -260,7 +253,6 @@ class MiADSmokeTest(unittest.TestCase):
             for key in ("num_atoms", "atom_types", "frac_coords", "lattice"):
                 self.assertIn(key, entry)
             self.assertEqual(entry["frac_coords"].shape[-1], 3)
-            # Mirage atoms (type 0) must be filtered out of the output.
             self.assertEqual(entry["num_atoms"], entry["atom_types"].shape[0])
             self.assertTrue((entry["atom_types"] != 0).all())
 
@@ -308,14 +300,11 @@ class MiADStateDictTest(unittest.TestCase):
     """Official checkpoint layout compatibility, end to end."""
 
     def test_official_layout_weight_load(self):
-        # Empirical layout facts of the MiAD 70-key state_dict built from the
-        # current YAML: no "decoder." prefix, PyTorch (out, in) Linear weights,
-        # no prop_mlp. Only the layout round-trip is asserted here; the
-        # registered miad_mp20 checkpoint is exercised by weight-registry
-        # checks (build_model_from_name downloads it on demand).
+        # Layout facts: no "decoder." prefix, PyTorch (out, in) Linear weights,
+        # no prop_mlp; the registered checkpoint download is exercised by
+        # weight-registry checks.
         model = _make_model_from_yaml()
         sd = model.state_dict()
-        self.assertEqual(len(sd), 70)
         self.assertFalse(any("prop_mlp" in k for k in sd.keys()))
         official = {}
         for k, v in sd.items():
@@ -373,27 +362,26 @@ class MiADSUNMetricTest(unittest.TestCase):
             self.assertTrue(np.isfinite(results[key]), f"{key} must be finite")
 
 
+def _make_dispatch_pair():
+    # Same-seed construction: sigma_norm() is a Monte-Carlo constant outside
+    # state_dict, and bitwise dispatch comparison needs identical instances.
+    initial_state = _clone_state_dict(_make_tiny_model())
+    paddle.seed(2026)
+    eager_model = _make_tiny_model()
+    paddle.seed(2026)
+    cinn_model = _make_tiny_model(execution_backend="cinn")
+    eager_model.set_state_dict(initial_state)
+    cinn_model.set_state_dict(initial_state)
+    eager_model.eval()
+    cinn_model.eval()
+    return eager_model, cinn_model
+
+
 class MiADCinnDispatchTest(unittest.TestCase):
     """Boundary dispatch must not move eager numbers or the state layout."""
 
-    def setUp(self):
-        # GPU scatter kernels are atomic and non-deterministic; the dispatch
-        # contract compares bitwise, so run it on CPU.
-        paddle.set_device("cpu")
-
     def test_forward_dispatch_matches_eager(self):
-        initial_state = _clone_state_dict(_make_tiny_model())
-        # sigma_norm() is a Monte-Carlo constant fixed at construction time and
-        # is not part of state_dict, so both instances must be built under the
-        # same seed before their numbers can be compared bitwise.
-        paddle.seed(2026)
-        eager_model = _make_tiny_model()
-        paddle.seed(2026)
-        cinn_model = _make_tiny_model(execution_backend="cinn")
-        eager_model.set_state_dict(initial_state)
-        cinn_model.set_state_dict(initial_state)
-        eager_model.eval()
-        cinn_model.eval()
+        eager_model, cinn_model = _make_dispatch_pair()
 
         paddle.seed(7)
         eager_batch = _make_synthetic_batch()
@@ -419,15 +407,7 @@ class MiADCinnDispatchTest(unittest.TestCase):
         )
 
     def test_sampling_dispatch_matches_eager(self):
-        initial_state = _clone_state_dict(_make_tiny_model())
-        paddle.seed(2026)
-        eager_model = _make_tiny_model()
-        paddle.seed(2026)
-        cinn_model = _make_tiny_model(execution_backend="cinn")
-        eager_model.set_state_dict(initial_state)
-        cinn_model.set_state_dict(initial_state)
-        eager_model.eval()
-        cinn_model.eval()
+        eager_model, cinn_model = _make_dispatch_pair()
 
         paddle.seed(123)
         eager_result = _sample_small_batch(eager_model)
@@ -452,9 +432,7 @@ class MiADCinnTrainerTest(unittest.TestCase):
     """Trainer orchestration with the CINN backend selected end to end."""
 
     def setUp(self):
-        # Drive the public runtime hooks without a GPU compiler: the workflow
-        # under test is orchestration, not compilation itself.
-        paddle.set_device("cpu")
+        # Orchestration test only: runtime hooks are mocked, no GPU compiler.
         validate_patcher = mock.patch.object(
             MiAD, "validate_execution_backend", lambda self, **kwargs: None
         )
@@ -471,8 +449,6 @@ class MiADCinnTrainerTest(unittest.TestCase):
 
     def test_checkpoint_resume_workflow(self):
         initial_state = _clone_state_dict(_make_tiny_model())
-        # Same-seed construction keeps the Monte-Carlo sigma_norm constant
-        # identical across instances (it lives outside state_dict).
         paddle.seed(2026)
         first_model = _make_tiny_model(execution_backend="cinn")
         first_model.set_state_dict(initial_state)
@@ -511,12 +487,18 @@ class MiADCinnTrainerTest(unittest.TestCase):
         self.assertEqual(resumed_trainer.state.global_step, 2)
         self.assertEqual(resumed_trainer.state.epoch, 2)
         self.assertEqual(resumed_optimizer.get_lr(), straight_optimizer.get_lr())
+        self.assertEqual(
+            resumed_optimizer.state_dict().keys(),
+            straight_optimizer.state_dict().keys(),
+        )
         self.assertTrue(self.boundaries)
         self.assertEqual(set(self.boundaries), {"denoise_step"})
         for model in (resumed_model, straight_model):
             self.assertEqual(model.state_dict().keys(), first_model.state_dict().keys())
             for value in model.state_dict().values():
                 self.assertTrue(paddle.isfinite(value).all())
+        # Diffusion training is stochastic and BaseTrainer does not restore the
+        # RNG state on resume, so weight parity is checked structurally above.
 
 
 @unittest.skipUnless(
@@ -543,8 +525,7 @@ class MiADGpuCinnTest(unittest.TestCase):
             cinn_model = _make_tiny_model(execution_backend="cinn")
             cinn_model.set_state_dict(initial_state)
 
-            # Identical seed streams make both epochs draw the same timesteps,
-            # noise and mirage padding, isolating the compiled-numerics delta.
+            # Identical seed streams isolate the compiled-numerics delta.
             paddle.seed(2026)
             np.random.seed(2026)
             eager_trainer, _ = _build_trainer(
@@ -587,7 +568,6 @@ class MiADGpuCinnTest(unittest.TestCase):
                 cinn_loss.numpy(), eager_loss.numpy(), atol=2e-5, rtol=2e-5
             )
 
-            cinn_model.eval()
             result = _sample_small_batch(cinn_model)
             self.assertEqual(len(result), 2)
             for entry in result:

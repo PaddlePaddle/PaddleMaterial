@@ -44,20 +44,14 @@ _METASTABILITY_THRESHOLD = 0.1
 
 
 def _composition_hash(structure) -> str:
-    # Composition key used to bucket structures before StructureMatcher.
     return str(sorted(list(structure.atomic_numbers)))
 
 
 def _structure_from_array(crystal_data):
     """Build a pymatgen Structure from an array-style dict.
 
-    Supported keys: ``frac_coords``, ``atom_types``, plus either
-    ``lengths`` + ``angles`` or ``lattice`` (3x3 matrix).
-
-    NOTE: metrics layer must not depend on ppmat.datasets (see
-    .agents/rules/metrics_layer_independence.md), so this intentionally
-    re-implements the ``array`` branch of ``BuildStructure.build_one``;
-    keep both in sync when either changes.
+    NOTE: re-implements the ``array`` branch of ``BuildStructure.build_one``
+    (metrics layer must not depend on ppmat.datasets); keep both in sync.
     """
     from pymatgen.core import Lattice
     from pymatgen.core import Structure
@@ -221,17 +215,10 @@ def compute_sun(
 class SUNMetric(StreamingMetricBase):
     """S.U.N. (Stability / Uniqueness / Novelty) metric for crystal generation.
 
-    Novelty references the training split (``reference_file_path``), and
-    stability requires convex-hull energies (``e_above_hull < 0``). Stability
-    is only computed when ``energy_above_hull`` is passed explicitly
-    (prerelaxation + hull reference not yet migrated); otherwise
-    ``stability_rate`` reports 0.0 with a warning.
-
-    Supports one-shot evaluation (``__call__`` over the full generated set)
-    and streaming evaluation through the ``StreamingMetricBase`` hooks
-    (``update_step`` / ``compute_epoch`` / ``reset``). The uniqueness pool is
-    shared across batch boundaries, so both entry points compute the exact
-    same global two-by-two semantics as the one-shot path.
+    Novelty references the training split (``reference_file_path``). Stability
+    requires ``energy_above_hull`` (hull reference not yet migrated); otherwise
+    ``stability_rate`` reports 0.0 with a warning. One-shot (``__call__``) and
+    streaming evaluation share the same cross-batch uniqueness pool.
     """
 
     def __init__(
@@ -254,7 +241,6 @@ class SUNMetric(StreamingMetricBase):
         self._reference_structures = None
         self.reset()
 
-    # ---- streaming lifecycle (StreamingMetricBase) ----
     def reset(self):
         """Clear the per-evaluation uniqueness pool and accumulated flags."""
         self._unique_pool: Dict[str, List] = defaultdict(list)
@@ -267,12 +253,7 @@ class SUNMetric(StreamingMetricBase):
         self._warned_no_eah = False
 
     def update_step(self, *, result: Dict, batch, stage: str):
-        """Accumulate one evaluation step's generated structures.
-
-        ``result`` must be a dict (per ``StreamingMetricBase``) carrying the
-        generated materials under ``"result"``/``"samples"``/``"structures"``
-        (sample output), and optionally ``"energy_above_hull"`` for stability.
-        """
+        """Accumulate one step's generated structures from a dict ``result``."""
         if stage not in ("eval", "sample"):
             return
         generated = (
@@ -288,7 +269,6 @@ class SUNMetric(StreamingMetricBase):
             return {}
         return self._finalize_dict()
 
-    # ---- one-shot evaluation (backwards compatible) ----
     def __call__(
         self,
         generated: Union[List[dict], List[str], "pd.DataFrame"],
@@ -298,7 +278,6 @@ class SUNMetric(StreamingMetricBase):
         self._ingest(generated, energy_above_hull)
         return self._finalize_dict()
 
-    # ---- internals ----
     def _ingest(
         self,
         generated: Union[List[dict], List[str], "pd.DataFrame"],
@@ -356,11 +335,7 @@ class SUNMetric(StreamingMetricBase):
             self._stability.extend([False] * n)
 
     def _match_unique(self, structures: List[Optional["Structure"]]) -> List[bool]:
-        """Incremental uniqueness against the shared (cross-batch) pool.
-
-        Semantically identical to ``compute_uniqueness`` (dynamic=True) over
-        the concatenation of all ingested batches.
-        """
+        """Incremental uniqueness against the shared (cross-batch) pool."""
         matcher = _make_matcher(
             self.stol, self.angle_tol, self.ltol, self.attempt_supercell
         )
@@ -413,12 +388,7 @@ class SUNMetric(StreamingMetricBase):
         return results
 
     def _load_reference(self):
-        """Load the novelty reference set (the training split).
-
-        Parsed structures are cached under ``DATASETS_HOME/miad/`` (keyed by a
-        hash of the reference file path) so repeated evaluations skip the
-        expensive CIF parsing without writing into the dataset directory.
-        """
+        """Load the novelty reference set, cached under DATASETS_HOME/miad."""
         import pickle
 
         import pandas as pd

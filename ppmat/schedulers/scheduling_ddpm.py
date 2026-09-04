@@ -91,26 +91,6 @@ def betas_for_alpha_bar(
     return paddle.to_tensor(betas, dtype=paddle.float32)
 
 
-def betas_for_diffcsp_cosine(num_diffusion_timesteps, s=0.008, max_beta=0.9999):
-    """DiffCSP cosine schedule: alpha_bar_t = cos((t/N + s) / (1 + s) * pi/2)^2
-    normalized by alpha_bar_0, betas_t = 1 - alpha_bar_{t+1} / alpha_bar_t
-    clipped to [1e-4, max_beta].
-
-    Distinct from the D3PM uniform-transition schedule in ``scheduling_d3pm.py``
-    (f_t = cos((t/(N+1) + s)/(1+s) * pi/2), no squaring, N+1 discretization).
-    """
-    discretization = paddle.linspace(
-        0, num_diffusion_timesteps, num_diffusion_timesteps + 1, dtype="float64"
-    )
-    alphas_cumprod = paddle.cos(
-        ((discretization / num_diffusion_timesteps) + s) / (1 + s) * math.pi * 0.5
-    ) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    betas = paddle.clip(betas, 1e-4, max_beta)
-    return betas.cast("float32")
-
-
 def rescale_zero_terminal_snr(betas):
     """
     Rescales betas to have zero terminal SNR Based on
@@ -260,7 +240,23 @@ class DDPMScheduler:
             # Glide cosine schedule
             self.betas = betas_for_alpha_bar(num_train_timesteps)
         elif beta_schedule == "diffcsp_cosine":
-            self.betas = betas_for_diffcsp_cosine(num_train_timesteps)
+            # DiffCSP cosine schedule: alpha_bar_t = cos((t/N + s)/(1+s)*pi/2)^2
+            # normalized by alpha_bar_0, betas clipped to [1e-4, 0.9999].
+            # Distinct from the D3PM uniform schedule in scheduling_d3pm.py.
+            s = 0.008
+            discretization = paddle.linspace(
+                0, num_train_timesteps, num_train_timesteps + 1, dtype="float64"
+            )
+            alphas_cumprod = (
+                paddle.cos(
+                    (discretization / num_train_timesteps + s) / (1 + s) * math.pi * 0.5
+                )
+                ** 2
+            )
+            alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+            self.betas = paddle.clip(
+                1 - alphas_cumprod[1:] / alphas_cumprod[:-1], 1e-4, 0.9999
+            ).cast("float32")
         elif beta_schedule == "sigmoid":
             # GeoDiff sigmoid schedule
             betas = paddle.linspace(-6, 6, num_train_timesteps)

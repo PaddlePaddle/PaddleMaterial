@@ -22,8 +22,6 @@ from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
 
 
 def parse_num_atoms_to_per_crystal(num_atoms_data):
-    if num_atoms_data is None:
-        return None
     if hasattr(num_atoms_data, "numpy"):
         num_atoms_np = num_atoms_data.numpy().flatten()
     elif hasattr(num_atoms_data, "reshape"):
@@ -34,15 +32,13 @@ def parse_num_atoms_to_per_crystal(num_atoms_data):
 
 
 class CrystalGen:
-    """Crystal generation orchestrator: coefficient pre-computation via ppmat
-    schedulers, custom step logic per diffusion type.
-    """
+    """Crystal generation orchestrator with per-diffusion-type step logic."""
 
     def __init__(self, diffusion_config):
         self.config = diffusion_config
         self.cont_time = self.config["cont_time"]
         self.num_steps = self.config["num_steps"]
-        # Official default eps=1e-3: lower bound of the time sampling range.
+        # Official default eps=1e-3.
         self.eps = float(self.config.get("eps", 1e-3))
         self.time_embedding = SinusoidalTimeEmbeddings(
             self.config.get("time_embed_dim", 256)
@@ -50,24 +46,20 @@ class CrystalGen:
         # gen_* tasks also diffuse atom types; csp_* tasks do not
         self.gen_type = self.config["task"].startswith("gen")
 
-        # Lattice diffusion
         lat_cfg = self.config["lat_diffusion"]
         self.lat_scheduler = build_scheduler(lat_cfg["scheduler_cfg"])
 
-        # Frac diffusion
         frac_cfg = self.config["frac_diffusion"]
         self.frac_scheduler = build_scheduler(frac_cfg["scheduler_cfg"])
         self.step_lr = frac_cfg.get("step_lr")
         if self.step_lr is None:
             raise ValueError(
-                "frac_diffusion.step_lr must be provided in the diffusion config "
-                "(the Langevin step-size coefficient, e.g. 1e-5 for gen_mp20)"
+                "frac_diffusion.step_lr must be provided (Langevin step size)"
             )
         self.sigmas_t = self.frac_scheduler.discrete_sigmas[:, None]
         self.sigmas_norm_t = self.frac_scheduler.discrete_sigmas_norm[:, None]
         self.sb = self.frac_scheduler.sigma_min
 
-        # Type diffusion
         if self.gen_type:
             self.type_diffusion = build_type_diffusion(
                 self.config.get("type_diffusion")
@@ -204,11 +196,9 @@ class CrystalGen:
         loss_frac = (
             ((batch["prediction"][1] - normed_score) ** 2).reshape([-1, 3]).mean(axis=1)
         )
-        # Mask out type-0 mirage atoms from the coordinate loss, rescaling to
-        # keep the loss scale over the reduced atom count.
+        # Mask type-0 mirage atoms from the coordinate loss and rescale.
         if self.gen_type and batch["x0"][2] is not None:
-            mirage_type = 0
-            mask = (batch["x0"][2] != mirage_type).cast(loss_frac.dtype)
+            mask = (batch["x0"][2] != 0).cast(loss_frac.dtype)
             coef = mask.shape[0] / mask.sum().clip(min=1)
             loss_frac = loss_frac * mask * coef
         loss_frac = loss_frac.mean()

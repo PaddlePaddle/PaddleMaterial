@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-
 from typing import Literal
 from typing import Optional
 from typing import Tuple
@@ -26,11 +25,10 @@ from ppmat.utils.misc import maybe_expand
 
 
 class D3PMUniformScheduler:
-    """D3PM scheduler with uniform transition matrices.
+    """D3PM scheduler with uniform transition matrices and a cosine schedule.
 
-    Pre-computes Q_t / cumprod_Q_t / Q_{t-1} / cumprod_Q_{t-1} for all
-    timesteps using a cosine schedule (uniform-transition variant, as opposed
-    to the absorbing-state ``D3PMScheduler``).
+    Distinct from the absorbing-state ``D3PMScheduler`` and from the DiffCSP
+    cosine schedule in ``scheduling_ddpm.py``.
     """
 
     def __init__(
@@ -41,9 +39,7 @@ class D3PMUniformScheduler:
     ):
         self.num_types = num_types
 
-        discretization = paddle.arange(
-            1, num_train_timesteps + 1, dtype="float64"
-        )
+        discretization = paddle.arange(1, num_train_timesteps + 1, dtype="float64")
         f_t = paddle.cos(
             (discretization / (num_train_timesteps + 1) + s) / (1 + s) * math.pi / 2
         )
@@ -69,9 +65,7 @@ class D3PMUniformScheduler:
 
         cumprod_Q_t_list = [Q_t[0]]
         for t_idx in range(1, num_train_timesteps):
-            cumprod_Q_t_list.append(
-                paddle.matmul(cumprod_Q_t_list[-1], Q_t[t_idx])
-            )
+            cumprod_Q_t_list.append(paddle.matmul(cumprod_Q_t_list[-1], Q_t[t_idx]))
         cumprod_Q_t = paddle.stack(cumprod_Q_t_list, axis=0)
 
         Q_t_1 = paddle.concat(
@@ -94,7 +88,7 @@ class D3PMUniformScheduler:
 
 
 class D3PMScheduler:
-    """D3PM Scheduler
+    """D3PM Scheduler with absorbing-state transition
 
     Args:
         num_train_timesteps (int, optional): Number of training timesteps. Defaults to

@@ -21,10 +21,10 @@ from ppmat.schedulers import build_scheduler
 
 
 def build_type_diffusion(cfg):
-    """Build a type diffusion module from ``__class_name__`` / ``__init_params__``.
+    """Build a type diffusion module from ``__class_name__``/``__init_params__``.
 
-    Evaluates in this module's namespace: ``D3PM`` lives here, not in
-    ``ppmat.schedulers``, so the generic ``build_scheduler`` cannot resolve it.
+    ``D3PM`` lives in this module, not in ``ppmat.schedulers``, so the generic
+    ``build_scheduler`` cannot resolve it.
     """
     if cfg is None:
         return None
@@ -82,7 +82,7 @@ class D3PM:
         ).sum(axis=-1)[:, None]
         result = numerator / (denominator + 1e-8)
         result = result / result.sum(axis=-1, keepdim=True)
-        # Fallback for zero-denominator edge cases (uniform distribution)
+        # Zero-denominator fallback: uniform distribution.
         return paddle.where(
             paddle.isnan(result),
             paddle.full_like(result, 1.0 / self.num_types),
@@ -114,8 +114,7 @@ class D3PM:
         return self.to_domain(xT)
 
     def loss(self, onehot_pred, onehot_xt, onehot_x0, t):
-        """Per-atom D3PM KL loss between predicted and ground-truth reverse
-        distributions, scaled by ``loss_scale``."""
+        """Per-atom D3PM KL loss scaled by ``loss_scale``."""
         t_idx = t.cast("int64")
         onehot_x0_pred = self.prediction_to_domain(onehot_pred)
         pred_xt_1_probs = self._reverse_step_distribution(
