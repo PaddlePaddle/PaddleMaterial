@@ -1,0 +1,26 @@
+{
+  "paddle_version": "3.3.1",
+  "device": "gpu:0",
+  "cuda_compiled": true,
+  "cinn_compiled": false,
+  "data_root": "D:\\实验\\liflow_official_data\\data\\universal",
+  "checkpoint": "D:\\实验\\liflow_reference\\ckpt\\converted\\P_universal\\propagator.pdparams",
+  "sample_name": "mp_4426",
+  "num_atoms": 160,
+  "warmup": 20,
+  "iterations": 100,
+  "backends": {
+    "eager": {
+      "status": "ok",
+      "first_seconds": 1.287953999999445,
+      "warmup_mean_seconds": 0.005528789999516448,
+      "warmup_std_seconds": 0.0007154728308342138,
+      "mean_seconds": 0.006097422999882838,
+      "std_seconds": 0.0016382469723068593
+    },
+    "cinn": {
+      "status": "skipped",
+      "reason": "RuntimeError: LiFlow execution_backend='cinn' requires a Paddle build with CINN support."
+    }
+  }
+}

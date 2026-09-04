@@ -1,0 +1,11 @@
+{
+  "num_features": 8,
+  "num_radial_basis": 5,
+  "num_layers": 1,
+  "num_elements": 40,
+  "r_max": 5.0,
+  "r_offset": 0.5,
+  "ref_temp": 1000.0,
+  "seed": 0,
+  "scatter": "index_add segment-sum shim"
+}

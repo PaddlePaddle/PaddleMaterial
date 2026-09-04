@@ -1,0 +1,30 @@
+{
+  "source": "D:\\\u5b9e\u9a8c\\liflow_reference\\ckpt\\C_LPS.ckpt",
+  "source_sha256": "883ed18414ebbc8b987a61860f206c021352981e9a76638ef463cd691af5331a",
+  "source_top_keys": [
+    "epoch",
+    "global_step",
+    "pytorch-lightning_version",
+    "state_dict",
+    "loops",
+    "callbacks",
+    "optimizer_states",
+    "lr_schedulers",
+    "hparams_name",
+    "hyper_parameters"
+  ],
+  "num_model_params": 45,
+  "model_cfg": {
+    "num_features": 64,
+    "num_radial_basis": 20,
+    "num_layers": 3,
+    "num_elements": 77,
+    "r_max": 5.0,
+    "r_offset": 0.5,
+    "ref_temp": 1000.0,
+    "prediction_mode": "velocity"
+  },
+  "propagate_prior": null,
+  "correct_prior": null,
+  "data_cutoff": null
+}

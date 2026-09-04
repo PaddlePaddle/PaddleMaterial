@@ -1,0 +1,24 @@
+Global:
+  do_train: false
+  do_eval: false
+  do_test: false
+  prim_eager_enabled: false
+Model:
+  __class_name__: LiFlow
+  __init_params__:
+    num_features: 64
+    num_radial_basis: 20
+    num_layers: 3
+    num_elements: 77
+    r_max: 5.0
+    ref_temp: 1000.0
+    prediction_mode: velocity
+Predict:
+  path: data/liflow
+  index_file: test_800K.csv
+  sample_index: 0
+  steps: 25
+  flow_steps: 10
+  solver: euler
+  corrector_every: 1
+  seed: 42

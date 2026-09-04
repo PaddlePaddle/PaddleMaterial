@@ -1,0 +1,70 @@
+{
+  "reference_repo": "https://github.com/learningmatter-mit/liflow",
+  "reference_commit": "e6fc475361d046865f12cae1aee11c4f56c48d87",
+  "paddlematerials_commit": "a9a689cf64d98a2b415a15f794fe88598b5943ef",
+  "cutoff": 5.0,
+  "model_hyperparams": {
+    "num_features": 64,
+    "num_radial_basis": 20,
+    "num_layers": 3,
+    "num_elements": 77,
+    "r_max": 5.0,
+    "r_offset": 0.5,
+    "ref_temp": 1000.0,
+    "prediction_mode": "velocity"
+  },
+  "fixtures": [
+    {
+      "file": "fixture_liflow_14atoms.npz",
+      "sha256": "7121d26db2ba8303fd782936bbefddbd4a4fc2a9c158e199d7928ed90b98c542",
+      "kind": "periodic",
+      "note": "pair (0.1,3,3)-(5.9,3,3) needs periodic image inside cutoff"
+    },
+    {
+      "file": "fixture_liflow_nonperiodic.npz",
+      "sha256": "46e6de2800f94711d350e63c6864bd037cfefba23079b676015fe9c26908b89b",
+      "kind": "nonperiodic",
+      "note": "lattice=None, dense neighbor list"
+    },
+    {
+      "file": "fixture_liflow_cutoff_edge.npz",
+      "sha256": "d36902fcfd572076811dab9e65b8235bd3bdae9a459fd94c7dc571ec5ced86f4",
+      "kind": "periodic",
+      "note": "4.98 inside cutoff, 5.02 outside but inside through the image"
+    }
+  ],
+  "reference_outputs": {
+    "dir": "reference_outputs/",
+    "generator": "liflow_reference/scripts/golden_export.py"
+  },
+  "checkpoints": [
+    {
+      "file": "C_LGPS_0.1.ckpt",
+      "sha256": "56b497d9b14e3af0a61f17e814e2a992611d5350806bc774acbeb0018e562f6d"
+    },
+    {
+      "file": "C_LGPS_0.2.ckpt",
+      "sha256": "6e9bd40fe82fc8fba43c4ecb9289230198c62a2d3d1ef5bfdbbb1b3e45ace520"
+    },
+    {
+      "file": "C_LPS.ckpt",
+      "sha256": "883ed18414ebbc8b987a61860f206c021352981e9a76638ef463cd691af5331a"
+    },
+    {
+      "file": "C_universal.ckpt",
+      "sha256": "a38418094109e250f31cfd4860da485403c0a39b5968a7733f94ab925f557088"
+    },
+    {
+      "file": "P_LGPS.ckpt",
+      "sha256": "b8785d2441264aaba1319814337e9b7712bf4215b03bb233f35cc5936b7f442e"
+    },
+    {
+      "file": "P_LPS.ckpt",
+      "sha256": "d1c022f55c75ad55f7a382aa743af99749d718cde2f61c4e1ce87f9ce37b3a23"
+    },
+    {
+      "file": "P_universal.ckpt",
+      "sha256": "41c1763f56ec1666bc7bbf2a9a17971633bb1e59d4ea4a75cbf0cf999dd50f2d"
+    }
+  ]
+}

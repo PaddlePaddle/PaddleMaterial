@@ -1,0 +1,62 @@
+Global:
+  do_train: true
+  do_eval: true
+  do_test: false
+  prim_eager_enabled: false
+Trainer:
+  output_dir: output/liflow_corrector
+  max_epochs: 500
+  max_iter: null
+  seed: 42
+  compute_metric_during_train: false
+  save_freq: 10
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  use_amp: false
+  eval_with_no_grad: true
+  best_metric_indicator: eval_loss
+  name_for_best_metric: loss
+  greater_is_better: false
+Model:
+  __class_name__: LiFlow
+  __init_params__:
+    num_features: 64
+    num_radial_basis: 20
+    num_layers: 3
+    num_elements: 77
+    r_max: 5.0
+    ref_temp: 1000.0
+    prediction_mode: data
+Metric:
+  target:
+    __class_name__: paddle.nn.MSELoss
+    __init_params__: {}
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr: 0.0003
+Dataset:
+  train:
+    dataset:
+      __class_name__: LiFlowDataset
+      __init_params__:
+        path: data/liflow
+        index_file: train_800K.csv
+        time_delay_steps: 100
+        seed: 42
+        random_time: true
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: LiFlowCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 16
+        shuffle: true
+        drop_last: false
+  val: null
+  test: null

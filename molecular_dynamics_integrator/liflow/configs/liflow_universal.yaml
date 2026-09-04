@@ -1,0 +1,143 @@
+Global:
+  do_train: true
+  do_eval: false
+  do_test: false
+  prim_eager_enabled: false
+
+Trainer:
+  output_dir: output/liflow_universal
+  max_epochs: 500
+  seed: 42
+  save_freq: 10
+  log_freq: 10
+  start_eval_epoch: 1
+  eval_freq: 1
+  use_amp: false
+  eval_with_no_grad: true
+  gradient_accumulation_steps: 1
+  best_metric_indicator: eval_loss
+  name_for_best_metric: loss
+  greater_is_better: false
+  compute_metric_during_train: false
+  metric_strategy_during_eval: step
+  pretrained_model_path:
+
+Model:
+  __class_name__: LiFlow
+  __init_params__:
+    num_features: 64
+    num_radial_basis: 20
+    num_layers: 3
+    num_elements: 77
+    r_max: 5.0
+    r_offset: 0.5
+    ref_temp: 1000.0
+    prediction_mode: velocity
+
+Metric:
+  target:
+    __class_name__: paddle.nn.MSELoss
+    __init_params__: {}
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 0.0003
+        eta_min: 0.000001
+        by_epoch: true
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: LiFlowDataset
+      __init_params__:
+        path: data/liflow
+        index_file: train_800K.csv
+        time_delay_steps: 100
+        prior_scale_li: [1.0, 10.0]
+        prior_scale_frame: [0.316, 3.16]
+        seed: 42
+        random_time: true
+        build_structure_cfg:
+          format: array
+          primitive: false
+          niggli: false
+          canocial: false
+          num_cpus: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 16
+        shuffle: true
+        drop_last: false
+  val:
+    dataset:
+      __class_name__: LiFlowDataset
+      __init_params__:
+        path: data/liflow
+        index_file: test_800K.csv
+        time_delay_steps: 100
+        prior_scale_li: [1.0, 10.0]
+        prior_scale_frame: [0.316, 3.16]
+        seed: 42
+        random_time: false
+        build_structure_cfg:
+          format: array
+          primitive: false
+          niggli: false
+          canocial: false
+          num_cpus: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 16
+        shuffle: false
+        drop_last: false
+  test:
+    dataset:
+      __class_name__: LiFlowDataset
+      __init_params__:
+        path: data/liflow
+        index_file: test_800K.csv
+        time_delay_steps: 100
+        prior_scale_li: [1.0, 10.0]
+        prior_scale_frame: [0.316, 3.16]
+        seed: 42
+        random_time: false
+        build_structure_cfg:
+          format: array
+          primitive: false
+          niggli: false
+          canocial: false
+          num_cpus: 1
+    loader:
+      num_workers: 0
+      use_shared_memory: false
+      collate_fn: DefaultCollator
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        batch_size: 16
+        shuffle: false
+        drop_last: false
+
+Predict:
+  path: data/liflow
+  index_file: test_800K.csv
+  sample_index: 0
+  time_delay_steps: 100
+  seed: 42
+  eval_with_no_grad: true
