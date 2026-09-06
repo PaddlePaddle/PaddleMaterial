@@ -35,40 +35,13 @@ from ppmat.models.diffnmr.diffnmr import DiffPrior
 from ppmat.models.diffnmr.diffnmr import MolecularGraphFormer
 from ppmat.models.diffnmr.diffnmr import NMRNetCLIP
 from ppmat.models.dimenetpp.dimenetpp import DimeNetPlusPlus
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 from ppmat.models.infgcn.infgcn import InfGCN
 from ppmat.models.mace.model import MACE
-=======
->>>>>>> ac0451b (Add files via upload)
-=======
->>>>>>> 39f7f5b (Add files via upload)
-=======
-from ppmat.models.infgcn.infgcn import InfGCN
->>>>>>> 491de35 (fix(models): sync __init__.py with develop and keep MACE additions)
 from ppmat.models.mattergen.mattergen import MatterGen
 from ppmat.models.mattergen.mattergen import MatterGenWithCondition
 from ppmat.models.mattersim.m3gnet import M3GNet
 from ppmat.models.mattersim.m3gnet_graph_converter import M3GNetGraphConvertor
-<<<<<<< HEAD
 from ppmat.models.megnet.megnet import MEGNetPlus
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
-from ppmat.models.mace.model import MACE
->>>>>>> 0351db3 (Add files via upload)
-=======
-from ppmat.models.infgcn.infgcn import InfGCN
-from ppmat.models.mateno.mateno import MatENO
-from ppmat.models.mace.model import MACE
->>>>>>> ac0451b (Add files via upload)
-=======
-from ppmat.models.mace.model import MACE
-from ppmat.models.megnet.megnet import MEGNetPlus
->>>>>>> 491de35 (fix(models): sync __init__.py with develop and keep MACE additions)
 from ppmat.models.sfin.sfin import SFIN
 from ppmat.models.spherenet.spherenet import SphereNet
 from ppmat.utils import download
@@ -148,23 +121,10 @@ MODEL_REGISTRY = {
     "mattergen_alex_mp20_dft_mag_density_hhi_score": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/structure_generation/mattergen/mattergen_alex_mp20_dft_mag_density_hhi_score.zip",
     "chgnet_mptrj": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/chgnet/chgnet_mptrj.zip",
     "mace_mp0_medium": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/interatomic_potentials/mace/mace_mp0_medium.zip",
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 491de35 (fix(models): sync __init__.py with develop and keep MACE additions)
     "dimenetpp_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet++/dimenetpp_mp2018_train_60k_e_form.zip",
     "dimenetpp_mp2018_train_60k_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet++/dimenetpp_mp2018_train_60k_band_gap.zip",
     "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet++/dimenetpp_mp2018_train_60k_G.zip",
     "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet++/dimenetpp_mp2018_train_60k_K.zip",
-<<<<<<< HEAD
-=======
-    "dimenetpp_mp2018_train_60k_e_form": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_e_form.zip",
-    "dimenetpp_mp2018_train_60k_band_gap": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_band_gap.zip",
-    "dimenetpp_mp2018_train_60k_G": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_G.zip",
-    "dimenetpp_mp2018_train_60k_K": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/dimenet%2B%2B/dimenetpp_mp2018_train_60k_K.zip",
->>>>>>> ac0451b (Add files via upload)
-=======
->>>>>>> 491de35 (fix(models): sync __init__.py with develop and keep MACE additions)
     "mattersim_1M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_1M.zip",
     "mattersim_5M": "https://paddle-org.bj.bcebos.com/paddlematerial/checkpoints/interatomic_potentials/mattersim/mattersim_5M.zip",
     "mattergen_ml2ddb": "https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/structure_generation/MatterGen/mattergen_ml2ddb.zip",
@@ -319,4 +279,3 @@ def build_model_from_name(
     save_load.load_pretrain(model, path, weights_name)
 
     return model, config
-    
