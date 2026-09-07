@@ -79,7 +79,7 @@ class SpaceGroupSampler(nn.Layer):
 class SGEQuiDiff(RuntimeMixin, nn.Layer):
     """Full crystal sampler combining all submodules.
 
-    This is the unified model entry: ``forward(batch_data)`` returns the
+    This is the unified model entry: ``forward(batch)`` returns the
     training loss dict (delegating to the internal coordinate diffusion model),
     and ``sample(batch_data)`` returns structures compatible with
     ``structure_generation/sample.py``.
@@ -210,10 +210,9 @@ class SGEQuiDiff(RuntimeMixin, nn.Layer):
             noise_scheduler_cfg=noise_scheduler_cfg,
             wyckoff_geometry=self.wyckoff_geometry,
             embedding_tools=self.embedding_tools,
+            execution_backend=execution_backend,
+            runtime_options=runtime_options,
         )
-        # Single source of truth for the runtime lives in the diffusion
-        # sub-model; the mixin state on this top-level wrapper stays idle.
-        self._init_runtime(execution_backend, runtime_options)
         self.space_group_sampler = SpaceGroupSampler()
         self.lattice_sampler = TelescopingDiscreteLatticeSampler(
             embedding_tools=self.embedding_tools,
@@ -233,15 +232,12 @@ class SGEQuiDiff(RuntimeMixin, nn.Layer):
     # Framework-facing runtime protocol: configure_execution_backend in
     # ppmat/utils/execution.py resolves these via getattr (trainer, predictor,
     # and samplers are the real callers). No direct callers exist in this
-    # file; do not remove.
+    # file; do not remove. The property is read-only by design: every
+    # mutation goes through set_execution_backend, the single entry point.
     @property
     def execution_backend(self) -> str:
         """Active numerical execution backend (owned by the diffusion model)."""
         return self.atom_coord_diffusion_model.execution_backend
-
-    @execution_backend.setter
-    def execution_backend(self, value: str) -> None:
-        self.atom_coord_diffusion_model.set_execution_backend(value)
 
     def set_execution_backend(self, backend: str) -> None:
         self.atom_coord_diffusion_model.set_execution_backend(backend)
@@ -256,7 +252,7 @@ class SGEQuiDiff(RuntimeMixin, nn.Layer):
             use_amp=use_amp, world_size=world_size
         )
 
-    def forward(self, batch_data: Dict) -> Dict:
+    def forward(self, batch) -> Dict:
         """Training entry: MLE on discrete variables + score matching on coords.
 
         Returns:
@@ -269,11 +265,11 @@ class SGEQuiDiff(RuntimeMixin, nn.Layer):
                 Generations are scored with the streaming
                 ``SGEQuiDiffMetric`` (``stage == "sample"``).
             label_dict : supervision fields passed through with keys identical
-                to the corresponding ``batch_data`` labels, so per-key
+                to the corresponding ``batch`` labels, so per-key
                 pred/label lookups stay aligned when a streaming metric needs
                 them.
         """
-        loss, artifacts = self.compute_loss(batch_data)
+        loss, artifacts = self.compute_loss(batch)
         label_keys = (
             "space_group_indices",
             "lattice_lengths",
@@ -284,37 +280,35 @@ class SGEQuiDiff(RuntimeMixin, nn.Layer):
             "wyckoff_shape_indices",
             "frac_coords",
         )
-        label_dict = {k: batch_data[k] for k in label_keys if k in batch_data}
+        label_dict = {k: batch[k] for k in label_keys if k in batch}
         return {
             "loss_dict": {"loss": loss},
             "pred_dict": artifacts,
             "label_dict": label_dict,
         }
 
-    def compute_loss(self, batch_data: Dict):
+    def compute_loss(self, batch):
         """MLE on discrete variables, score matching on atom coordinates.
 
         Returns:
             loss: scalar tensor.
             artifacts: dict of detached log-probs / losses for logging.
         """
-        space_group_indices = _as_tensor(batch_data["space_group_indices"])
-        lattice_lengths = _as_tensor(batch_data["lattice_lengths"], paddle.float32)
-        lattice_angles = _as_tensor(batch_data["lattice_angles"], paddle.float32)
-        if "lattice_matrices" in batch_data:
-            lattice_matrices = batch_data["lattice_matrices"]
+        space_group_indices = _as_tensor(batch["space_group_indices"])
+        lattice_lengths = _as_tensor(batch["lattice_lengths"], paddle.float32)
+        lattice_angles = _as_tensor(batch["lattice_angles"], paddle.float32)
+        if "lattice_matrices" in batch:
+            lattice_matrices = batch["lattice_matrices"]
         else:
             lattice_matrices = lattice_params_to_matrix_paddle(
                 lattice_lengths, lattice_angles
             )
         lattice_matrices = _as_tensor(lattice_matrices, paddle.float32)
-        element_indices = _as_tensor(batch_data["element_indices"], paddle.int64)
-        wyckoff_indices = _as_tensor(batch_data["wyckoff_indices"], paddle.int64)
-        n_asu_atoms_per_xtal = _as_tensor(batch_data["n_atoms_per_asu"], paddle.int64)
-        wyckoff_shape_indices = _as_tensor(
-            batch_data["wyckoff_shape_indices"], paddle.int64
-        )
-        asu_frac_coords = _as_tensor(batch_data["frac_coords"], paddle.float32)
+        element_indices = _as_tensor(batch["element_indices"], paddle.int64)
+        wyckoff_indices = _as_tensor(batch["wyckoff_indices"], paddle.int64)
+        n_asu_atoms_per_xtal = _as_tensor(batch["n_atoms_per_asu"], paddle.int64)
+        wyckoff_shape_indices = _as_tensor(batch["wyckoff_shape_indices"], paddle.int64)
+        asu_frac_coords = _as_tensor(batch["frac_coords"], paddle.float32)
 
         if self.training and (
             self.lattice_length_noise > 0 or self.lattice_angle_noise > 0

@@ -72,6 +72,36 @@ def _zeros(src: paddle.Tensor, shape) -> paddle.Tensor:
     return paddle.zeros(shape, dtype=src.dtype)
 
 
+def _segment_arg_extremum(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    segment_op,
+    sentinel: float,
+):
+    """Per-group extreme value and its source position over 1-D segment ids.
+
+    Float weights encode source positions; taking the extremum over the kept
+    positions resolves ties deterministically (max -> last occurrence,
+    min -> first occurrence). float32 represents integers exactly up to 2**24;
+    larger inputs would lose arg-position precision.
+
+    Returns (seg_size, empty_group_mask, per-group extreme, arg positions).
+    """
+    order = paddle.argsort(index, stable=True)
+    sorted_index = index[order]
+    sorted_src = src[order]
+    seg_size = int(sorted_index.max().item()) + 1
+    empty_mask = ~paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
+
+    extreme = segment_op(sorted_src, sorted_index)
+    weights = paddle.arange(sorted_src.shape[0], dtype=paddle.float32)
+    is_extreme = sorted_src == extreme[sorted_index]
+    extreme_weights = paddle.where(is_extreme, weights, paddle.to_tensor(sentinel))
+    arg_sorted = segment_op(extreme_weights, sorted_index)
+    arg = order[arg_sorted.cast(paddle.int64)]
+    return seg_size, empty_mask, extreme, arg
+
+
 def _broadcast(
     index: paddle.Tensor,
     src: paddle.Tensor,
@@ -126,36 +156,16 @@ def scatter_argmax(
     if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
         raise ValueError("src and index must be one-dimensional with equal length")
 
-    if dim_size is None:
-        dim_size = 0 if index.shape[0] == 0 else int(index.max()) + 1
-    if index.shape[0] == 0:
+    dim_size = _resolve_dim_size(index, dim_size)
+    if index.numel() == 0:
         return paddle.zeros([dim_size], dtype="int64")
 
-    # paddle.geometric.segment_max requires sorted segment ids; sort first.
-    sorted_order = paddle.argsort(index, stable=True)
-    sorted_index = index[sorted_order]
-    sorted_src = src[sorted_order]
-    seg_size = int(sorted_index.max().item()) + 1
-
-    group_counts = paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
-    empty_mask = ~group_counts
-
-    max_values = paddle.geometric.segment_max(sorted_src, sorted_index)
-    n = src.shape[0]
-    # float32 exactly represents integers up to 2**24; larger ``n`` loses
-    # arg-position precision in the weight trick below.
-    weights = paddle.arange(n, dtype=paddle.float32)
-    is_max = sorted_src == max_values[sorted_index]
-    max_weights = paddle.where(is_max, weights, paddle.to_tensor(-float("inf")))
-    argmax_sorted = paddle.geometric.segment_max(max_weights, sorted_index)
-    argmax = paddle.where(
-        empty_mask,
-        paddle.zeros([seg_size], dtype="int64"),
-        sorted_order[argmax_sorted.cast(paddle.int64)],
+    seg_size, empty_mask, _, argmax = _segment_arg_extremum(
+        src, index, paddle.geometric.segment_max, -float("inf")
     )
+    argmax = paddle.where(empty_mask, paddle.zeros_like(argmax), argmax)
     out = paddle.zeros([dim_size], dtype="int64")
-    if seg_size > 0:
-        out[:seg_size] = argmax
+    out[:seg_size] = argmax
     return out
 
 
@@ -318,51 +328,32 @@ def scatter_min_with_argmin(
     index: paddle.Tensor,
     dim_size: Optional[int] = None,
 ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-    if dim_size is None:
-        dim_size = 0 if index.shape[0] == 0 else int(index.max().item()) + 1
+    """Return the per-group minimum and its source index.
+
+    ``src`` and ``index`` must be one-dimensional. Empty groups and groups
+    beyond ``seg_size`` get ``(inf, dim_size)`` sentinels. ``argmin`` ties are
+    resolved by selecting the first occurrence in ``src``.
+    """
+    dim_size = _resolve_dim_size(index, dim_size)
     if index.shape[0] == 0:
         return (
             paddle.full([dim_size], float("inf"), dtype=src.dtype),
             paddle.full([dim_size], dim_size, dtype="int64"),
         )
 
-    # paddle.geometric.segment_min requires sorted segment ids; sort first.
-    sorted_order = paddle.argsort(index, stable=True)
-    sorted_index = index[sorted_order]
-    sorted_src = src[sorted_order]
-
-    seg_size = int(sorted_index.max().item()) + 1
-    group_counts = paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
-    empty_mask = ~group_counts
-
-    min_values = paddle.geometric.segment_min(sorted_src, sorted_index)
+    seg_size, empty_mask, min_values, argmin = _segment_arg_extremum(
+        src, index, paddle.geometric.segment_min, float("inf")
+    )
     min_values = paddle.where(
-        empty_mask,
-        paddle.full([seg_size], float("inf"), dtype=src.dtype),
-        min_values,
+        empty_mask, paddle.full_like(min_values, float("inf")), min_values
     )
+    argmin = paddle.where(empty_mask, paddle.full_like(argmin, dim_size), argmin)
     if seg_size < dim_size:
+        pad = dim_size - seg_size
         min_values = paddle.concat(
-            [
-                min_values,
-                paddle.full([dim_size - seg_size], float("inf"), dtype=src.dtype),
-            ]
+            [min_values, paddle.full([pad], float("inf"), dtype=src.dtype)]
         )
-
-    n = src.shape[0]
-    weights = paddle.arange(n, dtype=paddle.float32)
-    is_min = sorted_src == min_values[sorted_index]
-    min_weights = paddle.where(is_min, weights, paddle.to_tensor(float("inf")))
-    argmin_sorted = paddle.geometric.segment_min(min_weights, sorted_index)
-    argmin = paddle.where(
-        empty_mask,
-        paddle.full([seg_size], dim_size, dtype=paddle.int64),
-        sorted_order[argmin_sorted.cast(paddle.int64)],
-    )
-    if seg_size < dim_size:
-        argmin = paddle.concat(
-            [argmin, paddle.full([dim_size - seg_size], dim_size, dtype="int64")]
-        )
+        argmin = paddle.concat([argmin, paddle.full([pad], dim_size, dtype="int64")])
     return min_values, argmin
 
 
