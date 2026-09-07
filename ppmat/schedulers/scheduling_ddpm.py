@@ -239,10 +239,7 @@ class DDPMScheduler:
         elif beta_schedule == "squaredcos_cap_v2":
             # Glide cosine schedule
             self.betas = betas_for_alpha_bar(num_train_timesteps)
-        elif beta_schedule == "diffcsp_cosine":
-            # DiffCSP cosine schedule: alpha_bar_t = cos((t/N + s)/(1+s)*pi/2)^2
-            # normalized by alpha_bar_0, betas clipped to [1e-4, 0.9999].
-            # Distinct from the D3PM uniform schedule in scheduling_d3pm.py.
+        elif beta_schedule == "clipped_cosine":
             s = 0.008
             discretization = paddle.linspace(
                 0, num_train_timesteps, num_train_timesteps + 1, dtype="float64"

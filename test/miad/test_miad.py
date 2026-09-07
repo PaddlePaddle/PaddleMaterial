@@ -76,7 +76,7 @@ TINY_DIFFUSION_CFG = {
             "__class_name__": "DDPMScheduler",
             "__init_params__": {
                 "num_train_timesteps": 10,
-                "beta_schedule": "diffcsp_cosine",
+                "beta_schedule": "clipped_cosine",
             },
         },
     },
@@ -94,7 +94,7 @@ TINY_DIFFUSION_CFG = {
         },
     },
     "type_diffusion": {
-        "__class_name__": "D3PM",
+        "__class_name__": "D3PMUniformDiffusion",
         "__init_params__": {
             "loss_scale": 1000,
             "scheduler_cfg": {

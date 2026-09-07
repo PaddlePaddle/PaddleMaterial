@@ -55,7 +55,7 @@ Model:
           __class_name__: DDPMScheduler
           __init_params__:
             num_train_timesteps: 1000
-            beta_schedule: diffcsp_cosine
+            beta_schedule: clipped_cosine
       frac_diffusion:
         method: wrapped_normal
         step_lr: 0.00001
@@ -67,7 +67,7 @@ Model:
             sigma_max: 0.5
             sampling_eps: 0.001
       type_diffusion:
-        __class_name__: D3PM
+        __class_name__: D3PMUniformDiffusion
         __init_params__:
           loss_scale: 1000
           scheduler_cfg:

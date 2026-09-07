@@ -12,23 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
 import paddle
 
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
-from ppmat.models.miad.type_diffusion import build_type_diffusion
 from ppmat.schedulers import build_scheduler
 from ppmat.schedulers.scheduling_sde_ve import d_log_p_wrapped_normal
 
 
 def parse_num_atoms_to_per_crystal(num_atoms_data):
-    if hasattr(num_atoms_data, "numpy"):
-        num_atoms_np = num_atoms_data.numpy().flatten()
-    elif hasattr(num_atoms_data, "reshape"):
-        num_atoms_np = num_atoms_data.reshape(-1)
-    else:
-        num_atoms_np = np.array(num_atoms_data).flatten()
-    return paddle.to_tensor(num_atoms_np.astype("int64")), num_atoms_np
+    """Convert per-crystal atom counts to an int64 tensor and numpy array."""
+    num_atoms_np = num_atoms_data.numpy().flatten().astype("int64")
+    return paddle.to_tensor(num_atoms_np), num_atoms_np
 
 
 class CrystalGen:
@@ -61,9 +55,7 @@ class CrystalGen:
         self.sb = self.frac_scheduler.sigma_min
 
         if self.gen_type:
-            self.type_diffusion = build_type_diffusion(
-                self.config.get("type_diffusion")
-            )
+            self.type_diffusion = build_scheduler(self.config.get("type_diffusion"))
             assert self.type_diffusion is not None, (
                 "type_diffusion config must be provided for generation task "
                 f"{self.config['task']}"
