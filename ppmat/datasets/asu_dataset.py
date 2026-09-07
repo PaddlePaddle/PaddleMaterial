@@ -14,35 +14,32 @@
 
 """Asymmetric Unit (ASU) dataset. """
 
+import os
 import os.path as osp
+import pickle
+from typing import Dict
+from typing import Optional
 
 import numpy as np
+import paddle.distributed as dist
 from paddle.io import Dataset
 
+from ppmat.datasets.build_asu import BuildAsuCrystal
 from ppmat.datasets.custom_data_type import ConcatData
 from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
 from ppmat.utils import download
 from ppmat.utils import logger
-
-# Download metadata of the ASU dataset archives (bcebos release addresses).
-_ASU_DATASETS = {
-    "mp_20": {
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mp_20_asu.zip",
-        "md5": "c8dc162555808bf8dc0183b840209f6a",
-    },
-    "mpts_52": {
-        "url": "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mpts_52_asu.zip",
-        "md5": "bdbfdad0352bbf32afb1ee6561cea97b",
-    },
-}
+from ppmat.utils.misc import is_equal
 
 
 class AsymmetricUnitDataset(Dataset):
     """ASU-representation dataset (MP-20).
 
     Crystals are stored as flat packed arrays in NPZ archives
-    (``<split>.npz``) and parsed lazily on first access so that building
-    the dataset (and its DataLoader) stays cheap regardless of dataset size.
+    (``<split>.npz``). The packed arrays are parsed into per-crystal field
+    dicts by :class:`~ppmat.datasets.build_asu.BuildAsuCrystal` once and
+    serialized to cache files, so building the dataset (and its DataLoader)
+    stays cheap regardless of dataset size.
 
     **Data Format**
 
@@ -62,19 +59,28 @@ class AsymmetricUnitDataset(Dataset):
     Args:
         path (str, optional): The path of the dataset, if path is not exists,
             it will be downloaded. Defaults to "./data/mp_20/train.npz".
+        build_crystal_cfg (Dict, optional): The configs for building the
+            per-crystal field dicts from packed arrays. Defaults to None.
+        cache_path (Optional[str], optional): If a cache_path is set, the
+            built crystals will be read directly from this path; if the cache
+            does not exist, the built crystals will be saved to this path.
+            Defaults to None.
+        overwrite (bool, optional): Overwrite the existing cache file at the
+            given path if it already exists. Defaults to False.
     """
 
     name = "mp_20"
-    url = _ASU_DATASETS[name]["url"]
-    md5 = _ASU_DATASETS[name]["md5"]
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mp_20_asu.zip"
+    md5 = "c8dc162555808bf8dc0183b840209f6a"
 
-    # Packed-layout offsets that depend on the element encoding size
-    # (see Data Format in the class docstring).
-    _IDX_LENGTHS = 2 + ELEMENT_ENCODING_SIZE
-    _IDX_ANGLES = 5 + ELEMENT_ENCODING_SIZE
-    _IDX_ATOMS = 8 + ELEMENT_ENCODING_SIZE
-
-    def __init__(self, path: str = "./data/mp_20/train.npz", **kwargs):
+    def __init__(
+        self,
+        path: str = "./data/mp_20/train.npz",
+        build_crystal_cfg: Dict = None,
+        cache_path: Optional[str] = None,
+        overwrite: bool = False,
+        **kwargs,  # for compatibility
+    ):
         super().__init__()
 
         if not osp.exists(path):
@@ -83,8 +89,93 @@ class AsymmetricUnitDataset(Dataset):
             path = osp.join(root_path, self.name, osp.basename(path))
 
         self.path = path
-        self._flat_crystals, self.num_samples = self.read_data(path)
+
+        if build_crystal_cfg is None:
+            build_crystal_cfg = {
+                "element_encoding_size": ELEMENT_ENCODING_SIZE,
+                "num_cpus": 1,
+            }
+            logger.message(
+                "The build_crystal_cfg is not set, will use the default "
+                f"configs: {build_crystal_cfg}"
+            )
+        self.build_crystal_cfg = build_crystal_cfg
+
+        if cache_path is not None:
+            self.cache_path = cache_path
+        else:
+            # for example:
+            # path = ./data/mp_20/train.npz
+            # cache_path = ./data/mp_20_cache/train
+            self.cache_path = osp.join(
+                osp.split(path)[0] + "_cache", osp.splitext(osp.basename(path))[0]
+            )
+        logger.info(f"Cache path: {self.cache_path}")
+
+        self.overwrite = overwrite
+        self.cache_exists = True if osp.exists(self.cache_path) else False
+
+        flat_crystals, self.num_samples = self.read_data(path)
         logger.info(f"Load {self.num_samples} samples from {path}")
+
+        if self.cache_exists and not overwrite:
+            try:
+                build_crystal_cfg_cache = self.load_from_cache(
+                    osp.join(self.cache_path, "build_crystal_cfg.pkl")
+                )
+                if is_equal(build_crystal_cfg_cache, build_crystal_cfg):
+                    logger.info(
+                        "The cached build_crystal_cfg configuration matches "
+                        "the current settings. Reusing previously generated "
+                        "crystal data to optimize performance."
+                    )
+                else:
+                    logger.warning(
+                        "build_crystal_cfg is different from "
+                        "build_crystal_cfg_cache. Will rebuild the crystals."
+                    )
+                    logger.warning(
+                        "If you want to use the cached crystals, please "
+                        "ensure that the settings used in match your "
+                        "current settings."
+                    )
+                    overwrite = True
+            except Exception as e:
+                logger.warning(e)
+                logger.warning(
+                    "Failed to load build_crystal_cfg.pkl from cache. "
+                    "Will rebuild the crystals."
+                )
+                overwrite = True
+
+        crystal_cache_path = osp.join(self.cache_path, "crystals")
+        if overwrite or not self.cache_exists:
+            # convert crystals
+            # only rank 0 process do the conversion
+            if dist.get_rank() == 0:
+                # save build_crystal_cfg to cache file
+                os.makedirs(self.cache_path, exist_ok=True)
+                self.save_to_cache(
+                    osp.join(self.cache_path, "build_crystal_cfg.pkl"),
+                    build_crystal_cfg,
+                )
+                # convert crystals
+                crystals = BuildAsuCrystal(**build_crystal_cfg)(flat_crystals)
+                # save crystals to cache file
+                os.makedirs(crystal_cache_path, exist_ok=True)
+                for i in range(self.num_samples):
+                    self.save_to_cache(
+                        osp.join(crystal_cache_path, f"{i:010d}.pkl"), crystals[i]
+                    )
+                logger.info(f"Save {self.num_samples} crystals to {crystal_cache_path}")
+
+            # sync all processes
+            if dist.is_initialized():
+                dist.barrier()
+        self.crystals = [
+            osp.join(crystal_cache_path, f"{i:010d}.pkl")
+            for i in range(self.num_samples)
+        ]
 
     def read_data(self, path: str):
         """Read the packed NPZ archive and split it into per-crystal arrays."""
@@ -92,50 +183,29 @@ class AsymmetricUnitDataset(Dataset):
         flat_crystals = np.split(npz["packed"], npz["indices"])
         return flat_crystals, len(flat_crystals)
 
-    def parse_flat_crystal(self, flat: np.ndarray) -> dict:
-        """Parse one packed crystal array into a dict of its fields.
+    def save_to_cache(self, cache_path: str, data):
+        with open(cache_path, "wb") as f:
+            pickle.dump(data, f)
 
-        Archives without the optional trailing wyckoff-shape segment are
-        normalized with zero shape indices (no shape decomposition).
-        """
-        n = int(flat[0])
-        idx_atoms = self._IDX_ATOMS
-        if len(flat) > idx_atoms + 5 * n:
-            shape_indices = flat[idx_atoms + 5 * n : idx_atoms + 6 * n].astype(np.int64)
+    def load_from_cache(self, cache_path: str):
+        if osp.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                data = pickle.load(f)
+            return data
         else:
-            shape_indices = np.zeros(n, dtype=np.int64)
-        return {
-            "num_atoms": n,
-            "space_group_index": int(flat[1]) - 1,
-            "batch_chemistries": flat[2 : self._IDX_LENGTHS].astype(np.float32),
-            "lattice_lengths": flat[self._IDX_LENGTHS : self._IDX_ANGLES].astype(
-                np.float32
-            ),
-            "lattice_angles": flat[self._IDX_ANGLES : idx_atoms].astype(np.float32),
-            "element_indices": flat[idx_atoms : idx_atoms + n].astype(np.int64),
-            "wyckoff_indices": flat[idx_atoms + n : idx_atoms + 2 * n].astype(np.int64),
-            "frac_coords": flat[idx_atoms + 2 * n : idx_atoms + 5 * n]
-            .reshape(n, 3)
-            .astype(np.float32),
-            "wyckoff_shape_indices": shape_indices,
-        }
+            raise FileNotFoundError(f"No such file or directory: {cache_path}")
 
     def __getitem__(self, index: int) -> dict:
-        fields = self.parse_flat_crystal(self._flat_crystals[index])
-        # Stable sort by (wyckoff index, element index); np.lexsort takes the
-        # keys in reverse order, so the last key is the primary one.
-        order = np.lexsort((fields["element_indices"], fields["wyckoff_indices"]))
-        return {
-            "space_group_indices": fields["space_group_index"],
-            "batch_chemistries": fields["batch_chemistries"],
-            "lattice_lengths": fields["lattice_lengths"],
-            "lattice_angles": fields["lattice_angles"],
-            "n_atoms_per_asu": fields["num_atoms"],
-            "element_indices": ConcatData(fields["element_indices"][order]),
-            "wyckoff_indices": ConcatData(fields["wyckoff_indices"][order]),
-            "wyckoff_shape_indices": ConcatData(fields["wyckoff_shape_indices"][order]),
-            "frac_coords": ConcatData(fields["frac_coords"][order]),
-        }
+        crystal = self.load_from_cache(self.crystals[index])
+        # Variable-length fields are wrapped for the default collator.
+        for key in (
+            "element_indices",
+            "wyckoff_indices",
+            "wyckoff_shape_indices",
+            "frac_coords",
+        ):
+            crystal[key] = ConcatData(crystal[key])
+        return crystal
 
     def __len__(self) -> int:
         return self.num_samples
@@ -145,5 +215,7 @@ class MPTS52ASUDataset(AsymmetricUnitDataset):
     """ASU-representation dataset (MPTS-52)."""
 
     name = "mpts_52"
-    url = _ASU_DATASETS[name]["url"]
-    md5 = _ASU_DATASETS[name]["md5"]
+    url = (
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mpts_52_asu.zip"
+    )
+    md5 = "bdbfdad0352bbf32afb1ee6561cea97b"
