@@ -16,18 +16,14 @@
 
 from typing import Literal
 from typing import Optional
-from typing import Tuple
 
 import paddle
 
 __all__ = [
     "scatter",
-    "scatter_argmax",
     "scatter_argmin",
     "scatter_mean",
     "scatter_min",
-    "scatter_min_indices",
-    "scatter_min_with_argmin",
     "scatter_sum",
     "scatter_sum_first_order",
 ]
@@ -72,36 +68,6 @@ def _zeros(src: paddle.Tensor, shape) -> paddle.Tensor:
     return paddle.zeros(shape, dtype=src.dtype)
 
 
-def _segment_arg_extremum(
-    src: paddle.Tensor,
-    index: paddle.Tensor,
-    segment_op,
-    sentinel: float,
-):
-    """Per-group extreme value and its source position over 1-D segment ids.
-
-    Float weights encode source positions; taking the extremum over the kept
-    positions resolves ties deterministically (max -> last occurrence,
-    min -> first occurrence). float32 represents integers exactly up to 2**24;
-    larger inputs would lose arg-position precision.
-
-    Returns (seg_size, empty_group_mask, per-group extreme, arg positions).
-    """
-    order = paddle.argsort(index, stable=True)
-    sorted_index = index[order]
-    sorted_src = src[order]
-    seg_size = int(sorted_index.max().item()) + 1
-    empty_mask = ~paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
-
-    extreme = segment_op(sorted_src, sorted_index)
-    weights = paddle.arange(sorted_src.shape[0], dtype=paddle.float32)
-    is_extreme = sorted_src == extreme[sorted_index]
-    extreme_weights = paddle.where(is_extreme, weights, paddle.to_tensor(sentinel))
-    arg_sorted = segment_op(extreme_weights, sorted_index)
-    arg = order[arg_sorted.cast(paddle.int64)]
-    return seg_size, empty_mask, extreme, arg
-
-
 def _broadcast(
     index: paddle.Tensor,
     src: paddle.Tensor,
@@ -125,10 +91,6 @@ def scatter_argmin(
 
     src and index must be one-dimensional. Empty groups are assigned -1.
     Ties are resolved by selecting the first occurrence in src.
-
-    Note: ``scatter_argmax`` (segment-based implementation) resolves ties by
-    the **last** occurrence instead; do not swap the two implementations
-    without re-verifying numeric parity of their consumers.
     """
     if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
         raise ValueError("src and index must be one-dimensional with equal length")
@@ -141,32 +103,6 @@ def scatter_argmin(
     order = paddle.argsort(src, stable=True)
     groups, first = paddle.unique(index[order], return_index=True)
     return paddle.scatter(out, groups, order[first], overwrite=True)
-
-
-def scatter_argmax(
-    src: paddle.Tensor,
-    index: paddle.Tensor,
-    dim_size: Optional[int] = None,
-) -> paddle.Tensor:
-    """Return the source index of the maximum value in each group.
-
-    ``src`` and ``index`` must be one-dimensional. Empty groups are assigned
-    ``0``. Ties are resolved by selecting the last occurrence in ``src``.
-    """
-    if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
-        raise ValueError("src and index must be one-dimensional with equal length")
-
-    dim_size = _resolve_dim_size(index, dim_size)
-    if index.numel() == 0:
-        return paddle.zeros([dim_size], dtype="int64")
-
-    seg_size, empty_mask, _, argmax = _segment_arg_extremum(
-        src, index, paddle.geometric.segment_max, -float("inf")
-    )
-    argmax = paddle.where(empty_mask, paddle.zeros_like(argmax), argmax)
-    out = paddle.zeros([dim_size], dtype="int64")
-    out[:seg_size] = argmax
-    return out
 
 
 def scatter_sum_first_order(
@@ -321,59 +257,3 @@ def scatter_min(
     dim_size: Optional[int] = None,
 ) -> paddle.Tensor:
     return _scatter_min(src, index, dim, dim_size)
-
-
-def scatter_min_with_argmin(
-    src: paddle.Tensor,
-    index: paddle.Tensor,
-    dim_size: Optional[int] = None,
-) -> Tuple[paddle.Tensor, paddle.Tensor]:
-    """Return the per-group minimum and its source index.
-
-    ``src`` and ``index`` must be one-dimensional. Empty groups and groups
-    beyond ``seg_size`` get ``(inf, dim_size)`` sentinels. ``argmin`` ties are
-    resolved by selecting the first occurrence in ``src``.
-    """
-    dim_size = _resolve_dim_size(index, dim_size)
-    if index.shape[0] == 0:
-        return (
-            paddle.full([dim_size], float("inf"), dtype=src.dtype),
-            paddle.full([dim_size], dim_size, dtype="int64"),
-        )
-
-    seg_size, empty_mask, min_values, argmin = _segment_arg_extremum(
-        src, index, paddle.geometric.segment_min, float("inf")
-    )
-    min_values = paddle.where(
-        empty_mask, paddle.full_like(min_values, float("inf")), min_values
-    )
-    argmin = paddle.where(empty_mask, paddle.full_like(argmin, dim_size), argmin)
-    if seg_size < dim_size:
-        pad = dim_size - seg_size
-        min_values = paddle.concat(
-            [min_values, paddle.full([pad], float("inf"), dtype=src.dtype)]
-        )
-        argmin = paddle.concat([argmin, paddle.full([pad], dim_size, dtype="int64")])
-    return min_values, argmin
-
-
-def scatter_min_indices(
-    ov_row: paddle.Tensor,
-    ov_col: paddle.Tensor,
-    n_total: int,
-) -> paddle.Tensor:
-    if ov_row.shape[0] == 0:
-        return paddle.arange(n_total, dtype=paddle.int64)
-    # paddle.geometric.segment_min requires sorted segment ids; sort first.
-    order = paddle.argsort(ov_row, stable=True)
-    sorted_row = ov_row[order]
-    sorted_col = ov_col[order]
-    min_per_row = paddle.geometric.segment_min(
-        sorted_col.cast(paddle.float32), sorted_row
-    )
-    unique_rows = paddle.unique(ov_row)
-    result = paddle.arange(n_total, dtype=paddle.float32)
-    result = paddle.scatter(
-        result, unique_rows, min_per_row[unique_rows].cast(paddle.float32)
-    )
-    return result.cast(paddle.int64)

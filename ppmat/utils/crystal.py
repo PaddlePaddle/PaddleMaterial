@@ -21,7 +21,7 @@ from pymatgen.core.periodic_table import Element
 from ppmat.utils import paddle_aux  # noqa: F401
 from ppmat.utils.paddle_aux import dim2perm
 from ppmat.utils.scatter import scatter
-from ppmat.utils.scatter import scatter_min_with_argmin
+from ppmat.utils.scatter import scatter_min
 
 OFFSET_LIST = [
     [-1, -1, -1],
@@ -488,9 +488,7 @@ def build_pbc_graph(
 
     num_atoms_per_crystal_sqr = (num_atoms**2).cast(paddle.int64)
 
-    first_node_index_per_crystal = (
-        paddle.cumsum(num_atoms, axis=0) - num_atoms
-    )
+    first_node_index_per_crystal = paddle.cumsum(num_atoms, axis=0) - num_atoms
     first_node_index_per_crystal_expand = paddle.repeat_interleave(
         first_node_index_per_crystal, num_atoms_per_crystal_sqr
     )
@@ -613,9 +611,10 @@ def _get_smallest_edge_per_node_pair(
     edges = paddle.stack([dst_idx, src_idx], axis=-1)
     unique_edges, map_edge_to_unique = paddle.unique(edges, axis=0, return_inverse=True)
 
-    min_inter_atom_distances, _ = scatter_min_with_argmin(
-        src=inter_atom_distances,
-        index=map_edge_to_unique,
+    min_inter_atom_distances = scatter_min(
+        inter_atom_distances,
+        map_edge_to_unique,
+        dim=0,
         dim_size=unique_edges.shape[0],
     )
 
@@ -626,9 +625,7 @@ def _get_smallest_edge_per_node_pair(
     indices_to_keep = paddle.nonzero(keep_edge_mask).reshape([-1])
 
     edges = edges[indices_to_keep]
-    pbc_frac_offsets_per_source_atom = pbc_frac_offsets_per_source_atom[
-        indices_to_keep
-    ]
+    pbc_frac_offsets_per_source_atom = pbc_frac_offsets_per_source_atom[indices_to_keep]
 
     num_edges_per_crystal = scatter(
         src=paddle.ones([edges.shape[0]], dtype=paddle.float32),

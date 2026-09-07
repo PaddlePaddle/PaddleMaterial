@@ -31,8 +31,82 @@ from ppmat.utils.crystal import OFFSET_LIST
 from ppmat.utils.crystal import frac_to_cart_coords
 from ppmat.utils.crystal import lattice_params_to_matrix_paddle
 from ppmat.utils.scatter import scatter
-from ppmat.utils.scatter import scatter_argmax
-from ppmat.utils.scatter import scatter_min_indices
+
+
+def _segment_arg_extremum(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    segment_op,
+    sentinel: float,
+):
+    """Per-group extreme value and its source position over 1-D segment ids.
+
+    Float weights encode source positions; taking the extremum over the kept
+    positions resolves ties deterministically (max -> last occurrence,
+    min -> first occurrence). float32 represents integers exactly up to 2**24;
+    larger inputs would lose arg-position precision.
+
+    Returns (seg_size, empty_group_mask, per-group extreme, arg positions).
+    """
+    order = paddle.argsort(index, stable=True)
+    sorted_index = index[order]
+    sorted_src = src[order]
+    seg_size = int(sorted_index.max().item()) + 1
+    empty_mask = ~paddle.bincount(sorted_index, minlength=seg_size).cast(paddle.bool)
+
+    extreme = segment_op(sorted_src, sorted_index)
+    weights = paddle.arange(sorted_src.shape[0], dtype=paddle.float32)
+    is_extreme = sorted_src == extreme[sorted_index]
+    extreme_weights = paddle.where(is_extreme, weights, paddle.to_tensor(sentinel))
+    arg_sorted = segment_op(extreme_weights, sorted_index)
+    arg = order[arg_sorted.cast(paddle.int64)]
+    return seg_size, empty_mask, extreme, arg
+
+
+def _scatter_argmax(
+    src: paddle.Tensor,
+    index: paddle.Tensor,
+    dim_size: int,
+) -> paddle.Tensor:
+    """Return the source index of the maximum value in each group.
+
+    ``src`` and ``index`` must be one-dimensional with equal length. Empty
+    groups are assigned ``0``. Ties resolve to the last occurrence in ``src``.
+    """
+    if src.ndim != 1 or index.ndim != 1 or src.shape[0] != index.shape[0]:
+        raise ValueError("src and index must be one-dimensional with equal length")
+
+    seg_size, empty_mask, _, argmax = _segment_arg_extremum(
+        src, index, paddle.geometric.segment_max, -float("inf")
+    )
+    argmax = paddle.where(empty_mask, paddle.zeros_like(argmax), argmax)
+    out = paddle.zeros([dim_size], dtype="int64")
+    out[:seg_size] = argmax
+    return out
+
+
+def _scatter_min_indices(
+    ov_row: paddle.Tensor,
+    ov_col: paddle.Tensor,
+    n_total: int,
+) -> paddle.Tensor:
+    """Map each row to its minimum overlapping column; rows without overlaps
+    keep their own index."""
+    if ov_row.shape[0] == 0:
+        return paddle.arange(n_total, dtype=paddle.int64)
+    # paddle.geometric.segment_min requires sorted segment ids; sort first.
+    order = paddle.argsort(ov_row, stable=True)
+    sorted_row = ov_row[order]
+    sorted_col = ov_col[order]
+    min_per_row = paddle.geometric.segment_min(
+        sorted_col.cast(paddle.float32), sorted_row
+    )
+    unique_rows = paddle.unique(ov_row)
+    result = paddle.arange(n_total, dtype=paddle.float32)
+    result = paddle.scatter(
+        result, unique_rows, min_per_row[unique_rows].cast(paddle.float32)
+    )
+    return result.cast(paddle.int64)
 
 
 def primitive_lattice_matrix_from_conventional_lattice_params(
@@ -79,7 +153,7 @@ def _deduplicate_orbit_coords(
     ov_col = col_ids[overlapping]
     ov_row = row_ids[overlapping]
 
-    min_col_per_row = scatter_min_indices(ov_row, ov_col, coords.shape[0])
+    min_col_per_row = _scatter_min_indices(ov_row, ov_col, coords.shape[0])
     if return_inverse:
         return paddle.unique(min_col_per_row, return_inverse=True)
     return paddle.unique(min_col_per_row), None
@@ -343,7 +417,7 @@ def wrap_frac_coords_into_asu(
     supercell_in_any_wyckoff = supercell_in_wyckoff.any(axis=-1)
     conv_atom_has_image_in_asu = supercell_in_any_wyckoff.any(axis=-1)
 
-    indices_of_conv_atoms_in_asu = scatter_argmax(
+    indices_of_conv_atoms_in_asu = _scatter_argmax(
         src=conv_atom_has_image_in_asu.cast(paddle.float32),
         index=map_conventional_to_asu_coord,
         dim_size=n_asu_atoms,

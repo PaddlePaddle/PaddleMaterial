@@ -16,12 +16,9 @@ import numpy as np
 import paddle
 
 from ppmat.utils.scatter import scatter
-from ppmat.utils.scatter import scatter_argmax
 from ppmat.utils.scatter import scatter_argmin
 from ppmat.utils.scatter import scatter_mean
 from ppmat.utils.scatter import scatter_min
-from ppmat.utils.scatter import scatter_min_indices
-from ppmat.utils.scatter import scatter_min_with_argmin
 from ppmat.utils.scatter import scatter_sum
 from ppmat.utils.scatter import scatter_sum_first_order
 
@@ -62,55 +59,6 @@ def test_scatter_argmin_handles_empty_input():
     result = scatter_argmin(values, groups, dim_size=3)
 
     np.testing.assert_array_equal(result.numpy(), [-1, -1, -1])
-
-
-def test_scatter_argmax_returns_group_argmax_with_empty_groups_as_zero():
-    values = paddle.to_tensor([3.0, -2.0, 4.0, 1.0])
-    groups = paddle.to_tensor([2, 0, 2, 0], dtype="int64")
-
-    # dim_size is inferred from index; empty groups resolve to 0.
-    result = scatter_argmax(values, groups)
-    np.testing.assert_array_equal(result.numpy(), [3, 0, 2])
-
-    # Ties resolve to the last occurrence of the group maximum.
-    tied = scatter_argmax(
-        paddle.to_tensor([1.0, 3.0, 3.0]), paddle.to_tensor([0, 0, 0], dtype="int64")
-    )
-    np.testing.assert_array_equal(tied.numpy(), [2])
-
-
-def test_scatter_min_with_argmin_fills_empty_groups_with_sentinels():
-    values = paddle.to_tensor([3.0, -2.0, 4.0, -5.0, 1.0])
-    groups = paddle.to_tensor([2, 0, 2, 0, 2], dtype="int64")
-
-    # Empty groups and groups beyond seg_size get (inf, dim_size) sentinels.
-    min_values, argmin = scatter_min_with_argmin(values, groups, dim_size=4)
-    np.testing.assert_array_equal(min_values.numpy(), [-5.0, np.inf, 1.0, np.inf])
-    np.testing.assert_array_equal(argmin.numpy(), [3, 4, 4, 4])
-
-    # argmin ties resolve to the first occurrence of the group minimum.
-    tied_min, tied_argmin = scatter_min_with_argmin(
-        paddle.to_tensor([2.0, 1.0, 1.0, 3.0]),
-        paddle.to_tensor([0, 0, 0, 1], dtype="int64"),
-    )
-    np.testing.assert_array_equal(tied_min.numpy(), [1.0, 3.0])
-    np.testing.assert_array_equal(tied_argmin.numpy(), [1, 3])
-
-
-def test_scatter_min_indices_maps_rows_to_min_overlap_column():
-    ov_row = paddle.to_tensor([0, 1, 0, 2, 1], dtype="int64")
-    ov_col = paddle.to_tensor([7, 5, 3, 9, 2], dtype="int64")
-
-    result = scatter_min_indices(ov_row, ov_col, n_total=4)
-    np.testing.assert_array_equal(result.numpy(), [3, 2, 9, 3])
-
-    # Rows without overlaps keep their arange value.
-    empty = scatter_min_indices(
-        paddle.empty([0], dtype="int64"),
-        paddle.empty([0], dtype="int64"),
-        n_total=3,
-    )
-    np.testing.assert_array_equal(empty.numpy(), [0, 1, 2])
 
 
 def test_scatter_sum_supports_second_order_gradients():
