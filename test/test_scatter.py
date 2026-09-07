@@ -118,7 +118,9 @@ def test_scatter_sum_supports_force_loss_parameter_gradients():
     coords = paddle.to_tensor(
         [[0.1, 0.2], [0.4, -0.2], [-0.3, 0.7]], stop_gradient=False
     )
-    weights = paddle.to_tensor([[0.2, 0.4], [0.6, 0.8]], stop_gradient=False)
+    weights = paddle.to_tensor(
+        [[0.2, 0.4], [0.6, 0.8]], stop_gradient=False
+    )
     groups = paddle.to_tensor([0, 1, 0], dtype="int64")
 
     messages = paddle.sin(coords @ weights)
