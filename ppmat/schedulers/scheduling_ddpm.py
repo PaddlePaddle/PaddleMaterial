@@ -240,6 +240,7 @@ class DDPMScheduler:
             # Glide cosine schedule
             self.betas = betas_for_alpha_bar(num_train_timesteps)
         elif beta_schedule == "clipped_cosine":
+            # Maid cosine  schedule
             s = 0.008
             discretization = paddle.linspace(
                 0, num_train_timesteps, num_train_timesteps + 1, dtype="float64"
