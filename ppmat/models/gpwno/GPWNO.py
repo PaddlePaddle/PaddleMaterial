@@ -17,29 +17,295 @@ import paddle
 
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius
 from ppmat.datasets.graph_utils.infgcn_graph_utils import radius_graph
+from ppmat.models.common.activation import NormActivation
+from ppmat.models.common.activation import ScalarActivation
+from ppmat.utils.crystal import pbc_vec
 from ppmat.utils.scatter import scatter
 
 from ..common.e3nn import o3
 from ..common.e3nn.math import soft_one_hot_linspace
+from ..common.e3nn.nn import FullyConnectedNet
 from ..common.orbital import GaussianOrbital
-from .GPWNO_utils import GCNLayer
-from .GPWNO_utils import NormActivation
-from .GPWNO_utils import ScalarActivation
-from .PWNO_utils import SpectralConv3d
-from .PWNO_utils import SpectralConv3d_FFNO
 
 
-def pbc_vec(vec, cell):
-    """
-    Apply periodic boundary condition to the vector
-    :param vec: original vector of (N, K, 3)
-    :param cell: cell frame of (N, 3, 3)
-    :return: shortest vector of (N, K, 3)
-    """
-    coord = vec @ paddle.linalg.inv(x=cell)
-    coord = coord - paddle.round(coord)
-    pbc_vec = coord @ cell
-    return pbc_vec.detach(), coord.detach()
+class GCNLayer(paddle.nn.Module):
+    def __init__(
+        self,
+        irreps_in,
+        irreps_out,
+        irreps_edge,
+        radial_embed_size,
+        num_radial_layer,
+        radial_hidden_size,
+        is_fc=True,
+        use_sc=True,
+        irrep_normalization="component",
+        path_normalization="element",
+        *args,
+        **kwargs,
+    ):
+        """
+        A single InfGCN layer for Tensor Product-based message passing.
+        If the tensor product is fully connected, we have (for every path)
+
+        .. math::
+            z_w=\\sum_{uv}w_{uvw}x_u\\otimes y_v=\\sum_{u}w_{uw}x_u \\otimes y
+
+        Else, we have
+
+        .. math::
+            z_u=x_u\\otimes \\sum_v w_{uv}y_v=w_u (x_u\\otimes y)
+
+        Here, uvw are radial (channel) indices of the first input, second input, and output, respectively.
+        Notice that in our model, the second input is always the spherical harmonics of the edge vector,
+        so the index v can be safely ignored.
+
+        :param irreps_in: irreducible representations of input node features
+        :param irreps_out: irreducible representations of output node features
+        :param irreps_edge: irreducible representations of edge features
+        :param radial_embed_size: embedding size of the edge length
+        :param num_radial_layer: number of hidden layers in the radial network
+        :param radial_hidden_size: hidden size of the radial network
+        :param is_fc: whether to use fully connected tensor product
+        :param use_sc: whether to use self-connection
+        :param irrep_normalization: representation normalization passed to the `o3.FullyConnectedTensorProduct`
+        :param path_normalization: path normalization passed to the `o3.FullyConnectedTensorProduct`
+        """
+        super(GCNLayer, self).__init__()
+        self.irreps_in = o3.Irreps(irreps_in)
+        self.irreps_out = o3.Irreps(irreps_out)
+        self.irreps_edge = o3.Irreps(irreps_edge)
+        self.radial_embed_size = radial_embed_size
+        self.num_radial_layer = num_radial_layer
+        self.radial_hidden_size = radial_hidden_size
+        self.is_fc = is_fc
+        self.use_sc = use_sc
+        if self.is_fc:
+            self.tp = o3.FullyConnectedTensorProduct(
+                self.irreps_in,
+                self.irreps_edge,
+                self.irreps_out,
+                internal_weights=False,
+                shared_weights=False,
+                irrep_normalization=irrep_normalization,
+                path_normalization=path_normalization,
+            )
+        else:
+            instr = [
+                (i_1, i_2, i_out, "uvu", True)
+                for i_1, (_, ir_1) in enumerate(self.irreps_in)
+                for i_2, (_, ir_edge) in enumerate(self.irreps_edge)
+                for i_out, (_, ir_out) in enumerate(self.irreps_out)
+                if ir_out in ir_1 * ir_edge
+            ]
+            self.tp = o3.TensorProduct(
+                self.irreps_in,
+                self.irreps_edge,
+                self.irreps_out,
+                instr,
+                internal_weights=False,
+                shared_weights=False,
+                irrep_normalization=irrep_normalization,
+                path_normalization=path_normalization,
+            )
+        self.fc = FullyConnectedNet(
+            [radial_embed_size]
+            + num_radial_layer * [radial_hidden_size]
+            + [self.tp.weight_numel],
+            paddle.nn.functional.silu,
+        )
+        self.sc = None
+        if self.use_sc:
+            self.sc = o3.Linear(self.irreps_in, self.irreps_out)
+
+    def forward(self, edge_index, node_feat, edge_feat, edge_embed, dim_size=None):
+        src, dst = edge_index
+        weight = self.fc(edge_embed)
+        out = self.tp(node_feat[src], edge_feat, weight=weight)
+        out = scatter(out, dst, dim=0, dim_size=dim_size, reduce="sum")
+        if self.use_sc:
+            out = out + self.sc(node_feat)
+        return out
+
+    def forward_mean(self, edge_index, node_feat, edge_feat, edge_embed, dim_size=None):
+        src, dst = edge_index
+        weight = self.fc(edge_embed)
+        out = self.tp(node_feat[src], edge_feat, weight=weight)
+        out = scatter(out, dst, dim=0, dim_size=dim_size, reduce="mean")
+        if self.use_sc:
+            out = out + self.sc(node_feat)
+        return out
+
+
+class SpectralConv3d(paddle.nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2, modes3):
+        super(SpectralConv3d, self).__init__()
+        """
+        3D Fourier layer. It does FFT, linear transform, and Inverse FFT.
+        """
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1
+        self.modes2 = modes2
+        self.modes3 = modes3
+        self.scale = 1 / (in_channels * out_channels)
+        self.weights1 = paddle.nn.Parameter(
+            self.scale
+            * paddle.rand(
+                in_channels,
+                out_channels,
+                self.modes1,
+                self.modes2,
+                self.modes3,
+                dtype=paddle.complex64,
+            )
+        )
+        self.weights2 = paddle.nn.Parameter(
+            self.scale
+            * paddle.rand(
+                in_channels,
+                out_channels,
+                self.modes1,
+                self.modes2,
+                self.modes3,
+                dtype=paddle.complex64,
+            )
+        )
+        self.weights3 = paddle.nn.Parameter(
+            self.scale
+            * paddle.rand(
+                in_channels,
+                out_channels,
+                self.modes1,
+                self.modes2,
+                self.modes3,
+                dtype=paddle.complex64,
+            )
+        )
+        self.weights4 = paddle.nn.Parameter(
+            self.scale
+            * paddle.rand(
+                in_channels,
+                out_channels,
+                self.modes1,
+                self.modes2,
+                self.modes3,
+                dtype=paddle.complex64,
+            )
+        )
+
+    def compl_mul3d(self, input, weights):
+        return paddle.einsum("bixyz,ioxyz->boxyz", input, weights)
+
+    def forward(self, x):
+        batchsize = x.shape[0]
+        # Pass explicit dimensions for the 3D real FFT.
+        x_ft = paddle.fft.rfftn(x, dim=[-3, -2, -1], norm="ortho")
+        out_ft = paddle.zeros(
+            [
+                batchsize,
+                self.out_channels,
+                x.shape[-3],
+                x.shape[-2],
+                x.shape[-1] // 2 + 1,
+            ],
+            dtype=paddle.complex64,
+            device=x.device,
+        )
+        out_ft[:, :, : self.modes1, : self.modes2, : self.modes3] = self.compl_mul3d(
+            x_ft[:, :, : self.modes1, : self.modes2, : self.modes3], self.weights1
+        )
+        out_ft[:, :, -self.modes1 :, : self.modes2, : self.modes3] = self.compl_mul3d(
+            x_ft[:, :, -self.modes1 :, : self.modes2, : self.modes3], self.weights2
+        )
+        out_ft[:, :, : self.modes1, -self.modes2 :, : self.modes3] = self.compl_mul3d(
+            x_ft[:, :, : self.modes1, -self.modes2 :, : self.modes3], self.weights3
+        )
+        out_ft[:, :, -self.modes1 :, -self.modes2 :, : self.modes3] = self.compl_mul3d(
+            x_ft[:, :, -self.modes1 :, -self.modes2 :, : self.modes3], self.weights4
+        )
+        # Use the original spatial shape for the inverse 3D real FFT.
+        x = paddle.fft.irfftn(
+            out_ft,
+            s=(x.shape[-3], x.shape[-2], x.shape[-1]),
+            dim=[-3, -2, -1],
+            norm="ortho",
+        )
+        return x
+
+
+class SpectralConv3d_FFNO(paddle.nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2, modes3):
+        super(SpectralConv3d_FFNO, self).__init__()
+        """
+        3D Fourier layer for FFNO-style factorized spectral convolution.
+        """
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes_x = modes1
+        self.modes_y = modes2
+        self.modes_z = modes3
+        self.fourier_weight = paddle.nn.ParameterList(parameters=[])
+        for n_modes in [self.modes_x, self.modes_y, self.modes_z]:
+            weight = paddle.randn(
+                [in_channels, out_channels, n_modes, 2], dtype=paddle.float32
+            )
+            paddle.nn.init.xavier_normal_(weight)
+            self.fourier_weight.append(paddle.nn.Parameter(weight))
+
+    def forward(self, x):
+        B, I, S1, S2, S3 = x.shape  # [batch, in_ch, x, y, z]
+
+        # Spectral convolution along the z axis.
+        x_ftz = paddle.fft.rfftn(
+            x,
+            dim=[
+                -1,
+            ],
+            norm="ortho",
+        )
+        out_ft = x_ftz.new_zeros(B, I, S1, S2, S3 // 2 + 1)
+        out_ft[:, :, :, :, : self.modes_z] = paddle.einsum(
+            "bixyz,ioz->boxyz",
+            x_ftz[:, :, :, :, : self.modes_z],
+            paddle.view_as_complex(self.fourier_weight[2]),
+        )
+        xz = paddle.fft.irfft(out_ft, n=S3, dim=-1, norm="ortho")
+
+        # Spectral convolution along the y axis.
+        x_fty = paddle.fft.rfftn(
+            x,
+            dim=[
+                -2,
+            ],
+            norm="ortho",
+        )
+        out_ft = x_ftz.new_zeros(B, I, S1, S2 // 2 + 1, S3)
+        out_ft[:, :, :, : self.modes_y, :] = paddle.einsum(
+            "bixyz,ioy->boxyz",
+            x_fty[:, :, :, : self.modes_y, :],
+            paddle.view_as_complex(self.fourier_weight[1]),
+        )
+        xy = paddle.fft.irfft(out_ft, n=S2, dim=-2, norm="ortho")
+
+        # Spectral convolution along the x axis.
+        x_ftx = paddle.fft.rfftn(
+            x,
+            dim=[
+                -3,
+            ],
+            norm="ortho",
+        )
+        out_ft = x_ftz.new_zeros(B, I, S1 // 2 + 1, S2, S3)
+        out_ft[:, :, : self.modes_x, :, :] = paddle.einsum(
+            "bixyz,iox->boxyz",
+            x_ftx[:, :, : self.modes_x, :, :],
+            paddle.view_as_complex(self.fourier_weight[0]),
+        )
+        xx = paddle.fft.irfft(out_ft, n=S1, dim=-3, norm="ortho")
+
+        x = xx + xy + xz
+        return x
 
 
 class PWNO(paddle.nn.Module):
@@ -565,9 +831,9 @@ class GPWNO(paddle.nn.Layer):
                 max_cell = new_cell * self.max_cell_size
             else:
                 max_cell_tensor = np.eye(3) * self.max_cell_size
-                max_cell = paddle.to_tensor(
-                    max_cell_tensor, dtype=atom_coord.dtype
-                ).to(atom_coord.place)
+                max_cell = paddle.to_tensor(max_cell_tensor, dtype=atom_coord.dtype).to(
+                    atom_coord.place
+                )
                 max_cell = max_cell.unsqueeze(0).repeat(grid.size(0), 1, 1)
             cell_inp = max_cell
         probe = paddle.einsum("ijkl,blm->bijkm", probe, cell_inp).detach()
@@ -917,7 +1183,6 @@ class GPWNO(paddle.nn.Layer):
         else:
             density = (orbital * feat.unsqueeze(1)).sum(dim=-1)
         density = scatter(density, batch_idx, dim=0, reduce="sum")
-        # scalar_field = scalar_field_gcn.reshape(grid.size(0), grid.size(1)).real()
         scalar_field = scalar_field_gcn.reshape([grid.shape[0], grid.shape[1]])
         if self.residual:
             density = density + residue.view(*density.size())
