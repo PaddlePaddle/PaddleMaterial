@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import paddle
+
 from ppmat.models.common.e3nn import o3
+from ppmat.models.common.e3nn.nn import Activation
+from ppmat.models.common.e3nn.nn import Extract
 
 
 def swish(x: paddle.Tensor) -> paddle.Tensor:
@@ -38,6 +41,7 @@ class SiQU(paddle.nn.Layer):
 
     def forward(self, x: paddle.Tensor):
         return x * self._activation(x)
+
 
 class ScalarActivation(paddle.nn.Layer):
     """
