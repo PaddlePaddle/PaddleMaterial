@@ -33,7 +33,12 @@ from ppmat.utils.misc import is_equal
 
 
 class AsymmetricUnitDataset(Dataset):
-    """ASU-representation dataset (MP-20).
+    """Base ASU-representation dataset.
+
+    Concrete datasets (e.g. ``MP20ASUDataset`` and ``MPTS52ASUDataset``)
+    declare the class-level ``name`` / ``url`` / ``md5`` /
+    ``default_path`` download information; the base class itself holds
+    no download source.
 
     Crystals are stored as flat packed arrays in NPZ archives
     (``<split>.npz``). The packed arrays are parsed into per-crystal field
@@ -57,8 +62,10 @@ class AsymmetricUnitDataset(Dataset):
     - ``[8+NE+5n:8+NE+6n]``: wyckoff shape indices (optional)
 
     Args:
-        path (str, optional): The path of the dataset, if path is not exists,
-            it will be downloaded. Defaults to "./data/mp_20/train.npz".
+        path (Optional[str], optional): The path of the dataset npz file.
+            Defaults to None, which falls back to the ``default_path`` of
+            the subclass. If the path does not exist, the dataset is
+            downloaded via the class-level ``url`` and ``md5``.
         build_crystal_cfg (Dict, optional): The configs for building the
             per-crystal field dicts from packed arrays. Defaults to None.
         cache_path (Optional[str], optional): If a cache_path is set, the
@@ -69,13 +76,14 @@ class AsymmetricUnitDataset(Dataset):
             given path if it already exists. Defaults to False.
     """
 
-    name = "mp_20"
-    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mp_20_asu.zip"
-    md5 = "c8dc162555808bf8dc0183b840209f6a"
+    name = None
+    url = None
+    md5 = None
+    default_path = None
 
     def __init__(
         self,
-        path: str = "./data/mp_20/train.npz",
+        path: Optional[str] = None,
         build_crystal_cfg: Dict = None,
         cache_path: Optional[str] = None,
         overwrite: bool = False,
@@ -83,7 +91,22 @@ class AsymmetricUnitDataset(Dataset):
     ):
         super().__init__()
 
+        if path is None:
+            path = self.default_path
+        if path is None:
+            raise ValueError(
+                "Dataset path is not set: pass an explicit path or set "
+                "default_path in the dataset subclass."
+            )
+
         if not osp.exists(path):
+            if self.url is None:
+                raise ValueError(
+                    f"Dataset path {path} does not exist, and "
+                    f"{type(self).__name__} does not define url/md5 for "
+                    "download. Use a concrete dataset subclass or pass an "
+                    "existing path."
+                )
             logger.message("The dataset is not found. Will download it now.")
             root_path = download.get_datasets_path_from_url(self.url, self.md5)
             path = osp.join(root_path, self.name, osp.basename(path))
@@ -211,11 +234,19 @@ class AsymmetricUnitDataset(Dataset):
         return self.num_samples
 
 
+class MP20ASUDataset(AsymmetricUnitDataset):
+    """ASU-representation dataset (MP-20)."""
+
+    name = "mp_20"
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mp_20_asu.zip"
+    md5 = "c8dc162555808bf8dc0183b840209f6a"
+    default_path = "./data/mp_20/train.npz"
+
+
 class MPTS52ASUDataset(AsymmetricUnitDataset):
     """ASU-representation dataset (MPTS-52)."""
 
     name = "mpts_52"
-    url = (
-        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mpts_52_asu.zip"
-    )
+    url = "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/asu/mpts_52_asu.zip"  # noqa
     md5 = "bdbfdad0352bbf32afb1ee6561cea97b"
+    default_path = "./data/mpts_52/train.npz"

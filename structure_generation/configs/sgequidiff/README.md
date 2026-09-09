@@ -61,7 +61,7 @@ Each sample stores the ASU fields consumed by `AsymmetricUnitDataset`: `space_gr
 #### Dataset preparation
 
 Both datasets are provided as preprocessed NPZ archives (`train/val/test.npz`).
-Each config selects the dataset class per source (`AsymmetricUnitDataset` for
+Each config selects the dataset class per source (`MP20ASUDataset` for
 MP-20, `MPTS52ASUDataset` for MPTS-52) and sets an explicit `path` per split
 (defaulting to `data/data/<name>/<split>.npz`); when the path does not exist,
 the archive is fetched automatically through the unified download pipeline

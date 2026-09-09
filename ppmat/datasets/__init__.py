@@ -31,6 +31,7 @@ from paddle.io import DistributedBatchSampler  # noqa
 
 from ppmat.datasets import collate_fn
 from ppmat.datasets.asu_dataset import AsymmetricUnitDataset  # noqa
+from ppmat.datasets.asu_dataset import MP20ASUDataset  # noqa
 from ppmat.datasets.asu_dataset import MPTS52ASUDataset  # noqa
 from ppmat.datasets.density_dataset import DensityDataset
 from ppmat.datasets.density_dataset import MD17DensityDataset
@@ -81,6 +82,7 @@ __all__ = [
     "SFINDataset",
     "OMol25Dataset",
     "AsymmetricUnitDataset",
+    "MP20ASUDataset",
     "MPTS52ASUDataset",
     "MD17Dataset",
 ]

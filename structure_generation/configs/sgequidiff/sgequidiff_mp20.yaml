@@ -110,7 +110,7 @@ Optimizer:
 Dataset:
   train:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MP20ASUDataset
       __init_params__:
         path: data/data/mp_20/train.npz
     loader:
@@ -124,7 +124,7 @@ Dataset:
         batch_size: 32
   val:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MP20ASUDataset
       __init_params__:
         path: data/data/mp_20/val.npz
     loader:
@@ -138,7 +138,7 @@ Dataset:
         batch_size: 64
   test:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MP20ASUDataset
       __init_params__:
         path: data/data/mp_20/test.npz
     loader:
@@ -154,7 +154,7 @@ Dataset:
 Sample:
   data:
     dataset:
-      __class_name__: AsymmetricUnitDataset
+      __class_name__: MP20ASUDataset
       __init_params__:
         path: data/data/mp_20/test.npz
     sampler:

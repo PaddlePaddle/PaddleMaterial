@@ -309,7 +309,7 @@ class TestFullTrainingObjective:
 def _write_synthetic_mp20_npz(root_dir, split="train", num_crystals=8):
     """Write a small mp_20-style npz (packed + indices) for the dataset chain test.
 
-    Field layout follows AsymmetricUnitDataset._parse_flat with NE=98:
+    Field layout follows AsymmetricUnitDataset.read_data with NE=98:
     [n, sg, comp(98), lengths(3), angles(3), elems(n), wyckoffs(n),
      frac_coords(3n), wyckoff_shape(n)].
     """
@@ -363,7 +363,7 @@ def test_dataset_collate_to_model_forward(tmp_path):
     """Data pipeline: npz -> build_dataloader -> collate -> model forward.
 
     Overall question: does a realistic dataset batch flow from disk through
-    AsymmetricUnitDataset / DefaultCollator into SGEQuiDiff.forward without
+    MP20ASUDataset / DefaultCollator into SGEQuiDiff.forward without
     key/shape mismatches?
     """
     from ppmat.datasets import build_dataloader
@@ -372,7 +372,7 @@ def test_dataset_collate_to_model_forward(tmp_path):
     loader = build_dataloader(
         {
             "dataset": {
-                "__class_name__": "AsymmetricUnitDataset",
+                "__class_name__": "MP20ASUDataset",
                 "__init_params__": {
                     "path": str(tmp_path / "mp_20" / "train.npz"),
                 },
@@ -422,13 +422,15 @@ def test_dataset_downloads_via_unified_pipeline(tmp_path, monkeypatch):
     """Download path: a missing explicit path falls back to the unified
     download pipeline (url + md5 + cache under ~/.paddlemat/datasets).
 
-    Overall question: when ``path`` does not exist, does the dataset resolve
-    the npz as ``<extract_root>/<name>/<split>.npz`` using the class-level
-    ``name`` / ``url`` / ``md5`` attributes, with subclass overrides
-    (MPTS52ASUDataset) selecting their own source?
+    Overall question: when ``path`` does not exist, does each concrete
+    dataset subclass (``MP20ASUDataset`` / ``MPTS52ASUDataset``) resolve
+    the npz as ``<extract_root>/<name>/<split>.npz`` using its own
+    class-level ``name`` / ``url`` / ``md5``, while the abstract base
+    class holds no download source?
     """
     import ppmat.utils.download as download
     from ppmat.datasets.asu_dataset import AsymmetricUnitDataset
+    from ppmat.datasets.asu_dataset import MP20ASUDataset
     from ppmat.datasets.asu_dataset import MPTS52ASUDataset
 
     extract_root = tmp_path / "cache" / "mp_20_asu"
@@ -445,13 +447,20 @@ def test_dataset_downloads_via_unified_pipeline(tmp_path, monkeypatch):
         download, "get_datasets_path_from_url", fake_get_datasets_path_from_url
     )
 
-    dataset = AsymmetricUnitDataset(path=str(tmp_path / "custom" / "train.npz"))
-    assert calls == {"url": AsymmetricUnitDataset.url, "md5": AsymmetricUnitDataset.md5}
+    dataset = MP20ASUDataset(path=str(tmp_path / "custom" / "train.npz"))
+    assert calls == {"url": MP20ASUDataset.url, "md5": MP20ASUDataset.md5}
     assert dataset.path == str(extract_root / "mp_20" / "train.npz")
     assert len(dataset) == 4
 
+    # The base class holds no download source; subclasses declare their own.
+    assert AsymmetricUnitDataset.url is None
+    assert MP20ASUDataset.name == "mp_20"
     assert MPTS52ASUDataset.name == "mpts_52"
-    assert MPTS52ASUDataset.url != AsymmetricUnitDataset.url
+    assert MPTS52ASUDataset.url != MP20ASUDataset.url
+
+    # Instantiating the base class without an existing path must fail fast.
+    with pytest.raises(ValueError):
+        AsymmetricUnitDataset(path=str(tmp_path / "missing" / "train.npz"))
 
 
 def test_sgequidiff_metric(tmp_path):

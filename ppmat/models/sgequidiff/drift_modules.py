@@ -25,6 +25,7 @@ import paddle.nn as nn
 from ppmat.models.common.activation import ScaledSiLU as Swish
 from ppmat.models.common.radial_basis import GaussianSmearing
 from ppmat.models.common.time_embedding import SinusoidalTimeEmbeddings
+from ppmat.models.sgequidiff.pbc_graph import build_pbc_graph
 from ppmat.models.sgequidiff.sgequidiff_csp_layer import CSPLayer
 from ppmat.models.sgequidiff.sgequidiff_csp_layer import SinusoidsEmbedding
 from ppmat.models.sgequidiff.sgequidiff_meta import ELEMENT_ENCODING_SIZE
@@ -32,7 +33,6 @@ from ppmat.models.sgequidiff.sgequidiff_meta import lattice_parameter_ranges
 from ppmat.models.sgequidiff.shared import GraphNorm
 from ppmat.models.sgequidiff.shared import VariancePreservingAggregation
 from ppmat.models.sgequidiff.vocabs import EmbeddingTools
-from ppmat.utils.crystal import build_pbc_graph
 from ppmat.utils.crystal import frac_to_cart_coords
 from ppmat.utils.crystal import get_pbc_distances
 from ppmat.utils.scatter import scatter as paddle_scatter
