@@ -372,6 +372,11 @@ class BinaryActivityDataset(Dataset):
             "x2": 1.0 - float(row.solv1_x),
             "gamma1": float(row.solv1_gamma),
             "gamma2": float(row.solv2_gamma),
+            # Joint label for the metric loop in base_trainer: shape [2],
+            # collated to [batch, 2] matching GEGNNBinary predictions.
+            "gamma": np.asarray(
+                [float(row.solv1_gamma), float(row.solv2_gamma)], dtype="float32"
+            ),
             "intra_hb1": solvent1["intra_hb"],
             "intra_hb2": solvent2["intra_hb"],
             "inter_hb": min(solvent1["hba"], solvent2["hbd"])

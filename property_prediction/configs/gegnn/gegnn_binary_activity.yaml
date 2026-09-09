@@ -21,7 +21,9 @@ Trainer:
   eval_with_no_grad: False
   # Set this to a checkpoint path when running evaluation only.
   gradient_accumulation_steps: 1
-  best_metric_indicator: "eval_metric"
+  # No validation split is defined for this dataset, so track the best
+  # checkpoint by the training gamma metric (L1) instead of eval_metric.
+  best_metric_indicator: "train_metric"
   name_for_best_metric: "gamma"
   greater_is_better: False
   compute_metric_during_train: True
