@@ -54,20 +54,6 @@ During training, every crystal is padded to `model_cfg.mirage_num_atoms` atoms (
 
 ---
 
-## Dataset Description
-
-MiAD is trained and evaluated on the MP-20 benchmark.
-
-#### MP-20 split
-
-| Dataset | Train | Val | Test |
-| --- | --- | --- | --- |
-| [MP-20](https://paddle-org.bj.bcebos.com/paddlematerial/datasets/mp_20/mp_20.zip) | 27136 | 9047 | 9046 |
-
-Extract to `./data/mp_20/` so that CSV files are at `./data/mp_20/train.csv`, `./data/mp_20/val.csv`, and `./data/mp_20/test.csv`.
-
----
-
 ## Results
 
 | Model | Dataset | Config | Checkpoint / Log |

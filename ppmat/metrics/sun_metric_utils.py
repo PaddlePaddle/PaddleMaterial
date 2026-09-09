@@ -1,11 +1,11 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-#
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-#
+
 #     http://www.apache.org/licenses/LICENSE-2.0
-#
+
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,7 +15,6 @@
 import hashlib
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -23,73 +22,20 @@ from typing import Union
 
 import numpy as np
 
+from ppmat.datasets.build_structure import BuildStructure
 from ppmat.metrics.streaming_base import StreamingMetricBase
 from ppmat.utils import download
 from ppmat.utils import logger
-from ppmat.utils.crystal import lattices_to_params_shape_numpy
-
-if TYPE_CHECKING:
-    import pandas as pd
-
-# StructureMatcher tolerances (fractional / degrees / lattice)
-_MATCHER_STOL = 0.5
-_MATCHER_ANGLE_TOL = 10.0
-_MATCHER_LTOL = 0.3
-# Match the full unit cell only, without supercell or symmetry reduction
-_MATCHER_ATTEMPT_SUPERCELL = False
-_MATCHER_SYMMETRIC = False
-# e_above_hull below these bounds counts as stable / metastable
-_STABILITY_THRESHOLD = 0.0
-_METASTABILITY_THRESHOLD = 0.1
 
 
-def _composition_hash(structure) -> str:
-    return str(sorted(list(structure.atomic_numbers)))
-
-
-def _structure_from_array(crystal_data):
-    """Build a pymatgen Structure from an array-style dict.
-
-    NOTE: re-implements the ``array`` branch of ``BuildStructure.build_one``
-    (metrics layer must not depend on ppmat.datasets); keep both in sync.
-    """
-    from pymatgen.core import Lattice
-    from pymatgen.core import Structure
-
-    frac_coords = crystal_data["frac_coords"]
-    atom_types = crystal_data["atom_types"]
-    if "lengths" in crystal_data and "angles" in crystal_data:
-        lengths = crystal_data["lengths"]
-        angles = crystal_data["angles"]
-    else:
-        lattice = crystal_data["lattice"]
-        if isinstance(lattice, list):
-            lattice = np.asarray(lattice)
-        lengths, angles = lattices_to_params_shape_numpy(lattice)
-    if isinstance(lengths, np.ndarray):
-        lengths = lengths.tolist()
-    if isinstance(angles, np.ndarray):
-        angles = angles.tolist()
-    return Structure(
-        lattice=Lattice.from_parameters(*(lengths + angles)),
-        species=atom_types,
-        coords=frac_coords,
-        coords_are_cartesian=False,
-    )
-
-
-def _parse_structures(raw_list, format_str):
-    from pymatgen.core import Structure
-
+def _parse_structures(raw_list):
     results = []
     for item in raw_list:
         try:
-            if format_str == "cif_str":
-                results.append(Structure.from_str(item, fmt="cif"))
-            elif format_str == "array":
-                results.append(_structure_from_array(item))
-            else:
-                raise ValueError(f"Invalid format specified: {format_str}")
+            fmt = "cif_str" if isinstance(item, str) else "array"
+            results.append(
+                BuildStructure.build_one(item, fmt, niggli=False, canocial=False)
+            )
         except Exception as exc:
             logger.debug("Failed to parse structure: %s", exc)
             results.append(None)
@@ -110,7 +56,7 @@ def _match_against(
         if struct is None:
             results.append(False)
             continue
-        h = _composition_hash(struct)
+        h = str(sorted(struct.atomic_numbers))
         refs = reference_by_comp.get(h)
         if refs is None:
             results.append(True)
@@ -126,26 +72,22 @@ def _match_against(
     return results
 
 
-def _make_matcher(stol, angle_tol, ltol, attempt_supercell):
+def compute_uniqueness(
+    structures: List[Optional["Structure"]],
+    stol: float = 0.5,
+    angle_tol: float = 10.0,
+    ltol: float = 0.3,
+    attempt_supercell: bool = False,
+    symmetric: bool = False,
+) -> List[bool]:
     from pymatgen.analysis.structure_matcher import StructureMatcher
 
-    return StructureMatcher(
+    matcher = StructureMatcher(
         stol=stol,
         angle_tol=angle_tol,
         ltol=ltol,
         attempt_supercell=attempt_supercell,
     )
-
-
-def compute_uniqueness(
-    structures: List[Optional["Structure"]],
-    stol: float = _MATCHER_STOL,
-    angle_tol: float = _MATCHER_ANGLE_TOL,
-    ltol: float = _MATCHER_LTOL,
-    attempt_supercell: bool = _MATCHER_ATTEMPT_SUPERCELL,
-    symmetric: bool = _MATCHER_SYMMETRIC,
-) -> List[bool]:
-    matcher = _make_matcher(stol, angle_tol, ltol, attempt_supercell)
     return _match_against(
         structures, defaultdict(list), matcher, symmetric=symmetric, dynamic=True
     )
@@ -154,22 +96,29 @@ def compute_uniqueness(
 def compute_novelty(
     structures: List[Optional["Structure"]],
     reference_structures: List["Structure"],
-    stol: float = _MATCHER_STOL,
-    angle_tol: float = _MATCHER_ANGLE_TOL,
-    ltol: float = _MATCHER_LTOL,
-    attempt_supercell: bool = _MATCHER_ATTEMPT_SUPERCELL,
-    symmetric: bool = _MATCHER_SYMMETRIC,
+    stol: float = 0.5,
+    angle_tol: float = 10.0,
+    ltol: float = 0.3,
+    attempt_supercell: bool = False,
+    symmetric: bool = False,
 ) -> List[bool]:
-    matcher = _make_matcher(stol, angle_tol, ltol, attempt_supercell)
+    from pymatgen.analysis.structure_matcher import StructureMatcher
+
+    matcher = StructureMatcher(
+        stol=stol,
+        angle_tol=angle_tol,
+        ltol=ltol,
+        attempt_supercell=attempt_supercell,
+    )
     reference_by_comp = defaultdict(list)
     for ref in reference_structures:
-        reference_by_comp[_composition_hash(ref)].append(ref)
+        reference_by_comp[str(sorted(ref.atomic_numbers))].append(ref)
     return _match_against(structures, reference_by_comp, matcher, symmetric=symmetric)
 
 
 def compute_stability(
     energy_above_hull: List[Optional[float]],
-    threshold: float = _STABILITY_THRESHOLD,
+    threshold: float = 0.0,
 ) -> List[bool]:
     return [
         (eah is not None and not np.isnan(eah) and eah < threshold)
@@ -225,11 +174,11 @@ class SUNMetric(StreamingMetricBase):
         self,
         gt_file_path: Optional[str] = None,
         reference_file_path: Optional[str] = None,
-        stol: float = _MATCHER_STOL,
-        angle_tol: float = _MATCHER_ANGLE_TOL,
-        ltol: float = _MATCHER_LTOL,
-        stability_threshold: float = _STABILITY_THRESHOLD,
-        attempt_supercell: bool = _MATCHER_ATTEMPT_SUPERCELL,
+        stol: float = 0.5,
+        angle_tol: float = 10.0,
+        ltol: float = 0.3,
+        stability_threshold: float = 0.0,
+        attempt_supercell: bool = False,
     ):
         self.gt_file_path = gt_file_path
         self.reference_file_path = reference_file_path or gt_file_path
@@ -271,7 +220,7 @@ class SUNMetric(StreamingMetricBase):
 
     def __call__(
         self,
-        generated: Union[List[dict], List[str], "pd.DataFrame"],
+        generated: Union[List[str], List[dict]],
         energy_above_hull: Optional[List[Optional[float]]] = None,
     ) -> Dict[str, float]:
         self.reset()
@@ -280,28 +229,14 @@ class SUNMetric(StreamingMetricBase):
 
     def _ingest(
         self,
-        generated: Union[List[dict], List[str], "pd.DataFrame"],
+        generated: Union[List[str], List[dict]],
         energy_above_hull: Optional[List[Optional[float]]],
     ):
-        import pandas as pd
-
-        if isinstance(generated, pd.DataFrame):
-            if "cif" in generated.columns:
-                generated = generated["cif"].tolist()
-            elif "structure" in generated.columns:
-                generated = generated["structure"].tolist()
-            else:
-                raise ValueError("DataFrame must have 'cif' or 'structure' column")
-
-        if isinstance(generated, list) and len(generated) > 0:
-            fmt = None
-            if isinstance(generated[0], str):
-                fmt = "cif_str"
-            elif isinstance(generated[0], dict):
-                fmt = "array"
-            structures = _parse_structures(generated, fmt) if fmt else list(generated)
-        else:
-            raise ValueError("generated must be a non-empty list or DataFrame")
+        if not isinstance(generated, list) or not generated:
+            raise ValueError(
+                "generated must be a non-empty list of cif strings or array dicts"
+            )
+        structures = _parse_structures(generated)
 
         n = len(structures)
         logger.info(f"Evaluating {n} generated structures")
@@ -336,15 +271,20 @@ class SUNMetric(StreamingMetricBase):
 
     def _match_unique(self, structures: List[Optional["Structure"]]) -> List[bool]:
         """Incremental uniqueness against the shared (cross-batch) pool."""
-        matcher = _make_matcher(
-            self.stol, self.angle_tol, self.ltol, self.attempt_supercell
+        from pymatgen.analysis.structure_matcher import StructureMatcher
+
+        matcher = StructureMatcher(
+            stol=self.stol,
+            angle_tol=self.angle_tol,
+            ltol=self.ltol,
+            attempt_supercell=self.attempt_supercell,
         )
         results = []
         for struct in structures:
             if struct is None:
                 results.append(False)
                 continue
-            h = _composition_hash(struct)
+            h = str(sorted(struct.atomic_numbers))
             refs = self._unique_pool.get(h)
             if refs is None:
                 self._unique_pool[h] = [struct]
@@ -369,9 +309,7 @@ class SUNMetric(StreamingMetricBase):
         )
 
         if self._stability_given:
-            metastable = compute_stability(
-                self._energy_above_hull, threshold=_METASTABILITY_THRESHOLD
-            )
+            metastable = compute_stability(self._energy_above_hull, threshold=0.1)
             msun = compute_sun(
                 metastable, self._unique, self._novelty, self._structures
             )
