@@ -30,7 +30,7 @@ GE-GNN first encodes each solvent molecule with two GCN convolution layers, then
 
 | Model Name | Dataset | Target | MAE (Val) | Config | Checkpoint |
 | --- | --- | --- | --- | --- | --- |
-| gegnn_binary_activity | binaryGamma | $\ln \gamma_1$, $\ln \gamma_2$ | 0.0237 | [gegnn_binary_activity.yaml](gegnn_binary_activity.yaml) | [gegnn_binary_gamma](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/gegnn/gegnn_binary_gamma.zip) |
+| gegnn_binary_activity | binaryGamma | $\ln \gamma_1$, $\ln \gamma_2$ | 0.0237 | [gegnn_binary_activity.yaml](gegnn_binary_activity.yaml) | [gegnn_binary_activity](https://paddle-org.bj.bcebos.com/paddlematerials/checkpoints/property_prediction/ge-gnn/gegnn_binary_activity.zip) |
 
 ## Training
 
