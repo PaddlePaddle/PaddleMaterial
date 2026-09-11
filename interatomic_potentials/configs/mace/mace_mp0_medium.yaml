@@ -1,0 +1,137 @@
+Global:
+  do_train: True
+  do_eval: False
+  do_test: False
+  label_names: ['energy_per_atom', 'force', 'stress']
+  graph_converter:
+    __class_name__: FindPointsInSpheres
+    __init_params__:
+      cutoff: 6.0
+  prim_eager_enabled: True
+
+Trainer:
+  max_epochs: 200
+  seed: 42
+  output_dir: ./output/mace_mp0_medium
+  save_freq: 10
+  log_freq: 100
+  start_eval_epoch: 1
+  eval_freq: 5
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: 'O1'
+  eval_with_no_grad: False
+  gradient_accumulation_steps: 1
+  best_metric_indicator: 'eval_metric'
+  name_for_best_metric: "energy_per_atom"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: 'epoch'
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Model:
+  __class_name__: MACE
+  __init_params__:
+    hidden_dim: 128
+    num_layers: 2
+    num_basis: 8
+    r_max: 6.0
+    num_elements: 89
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    lr:
+      __class_name__: Cosine
+      __init_params__:
+        learning_rate: 1e-3
+        eta_min: 1e-6
+        by_epoch: False
+    weight_decay: 0.0
+
+Metric:
+  energy_per_atom:
+    __class_name__: MAEMetric
+    __init_params__: {}
+  force:
+    __class_name__: MAEMetric
+    __init_params__: {}
+  stress:
+    __class_name__: MAEMetric
+    __init_params__: {}
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: MPTrjDataset
+      __init_params__:
+        path: "./data/MPtrj_2022.9_full/train.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: dict
+          primitive: False
+          niggli: False
+          num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/train"
+        build_graph_cfg: ${Global.graph_converter}
+        filter_unvalid: False
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 8
+  val:
+    dataset:
+      __class_name__: MPTrjDataset
+      __init_params__:
+        path: "./data/MPtrj_2022.9_full/val.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: dict
+          primitive: False
+          niggli: False
+          num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/val"
+        build_graph_cfg: ${Global.graph_converter}
+        filter_unvalid: False
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 8
+  test:
+    dataset:
+      __class_name__: MPTrjDataset
+      __init_params__:
+        path: "./data/MPtrj_2022.9_full/test.json"
+        property_names: ${Global.label_names}
+        build_structure_cfg:
+          format: dict
+          primitive: False
+          niggli: False
+          num_cpus: 10
+        cache_path: "./data/MPtrj_2022.9_full_cache/test"
+        build_graph_cfg: ${Global.graph_converter}
+        filter_unvalid: False
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: False
+        drop_last: False
+        batch_size: 8
+
+Predict:
+  graph_converter: ${Global.graph_converter}
+  eval_with_no_grad: False
