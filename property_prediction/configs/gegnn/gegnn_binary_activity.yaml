@@ -1,0 +1,89 @@
+Global:
+  label_names: ["gamma"]
+  do_train: True
+  do_eval: False
+  do_test: False
+
+Trainer:
+  max_epochs: 100
+  seed: 2021
+  output_dir: ./output/gegnn_binary_gamma
+  save_freq: 5
+  log_freq: 20
+  start_eval_epoch: 1
+  eval_freq: 1
+  pretrained_model_path: null
+  pretrained_weight_name: null
+  resume_from_checkpoint: null
+  use_amp: False
+  amp_level: "O1"
+  # GE-GNN derives ln(gamma) from dG^E/dx1 during evaluation.
+  eval_with_no_grad: False
+  # Set this to a checkpoint path when running evaluation only.
+  gradient_accumulation_steps: 1
+  # No validation split is defined for this dataset, so track the best
+  # checkpoint by the training gamma metric (L1) instead of eval_metric.
+  best_metric_indicator: "train_metric"
+  name_for_best_metric: "gamma"
+  greater_is_better: False
+  compute_metric_during_train: True
+  metric_strategy_during_eval: "epoch"
+  use_visualdl: False
+  use_wandb: False
+  use_tensorboard: False
+
+Predict:
+  eval_with_no_grad: False
+
+Model:
+  __class_name__: GEGNNBinary
+  __init_params__:
+    in_dim: 74
+    edge_in_feats: 3
+    hidden_dim: 256
+    n_classes: 1
+    mlp_dropout_rate: 0.0
+    mlp_activation: "softplus"
+    mpnn_activation: "relu"
+    mlp_num_hid_layers: 2
+    property_name: ${Global.label_names}
+
+
+Metric:
+  gamma:
+    __class_name__: paddle.nn.L1Loss
+    __init_params__: {}
+
+Optimizer:
+  __class_name__: Adam
+  __init_params__:
+    beta1: 0.9
+    beta2: 0.999
+    lr:
+      __class_name__: ReduceOnPlateau
+      __init_params__:
+        learning_rate: 0.001
+        mode: "min"
+        factor: 0.8
+        patience: 3
+        min_lr: 0.0000001
+        by_epoch: True
+        # Match upstream: scheduler.step(train_loss) after every epoch.
+        indicator: "train_loss"
+        indicator_name: "loss"
+
+Dataset:
+  train:
+    dataset:
+      __class_name__: BinaryActivityDataset
+      __init_params__:
+        path: ./data/binary_activity/output_binary_with_inf_all.csv
+    loader:
+      num_workers: 0
+      use_shared_memory: False
+    sampler:
+      __class_name__: BatchSampler
+      __init_params__:
+        shuffle: True
+        drop_last: True
+        batch_size: 256
