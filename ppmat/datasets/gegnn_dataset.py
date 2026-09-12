@@ -38,12 +38,6 @@ from ppmat.utils.misc import is_equal
 
 __all__ = ["BinaryActivityDataset"]
 
-_DATA_FILE = "output_binary_with_inf_all.csv"
-_SOLVENT_FILE = "solvent_list.csv"
-_DATA_URL = (
-    "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
-    "thermodynamic_data_of_binary_mixtures/"
-)
 _ATOM_TYPES = [
     "C",
     "N",
@@ -176,8 +170,12 @@ class BinaryActivityDataset(Dataset):
 
     name = "binary_activity"
     md5 = ""
-    url = _DATA_URL
-    solvent_url = _DATA_URL
+    url = (
+        "https://paddle-org.bj.bcebos.com/paddlematerials/datasets/"
+        "thermodynamic_data_of_binary_mixtures/"
+    )
+    data_file = "output_binary_with_inf_all.csv"
+    solvent_file = "solvent_list.csv"
     _REQUIRED_COLUMNS = {
         "solv1",
         "solv2",
@@ -204,10 +202,10 @@ class BinaryActivityDataset(Dataset):
                 decompress=False,
             )
         if solvent_list_path is None:
-            solvent_list_path = osp.join(osp.dirname(path), _SOLVENT_FILE)
+            solvent_list_path = osp.join(osp.dirname(path), self.solvent_file)
         if not osp.exists(solvent_list_path):
             solvent_list_path = download.get_path_from_url(
-                self.solvent_url + _SOLVENT_FILE,
+                self.url + self.solvent_file,
                 osp.dirname(solvent_list_path),
                 decompress=False,
             )
@@ -254,10 +252,6 @@ class BinaryActivityDataset(Dataset):
 
         need_rebuild = overwrite or not self.cache_exists
         if self.cache_exists and not overwrite:
-            logger.warning(
-                "Cache enabled. Existing graph cache settings will be checked "
-                "before reuse."
-            )
             try:
                 graph_paths = [
                     osp.join(graph_cache_path, f"{index:010d}.pkl")
@@ -368,19 +362,22 @@ class BinaryActivityDataset(Dataset):
         return {
             "g1": solvent1["graph"],
             "g2": solvent2["graph"],
-            "x1": float(row.solv1_x),
-            "x2": 1.0 - float(row.solv1_x),
-            "gamma1": float(row.solv1_gamma),
-            "gamma2": float(row.solv2_gamma),
-            # Joint label for the metric loop in base_trainer: shape [2],
-            # collated to [batch, 2] matching GEGNNBinary predictions.
+            "x1": np.asarray([float(row.solv1_x)], dtype="float32"),
+            "x2": np.asarray([1.0 - float(row.solv1_x)], dtype="float32"),
+            "gamma1": np.asarray([float(row.solv1_gamma)], dtype="float32"),
+            "gamma2": np.asarray([float(row.solv2_gamma)], dtype="float32"),
             "gamma": np.asarray(
                 [float(row.solv1_gamma), float(row.solv2_gamma)], dtype="float32"
             ),
-            "intra_hb1": solvent1["intra_hb"],
-            "intra_hb2": solvent2["intra_hb"],
-            "inter_hb": min(solvent1["hba"], solvent2["hbd"])
-            + min(solvent1["hbd"], solvent2["hba"]),
+            "intra_hb1": np.asarray([solvent1["intra_hb"]], dtype="float32"),
+            "intra_hb2": np.asarray([solvent2["intra_hb"]], dtype="float32"),
+            "inter_hb": np.asarray(
+                [
+                    min(solvent1["hba"], solvent2["hbd"])
+                    + min(solvent1["hbd"], solvent2["hba"])
+                ],
+                dtype="float32",
+            ),
             "empty_solvsys": self.generate_solvsys(1),
         }
 

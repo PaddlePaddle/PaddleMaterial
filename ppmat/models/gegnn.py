@@ -28,6 +28,20 @@ def _segment_mean(values, segment_ids, num_segments):
     return scatter_mean(values, segment_ids, dim=0, dim_size=num_segments)
 
 
+_ACTIVATION_MAP = {
+    "relu": (paddle.nn.ReLU, paddle.nn.functional.relu),
+    "elu": (paddle.nn.ELU, paddle.nn.functional.elu),
+    "leakyrelu": (paddle.nn.LeakyReLU, paddle.nn.functional.leaky_relu),
+    "softplus": (paddle.nn.Softplus, paddle.nn.functional.softplus),
+}
+
+
+def get_activation(activation, get_nn=False):
+    key = activation.lower() if isinstance(activation, str) else "relu"
+    nn_cls, func = _ACTIVATION_MAP.get(key, _ACTIVATION_MAP["relu"])
+    return nn_cls if get_nn else func
+
+
 class HigherOrderGraphConv(paddle.nn.Layer):
     """GCN convolution equivalent to PGL ``GCNConv(norm=True)``.
 
@@ -115,28 +129,6 @@ class NNConv(paddle.nn.Layer):
         return aggregated + self.bias
 
 
-def get_activation(activation, get_nn=False):
-    if activation is None or activation in ["relu", "ReLU", "RELU"]:
-        if get_nn:
-            return paddle.nn.ReLU
-        return paddle.nn.functional.relu
-    elif activation in ["elu", "ELU"]:
-        if get_nn:
-            return paddle.nn.ELU
-        return paddle.nn.functional.elu
-    elif activation in ["LeakyReLU", "leakyrelu"]:
-        if get_nn:
-            return paddle.nn.LeakyReLU
-        return paddle.nn.functional.leaky_relu
-    elif activation in ["softplus", "Softplus", "SOFTPLUS"]:
-        if get_nn:
-            return paddle.nn.Softplus
-        return paddle.nn.functional.softplus
-    if get_nn:
-        return paddle.nn.ReLU
-    return paddle.nn.functional.relu
-
-
 class HigherOrderGRUCell(paddle.nn.Layer):
     """One GRU step expressed with primitive ops for higher-order autograd.
 
@@ -220,17 +212,8 @@ class GEGNNBinary(paddle.nn.Layer):
     """
 
     @staticmethod
-    def _pgl_graph_to_tensor(graph):
-        if not hasattr(graph, "_tensor_mode") or not graph._tensor_mode:
-            graph = graph.tensor()
-        return graph
-
-    @staticmethod
     def _as_column(value):
-        if not isinstance(value, paddle.Tensor):
-            value = paddle.to_tensor(value)
-        value = paddle.cast(value, "float32")
-        return value.unsqueeze(1) if value.ndim == 1 else value
+        return paddle.to_tensor(value, dtype="float32").reshape([-1, 1])
 
     @staticmethod
     def activity_coefficients(excess_gibbs_energy, x1, derivative):
@@ -287,17 +270,10 @@ class GEGNNBinary(paddle.nn.Layer):
         self.property_name = property_name
 
     def _component_features(self, data, batch_size):
-        g1 = data["g1"]
-        g2 = data["g2"]
+        g1 = data["g1"].tensor()
+        g2 = data["g2"].tensor()
         h1 = g1.node_feat["h"]
         h2 = g2.node_feat["h"]
-        if not isinstance(h1, paddle.Tensor):
-            h1 = paddle.to_tensor(h1, dtype="float32")
-        if not isinstance(h2, paddle.Tensor):
-            h2 = paddle.to_tensor(h2, dtype="float32")
-
-        g1 = self._pgl_graph_to_tensor(g1)
-        g2 = self._pgl_graph_to_tensor(g2)
         h1 = paddle.nn.functional.relu(self.conv1(g1, h1))
         h1 = paddle.nn.functional.relu(self.conv2(g1, h1))
         h2 = paddle.nn.functional.relu(self.conv1(g2, h2))
@@ -318,7 +294,7 @@ class GEGNNBinary(paddle.nn.Layer):
             ],
             axis=0,
         )
-        interaction_graph = self._pgl_graph_to_tensor(data["empty_solvsys"])
+        interaction_graph = data["empty_solvsys"].tensor()
         return self.global_conv1(
             interaction_graph, paddle.concat([hg1, hg2], axis=0), edge_features
         )
@@ -404,5 +380,5 @@ class GEGNNBinary(paddle.nn.Layer):
         return {"loss_dict": loss_dict, "pred_dict": prediction}
 
     def predict(self, data):
-        _, _, output = self._predict_head_gradient(data)
+        _, _, output = self._forward(data)
         return {self.property_name: output}
